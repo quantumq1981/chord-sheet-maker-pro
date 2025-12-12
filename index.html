@@ -545,11 +545,7 @@ Key: Cm
                 
                 const parts = line.split('|').filter(p => p.trim());
                 const chords = parts.map(p => {
-                    const chordList = p.trim()
-                        .replace(/‖/g, '')  // Remove double bar lines
-                        .trim()
-                        .split(/\s+/)
-                        .filter(c => c);  // Remove empty strings
+                    const chordList = p.trim().split(/\s+/);
                     return chordList.map(c => transposeChord(c, currentTranspose));
                 });
                 
@@ -639,7 +635,7 @@ Key: Cm
             const sheetContent = previewEl.querySelector('.sheet-content');
             
             const canvas = await html2canvas(sheetContent, {
-                scale: 4,
+                scale: 2,
                 backgroundColor: '#ffffff',
                 logging: false,
                 useCORS: true
