@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ChordSheet CSMPN Builder v1.1</title>
+<title>ChordSheet CSMPN Builder v1.2</title>
 
 <!-- PDF.js (required for UG Pro PDF text extraction) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -17,7 +17,55 @@
 <style>
   :root{
     --bg:#f3f4f6;
-    --card:#ffffff;
+    --card:#fff
+  /* Flow barlines (inline barline layout) */
+  .barlineRow{
+    display:flex;
+    align-items:stretch;
+    border-top: 2px solid #111;
+    border-bottom: 2px solid #111;
+    margin: 10px 0;
+  }
+  .barSep{
+    flex: 0 0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 8px 6px;
+    font-weight: 900;
+    font-size: 20px;
+    line-height: 1;
+    user-select:none;
+  }
+  .measure{
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px 10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .measure .beats{
+    width:100%;
+    display:grid;
+    grid-auto-flow:column;
+    grid-auto-columns:1fr;
+    gap: 10px;
+    align-items:center;
+    justify-items:center;
+    white-space: nowrap;
+    overflow:hidden;
+    text-overflow: ellipsis;
+  }
+  .measure .beat{
+    font-weight: 900;
+  }
+  @media (max-width: 520px){
+    .barSep{ font-size: 18px; padding: 6px 4px; }
+    .measure{ padding: 6px 8px; }
+    .measure .beats{ gap: 8px; }
+  }
+fff;
     --ink:#111827;
     --muted:#6b7280;
     --line:#111827;
@@ -333,7 +381,7 @@
 <body>
 <div class="app">
   <div class="topbar">
-    <div class="title">ChordSheet CSMPN Builder v1.1</div>
+    <div class="title">ChordSheet CSMPN Builder v1.2</div>
 
     <div class="row">
       <div class="field"><label>Title</label><input id="hdrTitle" placeholder="Song title"></div>
@@ -368,7 +416,7 @@ If a PDF import yields no chords, it may be image-only (no selectable text).</li
       </ul>
     </div>
 
-    <div id="status" class="status">Ready. v1.0 - All systems operational.</div>
+    <div id="status" class="status">Ready. v1.2 - All systems operational.</div>
 
     <!-- hidden file input -->
     <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml" style="display:none" />
@@ -430,6 +478,39 @@ function escapeHtml(s){
     .replaceAll('"','&quot;')
     .replaceAll("'","&#039;");
 }
+
+function safeFilename(name, fallback='chart'){
+  const base = (name || fallback).toString().trim() || fallback;
+  return base
+    .replace(/[\\\/\:*?"<>|]+/g,'-')
+    .replace(/\s+/g,' ')
+    .trim()
+    .slice(0, 80);
+}
+
+async function tryShareFile(file){
+  try{
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: file.name });
+      return true;
+    }
+  }catch(_e){}
+  return false;
+}
+
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+
 
 function normalizeAccidentals(s){
   return (s ?? '')
@@ -895,46 +976,41 @@ function renderDoc(doc){
 }
 
 function renderBars(tokens){
-  // Q1 FIX: Parse returns fully expanded bars array
   const bars = parseBarStructures(tokens);
   const indent = tokens.indent || 0;
+  let html = `<div class="barsBlock" style="margin-left:${indent * 22}px">`;
 
-  // Q5 VALIDATION: Check bar count multiple of 4
-  if (bars.length % 4 !== 0){
-    const needed = 4 - (bars.length % 4);
-    validationWarnings.push(`⚠️ ${bars.length} bars detected (not multiple of 4). Auto-padding with ${needed} empty bar(s).`);
-    // Auto-pad to complete row
-    for (let p=0; p<needed; p++){
-      bars.push({type:'bar', token: '*'});
-    }
-  }
+  // Render in groups of 4 bars per row (musician-friendly), but do not warn/pad noisily.
+  for(let i = 0; i < bars.length; i += 4){
+    const row = bars.slice(i, i + 4);
+    while(row.length < 4) row.push({ text: '', doubleLeft: false });
 
-  const rows = [];
-  let cur = [];
-  for (const b of bars){
-    cur.push(b);
-    if (cur.length === 4){
-      rows.push(cur);
-      cur = [];
-    }
-  }
-  if (cur.length) rows.push(cur);
+    const startsDouble = !!row[0]?.doubleLeft;
+    html += `<div class="barlineRow">`;
+    html += `<span class="barSep">${startsDouble ? '||' : '|'}</span>`;
 
-  let html = `<div class="barsBlock" style="margin-left:${indent ? (indent*22) : 0}px">`;
-  for (const row of rows){
-    html += `<div class="barRow">`;
-    for (const bar of row){
-      html += renderBar(bar);
+    for(const bar of row){
+      html += renderMeasure(bar.text);
+      html += `<span class="barSep">|</span>`;
     }
-    // pad remaining cells to 4
-    for (let i=row.length;i<4;i++){
-      html += `<div class="bar"><div class="barSegments"><div class="seg"></div></div></div>`;
-    }
+
     html += `</div>`;
   }
+
   html += `</div>`;
   return html;
 }
+
+function renderMeasure(measureText){
+  const raw = (measureText || '').trim();
+  if(!raw){
+    return `<div class="measure"><div class="beats"><span class="beat"></span></div></div>`;
+  }
+  const beats = raw.split('_').map(s => s.trim()).filter(Boolean);
+  const beatHtml = (beats.length ? beats : [raw]).map(b => `<span class="beat">${escapeHtml(b)}</span>`).join('');
+  return `<div class="measure"><div class="beats">${beatHtml}</div></div>`;
+}
+
 
 function renderBar(bar){
   const tok = bar.token ?? '';
@@ -1462,9 +1538,12 @@ document.getElementById('btnDownloadPdf').addEventListener('click', async () => 
       heightLeft -= (pageHeight - margin * 2);
     }
 
-    const filename = safeFilename((docTitle || 'chart') + '.pdf');
-    pdf.save(filename);
-    setStatus('PDF downloaded.');
+    const filename = safeFilename(docTitle || 'chart') + '.pdf';
+    const blob = pdf.output('blob');
+    const file = new File([blob], filename, { type: 'application/pdf' });
+    const shared = await tryShareFile(file);
+    if(!shared) downloadBlob(blob, filename);
+    setStatus(shared ? 'PDF ready (shared).' : 'PDF downloaded.');
   } catch (e){
     console.error(e);
     setStatus('PDF export failed: ' + (e?.message || e), 'error');
@@ -1475,19 +1554,28 @@ document.getElementById('btnPng').addEventListener('click', async () => {
   try{
     setStatus('Rendering PNG...');
     const canvas = await html2canvas(previewEl, {scale: 2, backgroundColor: '#ffffff'});
-    const url = canvas.toDataURL('image/png');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = (hdr.title.value?.trim() || 'chordsheet') + '.png';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setStatus('PNG saved.');
+    const filename = safeFilename(hdr.title.value?.trim() || 'chordsheet') + '.png';
+
+    await new Promise((resolve, reject) => {
+      canvas.toBlob(async (blob) => {
+        try{
+          if(!blob) throw new Error('PNG blob is empty');
+          const file = new File([blob], filename, { type: 'image/png' });
+          const shared = await tryShareFile(file);
+          if(!shared) downloadBlob(blob, filename);
+          setStatus(shared ? 'PNG ready (shared).' : 'PNG downloaded.');
+          resolve();
+        }catch(e){
+          reject(e);
+        }
+      }, 'image/png');
+    });
   }catch(err){
     console.error(err);
     setStatus(`PNG export failed: ${err?.message || err}`, true);
   }
 });
+
 
 document.getElementById('btnCopy').addEventListener('click', async () => {
   try{
@@ -1525,7 +1613,7 @@ Gm7 C7 F7 Bb
 
 extractHeaderFromText(sourceEl.value);
 updatePreview();
-setStatus('Ready. v1.0 - All systems operational.');
+setStatus('Ready. v1.2 - All systems operational.');
 </script>
 </body>
 </html>
