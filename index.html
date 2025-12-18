@@ -1,1195 +1,1531 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Professional Chord Sheet Maker</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ChordSheet CSMPN Builder v1.1</title>
 
-  <!-- html2canvas for screenshot capture -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<!-- PDF.js (required for UG Pro PDF text extraction) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+<!-- html2canvas for image/PDF capture -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      padding: 10px;
-    }
+<!-- jsPDF for optional PDF export (print remains the primary PDF workflow) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-    .app-container {
-      max-width: 1200px;
-      margin: 0 auto;
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      overflow: hidden;
-    }
+<style>
+  :root{
+    --bg:#f3f4f6;
+    --card:#ffffff;
+    --ink:#111827;
+    --muted:#6b7280;
+    --line:#111827;
+    --hair:#d1d5db;
+    --soft:#eef2f7;
+    --accent:#2563eb;
+    --danger:#b91c1c;
+    --warning:#f59e0b;
+  }
 
-    .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 20px;
-      text-align: center;
-    }
+  * { box-sizing: border-box; }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
 
-    .header h1 { font-size: 2em; margin-bottom: 10px; }
-    .main-content { padding: 20px; }
-    .panel { margin-bottom: 20px; }
-    .panel-title { font-size: 1.3em; font-weight: 600; color: #333; margin-bottom: 15px; }
+  .app{
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 12px;
+  }
 
-    textarea {
-      width: 100%;
-      padding: 15px;
-      border: 2px solid #e0e0e0;
-      border-radius: 8px;
-      font-family: "Courier New", monospace;
-      font-size: 14px;
-      line-height: 1.6;
-      min-height: 320px;
-      resize: vertical;
-    }
-    textarea:focus { outline: none; border-color: #667eea; }
+  .topbar{
+    background: var(--card);
+    border: 1px solid var(--hair);
+    border-radius: 14px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
 
-    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin: 15px 0; }
+  .title{
+    font-weight: 800;
+    font-size: 18px;
+    margin: 0 0 10px 0;
+  }
 
-    .btn {
-      padding: 12px 20px;
-      border: none;
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      position: relative;
-    }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-primary { background: #667eea; color: white; }
-    .btn-success { background: #28a745; color: white; }
-    .btn-info { background: #17a2b8; color: white; }
-    .btn-warning { background: #ffc107; color: #000; }
-    .btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
-    .btn:active:not(:disabled) { transform: translateY(1px); }
+  .grid{
+    display:grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
 
-    .status-message {
-      padding: 12px;
-      border-radius: 6px;
-      margin: 10px 0;
-      display: none;
-      font-weight: 500;
-    }
-    .status-message.show { display: block; animation: slideIn 0.3s ease-out; }
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateY(-10px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .status-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-    .status-error   { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-    .status-info    { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+  .card{
+    background: var(--card);
+    border: 1px solid var(--hair);
+    border-radius: 14px;
+    padding: 12px;
+  }
 
-    .loading-spinner {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      border: 3px solid #f3f3f3;
-      border-top: 3px solid #667eea;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-left: 8px;
-      vertical-align: middle;
-    }
-    @keyframes spin { 0% { transform: rotate(0deg);} 100% { transform: rotate(360deg);} }
+  .row{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:flex-end;
+  }
+  .field{
+    min-width: 140px;
+    flex: 1 1 160px;
+  }
+  label{
+    display:block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  input, select, textarea{
+    width:100%;
+    padding:10px;
+    border: 1px solid var(--hair);
+    border-radius: 10px;
+    font-size: 14px;
+    background: white;
+    color: var(--ink);
+  }
+  textarea{
+    min-height: 210px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 13px;
+    line-height: 1.35;
+    resize: vertical;
+  }
 
-    .transpose-controls {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      padding: 10px;
-      background: #f8f9fa;
-      border-radius: 6px;
-      margin: 10px 0;
-      flex-wrap: wrap;
-    }
-    .transpose-controls button { padding: 8px 15px; }
+  .btnrow{
+    display:flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  button{
+    border: 0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-weight: 700;
+    font-size: 14px;
+    background: #111827;
+    color: white;
+    cursor: pointer;
+  }
+  button.secondary{ background: #374151; }
+  button.accent{ background: var(--accent); }
+  button.danger{ background: var(--danger); }
+  button:disabled{ opacity: .55; cursor:not-allowed; }
 
-    .settings-row{
-      display:flex;
-      gap:12px;
-      align-items:center;
-      flex-wrap:wrap;
-      margin: 8px 0 0 0;
-      padding: 10px;
-      background: #f8f9fa;
-      border-radius: 6px;
-    }
-    .settings-row label { font-size: 0.95em; color:#333; font-weight:600; }
-    .settings-row select, .settings-row input {
-      padding: 8px 10px;
-      border-radius: 6px;
-      border: 1px solid #ddd;
-      font-size: 14px;
-      background: white;
-    }
+  .status{
+    margin-top: 10px;
+    font-size: 13px;
+    padding: 10px;
+    border-radius: 10px;
+    background: var(--soft);
+    border: 1px solid var(--hair);
+    color: var(--ink);
+    white-space: pre-wrap;
+  }
+  .status.error{
+    border-color: rgba(185,28,28,.35);
+    background: rgba(185,28,28,.08);
+    color: #7f1d1d;
+  }
+  .status.warning{
+    border-color: rgba(245,158,11,.35);
+    background: rgba(245,158,11,.08);
+    color: #78350f;
+  }
 
-    .help-text {
-      font-size: 0.9em;
-      color: #666;
-      margin-top: 10px;
-      padding: 10px;
-      background: #f8f9fa;
-      border-radius: 6px;
-    }
+  /* ========= ChordSheet-style preview =========
+     Goal: match ChordSheet.com look-and-feel (no boxed fakebook grid). */
+  .previewWrap{
+    background: var(--card);
+    border: 1px solid var(--hair);
+    border-radius: 14px;
+    padding: 12px;
+  }
 
-    .preview-container {
-      border: 2px solid #e0e0e0;
-      border-radius: 8px;
-      padding: 40px;
-      background: white;
-      min-height: 420px;
-    }
+  .sheet{
+    background: white;
+    border-radius: 12px;
+    padding: 18px;
+    color: #000;
+  }
 
-    .sheet-content {
-      max-width: 980px;
-      margin: 0 auto;
-      font-family: "Times New Roman", Times, serif;
-    }
+  .sheet h1{
+    margin:0;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: .2px;
+  }
 
-    .sheet-title {
-      font-size: 2em;
-      font-weight: normal;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      margin-bottom: 10px;
-      padding-bottom: 10px;
-      border-bottom: 3px solid #000;
-    }
+  .meta{
+    margin-top: 6px;
+    font-size: 14px;
+  }
+  .metaLine{
+    margin: 2px 0;
+  }
+  .metaLabel{
+    font-weight: 800;
+  }
 
-    .sheet-meta {
-      font-size: 1.05em;
-      margin-bottom: 10px;
-    }
-    .sheet-meta strong { font-weight: 700; }
-    .sheet-meta-line { margin-bottom: 4px; }
+  .sectionText{
+    margin: 14px 0 6px 0;
+    font-size: 18px;
+    font-weight: 800;
+  }
 
-    .section { margin-bottom: 22px; }
-    .section-label {
-      display: inline-block;
-      border: 2px solid #000;
-      padding: 3px 8px;
-      margin: 12px 0 10px 0;
-      font-size: 0.95em;
-      font-family: Arial, sans-serif;
-      font-weight: 700;
-    }
-    .section-label.delim { border-style: double; }
+  .labelBox{
+    display:inline-block;
+    border: 2px solid #111;
+    padding: 6px 10px;
+    border-radius: 2px;
+    font-weight: 900;
+    font-size: 18px;
+    background: #fff;
+  }
 
-    .text-annotation {
-      font-family: Arial, sans-serif;
-      font-size: 0.98em;
-      color: #111;
-      margin: 12px 0 6px 0;
-    }
+  .dividerRow{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    margin: 14px 0 6px 0;
+  }
+  .dividerRow .rule{
+    height: 2px;
+    background:#111;
+    flex: 1 1 auto;
+  }
 
-    /* Fakebook-style grid */
-    .bar-grid { margin: 4px 0 6px 0; }
-    .bar-row {
-      display: grid;
-      gap: 0;
-      margin-bottom: 10px;
-      border-left: 2px solid #000;
-      border-right: 2px solid #000;
-    }
-    .bar-cell {
-      min-height: 42px;
-      border-top: 2px solid #000;
-      border-bottom: 2px solid #000;
-      border-right: 2px solid #000;
-      padding: 6px 8px;
-      display: flex;
-      align-items: center;
-      justify-content: flex-start;
-      font-family: Arial, sans-serif;
-      font-size: 1.15em;
-      font-weight: 700;
-      line-height: 1.1;
-    }
-    .bar-cell:first-child { border-left: 0; }
-    .bar-cell:last-child { border-right: 0; }
+  .barsBlock{
+    margin-top: 6px;
+  }
 
-    .bar-split {
-      width: 100%;
-      display: grid;
-      gap: 0;
-      align-items: center;
-    }
-    .bar-split-part {
-      padding: 0 4px 0 0;
-      border-right: 1px solid #000;
-      display: flex;
-      align-items: center;
-      justify-content: flex-start;
-      min-height: 24px;
-    }
-    .bar-split-part:last-child { border-right: 0; padding-right: 0; }
+  .barRow{
+    display:flex;
+    gap: 0;
+    margin: 10px 0;
+  }
 
-    .marker {
-      font-family: Arial, sans-serif;
-      font-weight: 700;
-      font-size: 0.9em;
-      color: #333;
-      padding: 0 6px;
-      display: inline-block;
-      vertical-align: middle;
-    }
+  /* Each bar is a "cell" with heavy barlines like ChordSheet */
+  .bar{
+    flex: 1 1 0;
+    min-width: 0;
+    border-top: 2px solid #111;
+    border-bottom: 2px solid #111;
+    border-right: 2px solid #111;
+    padding: 10px 10px;
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+    /* Handwritten-like feel on iOS */
+    font-family: "MarkerFelt-Wide","MarkerFelt-Thin","Bradley Hand","Comic Sans MS",cursive;
+    font-weight: 700;
+    font-size: 22px;
+    line-height: 1;
+  }
+  .barRow .bar:first-child{
+    border-left: 2px solid #111;
+  }
 
-    .page-break {
-      margin: 18px 0;
-      border-top: 2px dashed #999;
-    }
+  /* Split bar segments (underscore glue) */
+  .barSegments{
+    width: 100%;
+    display:flex;
+    gap: 0;
+    align-items:center;
+  }
+  .seg{
+    flex: 1 1 0;
+    min-width:0;
+    padding: 0 6px;
+    display:flex;
+    justify-content:flex-start;
+    align-items:center;
+    white-space: nowrap;
+    overflow:hidden;
+    text-overflow: ellipsis;
+  }
+  .seg + .seg{
+    border-left: 2px solid #111;
+  }
 
-    /* Mobile responsiveness */
-    @media (max-width: 768px) {
-      body { padding: 5px; }
-      .header h1 { font-size: 1.5em; }
-      .main-content { padding: 10px; }
-      .btn { padding: 10px 15px; font-size: 13px; flex: 1 1 45%; }
-      .sheet-title { font-size: 1.5em; }
-      .preview-container { padding: 20px; }
-      .bar-cell { font-size: 1.05em; }
-    }
+  .small{
+    font-size: 16px;
+    font-weight: 800;
+  }
 
-    /* Print styles */
-    @media print {
-      body { background: white; padding: 0; }
-      .app-container { box-shadow: none; border-radius: 0; }
-      .header, .panel-title, .toolbar, .transpose-controls, textarea, .status-message, .help-text, .settings-row { display: none !important; }
-      .preview-container { border: none; padding: 10px; }
-      .page-break { break-after: page; border-top: none; margin: 0; }
-    }
+  .endingLabel{
+    position: relative;
+    top: -10px;
+    font-size: 14px;
+    font-weight: 900;
+    margin-right: 8px;
+  }
 
-    .header-form {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(120px, 1fr));
-      gap: 10px;
-      align-items: end;
-      margin: 10px 0 12px 0;
-      padding: 12px;
-      background: #f8f9fa;
-      border-radius: 8px;
-      border: 1px solid #e9ecef;
-    }
-    .header-form .field { display: flex; flex-direction: column; gap: 6px; }
-    .header-form .field label { font-size: 0.85em; font-weight: 700; color: #333; }
-    .header-form .field input, .header-form .field select {
-      padding: 10px 10px;
-      border-radius: 6px;
-      border: 1px solid #ddd;
-      font-size: 14px;
-      background: white;
-    }
-    .header-form .actions { grid-column: 1 / -1; display:flex; gap:10px; flex-wrap:wrap; margin-top: 4px; }
-    .header-form .actions .btn { padding: 10px 14px; }
-    @media (max-width: 900px) {
-      .header-form { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
-    }
+  .annotation{
+    margin: 8px 0;
+    font-size: 15px;
+    color:#111;
+  }
 
-  </style>
+  .pageBreak{
+    page-break-before: always;
+    break-before: page;
+    height: 1px;
+  }
+
+  /* Tips: concise */
+  .tips{
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  .tips ul{ margin: 8px 0 0 18px; }
+
+  /* Mobile-first layout: stacked editor and preview */
+  @media (min-width: 980px){
+    .grid{ grid-template-columns: 1fr 1fr; }
+    textarea{ min-height: 520px; }
+    .previewWrap{ position: sticky; top: 12px; align-self: start; }
+  }
+
+  /* Print: show only the sheet */
+  @media print{
+    body{ background: white; }
+    .topbar, .card.editorCard, .tips, .status, .btnrow { display:none !important; }
+    .app{ max-width: none; padding: 0; }
+    .previewWrap{ border: 0; padding: 0; }
+    .sheet{ border-radius: 0; padding: 18px; }
+  }
+
+  .bar.doubleLeft{
+    border-left: 6px double #111 !important;
+  }
+  .bar.doubleRight{
+    border-right: 6px double #111 !important;
+  }
+
+  /* Make the preview naturally page-like and centered */
+  .sheet{
+    max-width: 8.5in;
+    margin: 0 auto;
+  }
+
+  @media print{
+    @page { size: letter; margin: 0.5in; }
+    .sheet{ max-width: none; margin: 0; }
+  }
+
+</style>
 </head>
 
 <body>
-  <div class="app-container">
-    <div class="header">
-      <h1>🎵 Professional Chord Sheet Maker</h1>
-      <p>Create, transpose, and export Chord Sheet Maker Pro charts (fakebook style)</p>
+<div class="app">
+  <div class="topbar">
+    <div class="title">ChordSheet CSMPN Builder v1.1</div>
+
+    <div class="row">
+      <div class="field"><label>Title</label><input id="hdrTitle" placeholder="Song title"></div>
+      <div class="field"><label>Composer / Artist</label><input id="hdrComposer" placeholder="Artist / composer"></div>
+      <div class="field"><label>Key</label><input id="hdrKey" placeholder="e.g., Bb"></div>
+      <div class="field"><label>Time</label><input id="hdrTime" placeholder="e.g., 4/4"></div>
+      <div class="field"><label>Tempo</label><input id="hdrTempo" placeholder="e.g., 120"></div>
+      <div class="field"><label>Style</label><input id="hdrStyle" placeholder="e.g., Swing"></div>
     </div>
 
-    <div class="main-content">
-      <div id="statusMessage" class="status-message"></div>
+    <div class="btnrow">
+      <button class="accent" id="btnImport">Import File → CSMPN</button>
+      <button class="secondary" id="btnTransposeDown">Transpose -1</button>
+      <button class="secondary" id="btnTransposeUp">Transpose +1</button>
+      <button class="secondary" id="btnTransposeReset">Reset Transpose</button>
+      <button class="accent" id="btnPrint">Print / Save PDF</button>
+      <button class="secondary" id="btnDownloadPdf">Download PDF (iOS)</button>
+      <button class="secondary" id="btnPng">Save Image (PNG)</button>
+      <button class="secondary" id="btnCopy">Copy CSMPN</button>
+    </div>
 
-      <div class="panel">
-        <div class="panel-title">✏️ Editor</div>
+    <div class="tips">
+      <strong>How to use:</strong>
+      <ul>
+        <li>Import a PDF/TXT/XML, or paste CSMPN in the editor.</li>
+        <li>Each chord token is a bar; four bars render per row automatically.</li>
+        <li>Use <code>_</code> to split a bar (e.g., <code>Bb_Eb7</code>), <code>%</code> to repeat a bar, and <code>(... )x2</code> for repeats.</li>
+        <li>Endings: <code>1. Gm7 C7 2. F7 Bb</code> renders with labels above bars.</li>
+        <li>Print is the primary PDF workflow; "Download PDF (iOS)" provides one-tap mobile export.</li>
+        <li>You can paste/import barline charts using "|" and "ǁ" – they will be interpreted as measure separators.
+If a PDF import yields no chords, it may be image-only (no selectable text).</li>
+      </ul>
+    </div>
 
-        <div class="toolbar">
-          <button class="btn btn-primary" onclick="loadExample('csmpnBasics')">CSMPN Basics</button>
-          <button class="btn btn-primary" onclick="loadExample('splitBars')">Split Bars</button>
-          <button class="btn btn-primary" onclick="loadExample('legacy')">Legacy Example</button>
-        </div>
+    <div id="status" class="status">Ready. v1.0 - All systems operational.</div>
 
-        
-        <div class="panel-title">Chart Header</div>
-        <div class="header-form" id="headerForm">
-          <div class="field">
-            <label for="hdrTitle">Title</label>
-            <input id="hdrTitle" type="text" placeholder="Song title" />
-          </div>
-          <div class="field">
-            <label for="hdrComposer">Composer / Artist</label>
-            <input id="hdrComposer" type="text" placeholder="Artist or composer" />
-          </div>
-          <div class="field">
-            <label for="hdrStyle">Style</label>
-            <input id="hdrStyle" type="text" placeholder="e.g., Slow blues swing" />
-          </div>
-          <div class="field">
-            <label for="hdrTempo">Tempo</label>
-            <input id="hdrTempo" type="text" placeholder="e.g., ♩=90 or 90" />
-          </div>
-          <div class="field">
-            <label for="hdrKey">Key</label>
-            <input id="hdrKey" type="text" placeholder="e.g., Bb" />
-          </div>
-          <div class="field">
-            <label for="hdrTime">Time</label>
-            <select id="hdrTime">
-              <option value="">(none)</option>
-              <option value="4/4">4/4</option>
-              <option value="3/4">3/4</option>
-              <option value="6/8">6/8</option>
-              <option value="12/8">12/8</option>
-              <option value="2/4">2/4</option>
-              <option value="5/4">5/4</option>
-              <option value="7/8">7/8</option>
-            </select>
-          </div>
+    <!-- hidden file input -->
+    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml" style="display:none" />
+  </div>
 
-          <div class="actions">
-            <button class="btn btn-primary" type="button" onclick="applyHeaderToText()">Apply header to text</button>
-            <button class="btn btn-warning" type="button" onclick="extractHeaderFromText()">Read header from text</button>
-          </div>
-        </div>
+  <div class="grid">
+    <div class="card editorCard">
+      <label>CSMPN Source (ChordSheet-compatible)</label>
+      <textarea id="source"></textarea>
+    </div>
 
-<textarea id="chordInput" spellcheck="false"
-          placeholder="Paste your Chord Sheet Maker Pro (CSMPN) text here...&#10;&#10;Meta chars:&#10;# comment, + pagebreak, - text, : section, = section+delimiter, _ split bars, * empty bar, % simile, ( ) repeats, xN, 1. / 2. endings"></textarea>
-
-        <div class="settings-row">
-          <label for="barsPerRow">Bars per row:</label>
-          <select id="barsPerRow" onchange="updatePreview()">
-            <option value="2">2</option>
-            <option value="4" selected>4</option>
-            <option value="6">6</option>
-            <option value="8">8</option>
-          </select>
-
-          <label for="inputMode">Parsing mode:</label>
-          <select id="inputMode" onchange="updatePreview()">
-            <option value="auto" selected>Auto</option>
-            <option value="csmpn">CSMPN</option>
-            <option value="legacy">Legacy (pipes + brackets)</option>
-          </select>
-
-          <label for="showMarkers">Show repeat/ending markers:</label>
-          <select id="showMarkers" onchange="updatePreview()">
-            <option value="1" selected>Yes</option>
-            <option value="0">No</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-title">💾 Save & Export</div>
-
-        <div class="toolbar">
-          <button class="btn btn-success" id="saveJpegBtn" onclick="saveAsImage('jpeg')">📷 Save as JPEG</button>
-          <button class="btn btn-success" id="savePngBtn" onclick="saveAsImage('png')">🖼️ Save as PNG</button>
-          <button class="btn btn-info" id="printBtn" onclick="printSheet()">🖨️ Print</button>
-          <button class="btn btn-warning" id="copyBtn" onclick="copyText()">📋 Copy Text</button>
-        </div>
-
-        <div class="help-text">
-          💡 <strong>Tip:</strong> Input supports ChordSheet.com-style meta characters (CSMPN): section titles (-/:/=), split bars with "_", simile marks with "%", repeats with parentheses and xN, and endings (1. / 2.).<br>
-          Split-bar placeholders "*" are supported for positioning inside bars.
-        </div>
-
-        <div class="transpose-controls">
-          <span>Transpose:</span>
-          <button class="btn btn-primary" onclick="transpose(-1)">↓ -1</button>
-          <span id="transposeValue">0</span>
-          <button class="btn btn-primary" onclick="transpose(1)">↑ +1</button>
-          <button class="btn btn-primary" onclick="resetTranspose()">Reset</button>
-        </div>
-
-        <div class="preview-container" id="preview">
-          <div class="sheet-content">
-            <p style="text-align:center; color:#666; padding:40px;">
-              👈 Start typing/pasting to create your chord sheet preview.
-            </p>
-          </div>
+    <div class="previewWrap">
+      <div id="preview" class="sheet">
+        <div style="color:#666; font-size:14px; text-align:center; padding: 40px 10px;">
+          Import a file or paste CSMPN to preview.
         </div>
       </div>
     </div>
   </div>
+</div>
 
 <script>
-  // ========================================
-  // GLOBAL STATE
-  // ========================================
-  let currentTranspose = 0;
-  let notationPreference = 'sharp'; // 'sharp' or 'flat' - detected from Key: field (or chord usage)
+/* =========================================================
+   Core constants / helpers
+========================================================= */
+const sourceEl = document.getElementById('source');
+const previewEl = document.getElementById('preview');
+const statusEl = document.getElementById('status');
 
-  // ========================================
-  // CHROMATIC SCALES
-  // ========================================
-  const SHARP_NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  const FLAT_NOTES  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const hdr = {
+  title: document.getElementById('hdrTitle'),
+  composer: document.getElementById('hdrComposer'),
+  key: document.getElementById('hdrKey'),
+  time: document.getElementById('hdrTime'),
+  tempo: document.getElementById('hdrTempo'),
+  style: document.getElementById('hdrStyle'),
+};
 
-  // ========================================
-  // ENHARMONIC EQUIVALENTS MAP
-  // ========================================
-  const ENHARMONIC_TO_SHARP = {
-    'C':'C','D':'D','E':'E','F':'F','G':'G','A':'A','B':'B',
-    'B#':'C',
-    'C#':'C#','Db':'C#',
-    'D#':'D#','Eb':'D#',
-    'Fb':'E',
-    'E#':'F',
-    'F#':'F#','Gb':'F#',
-    'G#':'G#','Ab':'G#',
-    'A#':'A#','Bb':'A#',
-    'Cb':'B'
+let currentTranspose = 0;
+let notationPreference = 'sharp'; // recomputed from key/text
+let validationWarnings = []; // Q5: Track validation issues
+
+function setStatus(msg, type='info'){
+  // Back-compat: older call sites passed boolean (true=error)
+  if (type === true) type = 'error';
+  if (type === false) type = 'info';
+
+  statusEl.textContent = msg;
+  statusEl.classList.remove('error', 'warning');
+  if (type === 'error') statusEl.classList.add('error');
+  if (type === 'warning') statusEl.classList.add('warning');
+}
+
+function escapeHtml(s){
+  return (s ?? '').toString()
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'","&#039;");
+}
+
+function normalizeAccidentals(s){
+  return (s ?? '')
+    .replace(/♭/g,'b')
+    .replace(/♯/g,'#')
+    .replace(/\u00A0/g,' ')
+    .trim();
+}
+
+/* =========================================================
+   Phase-1 fixes: Header <-> Source bidirectional sync
+========================================================= */
+function extractHeaderFromText(text){
+  const get = (re) => {
+    const m = text.match(re);
+    return m ? m[1].trim() : '';
+  };
+  hdr.title.value    = get(/^Title:\s*(.+)$/im);
+  hdr.composer.value = get(/^(?:Composer|Artist):\s*(.+)$/im);
+  hdr.key.value      = get(/^Key:\s*(.+)$/im);
+  hdr.time.value     = get(/^Time:\s*(.+)$/im);
+  hdr.tempo.value    = get(/^Tempo:\s*(.+)$/im);
+  hdr.style.value    = get(/^Style:\s*(.+)$/im);
+}
+
+function applyHeaderToText(){
+  const lines = sourceEl.value.split(/\r?\n/);
+  const meta = {
+    Title: hdr.title.value.trim(),
+    Composer: hdr.composer.value.trim(),
+    Key: hdr.key.value.trim(),
+    Time: hdr.time.value.trim(),
+    Tempo: hdr.tempo.value.trim(),
+    Style: hdr.style.value.trim(),
   };
 
-  // ========================================
-  // EXAMPLE SONGS
-  // ========================================
-  const examples = {
-    csmpnBasics: `Title: CSMPN Demo
-Composer: Chord Sheet Maker Pro
+  // remove existing meta lines
+  const keep = [];
+  for (const line of lines){
+    if (/^(Title|Composer|Artist|Key|Time|Tempo|Style)\s*:/i.test(line.trim())) continue;
+    keep.push(line);
+  }
+
+  const metaLines = [];
+  if (meta.Title) metaLines.push(`Title: ${meta.Title}`);
+  if (meta.Composer) metaLines.push(`Composer: ${meta.Composer}`);
+  if (meta.Style) metaLines.push(`Style: ${meta.Style}`);
+  if (meta.Tempo) metaLines.push(`Tempo: ${meta.Tempo}`);
+  if (meta.Time) metaLines.push(`Time: ${meta.Time}`);
+  if (meta.Key) metaLines.push(`Key: ${meta.Key}`);
+
+  // ensure a blank line after headers if content exists
+  const body = keep.join('\n').trimStart();
+  const combined = metaLines.join('\n') + (metaLines.length ? '\n\n' : '') + body;
+
+  sourceEl.value = combined.replace(/\n{3,}/g,'\n\n');
+}
+
+for (const k of Object.keys(hdr)){
+  hdr[k].addEventListener('input', () => {
+    applyHeaderToText();
+    updatePreview();
+  });
+}
+
+sourceEl.addEventListener('input', () => {
+  extractHeaderFromText(sourceEl.value);
+  updatePreview();
+});
+
+/* =========================================================
+   CSMPN parsing
+========================================================= */
+function detectNotationPreferenceFromKeyOrText(key, text){
+  const k = (key||'').toLowerCase();
+  if (k.includes('b')) return 'flat';
+  if (k.includes('#')) return 'sharp';
+  // fallback: inspect chord tokens
+  if (/[A-G][b]/.test(text)) return 'flat';
+  if (/[A-G]#/.test(text)) return 'sharp';
+  return 'sharp';
+}
+
+function parseCSMPN(text){
+  const raw = (text || '').replace(/\r/g,'');
+  const lines = raw.split('\n');
+
+  const doc = {
+    title: '',
+    composer: '',
+    style: '',
+    tempo: '',
+    time: '',
+    key: '',
+    blocks: []
+  };
+
+  const metaRE = /^(Title|Composer|Artist|Style|Tempo|Time|Key)\s*:\s*(.*)$/i;
+
+  // First pass: meta extraction
+  const contentLines = [];
+  for (const line of lines){
+    const m = line.match(metaRE);
+    if (m){
+      const field = m[1].toLowerCase();
+      const val = m[2].trim();
+      if (field === 'title') doc.title = val;
+      else if (field === 'composer' || field === 'artist') doc.composer = val;
+      else if (field === 'style') doc.style = val;
+      else if (field === 'tempo') doc.tempo = val;
+      else if (field === 'time') doc.time = val;
+      else if (field === 'key') doc.key = val;
+      continue;
+    }
+    contentLines.push(line);
+  }
+
+  for (const line0 of contentLines){
+    const line = line0.trim();
+    if (!line) continue;
+
+    // page break
+    if (line.startsWith('+')){
+      doc.blocks.push({type:'pagebreak'});
+      continue;
+    }
+
+    // marker lines
+    const lead = line[0];
+    if (lead === '-' || lead === ':' || lead === '=' || lead === ';' || lead === '#'){
+      doc.blocks.push({type:'marker', marker: lead, text: line.slice(1).trim()});
+      continue;
+    }
+
+    // chord line
+    const tokens = tokenizeBars(line0);
+    if (tokens.length){
+      doc.blocks.push({type:'bars', tokens});
+    }
+  }
+
+  return doc;
+}
+
+function normalizeBarlineDelimiters(line){
+  // Accept UG/ChordSheet barline characters and normalize for tokenization
+  // ǁ / ‖ / ∥ are treated as double barlines
+  return (line || '')
+    .replace(/[ǁ‖∥]/g, '||')
+    .replace(/\|\|/g, ' || ')
+    .replace(/\|/g, ' | ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tokenizeBars(line){
+  // tokenization: keep quoted annotations intact; also supports UG-style barlines
+  const s = normalizeBarlineDelimiters(line);
+  if (!s) return [];
+  const out = [];
+  let cur = '';
+  let inQuote = false;
+
+  for (let i=0;i<s.length;i++){
+    const ch = s[i];
+    if (ch === '"'){
+      inQuote = !inQuote;
+      cur += ch;
+      continue;
+    }
+    if (!inQuote && /\s/.test(ch)){
+      if (cur){
+        out.push(cur);
+        cur = '';
+      }
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur) out.push(cur);
+
+  // If any token still contains barlines (rare PDF extraction cases), explode them.
+  const exploded = [];
+  for (const t of out){
+    if (t.includes('|') && t !== '|' && t !== '||'){
+      let buf = '';
+      let i = 0;
+      while (i < t.length){
+        if (t[i] === '|'){
+          if (buf){ exploded.push(buf); buf=''; }
+          if (i+1 < t.length && t[i+1] === '|'){
+            exploded.push('||'); i += 2; continue;
+          } else {
+            exploded.push('|'); i += 1; continue;
+          }
+        }
+        buf += t[i];
+        i++;
+      }
+      if (buf) exploded.push(buf);
+    } else {
+      exploded.push(t);
+    }
+  }
+
+  return exploded;
+}
+
+function transposeChordToken(tok, semis, pref){
+  // structural tokens
+  if (!tok) return tok;
+  const upper = tok.toUpperCase();
+  if (tok === '%' || tok === '%%' || /^%\d+$/.test(tok)) return tok;
+  if (tok === '*' || tok === '||' || tok === '|' ) return tok;
+  if (upper === 'N.C.' || upper === 'NC') return tok;
+  if (/^\d+\.$/.test(tok)) return tok; // endings marker token itself
+  if (tok.startsWith('"') && tok.endsWith('"')) return tok; // annotation token
+
+  // handle repeats: keep punctuation
+  const mRepeat = tok.match(/^(\()?(.*?)(\))?(x\d+)?$/);
+  if (!mRepeat) return tok;
+
+  const preL = mRepeat[1] || '';
+  let core = mRepeat[2] || '';
+  const preR = mRepeat[3] || '';
+  const rep  = mRepeat[4] || '';
+
+  // split by underscores, commas
+  const parts = core.split('_').map(seg => {
+    return seg.split(',').map(piece => transposeChordSimple(piece, semis, pref)).join(',');
+  }).join('_');
+
+  return preL + parts + preR + rep;
+}
+
+function transposeChordSimple(ch, semis, pref){
+  const s = ch.trim();
+  if (!s) return s;
+  // allow directives embedded
+  const upper = s.toUpperCase();
+  if (upper === 'N.C.' || upper === 'NC') return s;
+
+  const m = s.match(/^([A-G])([b#]?)(.*?)(?:\/([A-G])([b#]?))?$/);
+  if (!m) return s;
+
+  const root = m[1] + (m[2]||'');
+  const qual = m[3]||'';
+  const bass = m[4] ? (m[4] + (m[5]||'')) : '';
+
+  const trRoot = transposeNote(root, semis, pref);
+  const trBass = bass ? transposeNote(bass, semis, pref) : '';
+
+  return trBass ? `${trRoot}${qual}/${trBass}` : `${trRoot}${qual}`;
+}
+
+function transposeWholeText(text, semis){
+  const keyMatch = text.match(/^Key:\s*(.+)$/im);
+  const key = keyMatch ? keyMatch[1].trim() : '';
+  const pref = detectNotationPreferenceFromKeyOrText(key, text);
+
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  for (const line of lines){
+    const m = line.match(/^Key:\s*(.+)$/i);
+    if (m){
+      const oldKey = m[1].trim();
+      const trKey = transposeChordSimple(oldKey, semis, pref);
+      out.push(`Key: ${trKey}`);
+      continue;
+    }
+
+    // preserve marker lines and meta lines except chord payload
+    if (/^(Title|Composer|Artist|Style|Tempo|Time)\s*:/i.test(line.trim())){
+      out.push(line);
+      continue;
+    }
+    const trimmed = line.trim();
+    if (!trimmed){
+      out.push(line);
+      continue;
+    }
+
+    // marker lines
+    if (/^[-:=;#\+]/.test(trimmed)){
+      out.push(line);
+      continue;
+    }
+
+    // chord lines: transpose tokens
+    const tokens = tokenizeBars(line);
+    const indent = tokens.indent || 0;
+    const t2 = tokens.map(tok => transposeChordToken(tok, semis, pref));
+    const prefix = indent ? ('X '.repeat(indent)) : '';
+    out.push(prefix + t2.join(' '));
+  }
+  return out.join('\n');
+}
+
+/* =========================================================
+   Q1 FIX: Repeat Expansion Logic (CRITICAL)
+   Expands repeat groups fully to maintain 4-bar-per-row grid
+========================================================= */
+function parseBarStructures(tokens){
+  // Returns flat array of bar objects after expanding repeats.
+  // Also consumes UG-style barline tokens: '|' (single) and '||' (double).
+  const out = [];
+  let i = 0;
+
+  let pendingDoubleLeft = false;
+
+  const markDoubleBoundary = () => {
+    const prev = out[out.length - 1];
+    if (prev) prev.doubleRight = true;
+    pendingDoubleLeft = true;
+  };
+
+  const readTimes = (tok) => {
+    const m = (tok || '').match(/x(\d+)$/i);
+    return m ? parseInt(m[1],10) : null;
+  };
+
+  const skipBarlines = () => {
+    while (i < tokens.length && (tokens[i] === '|' || tokens[i] === '||')){
+      if (tokens[i] === '||') markDoubleBoundary();
+      i++;
+    }
+  };
+
+  while (i < tokens.length){
+    let tok = tokens[i];
+
+    if (tok === '|'){ i++; continue; }
+    if (tok === '||'){ markDoubleBoundary(); i++; continue; }
+
+    // Endings token - associate with next bar (skipping delimiters)
+    if (/^\d+\.$/.test(tok)){
+      const endingLabel = tok;
+      i++;
+      skipBarlines();
+      if (i < tokens.length){
+        const nextTok = tokens[i];
+        out.push({type:'bar', token: nextTok, endingLabel, doubleLeft: pendingDoubleLeft || false, doubleRight: false});
+        pendingDoubleLeft = false;
+        i++;
+      }
+      continue;
+    }
+
+    // Repeat group ( ... )xN
+    if (tok.startsWith('(')){
+      const groupTokens = [];
+      let times = 2;
+      let closed = false;
+
+      tok = tok.slice(1);
+      if (tok) groupTokens.push(tok);
+
+      i++;
+      while (i < tokens.length){
+        const t = tokens[i];
+
+        if (t === '|' ){ i++; continue; }
+        if (t === '||'){ i++; continue; }
+
+        if (t.endsWith(')') || /\)x\d+$/i.test(t)){
+          const before = t.replace(/\)x\d+$/i,'').replace(/\)$/,'');
+          const after = t.match(/\)x(\d+)$/i);
+          if (before) groupTokens.push(before);
+          if (after) times = parseInt(after[1],10);
+          const tIn = readTimes(before) || readTimes(t) || null;
+          if (tIn) times = tIn;
+          closed = true;
+          i++;
+          break;
+        } else {
+          groupTokens.push(t);
+          i++;
+        }
+      }
+
+      if (!closed){
+        validationWarnings.push(`⚠️ Unclosed repeat parenthesis - auto-closing`);
+      }
+
+      for (let rep=0; rep<times; rep++){
+        for (const gt of groupTokens){
+          out.push({type:'bar', token: gt, doubleLeft: pendingDoubleLeft || false, doubleRight: false});
+          pendingDoubleLeft = false;
+        }
+      }
+      continue;
+    }
+
+    out.push({type:'bar', token: tok, doubleLeft: pendingDoubleLeft || false, doubleRight: false});
+    pendingDoubleLeft = false;
+    i++;
+  }
+
+  return out;
+}
+
+
+/* =========================================================
+   Rendering (ChordSheet-style only)
+========================================================= */
+function renderDoc(doc){
+  // Q5 VALIDATION: Reset warnings
+  validationWarnings = [];
+
+  let html = '';
+  if (doc.title){
+    html += `<h1>${escapeHtml(doc.title)}</h1>`;
+  }
+  const meta = [];
+  if (doc.composer) meta.push(`<div class="metaLine"><span class="metaLabel">Composer:</span> ${escapeHtml(doc.composer)}</div>`);
+  if (doc.style) meta.push(`<div class="metaLine"><span class="metaLabel">Style:</span> ${escapeHtml(doc.style)}</div>`);
+  if (doc.tempo) meta.push(`<div class="metaLine"><span class="metaLabel">Tempo:</span> ${escapeHtml(doc.tempo)}</div>`);
+  if (doc.time) meta.push(`<div class="metaLine"><span class="metaLabel">Time:</span> ${escapeHtml(doc.time)}</div>`);
+  if (doc.key) meta.push(`<div class="metaLine"><span class="metaLabel">Key:</span> ${escapeHtml(doc.key)}</div>`);
+  if (meta.length){
+    html += `<div class="meta">${meta.join('')}</div>`;
+  }
+
+  for (const block of doc.blocks){
+    if (block.type === 'pagebreak'){
+      html += `<div class="pageBreak"></div>`;
+      continue;
+    }
+    if (block.type === 'marker'){
+      const t = escapeHtml(block.text || '');
+      if (block.marker === '-'){
+        html += `<div class="sectionText">${t}</div>`;
+      } else if (block.marker === ':'){
+        html += `<div class="sectionText"><span class="labelBox">${t}</span></div>`;
+      } else if (block.marker === '='){
+        html += `<div class="dividerRow"><span class="labelBox">${t}</span><div class="rule"></div></div>`;
+      } else if (block.marker === ';'){
+        html += `<div class="annotation">${t}</div>`;
+      } else if (block.marker === '#'){
+        html += `<div class="annotation"><span class="small">#</span> ${t}</div>`;
+      }
+      continue;
+    }
+    if (block.type === 'bars'){
+      html += renderBars(block.tokens);
+      continue;
+    }
+  }
+
+  if (!doc.blocks.length){
+    html += `<div style="color:#666; font-size:14px; text-align:center; padding: 40px 10px;">
+      Import a file or paste CSMPN to preview.
+    </div>`;
+  }
+
+  // Q5 VALIDATION: Display warnings if any
+  if (validationWarnings.length){
+    const warnMsg = validationWarnings.join('\n');
+    setStatus(warnMsg, 'warning');
+  }
+
+  return html;
+}
+
+function renderBars(tokens){
+  // Q1 FIX: Parse returns fully expanded bars array
+  const bars = parseBarStructures(tokens);
+  const indent = tokens.indent || 0;
+
+  // Q5 VALIDATION: Check bar count multiple of 4
+  if (bars.length % 4 !== 0){
+    const needed = 4 - (bars.length % 4);
+    validationWarnings.push(`⚠️ ${bars.length} bars detected (not multiple of 4). Auto-padding with ${needed} empty bar(s).`);
+    // Auto-pad to complete row
+    for (let p=0; p<needed; p++){
+      bars.push({type:'bar', token: '*'});
+    }
+  }
+
+  const rows = [];
+  let cur = [];
+  for (const b of bars){
+    cur.push(b);
+    if (cur.length === 4){
+      rows.push(cur);
+      cur = [];
+    }
+  }
+  if (cur.length) rows.push(cur);
+
+  let html = `<div class="barsBlock" style="margin-left:${indent ? (indent*22) : 0}px">`;
+  for (const row of rows){
+    html += `<div class="barRow">`;
+    for (const bar of row){
+      html += renderBar(bar);
+    }
+    // pad remaining cells to 4
+    for (let i=row.length;i<4;i++){
+      html += `<div class="bar"><div class="barSegments"><div class="seg"></div></div></div>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function renderBar(bar){
+  const tok = bar.token ?? '';
+
+  let endingHtml = '';
+  if (bar.endingLabel){
+    endingHtml = `<span class="endingLabel">${escapeHtml(bar.endingLabel)}</span>`;
+  }
+
+  const classes = [
+    bar.doubleLeft ? 'doubleLeft' : '',
+    bar.doubleRight ? 'doubleRight' : ''
+  ].filter(Boolean).join(' ');
+
+  const segs = tok.split('_').map(s => s.trim());
+
+  for (const s of segs){
+    if (s && s !== '*' && s !== '%' && s !== '%%' && !s.startsWith('"') && !isChordLikeToken(s)){
+      validationWarnings.push(`⚠️ Unknown token "${s}" - rendering as-is`);
+    }
+  }
+
+  const segHtml = segs.map(s => {
+    if (!s || s === '*') return `<div class="seg"></div>`;
+    if (s.startsWith('"') && s.endsWith('"')){
+      return `<div class="seg small">${escapeHtml(s.slice(1,-1))}</div>`;
+    }
+    return `<div class="seg">${escapeHtml(s)}</div>`;
+  }).join('');
+
+  return `<div class="bar ${classes}">${endingHtml}<div class="barSegments">${segHtml || '<div class="seg"></div>'}</div></div>`;
+}
+
+function updatePreview(){
+  const text = sourceEl.value || '';
+  const keyMatch = text.match(/^Key:\s*(.+)$/im);
+  const key = keyMatch ? keyMatch[1].trim() : '';
+  notationPreference = detectNotationPreferenceFromKeyOrText(key, text);
+
+  const doc = parseCSMPN(text);
+  previewEl.innerHTML = renderDoc(doc);
+}
+
+/* =========================================================
+   Q3 FIX: Enhanced PDF Import with X-Coordinate Clustering
+   Detects split bars using spatial positioning
+========================================================= */
+const fileInput = document.getElementById('fileInput');
+
+document.getElementById('btnImport').addEventListener('click', () => {
+  fileInput.value = '';
+  fileInput.click();
+});
+
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  try{
+    setStatus(`Importing ${file.name}...`);
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.pdf')){
+      const csmpn = await importUGProPDF(file);
+      sourceEl.value = csmpn;
+      extractHeaderFromText(csmpn);
+      updatePreview();
+      return;
+    }
+    if (name.endsWith('.xml') || name.endsWith('.musicxml')){
+      const text = await file.text();
+      const csmpn = importMusicXML(text);
+      sourceEl.value = csmpn;
+      extractHeaderFromText(csmpn);
+      updatePreview();
+      setStatus('Imported MusicXML.');
+      return;
+    }
+    // txt
+    const text = await file.text();
+    const csmpn = detectChordPro(text) ? importChordPro(text) : importUGText(text);
+    sourceEl.value = csmpn;
+    extractHeaderFromText(csmpn);
+    updatePreview();
+    setStatus('Imported text.');
+  }catch(err){
+    console.error(err);
+    setStatus(`Import failed: ${err?.message || err}`, true);
+  }
+});
+
+function detectChordPro(text){
+  return /\{\s*(title|key|tempo|time)\s*:/i.test(text);
+}
+
+function importUGText(text){
+  const lines = text.replace(/\r/g,'').split('\n');
+  const out = [];
+  for (const line0 of lines){
+    const line = normalizeAccidentals(line0);
+    if (!line.trim()) continue;
+
+    // preserve bracket headings [Verse], etc.
+    if (/^\[.*\]$/.test(line.trim())){
+      out.push(`- ${line.trim().replace(/^[\[]|[\]]$/g,'')}`);
+      continue;
+    }
+
+    // chord-line heuristic: majority of tokens look like chords or markers
+    const toks = line.trim().split(/\s+/);
+    const chordLike = toks.filter(isChordLikeToken).length;
+    if (toks.length && chordLike / toks.length >= 0.7){
+      out.push(toCSMPNBars(toks));
+    }
+  }
+
+  if (!out.length){
+    setStatus('No chord lines detected in text.', true);
+    return '';
+  }
+  setStatus(`Imported UG text: ${out.length} line(s).`);
+  return out.join('\n');
+}
+
+function importChordPro(text){
+  const lines = text.replace(/\r/g,'').split('\n');
+  const out = [];
+  for (const line0 of lines){
+    const line = normalizeAccidentals(line0);
+
+    // directives
+    const m = line.match(/^\{\s*([a-z_]+)\s*:\s*(.*?)\s*\}$/i);
+    if (m){
+      const k = m[1].toLowerCase();
+      const v = m[2].trim();
+      if (k === 'title') out.unshift(`Title: ${v}`);
+      if (k === 'composer' || k === 'artist') out.unshift(`Composer: ${v}`);
+      if (k === 'key') out.unshift(`Key: ${v}`);
+      if (k === 'time') out.unshift(`Time: ${v}`);
+      if (k === 'tempo') out.unshift(`Tempo: ${v}`);
+      continue;
+    }
+    if (!line.trim()) continue;
+
+    // section markers
+    if (/^\{\s*start_of_(chorus|verse|bridge)\s*\}$/i.test(line.trim())){
+      out.push(`: ${RegExp.$1.toUpperCase()}`);
+      continue;
+    }
+
+    // extract chords in []
+    const chords = [];
+    const re = /\[([^\]]+)\]/g;
+    let mm;
+    while ((mm = re.exec(line)) !== null){
+      const c = mm[1].trim();
+      if (c) chords.push(c);
+    }
+    if (chords.length){
+      out.push(toCSMPNBars(chords));
+    }
+  }
+  setStatus(`Imported ChordPro.`);
+  return out.join('\n').replace(/\n{3,}/g,'\n\n');
+}
+
+function importMusicXML(xmlText){
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(xmlText, "application/xml");
+  const title = xml.querySelector("work > work-title")?.textContent?.trim() || '';
+  const composer = xml.querySelector("identification creator[type='composer']")?.textContent?.trim() || '';
+  const keyFifths = xml.querySelector("key fifths")?.textContent?.trim();
+  const timeBeats = xml.querySelector("time beats")?.textContent?.trim();
+  const timeBeatType = xml.querySelector("time beat-type")?.textContent?.trim();
+
+  const out = [];
+  if (title) out.push(`Title: ${title}`);
+  if (composer) out.push(`Composer: ${composer}`);
+  if (timeBeats && timeBeatType) out.push(`Time: ${timeBeats}/${timeBeatType}`);
+
+  // measures
+  const measures = [...xml.querySelectorAll("measure")];
+  const bars = [];
+  for (const meas of measures){
+    const harmonies = [...meas.querySelectorAll("harmony")];
+    if (!harmonies.length){
+      bars.push('%'); // simile (or *), conservative
+      continue;
+    }
+    // take first harmony as bar chord; if multiple, split bar
+    const chords = harmonies.map(h => harmonyToChord(h)).filter(Boolean);
+    if (chords.length === 1) bars.push(chords[0]);
+    else bars.push(chords.join('_'));
+  }
+
+  // chunk into 4 per line
+  for (let i=0;i<bars.length;i+=4){
+    out.push(bars.slice(i,i+4).join(' '));
+  }
+  setStatus(`Imported MusicXML: ${measures.length} measure(s).`);
+  return out.join('\n');
+}
+
+function harmonyToChord(h){
+  const step = h.querySelector("root root-step")?.textContent?.trim();
+  const alter = h.querySelector("root root-alter")?.textContent?.trim();
+  if (!step) return '';
+  const acc = alter === '1' ? '#' : (alter === '-1' ? 'b' : '');
+  const kindText = h.querySelector("kind")?.getAttribute("text")?.trim() || '';
+  const kind = h.querySelector("kind")?.textContent?.trim() || '';
+  const bassStep = h.querySelector("bass bass-step")?.textContent?.trim();
+  const bassAlter = h.querySelector("bass bass-alter")?.textContent?.trim();
+  const bassAcc = bassAlter === '1' ? '#' : (bassAlter === '-1' ? 'b' : '');
+
+  let qual = kindText || kind || '';
+  // map a few common MusicXML kinds to chord quality
+  const map = {
+    'major': '',
+    'minor': 'm',
+    'dominant': '7',
+    'major-seventh': 'maj7',
+    'minor-seventh': 'm7',
+    'diminished': 'dim',
+    'diminished-seventh': 'dim7',
+    'augmented': 'aug',
+    'half-diminished': 'm7b5'
+  };
+  if (map[qual]) qual = map[qual];
+
+  let chord = `${step}${acc}${qual}`;
+  if (bassStep) chord += `/${bassStep}${bassAcc}`;
+  return chord;
+}
+
+function isChordLikeToken(tok){
+  if (!tok) return false;
+  const t = normalizeAccidentals(tok);
+  if (t === '%' || t === '%%' || /^%\d+$/.test(t)) return true;
+  if (t === '*' || t.toUpperCase()==='N.C.' || t.toUpperCase()==='NC') return true;
+  // root chord
+  return /^\(?[A-G](?:b|#)?[a-zA-Z0-9+()#b/.,_-]*\)?(?:x\d+)?$/.test(t);
+}
+
+function toCSMPNBars(chords){
+  // chords array -> lines of 4 bars
+  const toks = chords.map(c => normalizeAccidentals(c)).filter(Boolean);
+  const out = [];
+  for (let i=0;i<toks.length;i+=4){
+    out.push(toks.slice(i,i+4).join(' '));
+  }
+  return out.join('\n');
+}
+
+async function importUGProPDF(file){
+  // Strategy:
+  // 1) Reconstruct full text lines (best for ChordSheet/UG PDFs that contain '|' barlines).
+  // 2) If that fails, fall back to spatial chord clustering (best for UG Pro PDFs with isolated chord glyphs).
+  const arrayBuffer = await file.arrayBuffer();
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  const pdf = await loadingTask.promise;
+
+  const allItems = [];
+  const reconstructedLines = [];
+
+  for (let p=1; p<=pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent();
+
+    const items = tc.items.map(it => {
+      const [a,b,c,d,e,f] = it.transform;
+      return {
+        page: p,
+        str: (it.str || '').trim(),
+        x: e,
+        y: f
+      };
+    }).filter(it => it.str);
+
+    allItems.push(...items);
+
+    // Cluster into lines by Y
+    const buckets = new Map();
+    for (const it of items){
+      const yKey = Math.round(it.y / 4) * 4; // tolerance
+      const key = `${p}:${yKey}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(it);
+    }
+    const sortedBuckets = Array.from(buckets.entries())
+      .sort((a,b) => {
+        const ya = parseFloat(a[0].split(':')[1]);
+        const yb = parseFloat(b[0].split(':')[1]);
+        return yb - ya; // top to bottom
+      });
+
+    for (const [k, arr] of sortedBuckets){
+      arr.sort((a,b) => a.x - b.x);
+      const line = arr.map(x => x.str).join(' ').replace(/\s+/g,' ').trim();
+      if (line) reconstructedLines.push(line);
+    }
+  }
+
+  const hasBarlines = reconstructedLines.some(l => /[|ǁ‖∥]/.test(l));
+  if (hasBarlines){
+    const csmpn = ugLinesToCSMPN(reconstructedLines);
+    if (csmpn && csmpn.trim().length > 20){
+      setStatus(`PDF import: parsed ${pdf.numPages} page(s) using text-line reconstruction.`, 'warning');
+      return csmpn;
+    }
+  }
+
+  // Fall back: spatial chord clustering
+  const chordItems = allItems
+    .map(it => ({...it, str: it.str.replace(/\s+/g,'') }))
+    .filter(it => isChordLikeToken(it.str) || (it.str && it.str.includes('|') && /[A-G]/.test(it.str)));
+
+  if (!chordItems.length){
+    setStatus('PDF import: no selectable chord text detected. This PDF is likely image-only (scanned).', 'error');
+    return '';
+  }
+
+  chordItems.sort((a,b) => (a.page-b.page) || (b.y-a.y) || (a.x-b.x));
+
+  const bars = [];
+  let splitBarsDetected = 0;
+
+  for (let i=0; i<chordItems.length; i++){
+    const current = chordItems[i];
+
+    // Explode embedded barlines in a single token (common in some PDFs)
+    if (current.str.includes('|')){
+      const parts = tokenizeBars(current.str).filter(t => t !== '|' && t !== '||');
+      for (const p of parts) bars.push(p);
+      continue;
+    }
+
+    // Detect split bars by grouping close-Y neighbors
+    const cluster = [current];
+    for (let j=i+1; j<chordItems.length; j++){
+      const next = chordItems[j];
+      if (next.page === current.page &&
+          Math.abs(next.y - current.y) < 10 &&
+          Math.abs(next.x - current.x) > 5){
+        cluster.push(next);
+      } else {
+        break;
+      }
+    }
+
+    if (cluster.length > 1){
+      const splitBar = cluster.map(c => c.str).join('_');
+      bars.push(splitBar);
+      splitBarsDetected++;
+      i += (cluster.length - 1);
+    } else {
+      bars.push(current.str);
+    }
+  }
+
+  const out = [];
+  out.push('Title:');
+  out.push('Composer:');
+  out.push('Time:');
+  out.push('Key:');
+  out.push('');
+
+  for (let i=0;i<bars.length;i+=4){
+    out.push(bars.slice(i,i+4).join(' '));
+  }
+
+  const statusMsg = `PDF import: ${bars.length} bar(s) extracted from ${pdf.numPages} page(s).${splitBarsDetected ? `\n${splitBarsDetected} split bar(s) auto-detected.` : ''}\nReview layout and manually add _ for any missed multi-chord bars.`;
+  setStatus(statusMsg, 'warning');
+  return out.join('\n');
+}
+
+// Convert barline-delimited text lines from UG/ChordSheet-like PDFs into CSMPN
+function ugLinesToCSMPN(lines){
+  const blocks = [];
+
+  let title = '';
+  let composer = '';
+  let key = '';
+  let time = '';
+  let tempo = '';
+  let style = '';
+
+  const isHeaderLine = (ln) => /^(title|composer|artist|key|tempo|time|style)\s*:/i.test(ln);
+
+  let sawAnyBars = false;
+
+  // First pass: pull header-ish fields
+  for (let raw of lines){
+    const ln = (raw || '').replace(/\s+/g,' ').trim();
+    if (!ln) continue;
+
+    if (/^powered by/i.test(ln)) continue;
+
+    if (!title && !ln.includes(':') && ln.length <= 50 && /^[A-Za-z0-9][A-Za-z0-9 '\-()]+$/.test(ln)){
+      title = ln;
+      continue;
+    }
+    if (/^composer\s*:/i.test(ln)) { composer = ln.split(':').slice(1).join(':').trim(); continue; }
+    if (/^artist\s*:/i.test(ln))   { composer = ln.split(':').slice(1).join(':').trim(); continue; }
+    if (/^key\s*:/i.test(ln))      { key = ln.split(':').slice(1).join(':').trim(); continue; }
+    if (/^time\s*:/i.test(ln))     { time = ln.split(':').slice(1).join(':').trim(); continue; }
+    if (/^tempo\s*:/i.test(ln))    { tempo = ln.split(':').slice(1).join(':').trim(); continue; }
+    if (/^style\s*:/i.test(ln))    { style = ln.split(':').slice(1).join(':').trim(); continue; }
+  }
+
+  // Second pass: build blocks
+  for (let raw of lines){
+    let ln = (raw || '').replace(/\s+/g,' ').trim();
+    if (!ln) continue;
+    if (/^powered by/i.test(ln)) continue;
+    if (isHeaderLine(ln)) continue;
+
+    if (/[|ǁ‖∥]/.test(ln)){
+      const hasChordLetters = /\b[A-G](?:#|b)?/.test(ln);
+      if (!hasChordLetters){
+        blocks.push(`- ${ln.replace(/^[\-:;=]\s*/,'')}`);
+        continue;
+      }
+
+      sawAnyBars = true;
+      const startsDouble = /^[ǁ‖∥]|^\|\|/.test(ln);
+
+      // Normalize double barline char to leading ||
+      ln = ln.replace(/^[ǁ‖∥]/,'||').trim();
+      ln = ln.replace(/^\|\|/,'||').trim();
+      ln = ln.replace(/[ǁ‖∥]/g,'||');
+
+      const measures = ln.split('|').map(x => x.trim()).filter(Boolean);
+
+      const bars = [];
+      if (startsDouble) bars.push('||');
+
+      for (const m of measures){
+        const parts = m.split(/\s+/).filter(Boolean);
+        if (!parts.length) continue;
+        bars.push(parts.length === 1 ? parts[0] : parts.join('_'));
+      }
+
+      if (bars.length){
+        blocks.push(bars.join(' '));
+      }
+      continue;
+    }
+
+    // Non-barlined text: treat as section/annotation
+    if (/^(intro|verse|chorus|bridge|pre-?chorus|tag|outro|turnaround|solo)/i.test(ln)){
+      blocks.push(`- ${ln}`);
+    } else {
+      blocks.push(`; ${ln}`);
+    }
+  }
+
+  if (!sawAnyBars) return '';
+
+  const header = [];
+  header.push(`Title: ${title || ''}`.trimEnd());
+  header.push(`Composer: ${composer || ''}`.trimEnd());
+  if (style) header.push(`Style: ${style}`);
+  if (tempo) header.push(`Tempo: ${tempo}`);
+  if (time) header.push(`Time: ${time}`);
+  if (key) header.push(`Key: ${key}`);
+  header.push('');
+
+  return header.concat(blocks).join('\n');
+}
+
+/* =========================================================
+   Export / Print / Copy
+========================================================= */
+document.getElementById('btnTransposeDown').addEventListener('click', () => doTranspose(-1));
+document.getElementById('btnTransposeUp').addEventListener('click', () => doTranspose(1));
+document.getElementById('btnTransposeReset').addEventListener('click', () => { currentTranspose = 0; updatePreview(); setStatus('Transpose reset.'); });
+
+function doTranspose(delta){
+  currentTranspose += delta;
+  const tr = transposeWholeText(sourceEl.value, delta);
+  sourceEl.value = tr;
+  extractHeaderFromText(tr);
+  updatePreview();
+  setStatus(`Transposed ${currentTranspose >= 0 ? '+' : ''}${currentTranspose} semitone(s).`);
+}
+
+document.getElementById('btnPrint').addEventListener('click', () => {
+  setStatus('Opening print dialog...');
+  window.print();
+});
+
+/* =========================================================
+   Q4 FIX: jsPDF Download Button for iOS One-Tap Export
+========================================================= */
+document.getElementById('btnDownloadPdf').addEventListener('click', async () => {
+  try{
+    setStatus('Rendering PDF…');
+    const canvas = await html2canvas(previewEl, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      logging: false,
+      useCORS: true
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 36; // 0.5 inch
+
+    const imgProps = pdf.getImageProperties(imgData);
+    const imgWidth = pageWidth - margin * 2;
+    const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
+    let heightLeft = imgHeight;
+    let position = margin;
+
+    pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
+
+    heightLeft -= (pageHeight - margin * 2);
+    while (heightLeft > 0){
+      pdf.addPage();
+      position = margin - (imgHeight - heightLeft);
+      pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
+      heightLeft -= (pageHeight - margin * 2);
+    }
+
+    const filename = safeFilename((docTitle || 'chart') + '.pdf');
+    pdf.save(filename);
+    setStatus('PDF downloaded.');
+  } catch (e){
+    console.error(e);
+    setStatus('PDF export failed: ' + (e?.message || e), 'error');
+  }
+});
+
+document.getElementById('btnPng').addEventListener('click', async () => {
+  try{
+    setStatus('Rendering PNG...');
+    const canvas = await html2canvas(previewEl, {scale: 2, backgroundColor: '#ffffff'});
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (hdr.title.value?.trim() || 'chordsheet') + '.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setStatus('PNG saved.');
+  }catch(err){
+    console.error(err);
+    setStatus(`PNG export failed: ${err?.message || err}`, true);
+  }
+});
+
+document.getElementById('btnCopy').addEventListener('click', async () => {
+  try{
+    await navigator.clipboard.writeText(sourceEl.value || '');
+    setStatus('CSMPN copied to clipboard.');
+  }catch(err){
+    setStatus('Copy failed (clipboard permissions).', true);
+  }
+});
+
+/* =========================================================
+   Init
+========================================================= */
+sourceEl.value = `Title: Sin City Blues
+Composer: Czemba
+Style: Jazz swing
+Tempo: 81
 Time: 4/4
 Key: Bb
 
 - Verse
-Bb % Eb7 % 
-F7 Bb
+Bb % Eb7 %
+F7 Bb % %
 
 : Chorus
 (Bb_Eb7 F7_Bb)x2
 
 = Bridge
 1. Gm7 C7 2. F7 Bb
-+`,
 
-    splitBars: `Title: Split Bars Demo
-Composer: CSMPN
-Time: 4/4
-Key: C
-
-= A
-C G Am F
-C_G Am_F
-- Blank chord positioning using "*"
-C_*_Am_F *_G_Am_*`,
-
-    legacy: `Title: Sin City Blues
-Composer: Czemba
-Style: Jazz swing
-Tempo: ♩=81
-Key: Bb
-
-[Intro]
-‖ F9 F13 | Bb7 G7 |
-| C7 F7 ‖
-
-[Verse]
-‖ Bb7 | % | Eb7 | % |
-| Bb7 B7 | Bb7 | % ‖`
-  };
-
-  // ========================================
-  // DOM ELEMENTS
-  // ========================================
-  const inputEl = document.getElementById('chordInput');
-
-  const hdrTitleEl = document.getElementById('hdrTitle');
-  const hdrComposerEl = document.getElementById('hdrComposer');
-  const hdrStyleEl = document.getElementById('hdrStyle');
-  const hdrTempoEl = document.getElementById('hdrTempo');
-  const hdrKeyEl = document.getElementById('hdrKey');
-  const hdrTimeEl = document.getElementById('hdrTime');
-
-
-  const previewEl = document.getElementById('preview');
-  const transposeEl = document.getElementById('transposeValue');
-
-  // ========================================
-  // INITIALIZATION
-  // ========================================
-  const saved = localStorage.getItem('chordSheetInput');
-  inputEl.value = saved ? saved : examples.csmpnBasics;
-  // Populate header form based on current text
-  extractHeaderFromText();
-
-  // ========================================
-  // FIX #1: BIDIRECTIONAL HEADER SYNC
-  // ========================================
-  // BEFORE: Only saved to localStorage and updated preview
-  // AFTER: Also calls extractHeaderFromText() to sync form fields
-  inputEl.addEventListener('input', function() {
-    localStorage.setItem('chordSheetInput', this.value);
-    
-    // ✅ FIX #1: Sync header form fields when text changes
-    extractHeaderFromText();
-    
-    updatePreview();
-  });
-
-  updatePreview();
-
-  // ========================================
-  // NOTATION PREFERENCE DETECTION
-  // ========================================
-  function detectNotationPreferenceFromKeyOrText(keyString, fullText) {
-    const txt = (keyString || '') + ' ' + (fullText || '');
-    if (txt.includes('b')) return 'flat';
-    if (txt.includes('#')) return 'sharp';
-    return 'sharp';
-  }
-
-  // ========================================
-  // TOKEN HELPERS
-  // ========================================
-  // ========================================
-  // FIX #2: isMarkerToken() EMPTY STRING HANDLING
-  // ========================================
-  // BEFORE: Returned true for empty strings (!tok check)
-  // AFTER: Returns false for empty strings (they're not markers)
-  function isMarkerToken(tok) {
-    // ✅ FIX #2: Empty strings are NOT markers
-    if (!tok || tok === '') return false;
-    
-    return (
-      tok === '(' || tok === ')' ||
-      tok === '|:' || tok === ':|' ||
-      /^x\d+$/i.test(tok) ||
-      /^\d+\.$/.test(tok) ||
-      tok === '+' || tok.startsWith('#') ||
-      tok === '‖' || tok === '|'
-    );
-  }
-
-  function normalizeLineForTokenize(line) {
-    // Ensure parentheses and pipe/colon repeats become tokens
-    return line
-      .replace(/\|:/g, ' |: ')
-      .replace(/:\|/g, ' :| ')
-      .replace(/([()])/g, ' $1 ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  // ========================================
-  // TRANSPOSE (supports slash chords)
-  // ========================================
-  function transposeNoteToken(noteToken, semitones) {
-    const m = noteToken.match(/^([A-G][b#]?)(.*)$/);
-    if (!m) return noteToken;
-    const [, root, rest] = m;
-    const normalized = ENHARMONIC_TO_SHARP[root];
-    if (!normalized) return noteToken;
-
-    const idx = SHARP_NOTES.indexOf(normalized);
-    if (idx === -1) return noteToken;
-
-    let newIdx = (idx + semitones) % 12;
-    if (newIdx < 0) newIdx += 12;
-
-    const noteArray = (notationPreference === 'flat') ? FLAT_NOTES : SHARP_NOTES;
-    return noteArray[newIdx] + rest;
-  }
-
-  function transposeChordToken(chordToken, semitones) {
-    // Don't transpose meta symbols / placeholders / similes
-    if (!chordToken) return chordToken;
-    if (chordToken === '%' || chordToken === '%%' || /^%\d+$/.test(chordToken)) return chordToken;
-    if (chordToken === '*' ) return chordToken;
-    if (isMarkerToken(chordToken)) return chordToken;
-
-    // split-bars: transpose each part
-    if (chordToken.includes('_')) {
-      return chordToken.split('_').map(p => transposeChordToken(p, semitones)).join('_');
-    }
-
-    // Slash chords: transpose both chord and bass
-    if (chordToken.includes('/')) {
-      const [left, right] = chordToken.split(/\/(.+)/); // split on first slash
-      const leftT = transposeChordToken(left, semitones);
-      const rightT = transposeNoteToken(right, semitones);
-      return leftT + '/' + rightT;
-    }
-
-    // Standard chord root + quality
-    return transposeNoteToken(chordToken, semitones);
-  }
-
-  // ========================================
-  // PARSING MODES
-  // ========================================
-  function detectMode(text) {
-    const forced = document.getElementById('inputMode').value;
-    if (forced !== 'auto') return forced;
-
-    // Auto-detect: if any CSMPN meta markers present, treat as CSMPN
-    const csmpnHints = [/^[#\+\-:=]/m, /\b%\d+\b/, /\b%%\b/, /\b%\b/, /\b[A-G][b#]?(?:[^\s]*)_[^\s]+/];
-    if (csmpnHints.some(rx => rx.test(text))) return 'csmpn';
-
-    // If it looks like your legacy format (brackets + pipes), treat as legacy
-    if (/[\[\]]/.test(text) || /\|/.test(text)) return 'legacy';
-
-    return 'csmpn';
-  }
-
-  // ========================================
-  // CSMPN PARSER (ChordSheet.com style meta chars)
-  // ========================================
-  function parseCSMPN(text) {
-    const lines = text.split('\n');
-    const doc = {
-      title: '',
-      composer: '',
-      style: '',
-      tempo: '',
-      key: '',
-      time: '',
-      blocks: [] // {type: 'section'|'text'|'pagebreak'|'bars', ...}
-    };
-
-    let currentSection = { label: '', delim: false, rows: [] }; // rows are arrays of tokens/bars + markers
-
-    function pushSectionIfHasContent() {
-      if (currentSection && (currentSection.label || currentSection.rows.length)) {
-        doc.blocks.push({ type: 'section', label: currentSection.label, delim: currentSection.delim, rows: currentSection.rows });
-      }
-      currentSection = { label: '', delim: false, rows: [] };
-    }
-
-    for (let rawLine of lines) {
-      let line = rawLine.trim();
-      if (!line) continue;
-
-      // Metadata (your house style)
-      if (/^Title:/i.test(line)) { doc.title = line.slice(6).trim(); continue; }
-      if (/^Composer:/i.test(line)) { doc.composer = line.slice(9).trim(); continue; }
-      if (/^Style:/i.test(line)) { doc.style = line.slice(6).trim(); continue; }
-      if (/^Tempo:/i.test(line)) { doc.tempo = line.slice(6).trim(); continue; }
-      if (/^Key:/i.test(line)) { doc.key = line.slice(4).trim(); continue; }
-      if (/^(Time|Time Signature):/i.test(line)) { doc.time = line.split(':').slice(1).join(':').trim(); continue; }
-
-      // Meta characters
-      const first = line[0];
-
-      if (first === '#') {
-        // comment: ignore (ChordSheet.com convention)
-        continue;
-      }
-
-      if (first === '+') {
-        // page break
-        // end section first
-        pushSectionIfHasContent();
-        doc.blocks.push({ type: 'pagebreak' });
-        continue;
-      }
-
-      if (first === '-' || first === ':' || first === '=') {
-        // new section / text
-        pushSectionIfHasContent();
-        const label = line.slice(1).trim();
-        if (first === '-') {
-          doc.blocks.push({ type: 'text', text: label });
-        } else {
-          // ':' and '=' are bordered section titles; '=' also delimiter
-          currentSection.label = label;
-          currentSection.delim = (first === '=');
-        }
-        continue;
-      }
-
-      // Otherwise: chord line
-      // Normalize for tokenization (parentheses, repeats)
-      const norm = normalizeLineForTokenize(line);
-
-      // If user typed legacy "‖" or "|" inside CSMPN, just strip those separators
-      const cleaned = norm.replace(/‖/g,' ').replace(/\|/g,' ').trim();
-
-      // tokens = bars + markers
-      const tokens = cleaned.split(/\s+/).filter(Boolean);
-
-      // store as one row (we'll wrap to barsPerRow at render time)
-      currentSection.rows.push(tokens);
-    }
-
-    pushSectionIfHasContent();
-    return doc;
-  }
-
-  // ========================================
-  // LEGACY PARSER (your current bracket/pipe format)
-  // ========================================
-  function parseLegacy(text) {
-    const lines = text.split('\n');
-    const doc = { title:'', composer:'', style:'', tempo:'', key:'', time:'', blocks: [] };
-
-    let currentSection = null;
-
-    function startSection(label) {
-      if (currentSection) doc.blocks.push(currentSection);
-      currentSection = { type:'section', label: label || '', delim:false, rows: [] };
-    }
-
-    for (let rawLine of lines) {
-      let line = rawLine.trim();
-      if (!line) continue;
-
-      if (line.startsWith('Title:')) doc.title = line.substring(6).trim();
-      else if (line.startsWith('Composer:')) doc.composer = line.substring(9).trim();
-      else if (line.startsWith('Style:')) doc.style = line.substring(6).trim();
-      else if (line.startsWith('Tempo:')) doc.tempo = line.substring(6).trim();
-      else if (line.startsWith('Key:')) doc.key = line.substring(4).trim();
-      else if (line.startsWith('Time:')) doc.time = line.substring(5).trim();
-      else if (line.startsWith('[') && line.endsWith(']')) {
-        startSection(line.substring(1, line.length - 1));
-      } else {
-        // chord lines. Accept both: pipe-separated bars, or space-separated bars.
-        if (!currentSection) startSection('');
-        if (line.includes('|')) {
-          const parts = line.split('|').map(p => p.replace(/‖/g,'').trim()).filter(p => p.length);
-          const tokens = [];
-          for (const p of parts) {
-            // treat each part as a "bar", but allow multiple tokens within (legacy behaviour)
-            const inner = p.split(/\s+/).filter(Boolean);
-            if (inner.length === 0) continue;
-            if (inner.length === 1) tokens.push(inner[0]);
-            else {
-              // If legacy had multiple chords per bar separated by spaces, glue them into split-bar tokens
-              // to preserve within-bar intent. Use "_" rather than spaces.
-              tokens.push(inner.join('_'));
-            }
-          }
-          currentSection.rows.push(tokens);
-        } else {
-          const tokens = line.replace(/‖/g,' ').split(/\s+/).filter(Boolean);
-          currentSection.rows.push(tokens);
-        }
-      }
-    }
-
-    if (currentSection) doc.blocks.push(currentSection);
-    return doc;
-  }
-
-  // ========================================
-  // RENDERING
-  // ========================================
-  function renderDoc(doc) {
-    const barsPerRow = parseInt(document.getElementById('barsPerRow').value, 10) || 4;
-    const showMarkers = document.getElementById('showMarkers').value === '1';
-
-    let html = '<div class="sheet-content">';
-
-    if (doc.title) html += `<div class="sheet-title">${escapeHtml(doc.title)}</div>`;
-
-    const metaLines = [];
-    if (doc.composer) metaLines.push(`<div class="sheet-meta-line"><strong>Composer:</strong> ${escapeHtml(doc.composer)}</div>`);
-    if (doc.style) metaLines.push(`<div class="sheet-meta-line"><strong>Style:</strong> ${escapeHtml(doc.style)}</div>`);
-    if (doc.tempo) metaLines.push(`<div class="sheet-meta-line"><strong>Tempo:</strong> ${escapeHtml(doc.tempo)}</div>`);
-    if (doc.time) metaLines.push(`<div class="sheet-meta-line"><strong>Time:</strong> ${escapeHtml(doc.time)}</div>`);
-    if (doc.key) metaLines.push(`<div class="sheet-meta-line"><strong>Key:</strong> ${escapeHtml(doc.key)}</div>`);
-
-    if (metaLines.length) html += `<div class="sheet-meta">${metaLines.join('')}</div>`;
-
-    for (const block of doc.blocks) {
-      if (block.type === 'text') {
-        html += `<div class="text-annotation">${escapeHtml(block.text)}</div>`;
-        continue;
-      }
-
-      if (block.type === 'pagebreak') {
-        html += `<div class="page-break"></div>`;
-        continue;
-      }
-
-      if (block.type === 'section') {
-        html += `<div class="section">`;
-        if (block.label) {
-          const cls = block.delim ? 'section-label delim' : 'section-label';
-          html += `<div class="${cls}">${escapeHtml(block.label)}</div>`;
-        }
-
-        // Each stored row is a list of tokens (bars + optional markers).
-        // We wrap bars to barsPerRow while preserving markers.
-        for (const rowTokens of block.rows) {
-          const wrapped = wrapTokensToRows(rowTokens, barsPerRow, showMarkers);
-          for (const tokens of wrapped) {
-            html += renderBarRow(tokens, barsPerRow, showMarkers);
-          }
-        }
-
-        html += `</div>`;
-        continue;
-      }
-    }
-
-    if (!doc.blocks.length) {
-      html += '<p style="text-align:center; color:#666; padding:40px;">Start typing to create your chord sheet!</p>';
-    }
-
-    html += '</div>';
-    return html;
-  }
-
-  function wrapTokensToRows(tokens, barsPerRow, showMarkers) {
-    const rows = [];
-    let current = [];
-    let barCount = 0;
-
-    const pushRow = () => {
-      if (current.length) rows.push(current);
-      current = [];
-      barCount = 0;
-    };
-
-    for (const t of tokens) {
-      if (isMarkerToken(t) || (showMarkers && (t === '(' || t === ')' || /^x\d+$/i.test(t) || /^\d+\.$/.test(t) || t === '|:' || t === ':|'))) {
-        // Markers do not count as bars
-        if (showMarkers) current.push({ kind:'marker', value:t });
-        continue;
-      }
-
-      // bar token
-      current.push({ kind:'bar', value:t });
-      barCount++;
-
-      if (barCount >= barsPerRow) pushRow();
-    }
-
-    pushRow();
-    return rows;
-  }
-
-  function renderBarRow(row, barsPerRow, showMarkers) {
-    // row is array of {kind:'bar'|'marker', value:...}
-    // We'll render markers inline between grids, but keep a stable bar grid.
-    const bars = row.filter(x => x.kind === 'bar').map(x => x.value);
-    const markers = row.filter(x => x.kind === 'marker').map(x => x.value);
-
-    let markerHtml = '';
-    if (showMarkers && markers.length) {
-      markerHtml = `<div style="margin: 2px 0 6px 0;">${markers.map(m => `<span class="marker">${escapeHtml(m)}</span>`).join(' ')}</div>`;
-    }
-
-    // If row has fewer than barsPerRow bars, pad with empty bars to preserve layout.
-    while (bars.length < barsPerRow) bars.push('');
-
-    let html = markerHtml;
-    html += `<div class="bar-grid"><div class="bar-row" style="grid-template-columns: repeat(${barsPerRow}, 1fr);">`;
-
-    for (let i = 0; i < bars.length; i++) {
-      const barTok = bars[i];
-      html += `<div class="bar-cell">${renderBarToken(barTok)}</div>`;
-    }
-
-    html += `</div></div>`;
-    return html;
-  }
-
-  function renderBarToken(barTok) {
-    if (!barTok) return '';
-    // Simile marks
-    if (barTok === '%' || barTok === '%%' || /^%\d+$/.test(barTok)) return escapeHtml(barTok);
-
-    // Split-bars
-    if (barTok.includes('_')) {
-      const parts = barTok.split('_');
-      const cols = parts.length;
-      const safeParts = parts.map(p => {
-        const v = (p === '*') ? '' : p;
-        return `<div class="bar-split-part">${escapeHtml(v)}</div>`;
-      }).join('');
-      return `<div class="bar-split" style="grid-template-columns: repeat(${cols}, 1fr);">${safeParts}</div>`;
-    }
-
-    // Placeholder empty bar
-    if (barTok === '*') return '';
-
-    return escapeHtml(barTok);
-  }
-
-  // ========================================
-  // UPDATE PREVIEW
-  // ========================================
-  // ========================================
-  // FIX #3: NOTATION PREFERENCE RECALCULATION
-  // ========================================
-  // BEFORE: Notation preference set once at global scope
-  // AFTER: Recalculated on every preview update
-  function updatePreview() {
-    const text = inputEl.value || '';
-    const mode = detectMode(text);
-
-    // ✅ FIX #3: Recalculate notation preference every time
-    // (in case user changed Key: field during editing)
-    const keyMatch = text.match(/^Key:\s*(.+)$/im);
-    const key = keyMatch ? keyMatch[1].trim() : '';
-    notationPreference = detectNotationPreferenceFromKeyOrText(key, text);
-
-    // Parse
-    const doc = (mode === 'legacy') ? parseLegacy(text) : parseCSMPN(text);
-
-    // Apply transpose to key and chords
-    const transposedDoc = applyTransposeToDoc(doc, currentTranspose);
-
-    previewEl.innerHTML = renderDoc(transposedDoc);
-  }
-
-  function applyTransposeToDoc(doc, semitones) {
-    // Clone shallow
-    const out = JSON.parse(JSON.stringify(doc));
-
-    if (out.key) out.key = transposeChordToken(out.key, semitones);
-
-    for (const block of out.blocks) {
-      if (block.type !== 'section') continue;
-      for (let r = 0; r < block.rows.length; r++) {
-        const row = block.rows[r];
-        // rows are arrays of strings (tokens)
-        block.rows[r] = row.map(tok => transposeChordToken(tok, semitones));
-      }
-    }
-    return out;
-  }
-
-
-  // ========================================
-  // HEADER SYNC (Text <-> Form)
-  // ========================================
-  function applyHeaderToText() {
-    const headerLines = [];
-    if (hdrTitleEl.value.trim()) headerLines.push(`Title: ${hdrTitleEl.value.trim()}`);
-    if (hdrComposerEl.value.trim()) headerLines.push(`Composer: ${hdrComposerEl.value.trim()}`);
-    if (hdrStyleEl.value.trim()) headerLines.push(`Style: ${hdrStyleEl.value.trim()}`);
-    if (hdrTempoEl.value.trim()) headerLines.push(`Tempo: ${hdrTempoEl.value.trim()}`);
-    if (hdrKeyEl.value.trim()) headerLines.push(`Key: ${hdrKeyEl.value.trim()}`);
-    if (hdrTimeEl.value.trim()) headerLines.push(`Time: ${hdrTimeEl.value.trim()}`);
-
-    const body = stripExistingHeader(inputEl.value || '');
-    const out = headerLines.join('\n') + (headerLines.length ? '\n\n' : '') + body.trimStart();
-    inputEl.value = out;
-    localStorage.setItem('chordSheetInput', inputEl.value);
-    updatePreview();
-    showStatus('✅ Header applied to text.', 'success');
-  }
-
-  function extractHeaderFromText() {
-    const t = inputEl.value || '';
-    const h = parseHeaderFromText(t);
-    hdrTitleEl.value = h.title || '';
-    hdrComposerEl.value = h.composer || '';
-    hdrStyleEl.value = h.style || '';
-    hdrTempoEl.value = h.tempo || '';
-    hdrKeyEl.value = h.key || '';
-    hdrTimeEl.value = h.time || '';
-    showStatus('✅ Header read from text.', 'success');
-  }
-
-  function parseHeaderFromText(text) {
-    const out = { title:'', composer:'', style:'', tempo:'', key:'', time:'' };
-    const lines = (text || '').split(/\n/);
-    for (const raw of lines) {
-      const line = raw.trim();
-      if (!line) continue;
-      if (/^Title:/i.test(line)) out.title = line.slice(6).trim();
-      else if (/^Composer:/i.test(line)) out.composer = line.slice(9).trim();
-      else if (/^Style:/i.test(line)) out.style = line.slice(6).trim();
-      else if (/^Tempo:/i.test(line)) out.tempo = line.slice(6).trim();
-      else if (/^Key:/i.test(line)) out.key = line.slice(4).trim();
-      else if (/^(Time|Time Signature):/i.test(line)) out.time = line.split(':').slice(1).join(':').trim();
-      // stop once we hit a section marker or chord content
-      else if (/^[#\+\-:=]/.test(line) || /[A-G][b#]?/.test(line)) break;
-    }
-    return out;
-  }
-
-  function stripExistingHeader(text) {
-    const lines = (text || '').split(/\n/);
-    const kept = [];
-    let inHeader = true;
-
-    for (const raw of lines) {
-      const line = raw.trim();
-
-      if (inHeader) {
-        if (!line) continue; // skip blank lines in header region
-        if (/^(Title|Composer|Style|Tempo|Key|Time|Time Signature):/i.test(line)) {
-          continue; // remove existing header lines
-        }
-        // If we hit section markers or chord content, header region ends
-        inHeader = false;
-      }
-      kept.push(raw);
-    }
-    return kept.join('\n');
-  }
-
-  // ========================================
-  // UTILITY FUNCTIONS
-  // ========================================
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  function generateFilename(title, extension) {
-    const base = (title || 'chord-sheet')
-      .replace(/[^a-z0-9]/gi, '-')
-      .replace(/-+/g, '-')
-      .toLowerCase();
-    return base + '.' + extension;
-  }
-
-  function showStatus(message, type) {
-    const statusEl = document.getElementById('statusMessage');
-    statusEl.className = 'status-message status-' + type + ' show';
-    statusEl.textContent = message;
-    const timeout = type === 'error' ? 6000 : 4000;
-    setTimeout(() => { statusEl.className = 'status-message'; }, timeout);
-  }
-
-  // ========================================
-  // USER ACTIONS
-  // ========================================
-  function loadExample(type) {
-    inputEl.value = examples[type];
-    localStorage.setItem('chordSheetInput', inputEl.value);
-    currentTranspose = 0;
-    transposeEl.textContent = '0';
-    extractHeaderFromText();
-    updatePreview();
-    showStatus('✅ Example loaded.', 'success');
-  }
-
-  // ========================================
-  // FIX #4: TRANSPOSE → FORM KEY FIELD SYNC
-  // ========================================
-  // BEFORE: Only updated preview and transpose counter
-  // AFTER: Also updates the header form's Key field
-  function transpose(semitones) {
-    currentTranspose += semitones;
-    transposeEl.textContent = (currentTranspose > 0 ? '+' : '') + currentTranspose;
-    updatePreview();
-    
-    // ✅ FIX #4: Update header form's Key field to match transposed key
-    const text = inputEl.value || '';
-    const keyMatch = text.match(/^Key:\s*(.+)$/im);
-    if (keyMatch) {
-      const originalKey = keyMatch[1].trim();
-      const transposedKey = transposeChordToken(originalKey, currentTranspose);
-      hdrKeyEl.value = transposedKey;
-    }
-  }
-
-  function resetTranspose() {
-    currentTranspose = 0;
-    transposeEl.textContent = '0';
-    updatePreview();
-    
-    // Also reset the key field to original
-    extractHeaderFromText();
-  }
-
-  // ========================================
-  // SAVE AS IMAGE (JPEG/PNG)
-  // ========================================
-  async function saveAsImage(format) {
-    const text = inputEl.value || '';
-    if (!text.trim()) {
-      showStatus('⚠️ Please enter some chords before saving.', 'error');
-      return;
-    }
-
-    const btn = format === 'jpeg' ? document.getElementById('saveJpegBtn') : document.getElementById('savePngBtn');
-    const originalText = btn.innerHTML;
-
-    btn.disabled = true;
-    btn.innerHTML = `Generating ${format.toUpperCase()}... <span class="loading-spinner"></span>`;
-
-    try {
-      showStatus(`📸 Capturing your chord sheet as ${format.toUpperCase()}...`, 'info');
-
-      const sheetContent = previewEl.querySelector('.sheet-content');
-      const canvas = await html2canvas(sheetContent, {
-        scale: 4,
-        backgroundColor: '#ffffff',
-        logging: false,
-        useCORS: true
-      });
-
-      canvas.toBlob((blob) => {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-
-        // Parse title for filename
-        const mode = detectMode(text);
-        const doc = (mode === 'legacy') ? parseLegacy(text) : parseCSMPN(text);
-
-        link.download = generateFilename(doc.title, format);
-        link.href = url;
-        link.click();
-
-        URL.revokeObjectURL(url);
-
-        showStatus(`✅ ${format.toUpperCase()} saved.`, 'success');
-        btn.disabled = false;
-        btn.innerHTML = originalText;
-      }, `image/${format}`, format === 'jpeg' ? 0.95 : 1.0);
-
-    } catch (error) {
-      console.error('Error generating image:', error);
-      showStatus('❌ Error generating image. Please try again.', 'error');
-      btn.disabled = false;
-      btn.innerHTML = originalText;
-    }
-  }
-
-  // ========================================
-  // PRINT FUNCTION
-  // ========================================
-  function printSheet() {
-    const text = inputEl.value || '';
-    if (!text.trim()) {
-      showStatus('⚠️ Please enter some chords before printing.', 'error');
-      return;
-    }
-    showStatus('🖨️ Opening print dialog...', 'info');
-    setTimeout(() => window.print(), 300);
-  }
-
-  // ========================================
-  // COPY TEXT FUNCTION
-  // ========================================
-  function copyText() {
-    inputEl.select();
-    inputEl.setSelectionRange(0, 99999);
-    try {
-      navigator.clipboard.writeText(inputEl.value).then(() => {
-        showStatus('✅ Copied to clipboard.', 'success');
-      }).catch(() => {
-        document.execCommand('copy');
-        showStatus('✅ Copied to clipboard.', 'success');
-      });
-    } catch (err) {
-      document.execCommand('copy');
-      showStatus('✅ Copied to clipboard.', 'success');
-    }
-  }
-
-  // ========================================
-  // LOG html2canvas LOAD STATUS
-  // ========================================
-  window.addEventListener('load', function() {
-    if (typeof html2canvas !== 'undefined') console.log('✅ html2canvas loaded successfully');
-    else console.error('❌ html2canvas failed to load');
-  });
+- Solo Section
+Bb Eb7 F7 Bb
+Gm7 C7 F7 Bb
+`;
+
+extractHeaderFromText(sourceEl.value);
+updatePreview();
+setStatus('Ready. v1.0 - All systems operational.');
 </script>
 </body>
 </html>
