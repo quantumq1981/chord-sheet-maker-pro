@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ChordSheet CSMPN Builder v1.4</title>
+<title>ChordSheet CSMPN Builder v1.6</title>
 
 <!-- PDF.js (required for UG Pro PDF text extraction) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -254,7 +254,7 @@
 <body>
 <div class="app">
   <div class="topbar">
-    <div class="title">ChordSheet CSMPN Builder v1.4</div>
+    <div class="title">ChordSheet CSMPN Builder v1.6</div>
 
     <div class="row">
       <div class="field"><label>Title</label><input id="hdrTitle" placeholder="Song title"></div>
@@ -289,7 +289,7 @@ If a PDF import yields no chords, it may be image-only (no selectable text).</li
       </ul>
     </div>
 
-    <div id="status" class="status">Ready. v1.4 - Render fixes applied.</div>
+    <div id="status" class="status">Ready. v1.6 - PDF import fixes applied.</div>
 
     <!-- hidden file input -->
     <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml" style="display:none" />
@@ -1163,14 +1163,67 @@ function harmonyToChord(h){
   return chord;
 }
 
+function stripTokenDecorators(t){
+  return (t || '')
+    .replace(/^\(+/,'')
+    .replace(/\)+$/,'')
+    .replace(/x\d+$/i,'')
+    .trim();
+}
+
+// Stricter chord token detection to avoid false positives from PDF text (e.g., section labels).
 function isChordLikeToken(tok){
   if (!tok) return false;
-  const t = normalizeAccidentals(tok);
+  let t = normalizeAccidentals(tok)
+    .replace(/\u200B/g,'')
+    .trim();
+
   if (t === '%' || t === '%%' || /^%\d+$/.test(t)) return true;
-  if (t === '*' || t.toUpperCase()==='N.C.' || t.toUpperCase()==='NC') return true;
-  // root chord
-  return /^\(?[A-G](?:b|#)?[a-zA-Z0-9+()#b/.,_-]*\)?(?:x\d+)?$/.test(t);
+  if (t === '*') return true;
+  const upper = t.toUpperCase();
+  if (upper === 'N.C.' || upper === 'NC') return true;
+
+  t = stripTokenDecorators(t);
+  if (!t) return false;
+
+  const m = t.match(/^([A-G])([b#]?)(.*)$/);
+  if (!m) return false;
+
+  const rest = m[3] || '';
+  if (!rest) return true;
+
+  const rl = rest.toLowerCase();
+
+  const startsOk =
+    /^[0-9#b\/()+.,-]/.test(rest) ||
+    rl.startsWith('m') ||
+    rl.startsWith('maj') ||
+    rl.startsWith('min') ||
+    rl.startsWith('dim') ||
+    rl.startsWith('aug') ||
+    rl.startsWith('sus') ||
+    rl.startsWith('add') ||
+    rl.startsWith('alt') ||
+    rl.startsWith('omit') ||
+    rl.startsWith('no');
+
+  if (!startsOk) return false;
+
+  if (/^[a-z]+$/i.test(rest) && rest.length > 3){
+    if (!/^(maj|min|dim|aug|sus|add|alt|omit|no|m)$/.test(rl)) return false;
+  }
+
+  return /^[A-Za-z0-9#b\/()+.,-ΔøØ°º]*$/.test(rest);
 }
+
+function isChordLikeTokenPDF(tok){
+  if (!isChordLikeToken(tok)) return false;
+  const t = stripTokenDecorators(normalizeAccidentals(tok));
+  if (/^[A-G][a-z]{4,}$/i.test(t) && !/[0-9#b]/.test(t)) return false;
+  return true;
+}
+
+
 
 function toCSMPNBars(chords){
   // chords array -> lines of 4 bars
@@ -1253,72 +1306,102 @@ async function importUGProPDF(file){
     }
   }
 
-  // Fall back: spatial chord clustering
-  const chordItems = allItems
-    .map(it => ({...it, str: (it.str || '').replace(/\s+/g,'') }))
-    .filter(it => isChordLikeToken(it.str) || (it.str && it.str.includes('|') && /[A-G]/.test(it.str)));
+  // Fall back: spatial chord clustering (for PDFs where chords are separate glyph runs).
+const chordItems = allItems
+  .map(it => ({...it, str: (it.str || '').replace(/\s+/g,'')}))
+  .filter(it => isChordLikeTokenPDF(it.str) || (it.str && it.str.includes('|') && /[A-G]/.test(it.str)));
 
-  if (!chordItems.length){
-    setStatus('PDF import: no selectable chord text detected. This PDF is likely image-only (scanned).', 'error');
-    return '';
-  }
+if (!chordItems.length){
+  setStatus('PDF import: no selectable chord text detected. This PDF is likely image-only (scanned).', 'error');
+  return '';
+}
 
-  chordItems.sort((a,b) => (a.page-b.page) || (b.y-a.y) || (a.x-b.x));
+// Bucket by (page, approximate y) and, within each line, infer split-bars using x-gap
+const buckets = new Map();
+for (const it of chordItems){
+  const yKey = Math.round(it.y / 6) * 6;
+  const key = it.page + ':' + yKey;
+  if (!buckets.has(key)) buckets.set(key, []);
+  buckets.get(key).push(it);
+}
 
-  const bars = [];
-  let splitBarsDetected = 0;
+const keys = Array.from(buckets.keys()).sort((ka, kb) => {
+  const a = ka.split(':').map(Number);
+  const b = kb.split(':').map(Number);
+  if (a[0] !== b[0]) return a[0] - b[0];
+  return b[1] - a[1]; // y desc
+});
 
-  for (let i=0; i<chordItems.length; i++){
-    const current = chordItems[i];
+const bars = [];
+let splitBarsDetected = 0;
 
-    // Explode embedded barlines in a single token (common in some PDFs)
-    if (current.str.includes('|') || /[ǁ‖∥]/.test(current.str)){
-      const parts = tokenizeBars(current.str).filter(t => t !== '|' && t !== '||');
-      for (const p of parts) bars.push(p);
-      continue;
-    }
+for (const k of keys){
+  const arr0 = buckets.get(k) || [];
+  if (!arr0.length) continue;
 
-    // Detect split bars by grouping close-Y neighbors
-    const cluster = [current];
-    for (let j=i+1; j<chordItems.length; j++){
-      const next = chordItems[j];
-      if (next.page === current.page &&
-          Math.abs(next.y - current.y) < 10 &&
-          Math.abs(next.x - current.x) > 5){
-        cluster.push(next);
-      } else {
-        break;
+  // Expand embedded barlines into chord tokens when present
+  const arr = [];
+  for (const it of arr0){
+    if (it.str && (it.str.includes('|') || /[ǁ‖∥]/.test(it.str))){
+      const parts = tokenizeBars(it.str).filter(t => t !== '|' && t !== '||');
+      for (const part of parts){
+        if (isChordLikeTokenPDF(part)) arr.push({...it, str: part});
       }
-    }
-
-    if (cluster.length > 1){
-      const splitBar = cluster.map(c => c.str).join('_');
-      bars.push(splitBar);
-      splitBarsDetected++;
-      i += (cluster.length - 1);
     } else {
-      bars.push(current.str);
+      arr.push(it);
     }
   }
+  if (!arr.length) continue;
 
-  const out = [];
-  out.push('Title:');
-  out.push('Composer:');
-  out.push('Style:');
-  out.push('Tempo:');
-  out.push('Time:');
-  out.push('Key:');
-  out.push('');
+  arr.sort((a,b) => a.x - b.x);
 
-  for (let i=0;i<bars.length;i+=4){
-    out.push(bars.slice(i,i+4).join(' '));
+  const diffs = [];
+  for (let i=1;i<arr.length;i++){
+    const dx = arr[i].x - arr[i-1].x;
+    if (dx > 0) diffs.push(dx);
   }
+  diffs.sort((a,b) => a - b);
+  const med = diffs.length ? diffs[Math.floor(diffs.length/2)] : 60;
+  const splitThresh = Math.max(18, Math.min(34, med * 0.55));
 
-  const statusMsg = `PDF import: ${bars.length} bar(s) extracted from ${pdf.numPages} page(s).` +
-    (splitBarsDetected ? `\n${splitBarsDetected} split bar(s) auto-detected.` : '') +
-    `\nIf any multi-chord bars were missed, add "_" manually (e.g., Dm7_G7).`;
-  setStatus(statusMsg, 'warning');
-  return out.join('\n');
+  let cur = [arr[0].str];
+  for (let i=1;i<arr.length;i++){
+    const dx = arr[i].x - arr[i-1].x;
+    if (dx > 0 && dx <= splitThresh){
+      cur.push(arr[i].str);
+    } else {
+      if (cur.length) bars.push(cur.join('_'));
+      if (cur.length > 1) splitBarsDetected++;
+      cur = [arr[i].str];
+    }
+  }
+  if (cur.length){
+    bars.push(cur.join('_'));
+    if (cur.length > 1) splitBarsDetected++;
+  }
+}
+
+const barsClean = bars.map(b => (b || '').trim()).filter(Boolean);
+
+const out = [];
+out.push('Title:');
+out.push('Composer:');
+out.push('Style:');
+out.push('Tempo:');
+out.push('Time:');
+out.push('Key:');
+out.push('');
+
+for (let i=0;i<barsClean.length;i+=4){
+  out.push(barsClean.slice(i,i+4).join(' '));
+}
+
+let statusMsg = 'PDF import: ' + barsClean.length + ' bar(s) extracted from ' + pdf.numPages + ' page(s).';
+if (splitBarsDetected) statusMsg += '\n' + splitBarsDetected + ' split bar(s) auto-detected.';
+statusMsg += '\nIf any multi-chord bars were missed, add "_" manually (e.g., Dm7_G7).';
+setStatus(statusMsg, 'warning');
+return out.join('\n');
+
 }
 
 // Convert barline-delimited text lines from UG/ChordSheet-like PDFs into CSMPN
@@ -1550,7 +1633,7 @@ Gm7 C7 F7 Bb
 
 extractHeaderFromText(sourceEl.value);
 updatePreview();
-setStatus('Ready. v1.4 - Render fixes applied.');
+setStatus('Ready. v1.6 - PDF import fixes applied.');
 </script>
 </body>
 </html>
