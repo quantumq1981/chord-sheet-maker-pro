@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ChordSheet CSMPN Builder v1.3</title>
+<title>ChordSheet CSMPN Builder v1.4</title>
 
 <!-- PDF.js (required for UG Pro PDF text extraction) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -208,6 +208,16 @@
     gap: 0.55rem;
   }
 
+  .beats{
+    display:inline-flex;
+    gap: 0.55rem;
+    align-items:baseline;
+  }
+  .beat{
+    display:inline-block;
+  }
+
+
   .endingLabel{
     font-weight:900;
     margin-right:6px;
@@ -244,7 +254,7 @@
 <body>
 <div class="app">
   <div class="topbar">
-    <div class="title">ChordSheet CSMPN Builder v1.3</div>
+    <div class="title">ChordSheet CSMPN Builder v1.4</div>
 
     <div class="row">
       <div class="field"><label>Title</label><input id="hdrTitle" placeholder="Song title"></div>
@@ -279,7 +289,7 @@ If a PDF import yields no chords, it may be image-only (no selectable text).</li
       </ul>
     </div>
 
-    <div id="status" class="status">Ready. v1.3 - All systems operational.</div>
+    <div id="status" class="status">Ready. v1.4 - Render fixes applied.</div>
 
     <!-- hidden file input -->
     <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml" style="display:none" />
@@ -328,9 +338,9 @@ function setStatus(msg, type='info'){
   if (type === false) type = 'info';
 
   statusEl.textContent = msg;
-  statusEl.classList.remove('error', 'warning');
-  if (type === 'error') statusEl.classList.add('error');
-  if (type === 'warning') statusEl.classList.add('warning');
+  statusEl.classList.remove('err', 'warn');
+  if (type === 'error') statusEl.classList.add('err');
+  if (type === 'warning') statusEl.classList.add('warn');
 }
 
 function escapeHtml(s){
@@ -456,6 +466,38 @@ function detectNotationPreferenceFromKeyOrText(key, text){
   if (/[A-G]#/.test(text)) return 'sharp';
   return 'sharp';
 }
+
+// ---------------------------------------------------------
+// Transposition helpers
+// ---------------------------------------------------------
+const NOTE_INDEX = new Map([
+  ['C',0],['B#',0],
+  ['C#',1],['DB',1],
+  ['D',2],
+  ['D#',3],['EB',3],
+  ['E',4],['FB',4],
+  ['F',5],['E#',5],
+  ['F#',6],['GB',6],
+  ['G',7],
+  ['G#',8],['AB',8],
+  ['A',9],
+  ['A#',10],['BB',10],
+  ['B',11],['CB',11],
+]);
+
+const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const NOTES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+
+function transposeNote(note, semis, pref){
+  const n = normalizeAccidentals(note).toUpperCase().replace(/\s+/g,'');
+  const idx = NOTE_INDEX.get(n);
+  if (idx === undefined) return note;
+
+  const t = (idx + (semis % 12) + 12) % 12;
+  const arr = (pref === 'flat') ? NOTES_FLAT : NOTES_SHARP;
+  return arr[t];
+}
+
 
 function parseCSMPN(text){
   const raw = (text || '').replace(/\r/g,'');
@@ -785,7 +827,7 @@ function renderDoc(doc){
 
   let html = '';
   if (doc.title){
-    html += `<h1>${escapeHtml(doc.title)}</h1>`;
+    html += `<div class="songTitle">${escapeHtml(doc.title)}</div>`;
   }
   const meta = [];
   if (doc.composer) meta.push(`<div class="metaLine"><span class="metaLabel">Composer:</span> ${escapeHtml(doc.composer)}</div>`);
@@ -841,20 +883,30 @@ function renderDoc(doc){
 function renderBars(tokens){
   const bars = parseBarStructures(tokens);
   const indent = tokens.indent || 0;
+
   let html = `<div class="barsBlock" style="margin-left:${indent * 22}px">`;
 
-  // Render in groups of 4 bars per row (musician-friendly), but do not warn/pad noisily.
-  for(let i = 0; i < bars.length; i += 4){
+  // Render in groups of 4 bars per row (musician-friendly).
+  for (let i = 0; i < bars.length; i += 4){
     const row = bars.slice(i, i + 4);
-    while(row.length < 4) row.push({ text: '', doubleLeft: false });
+
+    // Pad to 4
+    while (row.length < 4){
+      row.push({ token: '', doubleLeft: false, doubleRight: false });
+    }
 
     const startsDouble = !!row[0]?.doubleLeft;
+
     html += `<div class="barlineRow">`;
     html += `<span class="barSep">${startsDouble ? '||' : '|'}</span>`;
 
-    for(const bar of row){
-      html += renderMeasure(bar.text);
-      html += `<span class="barSep">|</span>`;
+    for (const bar of row){
+      const label = bar.endingLabel ? `${bar.endingLabel} ` : '';
+      const txt = label + (bar.token || '');
+      html += renderMeasure(txt);
+
+      // Respect doubleRight boundaries (e.g., from '||' in source)
+      html += `<span class="barSep">${bar.doubleRight ? '||' : '|'}</span>`;
     }
 
     html += `</div>`;
@@ -1125,223 +1177,6 @@ function toCSMPNBars(chords){
   return out.join('\n');
 }
 
-async function importUGProPDF(file){
-  // Strategy:
-  // 1) Reconstruct full text lines (best for ChordSheet/UG PDFs that contain '|' barlines).
-  // 2) If that fails, fall back to spatial chord clustering (best for UG Pro PDFs with isolated chord glyphs).
-  const arrayBuffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-  const pdf = await loadingTask.promise;
-
-  const allItems = [];
-  const reconstructedLines = [];
-
-  for (let p=1; p<=pdf.numPages; p++){
-    const page = await pdf.getPage(p);
-    const tc = await page.getTextContent();
-
-    const items = tc.items.map(it => {
-      const [a,b,c,d,e,f] = it.transform;
-      return {
-        page: p,
-        str: (it.str || '').trim(),
-        x: e,
-        y: f
-      };
-    }).filter(it => it.str);
-
-    allItems.push(...items);
-
-    // Cluster into lines by Y
-    const buckets = new Map();
-    for (const it of items){
-      const yKey = Math.round(it.y / 4) * 4; // tolerance
-      const key = `${p}:${yKey}`;
-      if (!buckets.has(key)) buckets.set(key, []);
-      buckets.get(key).push(it);
-    }
-    const sortedBuckets = Array.from(buckets.entries())
-      .sort((a,b) => {
-        const ya = parseFloat(a[0].split(':')[1]);
-        const yb = parseFloat(b[0].split(':')[1]);
-        return yb - ya; // top to bottom
-      });
-
-    for (const [k, arr] of sortedBuckets){
-      arr.sort((a,b) => a.x - b.x);
-      const line = arr.map(x => x.str).join(' ').replace(/\s+/g,' ').trim();
-      if (line) reconstructedLines.push(line);
-    }
-  }
-
-  const hasBarlines = reconstructedLines.some(l => /[|ǁ‖∥]/.test(l));
-  if (hasBarlines){
-    const csmpn = ugLinesToCSMPN(reconstructedLines);
-    if (csmpn && csmpn.trim().length > 20){
-      setStatus(`PDF import: parsed ${pdf.numPages} page(s) using text-line reconstruction.`, 'warning');
-      return csmpn;
-    }
-  }
-
-  // Fall back: spatial chord clustering
-  const chordItems = allItems
-    .map(it => ({...it, str: it.str.replace(/\s+/g,'') }))
-    .filter(it => isChordLikeToken(it.str) || (it.str && it.str.includes('|') && /[A-G]/.test(it.str)));
-
-  if (!chordItems.length){
-    setStatus('PDF import: no selectable chord text detected. This PDF is likely image-only (scanned).', 'error');
-    return '';
-  }
-
-  chordItems.sort((a,b) => (a.page-b.page) || (b.y-a.y) || (a.x-b.x));
-
-  const bars = [];
-  let splitBarsDetected = 0;
-
-  for (let i=0; i<chordItems.length; i++){
-    const current = chordItems[i];
-
-    // Explode embedded barlines in a single token (common in some PDFs)
-    if (current.str.includes('|')){
-      const parts = tokenizeBars(current.str).filter(t => t !== '|' && t !== '||');
-      for (const p of parts) bars.push(p);
-      continue;
-    }
-
-    // Detect split bars by grouping close-Y neighbors
-    const cluster = [current];
-    for (let j=i+1; j<chordItems.length; j++){
-      const next = chordItems[j];
-      if (next.page === current.page &&
-          Math.abs(next.y - current.y) < 10 &&
-          Math.abs(next.x - current.x) > 5){
-        cluster.push(next);
-      } else {
-        break;
-      }
-    }
-
-    if (cluster.length > 1){
-      const splitBar = cluster.map(c => c.str).join('_');
-      bars.push(splitBar);
-      splitBarsDetected++;
-      i += (cluster.length - 1);
-    } else {
-      bars.push(current.str);
-    }
-  }
-
-  const out = [];
-  out.push('Title:');
-  out.push('Composer:');
-  out.push('Time:');
-  out.push('Key:');
-  out.push('');
-
-  for (let i=0;i<bars.length;i+=4){
-    out.push(bars.slice(i,i+4).join(' '));
-  }
-
-  const statusMsg = `PDF import: ${bars.length} bar(s) extracted from ${pdf.numPages} page(s).${splitBarsDetected ? `\n${splitBarsDetected} split bar(s) auto-detected.` : ''}\nReview layout and manually add _ for any missed multi-chord bars.`;
-  setStatus(statusMsg, 'warning');
-  return out.join('\n');
-}
-
-// Convert barline-delimited text lines from UG/ChordSheet-like PDFs into CSMPN
-function ugLinesToCSMPN(lines){
-  const blocks = [];
-
-  let title = '';
-  let composer = '';
-  let key = '';
-  let time = '';
-  let tempo = '';
-  let style = '';
-
-  const isHeaderLine = (ln) => /^(title|composer|artist|key|tempo|time|style)\s*:/i.test(ln);
-
-  let sawAnyBars = false;
-
-  // First pass: pull header-ish fields
-  for (let raw of lines){
-    const ln = (raw || '').replace(/\s+/g,' ').trim();
-    if (!ln) continue;
-
-    if (/^powered by/i.test(ln)) continue;
-
-    if (!title && !ln.includes(':') && ln.length <= 50 && /^[A-Za-z0-9][A-Za-z0-9 '\-()]+$/.test(ln)){
-      title = ln;
-      continue;
-    }
-    if (/^composer\s*:/i.test(ln)) { composer = ln.split(':').slice(1).join(':').trim(); continue; }
-    if (/^artist\s*:/i.test(ln))   { composer = ln.split(':').slice(1).join(':').trim(); continue; }
-    if (/^key\s*:/i.test(ln))      { key = ln.split(':').slice(1).join(':').trim(); continue; }
-    if (/^time\s*:/i.test(ln))     { time = ln.split(':').slice(1).join(':').trim(); continue; }
-    if (/^tempo\s*:/i.test(ln))    { tempo = ln.split(':').slice(1).join(':').trim(); continue; }
-    if (/^style\s*:/i.test(ln))    { style = ln.split(':').slice(1).join(':').trim(); continue; }
-  }
-
-  // Second pass: build blocks
-  for (let raw of lines){
-    let ln = (raw || '').replace(/\s+/g,' ').trim();
-    if (!ln) continue;
-    if (/^powered by/i.test(ln)) continue;
-    if (isHeaderLine(ln)) continue;
-
-    if (/[|ǁ‖∥]/.test(ln)){
-      const hasChordLetters = /\b[A-G](?:#|b)?/.test(ln);
-      if (!hasChordLetters){
-        blocks.push(`- ${ln.replace(/^[\-:;=]\s*/,'')}`);
-        continue;
-      }
-
-      sawAnyBars = true;
-      const startsDouble = /^[ǁ‖∥]|^\|\|/.test(ln);
-
-      // Normalize double barline char to leading ||
-      ln = ln.replace(/^[ǁ‖∥]/,'||').trim();
-      ln = ln.replace(/^\|\|/,'||').trim();
-      ln = ln.replace(/[ǁ‖∥]/g,'||');
-
-      const measures = ln.split('|').map(x => x.trim()).filter(Boolean);
-
-      const bars = [];
-      if (startsDouble) bars.push('||');
-
-      for (const m of measures){
-        const parts = m.split(/\s+/).filter(Boolean);
-        if (!parts.length) continue;
-        bars.push(parts.length === 1 ? parts[0] : parts.join('_'));
-      }
-
-      if (bars.length){
-        blocks.push(bars.join(' '));
-      }
-      continue;
-    }
-
-    // Non-barlined text: treat as section/annotation
-    if (/^(intro|verse|chorus|bridge|pre-?chorus|tag|outro|turnaround|solo)/i.test(ln)){
-      blocks.push(`- ${ln}`);
-    } else {
-      blocks.push(`; ${ln}`);
-    }
-  }
-
-  if (!sawAnyBars) return '';
-
-  const header = [];
-  header.push(`Title: ${title || ''}`.trimEnd());
-  header.push(`Composer: ${composer || ''}`.trimEnd());
-  if (style) header.push(`Style: ${style}`);
-  if (tempo) header.push(`Tempo: ${tempo}`);
-  if (time) header.push(`Time: ${time}`);
-  if (key) header.push(`Key: ${key}`);
-  header.push('');
-
-  return header.concat(blocks).join('\n');
-}
-
 /* =========================================================
    Export / Print / Copy
 ========================================================= */
@@ -1401,7 +1236,7 @@ document.getElementById('btnDownloadPdf').addEventListener('click', async () => 
       heightLeft -= (pageHeight - margin * 2);
     }
 
-    const filename = safeFilename(docTitle || 'chart') + '.pdf';
+    const filename = safeFilename(hdr.title.value?.trim() || 'chart') + '.pdf';
     const blob = pdf.output('blob');
     const file = new File([blob], filename, { type: 'application/pdf' });
     const shared = await tryShareFile(file);
@@ -1476,7 +1311,7 @@ Gm7 C7 F7 Bb
 
 extractHeaderFromText(sourceEl.value);
 updatePreview();
-setStatus('Ready. v1.3 - All systems operational.');
+setStatus('Ready. v1.4 - Render fixes applied.');
 </script>
 </body>
 </html>
