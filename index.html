@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ChordSheet CSMPN Builder v1.6</title>
+<title>ChordSheet CSMPN Builder v1.6.3</title>
 
 <!-- PDF.js (required for UG Pro PDF text extraction) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -197,8 +197,7 @@
   .measure{
     display:inline-flex;
     align-items:baseline;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    font-weight:800;
+    font-family: inherit; font-weight:800;
     font-size:18px;
     line-height:1.2;
     white-space:nowrap;      /* keep chord tokens intact */
@@ -239,7 +238,54 @@
   }
 
   /* Print: show only the sheet */
-  @media print{
+  
+/* Export fidelity: flatten UI chrome for PDF/PNG captures */
+body.exporting .card{
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+body.exporting #renderTarget{
+  padding: 0 !important;
+  margin: 0 !important;
+  background: #fff !important;
+}
+body.exporting .sheet{
+  padding: 36px 42px !important; /* ~0.5in */
+}
+
+/* Chord-sheet.com-like typography (preview + export) */
+.songTitle{
+  font-size: 48px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.5px;
+  margin: 0 0 8px 0 !important;
+}
+.metaLine{
+  font-size: 16px !important;
+  line-height: 1.35 !important;
+  margin: 2px 0 !important;
+}
+.metaLabel{
+  font-weight: 800 !important;
+  display: inline-block;
+  min-width: 78px;
+}
+.sectionText{
+  font-size: 22px !important;
+  font-weight: 900 !important;
+  margin: 18px 0 8px 0 !important;
+}
+.barText{
+  font-family: ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  line-height: 1.6 !important;
+}
+
+@media print{
     body{ background:white; }
     .topbar, .card.editorCard, .tips, .status, .btnrow { display:none !important; }
     .app{ max-width:none; padding:0; }
@@ -254,7 +300,7 @@
 <body>
 <div class="app">
   <div class="topbar">
-    <div class="title">ChordSheet CSMPN Builder v1.6</div>
+    <div class="title">ChordSheet CSMPN Builder v1.6.3</div>
 
     <div class="row">
       <div class="field"><label>Title</label><input id="hdrTitle" placeholder="Song title"></div>
@@ -342,6 +388,13 @@ function setStatus(msg, type='info'){
   if (type === true) type = 'error';
   if (type === false) type = 'info';
 
+  try{
+    window.__csmpnLog = window.__csmpnLog || [];
+    window.__csmpnLog.push({ t: new Date().toISOString(), type, msg: String(msg), ua: navigator.userAgent });
+    // Keep last ~500 entries
+    if (window.__csmpnLog.length > 500) window.__csmpnLog = window.__csmpnLog.slice(-500);
+  }catch(e){}
+
   statusEl.textContent = msg;
   statusEl.classList.remove('err', 'warn');
   if (type === 'error') statusEl.classList.add('err');
@@ -401,17 +454,101 @@ function normalizeAccidentals(s){
 /* =========================================================
    Phase-1 fixes: Header <-> Source bidirectional sync
 ========================================================= */
-function extractHeaderFromText(text){
-  const get = (re) => {
-    const m = text.match(re);
-    return m ? m[1].trim() : '';
+function extractHeaderFromText(text, writeToInputs=true){
+  // Extracts header metadata from CSMPN-like source and (optionally) syncs the form fields.
+  // Defensive: avoids poisoning header fields with chord lines / section labels.
+  const norm = (s) => (s ?? "").toString()
+    .replace(/\u00A0/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const looksChordy = (s) => {
+    const t = norm(s);
+    if (!t) return false;
+    if (/[|ǁ]/.test(t) || /%/.test(t)) return true;
+    const toks = t.split(" ").filter(Boolean);
+    let chordCount = 0;
+    for (const tok of toks){
+      if (isChordToken(tok)) chordCount++;
+    }
+    // If it contains multiple chord tokens, it's likely not a human header value.
+    return chordCount >= 2;
   };
-  hdr.title.value    = get(/^Title:\s*(.+)$/im);
-  hdr.composer.value = get(/^(?:Composer|Artist):\s*(.+)$/im);
-  hdr.key.value      = get(/^Key:\s*(.+)$/im);
-  hdr.time.value     = get(/^Time:\s*(.+)$/im);
-  hdr.tempo.value    = get(/^Tempo:\s*(.+)$/im);
-  hdr.style.value    = get(/^Style:\s*(.+)$/im);
+
+  const normalizeField = (field, raw) => {
+    let v = norm(raw);
+    if (!v) return "";
+    // Strip stray trailing punctuation
+    v = v.replace(/^[\-\u2013\u2014]+/, "").trim();
+
+    if (field === "key"){
+      // Accept common key spellings: Bb, F#, C#m, Abm, etc.
+      v = v.replace(/\s+/g, "");
+      v = v.replace(/minor$/i, "m").replace(/min$/i, "m");
+      // Reject obviously bad values
+      if (!/^[A-G](?:#|b)?(?:m)?$/i.test(v)) return "";
+      return v;
+    }
+    if (field === "time"){
+      v = v.replace(/\s+/g, "");
+      if (!/^\d{1,2}\/\d{1,2}$/.test(v)) return "";
+      return v;
+    }
+    if (field === "tempo"){
+      const m = v.match(/(\d{1,3})/);
+      if (!m) return "";
+      const n = parseInt(m[1], 10);
+      if (!(n >= 20 && n <= 320)) return "";
+      return String(n);
+    }
+
+    // title/composer/style: reject chord-like garbage or label-only values
+    if (/^(title|composer|artist|style|tempo|time|key)\s*:?$/i.test(v)) return "";
+    if (looksChordy(v)) return "";
+    // Cap ridiculous lengths (often PDF garbage)
+    if (v.length > 120) v = v.slice(0, 120).trim();
+    return v;
+  };
+
+  const getLineValue = (labelRe) => {
+    const m = text.match(labelRe);
+    return m ? m[1] : "";
+  };
+
+  const hdr = {
+    title: normalizeField("title", getLineValue(/^\s*Title:\s*(.*)$/im)),
+    composer: normalizeField("composer", getLineValue(/^\s*(?:Composer|Artist):\s*(.*)$/im)),
+    style: normalizeField("style", getLineValue(/^\s*Style:\s*(.*)$/im)),
+    tempo: normalizeField("tempo", getLineValue(/^\s*Tempo:\s*(.*)$/im)),
+    time: normalizeField("time", getLineValue(/^\s*Time:\s*(.*)$/im)),
+    key: normalizeField("key", getLineValue(/^\s*Key:\s*(.*)$/im)),
+  };
+
+  // If no explicit Title: and first non-empty line looks like a title, adopt it.
+  if (!hdr.title){
+    const first = (text.split(/\r?\n/).map(l => l.trim()).find(l => l) || "");
+    if (first && !first.includes(":") && !looksChordy(first) && first.length <= 80){
+      hdr.title = normalizeField("title", first);
+    }
+  }
+
+  hdr = sanitizeHeaderFields(hdr);
+  if (writeToInputs){
+    const map = {
+      title: elTitle,
+      composer: elComposer,
+      style: elStyle,
+      tempo: elTempo,
+      time: elTime,
+      key: elKey,
+    };
+    for (const k of Object.keys(map)){
+      const v = hdr[k] || "";
+      if (map[k] && map[k].value !== v) map[k].value = v;
+    }
+  }
+  return hdr;
 }
 
 function applyHeaderToText(){
@@ -574,6 +711,28 @@ function normalizeBarlineDelimiters(line){
     .replace(/\|/g, ' | ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+
+function normalizeUGProText(text){
+  // Normalizes Ultimate Guitar / UG Pro text exports.
+  let t = (text ?? "").toString();
+  t = t.replace(/\r\n?/g, "\n");
+  t = t.replace(/\u00A0/g, " ");
+  t = t.replace(/[\u200B-\u200D\uFEFF]/g, ""); // zero-width
+  // Normalize "times" repeat phrasing to xN
+  t = t.replace(/\b(times)\s*(two|2)\b/gi, "x2");
+  t = t.replace(/\b(times)\s*(three|3)\b/gi, "x3");
+  t = t.replace(/\b(times)\s*(four|4)\b/gi, "x4");
+  // Normalize unicode bars
+  t = t.replace(/[ǁ∥]/g, "||");
+  // Collapse duplicate repeat tokens
+  t = t.replace(/\b(x[234])(\s+\1)+\b/gi, "$1");
+  // UG sometimes emits "x2 x2)" etc
+  t = t.replace(/(\)\s*)\b(x[234])\b\s*\b\2\b/gi, "$1$2");
+  // Normalize common quote types
+  t = t.replace(/[“”]/g, "\"").replace(/[‘’]/g, "'");
+  return t.trim();
 }
 
 function tokenizeBars(line){
@@ -1242,169 +1401,263 @@ function toCSMPNBars(chords){
    - Prefers barline reconstruction when PDFs contain | / ‖ / ǁ
    - Falls back to spatial clustering for "floating chord glyph" PDFs
 ========================================================= */
-async function importUGProPDF(file){
-  if (!window.pdfjsLib) throw new Error('PDF.js failed to load (pdfjsLib missing).');
 
-  // Strategy:
-  // 1) Reconstruct full text lines (best for PDFs that contain '|' barlines).
-  // 2) If that fails, fall back to spatial chord clustering.
+// ------------------------------
+// Normalization & validation helpers
+// ------------------------------
+function normalizeChordToken(raw){
+  if(raw == null) return "";
+  let t = String(raw);
+
+  // Normalize common PDF glyph variants
+  t = t.replace(/\u00A0/g, " ");                // NBSP
+  t = t.replace(/[♭𝄫]/g, "b");                   // flat / double-flat
+  t = t.replace(/[♯𝄪]/g, "#");                   // sharp / double-sharp
+  t = t.replace(/[–—−]/g, "-");                  // dash variants
+  t = t.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+
+  // Trim and strip trivial trailing punctuation
+  t = t.trim().replace(/^[,.;:]+|[,.;:]+$/g, "");
+  return t;
+}
+
+function isChordToken(tok){
+  const t = normalizeChordToken(tok);
+  if(!t) return false;
+
+  // Hard reject common non-chord tokens seen in PDF imports
+  if(t.length > 18) return false; // prevents long section labels like "AintGotNothinButTheBlues"
+  if(/^(Title|Composer|Artist|Style|Tempo|Time|Key|Capo|Transpose)\:?$/i.test(t)) return false;
+
+  // ChordSheet simile / repeats / endings markers are allowed elsewhere, but not chords
+  if(/^\d+\.$/.test(t)) return false;
+
+  return isChordLikeTokenPDF(t);
+}
+
+function looksLikeChordLine(line){
+  if(!line) return false;
+  const toks = String(line).trim().split(/\s+/).filter(Boolean);
+  if(toks.length < 2) return false;
+  let chordCount = 0;
+  for(const tok of toks){
+    if(isChordToken(tok)) chordCount++;
+  }
+  return chordCount >= Math.max(2, Math.ceil(toks.length * 0.5));
+}
+
+function sanitizeHeaderFields(h){
+  const out = { ...(h||{}) };
+
+  const clean = (v)=> (v==null ? "" : String(v)).replace(/\s+/g," ").trim();
+
+  out.title = clean(out.title);
+  out.composer = clean(out.composer);
+  out.style = clean(out.style);
+  out.key = clean(out.key);
+  out.time = clean(out.time);
+  out.tempo = clean(out.tempo);
+
+  // Reject chord-lines accidentally captured as header fields
+  if(out.title && looksLikeChordLine(out.title)) out.title = "";
+  if(out.composer && looksLikeChordLine(out.composer)) out.composer = "";
+  if(out.style && looksLikeChordLine(out.style)) out.style = "";
+
+  // Key validation: accept common spellings like Bb, F#, C#m, Abm, etc.
+  if(out.key && !/^[A-G][b#]?(m|maj|min)?\b/i.test(out.key)) out.key = "";
+  if(out.key && out.key.split(/\s+/).length > 1) out.key = "";
+
+  // Time validation
+  if(out.time && !/^\d+\/\d+$/.test(out.time)) out.time = "";
+
+  // Tempo validation (reasonable bounds)
+  if(out.tempo){
+    const n = parseInt(out.tempo, 10);
+    if(!Number.isFinite(n) || n < 20 || n > 320) out.tempo = "";
+    else out.tempo = String(n);
+  }
+
+  return out;
+}
+
+function isLikelySectionLabelToken(tok){
+  const t = normalizeChordToken(tok);
+  if(!t) return false;
+  if(isChordToken(t)) return false;
+  if(/^\d+(st|nd|rd|th)?$/i.test(t)) return false;
+  if(/^x\d+$/i.test(t)) return true;
+  // Words like "Intro", "Verse", "Chorus1", "Bridge", "Solo", "Tag", "Coda", "DOUBLE-TIME"
+  if(/^(intro|verse|chorus\d*|bridge|solo|tag|coda|ending|outro|pre-?chorus)\b/i.test(t)) return true;
+  if(/^[A-Z][A-Za-z0-9_-]{2,}$/.test(t) && !/[#b]/.test(t)) return true;
+  if(/^[A-Z0-9_-]{4,}$/.test(t) && !/[#b]/.test(t)) return true;
+  return false;
+}
+
+function chunkIntoLines(tokens, perLine){
+  const out = [];
+  for(let i=0;i<tokens.length;i+=perLine){
+    out.push(tokens.slice(i,i+perLine));
+  }
+  return out;
+}
+
+// Apply a header object to form fields safely
+function applyHeader(header){
+  const h = sanitizeHeaderFields(header || {});
+  if(h.title)   hdrTitle.value = h.title;
+  if(h.composer)hdrComposer.value = h.composer;
+  if(h.style)   hdrStyle.value = h.style;
+  if(h.key)     hdrKey.value = h.key;
+  if(h.time)    hdrTime.value = h.time;
+  if(h.tempo)   hdrTempo.value = h.tempo;
+}
+
+
+async function importUGProPDF(file){
+  // Robust PDF text extraction with positional grouping (handles UG Pro / image-ish layouts better)
+  if(typeof pdfjsLib === "undefined"){
+    throw new Error("PDF.js not loaded. Make sure the pdfjs-dist script is available.");
+  }
   const arrayBuffer = await file.arrayBuffer();
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
   const pdf = await loadingTask.promise;
 
-  const allItems = [];
-  const reconstructedLines = [];
+  const rows = []; // {page, y, items:[{t,x,endX}]}
 
-  for (let p=1; p<=pdf.numPages; p++){
+  for(let p=1; p<=pdf.numPages; p++){
     const page = await pdf.getPage(p);
-    const tc = await page.getTextContent();
+    const viewport = page.getViewport({ scale: 1.25 });
+    const content = await page.getTextContent();
 
-    const items = tc.items.map(it => {
-      const t = it.transform || [1,0,0,1,0,0];
-      const e = t[4] ?? 0;
-      const f = t[5] ?? 0;
-      return {
-        page: p,
-        str: (it.str || '').trim(),
-        x: e,
-        y: f
-      };
-    }).filter(it => it.str);
-
-    allItems.push(...items);
-
-    // Cluster into lines by Y (tolerance buckets)
+    // Group tokens by approximate row (y-bucket)
     const buckets = new Map();
-    for (const it of items){
-      const yKey = Math.round(it.y / 4) * 4;
-      const key = `${p}:${yKey}`;
-      if (!buckets.has(key)) buckets.set(key, []);
-      buckets.get(key).push(it);
+    for(const it of content.items){
+      const raw = it.str;
+      if(!raw || !raw.trim()) continue;
+
+      const t = normalizeChordToken(raw);
+      if(!t) continue;
+
+      const x = it.transform[4];
+      const y = it.transform[5];
+      const endX = x + (it.width || 0);
+
+      const yKey = Math.round(y / 2) * 2; // bucket
+      if(!buckets.has(yKey)) buckets.set(yKey, []);
+      buckets.get(yKey).push({ t, x, endX });
     }
 
-    // Sort top-to-bottom
-    const sortedBuckets = Array.from(buckets.entries())
-      .sort((a,b) => {
-        const ya = parseFloat(a[0].split(':')[1]);
-        const yb = parseFloat(b[0].split(':')[1]);
-        return yb - ya;
-      });
-
-    for (const [_k, arr] of sortedBuckets){
-      arr.sort((a,b) => a.x - b.x);
-      const line = arr.map(x => x.str).join(' ').replace(/\s+/g,' ').trim();
-      if (line) reconstructedLines.push(line);
-    }
-  }
-
-  const hasBarlines = reconstructedLines.some(l => /[|ǁ‖∥]/.test(l));
-  if (hasBarlines){
-    const csmpn = ugLinesToCSMPN(reconstructedLines);
-    if (csmpn && csmpn.trim().length > 20){
-      setStatus(`PDF import: parsed ${pdf.numPages} page(s) using text-line reconstruction.`, 'warning');
-      return csmpn;
-    }
-  }
-
-  // Fall back: spatial chord clustering (for PDFs where chords are separate glyph runs).
-const chordItems = allItems
-  .map(it => ({...it, str: (it.str || '').replace(/\s+/g,'')}))
-  .filter(it => isChordLikeTokenPDF(it.str) || (it.str && it.str.includes('|') && /[A-G]/.test(it.str)));
-
-if (!chordItems.length){
-  setStatus('PDF import: no selectable chord text detected. This PDF is likely image-only (scanned).', 'error');
-  return '';
-}
-
-// Bucket by (page, approximate y) and, within each line, infer split-bars using x-gap
-const buckets = new Map();
-for (const it of chordItems){
-  const yKey = Math.round(it.y / 6) * 6;
-  const key = it.page + ':' + yKey;
-  if (!buckets.has(key)) buckets.set(key, []);
-  buckets.get(key).push(it);
-}
-
-const keys = Array.from(buckets.keys()).sort((ka, kb) => {
-  const a = ka.split(':').map(Number);
-  const b = kb.split(':').map(Number);
-  if (a[0] !== b[0]) return a[0] - b[0];
-  return b[1] - a[1]; // y desc
-});
-
-const bars = [];
-let splitBarsDetected = 0;
-
-for (const k of keys){
-  const arr0 = buckets.get(k) || [];
-  if (!arr0.length) continue;
-
-  // Expand embedded barlines into chord tokens when present
-  const arr = [];
-  for (const it of arr0){
-    if (it.str && (it.str.includes('|') || /[ǁ‖∥]/.test(it.str))){
-      const parts = tokenizeBars(it.str).filter(t => t !== '|' && t !== '||');
-      for (const part of parts){
-        if (isChordLikeTokenPDF(part)) arr.push({...it, str: part});
+    const yKeys = Array.from(buckets.keys()).sort((a,b)=>b-a); // top-to-bottom in PDF coordinates
+    for(const yKey of yKeys){
+      const items = buckets.get(yKey).sort((a,b)=>a.x-b.x);
+      // Collapse duplicate tokens that often appear (same x,y)
+      const dedup = [];
+      for(const item of items){
+        const last = dedup[dedup.length-1];
+        if(last && Math.abs(last.x-item.x) < 0.5 && last.t === item.t) continue;
+        dedup.push(item);
       }
-    } else {
-      arr.push(it);
+      rows.push({ page: p, y: yKey, items: dedup });
     }
   }
-  if (!arr.length) continue;
 
-  arr.sort((a,b) => a.x - b.x);
+  // Build fullText for header extraction (used later by caller too)
+  const fullText = rows
+    .map(r => r.items.map(i=>i.t).join(" ").trim())
+    .filter(Boolean)
+    .join("\n");
 
-  const diffs = [];
-  for (let i=1;i<arr.length;i++){
-    const dx = arr[i].x - arr[i-1].x;
-    if (dx > 0) diffs.push(dx);
+  // Helper: merge close chords into split-bars using X gaps
+  function mergeSplitBarsByX(items){
+    const chordItems = items.filter(i => isChordToken(i.t) || ["%","%%","%1","%2","1.","2."].includes(i.t));
+    if(chordItems.length === 0) return [];
+
+    // Compute gaps between adjacent chord items
+    const gaps = [];
+    for(let i=0;i<chordItems.length-1;i++){
+      gaps.push(Math.max(0, chordItems[i+1].x - chordItems[i].endX));
+    }
+    gaps.sort((a,b)=>a-b);
+    const median = gaps.length ? gaps[Math.floor(gaps.length/2)] : 10;
+    const splitThreshold = Math.max(2.5, Math.min(10, median * 0.45));
+
+    const bars = [];
+    for(const ci of chordItems){
+      const t = ci.t;
+      if(!isChordToken(t) && !["%","%%","%1","%2","1.","2."].includes(t)) continue;
+
+      if(bars.length === 0){
+        bars.push({ text: t, lastEndX: ci.endX, chordCount: isChordToken(t) ? 1 : 0 });
+        continue;
+      }
+
+      const prev = bars[bars.length-1];
+      const gap = ci.x - prev.lastEndX;
+      const canMerge = isChordToken(t) && prev.chordCount > 0 && prev.chordCount < 3 && gap >= 0 && gap < splitThreshold;
+
+      if(canMerge){
+        prev.text = prev.text + "_" + t;
+        prev.lastEndX = ci.endX;
+        prev.chordCount += 1;
+      }else{
+        bars.push({ text: t, lastEndX: ci.endX, chordCount: isChordToken(t) ? 1 : 0 });
+      }
+    }
+    return bars.map(b => b.text);
   }
-  diffs.sort((a,b) => a - b);
-  const med = diffs.length ? diffs[Math.floor(diffs.length/2)] : 60;
-  const splitThresh = Math.max(18, Math.min(34, med * 0.55));
 
-  let cur = [arr[0].str];
-  for (let i=1;i<arr.length;i++){
-    const dx = arr[i].x - arr[i-1].x;
-    if (dx > 0 && dx <= splitThresh){
-      cur.push(arr[i].str);
-    } else {
-      if (cur.length) bars.push(cur.join('_'));
-      if (cur.length > 1) splitBarsDetected++;
-      cur = [arr[i].str];
+  // Convert rows to CSMPN-ish block text (section labels + 4-bars-per-line)
+  const blocks = [];
+  let chordBarsExtracted = 0;
+
+  for(const r of rows){
+    const lineTokens = r.items.map(i=>i.t).filter(Boolean);
+    if(lineTokens.length === 0) continue;
+
+    // Skip obvious header lines (but do not require headers to exist)
+    const joined = lineTokens.join(" ").trim();
+    if(/^(Title|Composer|Artist|Style|Tempo|Time|Key)\s*:/i.test(joined)) continue;
+    if(/^\s*Page\s+\d+/i.test(joined)) continue;
+
+    const hasChord = lineTokens.some(t => isChordToken(t) || ["%","%%","%1","%2"].includes(t));
+    const likelySectionOnly = !hasChord && lineTokens.every(t => isLikelySectionLabelToken(t));
+
+    // Section-only line
+    if(likelySectionOnly){
+      const label = joined.replace(/\s+/g," ").trim();
+      if(label) blocks.push("- " + label);
+      continue;
+    }
+
+    // Chord line (possibly prefixed with section label tokens)
+    if(hasChord){
+      // Determine label prefix before first chord
+      let firstChordIdx = lineTokens.findIndex(t => isChordToken(t) || ["%","%%","%1","%2"].includes(t));
+      if(firstChordIdx < 0) firstChordIdx = 0;
+
+      const prefix = lineTokens.slice(0, firstChordIdx).filter(t => isLikelySectionLabelToken(t));
+      if(prefix.length){
+        const label = prefix.join(" ").replace(/\s+/g," ").trim();
+        if(label) blocks.push("- " + label);
+      }
+
+      const mergedBars = mergeSplitBarsByX(r.items);
+      if(mergedBars.length){
+        chordBarsExtracted += mergedBars.filter(t=>t && t!=="%").length;
+        const lines = chunkIntoLines(mergedBars, 4);
+        for(const ln of lines){
+          blocks.push(ln.join(" "));
+        }
+      }
     }
   }
-  if (cur.length){
-    bars.push(cur.join('_'));
-    if (cur.length > 1) splitBarsDetected++;
-  }
+
+  setStatus(`PDF import: ${chordBarsExtracted} bar(s) extracted from ${pdf.numPages} page(s). If any multi-chord bars were missed, add "_" manually (e.g., Dm7_G7).`);
+
+  return blocks.join("\n");
 }
 
-const barsClean = bars.map(b => (b || '').trim()).filter(Boolean);
 
-const out = [];
-out.push('Title:');
-out.push('Composer:');
-out.push('Style:');
-out.push('Tempo:');
-out.push('Time:');
-out.push('Key:');
-out.push('');
-
-for (let i=0;i<barsClean.length;i+=4){
-  out.push(barsClean.slice(i,i+4).join(' '));
-}
-
-let statusMsg = 'PDF import: ' + barsClean.length + ' bar(s) extracted from ' + pdf.numPages + ' page(s).';
-if (splitBarsDetected) statusMsg += '\n' + splitBarsDetected + ' split bar(s) auto-detected.';
-statusMsg += '\nIf any multi-chord bars were missed, add "_" manually (e.g., Dm7_G7).';
-setStatus(statusMsg, 'warning');
-return out.join('\n');
-
-}
-
-// Convert barline-delimited text lines from UG/ChordSheet-like PDFs into CSMPN
 function ugLinesToCSMPN(lines){
   const blocks = [];
 
@@ -1525,6 +1778,7 @@ document.getElementById('btnPrint').addEventListener('click', () => {
 ========================================================= */
 document.getElementById('btnDownloadPdf').addEventListener('click', async () => {
   try{
+    document.body.classList.add('exporting');
     setStatus('Rendering PDF…');
     const canvas = await html2canvas(previewEl, {
       scale: 2,
@@ -1572,6 +1826,7 @@ document.getElementById('btnDownloadPdf').addEventListener('click', async () => 
 
 document.getElementById('btnPng').addEventListener('click', async () => {
   try{
+    document.body.classList.add('exporting');
     setStatus('Rendering PNG...');
     const canvas = await html2canvas(previewEl, {scale: 2, backgroundColor: '#ffffff'});
     const filename = safeFilename(hdr.title.value?.trim() || 'chordsheet') + '.png';
@@ -1593,6 +1848,8 @@ document.getElementById('btnPng').addEventListener('click', async () => {
   }catch(err){
     console.error(err);
     setStatus(`PNG export failed: ${err?.message || err}`, true);
+  }finally{
+    document.body.classList.remove('exporting');
   }
 });
 
@@ -1634,6 +1891,38 @@ Gm7 C7 F7 Bb
 extractHeaderFromText(sourceEl.value);
 updatePreview();
 setStatus('Ready. v1.6 - PDF import fixes applied.');
+
+// --- Optional self-tests (run manually in console): window.runCSMPNSelfTests() ---
+window.runCSMPNSelfTests = function(){
+  const results = [];
+  const assert = (name, cond) => results.push({ name, pass: !!cond });
+  try{
+    // Header extraction sanity
+    const h = extractHeaderFromText("Title: Sin City Blues\nComposer: Czemba\nStyle: Swing\nTempo: 81\nTime: 4/4\nKey: Bb", false);
+    assert("header.title", h.title === "Sin City Blues");
+    assert("header.key", h.key === "Bb");
+    assert("header.tempo", h.tempo === "81");
+
+    // Reject chord-poisoned key
+    const h2 = extractHeaderFromText("Key: G G7sus4", false);
+    assert("reject chordy key", h2.key === "");
+
+    // UG Pro normalization
+    const n = normalizeUGProText("Bb7 | Eb7 | x2 x2\n(times two)\n");
+    assert("normalize times two", n.includes("x2"));
+    assert("dedupe x2", !/x2\s+x2/i.test(n));
+
+    // Barline delimiter normalization
+    const b = normalizeBarlineDelimiters("ǁ Bb7 | % |");
+    assert("normalize unicode bars", b.includes("||"));
+
+  }catch(e){
+    results.push({ name: "exception", pass: false, error: e?.message || String(e) });
+  }
+  console.table(results);
+  return results;
+};
+
 </script>
 </body>
 </html>
