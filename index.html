@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ChordSheet CSMPN Builder v1.6.3</title>
+<title>ChordSheet CSMPN Builder v1.6.4.2</title>
 
 <!-- PDF.js (required for UG Pro PDF text extraction) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -197,7 +197,8 @@
   .measure{
     display:inline-flex;
     align-items:baseline;
-    font-family: inherit; font-weight:800;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-weight:800;
     font-size:18px;
     line-height:1.2;
     white-space:nowrap;      /* keep chord tokens intact */
@@ -300,7 +301,7 @@ body.exporting .sheet{
 <body>
 <div class="app">
   <div class="topbar">
-    <div class="title">ChordSheet CSMPN Builder v1.6.3</div>
+    <div class="title">ChordSheet CSMPN Builder v1.6.4.2</div>
 
     <div class="row">
       <div class="field"><label>Title</label><input id="hdrTitle" placeholder="Song title"></div>
@@ -367,7 +368,16 @@ const statusEl = document.getElementById('status');
 
 // PDF.js worker config (required when loading PDF.js from a CDN on GitHub Pages)
 if (window.pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+  try {
+      if (window.pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
+        // Some Safari/iOS builds treat workerSrc as read-only. Guard and fail soft.
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+        }
+      }
+    } catch (e) {
+      console.warn('pdf.js workerSrc assignment skipped:', e);
+    }
 }
 
 const hdr = {
@@ -528,12 +538,13 @@ function extractHeaderFromText(text, writeToInputs=true){
   // If no explicit Title: and first non-empty line looks like a title, adopt it.
   if (!hdr.title){
     const first = (text.split(/\r?\n/).map(l => l.trim()).find(l => l) || "");
-    if (first && !first.includes(":") && !looksChordy(first) && first.length <= 80){
+    // Avoid promoting section/marker lines (e.g., "- Intro", "= Verse") to Title.
+    const looksLikeMarker = (s) => /^[-=:#;\[]\s*/.test((s||"").trim());
+    if (first && !looksLikeMarker(first) && !first.includes(":") && !looksChordy(first) && first.length <= 80){
       hdr.title = normalizeField("title", first);
     }
   }
 
-  hdr = sanitizeHeaderFields(hdr);
   if (writeToInputs){
     const map = {
       title: elTitle,
@@ -1184,32 +1195,92 @@ function detectChordPro(text){
 }
 
 function importUGText(text){
-  const lines = text.replace(/\r/g,'').split('\n');
-  const out = [];
-  for (const line0 of lines){
-    const line = normalizeAccidentals(line0);
-    if (!line.trim()) continue;
+  // UG Pro TXT exports can be noisy: headers, blank lines, "times two", duplicate repeats, etc.
+  // Goal: produce chord-only CSMPN with 4 bars per line, preserving repeat intent when explicit.
+  text = (text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
-    // preserve bracket headings [Verse], etc.
-    if (/^\[.*\]$/.test(line.trim())){
-      out.push(`- ${line.trim().replace(/^[\[]|[\]]$/g,'')}`);
+  const repeatTokenToN = (t) => {
+    if (!t) return null;
+    const s = String(t).trim();
+    let m = s.match(/^\(\s*x\s*(\d+)\s*\)$/i); // (x2)
+    if (m) return parseInt(m[1], 10);
+    m = s.match(/^x\s*(\d+)$/i); // x2
+    if (m) return parseInt(m[1], 10);
+    m = s.match(/^(\d+)\s*x$/i); // 2x
+    if (m) return parseInt(m[1], 10);
+    return null;
+  };
+
+  const parseTimesPhrase = (tokens) => {
+    if (!tokens || tokens.length < 2) return null;
+    if (String(tokens[0]).toLowerCase() !== "times") return null;
+    const v = String(tokens[1]).toLowerCase();
+    const map = {one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+    if (v in map) return map[v];
+    if (/^\d+$/.test(v)) return parseInt(v, 10);
+    return null;
+  };
+
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+
+  const out = [];
+  for (const line of lines){
+    const raw = line.trim();
+    if (!raw) continue;
+
+    // Section headings: common UG / chord dump patterns
+    let m = raw.match(/^\[(.+?)\]$/); // [Chorus]
+    if (m){ out.push(`= ${m[1].trim()}`); continue; }
+    m = raw.match(/^[-=]\s*(.+)$/); // - Intro / = Verse
+    if (m){ out.push(`= ${m[1].trim()}`); continue; }
+    m = raw.match(/^(#{1,6})\s*(.+)$/); // Markdown
+    if (m){ out.push(`= ${m[2].trim()}`); continue; }
+
+    // Standalone repeat marker line applies to previous chord line
+    const standaloneN = repeatTokenToN(raw) || parseTimesPhrase(raw.split(/\s+/));
+    if (standaloneN && out.length){
+      const prev = (out[out.length-1] || "").trim();
+      if (prev && !/^[=:#;]/.test(prev) && !/^\(.*\)x\d+$/i.test(prev)){
+        out[out.length-1] = `(${prev})x${standaloneN}`;
+      }
       continue;
     }
 
-    // chord-line heuristic: majority of tokens look like chords or markers
-    const toks = line.trim().split(/\s+/);
-    const chordLike = toks.filter(isChordLikeToken).length;
-    if (toks.length && chordLike / toks.length >= 0.7){
-      out.push(toCSMPNBars(toks));
+    // Tokenize
+    let toks = raw.split(/\s+/).filter(Boolean);
+
+    // Strip common UG "times N" that can appear after a chord line
+    let repeatN = repeatTokenToN(toks[toks.length-1]);
+    if (!repeatN && toks.length >= 2){
+      repeatN = parseTimesPhrase(toks.slice(-2));
+    }
+
+    // Remove trailing repeat tokens from chord candidates
+    if (repeatN){
+      if (repeatTokenToN(toks[toks.length-1])) toks = toks.slice(0, -1);
+      else if (parseTimesPhrase(toks.slice(-2))) toks = toks.slice(0, -2);
+    }
+
+    // Determine if this is chord-dominant
+    const chordLike = toks.reduce((acc,t)=>acc + (isChordLikeToken(t) ? 1 : 0), 0);
+    if (!toks.length || (chordLike / toks.length) < 0.6) continue;
+
+    // Normalize chords
+    const chords = toks.map(t => normalizeChordToken(t)).filter(Boolean);
+    if (!chords.length) continue;
+
+    // Convert to 4-bars-per-line CSMPN; if repeatN is present, wrap as a single repeat block
+    let block = toCSMPNBars(chords).trim();
+    if (repeatN && repeatN > 1){
+      // Collapse newlines inside the repeat block for safer syntax: (A B C D)x2
+      block = block.replace(/\n+/g, " ").trim();
+      out.push(`(${block})x${repeatN}`);
+    } else {
+      out.push(block);
     }
   }
 
-  if (!out.length){
-    setStatus('No chord lines detected in text.', true);
-    return '';
-  }
-  setStatus(`Imported UG text: ${out.length} line(s).`);
-  return out.join('\n');
+  return out.join("\n").trim();
 }
 
 function importChordPro(text){
@@ -1401,263 +1472,189 @@ function toCSMPNBars(chords){
    - Prefers barline reconstruction when PDFs contain | / ‖ / ǁ
    - Falls back to spatial clustering for "floating chord glyph" PDFs
 ========================================================= */
-
-// ------------------------------
-// Normalization & validation helpers
-// ------------------------------
-function normalizeChordToken(raw){
-  if(raw == null) return "";
-  let t = String(raw);
-
-  // Normalize common PDF glyph variants
-  t = t.replace(/\u00A0/g, " ");                // NBSP
-  t = t.replace(/[♭𝄫]/g, "b");                   // flat / double-flat
-  t = t.replace(/[♯𝄪]/g, "#");                   // sharp / double-sharp
-  t = t.replace(/[–—−]/g, "-");                  // dash variants
-  t = t.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-
-  // Trim and strip trivial trailing punctuation
-  t = t.trim().replace(/^[,.;:]+|[,.;:]+$/g, "");
-  return t;
-}
-
-function isChordToken(tok){
-  const t = normalizeChordToken(tok);
-  if(!t) return false;
-
-  // Hard reject common non-chord tokens seen in PDF imports
-  if(t.length > 18) return false; // prevents long section labels like "AintGotNothinButTheBlues"
-  if(/^(Title|Composer|Artist|Style|Tempo|Time|Key|Capo|Transpose)\:?$/i.test(t)) return false;
-
-  // ChordSheet simile / repeats / endings markers are allowed elsewhere, but not chords
-  if(/^\d+\.$/.test(t)) return false;
-
-  return isChordLikeTokenPDF(t);
-}
-
-function looksLikeChordLine(line){
-  if(!line) return false;
-  const toks = String(line).trim().split(/\s+/).filter(Boolean);
-  if(toks.length < 2) return false;
-  let chordCount = 0;
-  for(const tok of toks){
-    if(isChordToken(tok)) chordCount++;
-  }
-  return chordCount >= Math.max(2, Math.ceil(toks.length * 0.5));
-}
-
-function sanitizeHeaderFields(h){
-  const out = { ...(h||{}) };
-
-  const clean = (v)=> (v==null ? "" : String(v)).replace(/\s+/g," ").trim();
-
-  out.title = clean(out.title);
-  out.composer = clean(out.composer);
-  out.style = clean(out.style);
-  out.key = clean(out.key);
-  out.time = clean(out.time);
-  out.tempo = clean(out.tempo);
-
-  // Reject chord-lines accidentally captured as header fields
-  if(out.title && looksLikeChordLine(out.title)) out.title = "";
-  if(out.composer && looksLikeChordLine(out.composer)) out.composer = "";
-  if(out.style && looksLikeChordLine(out.style)) out.style = "";
-
-  // Key validation: accept common spellings like Bb, F#, C#m, Abm, etc.
-  if(out.key && !/^[A-G][b#]?(m|maj|min)?\b/i.test(out.key)) out.key = "";
-  if(out.key && out.key.split(/\s+/).length > 1) out.key = "";
-
-  // Time validation
-  if(out.time && !/^\d+\/\d+$/.test(out.time)) out.time = "";
-
-  // Tempo validation (reasonable bounds)
-  if(out.tempo){
-    const n = parseInt(out.tempo, 10);
-    if(!Number.isFinite(n) || n < 20 || n > 320) out.tempo = "";
-    else out.tempo = String(n);
-  }
-
-  return out;
-}
-
-function isLikelySectionLabelToken(tok){
-  const t = normalizeChordToken(tok);
-  if(!t) return false;
-  if(isChordToken(t)) return false;
-  if(/^\d+(st|nd|rd|th)?$/i.test(t)) return false;
-  if(/^x\d+$/i.test(t)) return true;
-  // Words like "Intro", "Verse", "Chorus1", "Bridge", "Solo", "Tag", "Coda", "DOUBLE-TIME"
-  if(/^(intro|verse|chorus\d*|bridge|solo|tag|coda|ending|outro|pre-?chorus)\b/i.test(t)) return true;
-  if(/^[A-Z][A-Za-z0-9_-]{2,}$/.test(t) && !/[#b]/.test(t)) return true;
-  if(/^[A-Z0-9_-]{4,}$/.test(t) && !/[#b]/.test(t)) return true;
-  return false;
-}
-
-function chunkIntoLines(tokens, perLine){
-  const out = [];
-  for(let i=0;i<tokens.length;i+=perLine){
-    out.push(tokens.slice(i,i+perLine));
-  }
-  return out;
-}
-
-// Apply a header object to form fields safely
-function applyHeader(header){
-  const h = sanitizeHeaderFields(header || {});
-  if(h.title)   hdrTitle.value = h.title;
-  if(h.composer)hdrComposer.value = h.composer;
-  if(h.style)   hdrStyle.value = h.style;
-  if(h.key)     hdrKey.value = h.key;
-  if(h.time)    hdrTime.value = h.time;
-  if(h.tempo)   hdrTempo.value = h.tempo;
-}
-
-
 async function importUGProPDF(file){
-  // Robust PDF text extraction with positional grouping (handles UG Pro / image-ish layouts better)
-  if(typeof pdfjsLib === "undefined"){
-    throw new Error("PDF.js not loaded. Make sure the pdfjs-dist script is available.");
-  }
+  if (!window.pdfjsLib) throw new Error("PDF.js not loaded.");
+  statusEl.textContent = "Reading PDF…";
   const arrayBuffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  const pdfOpts = { data: arrayBuffer };
+  // If the worker cannot be configured (common on iOS Safari), fall back to no-worker mode.
+  try {
+    if (!pdfjsLib?.GlobalWorkerOptions?.workerSrc) pdfOpts.disableWorker = true;
+  } catch (e) {
+    pdfOpts.disableWorker = true;
+  }
+  const loadingTask = pdfjsLib.getDocument(pdfOpts);
   const pdf = await loadingTask.promise;
 
-  const rows = []; // {page, y, items:[{t,x,endX}]}
+  const meta = { title:"", composer:"", style:"", tempo:"", time:"", key:"" };
+  const bodyLines = [];
+  let pendingBars = [];
 
-  for(let p=1; p<=pdf.numPages; p++){
+  const flushBars = () => {
+    while (pendingBars.length){
+      bodyLines.push(pendingBars.splice(0,4).join(" "));
+    }
+  };
+
+  const normLine = (s) => (s ?? "").toString()
+    .replace(/\u00A0/g, " ")
+    .replace(/[ǁ∥]/g, "||")
+    .replace(/[“”]/g, "\"")
+    .replace(/[‘’]/g, "'")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const isBarToken = (t) => /^(\|{1,2})$/.test(t);
+
+  const splitTokens = (line) => {
+    // Ensure barlines are tokenized
+    let s = normLine(line);
+    s = s.replace(/(\|{1,2})/g, " $1 ");
+    return s.split(" ").filter(Boolean);
+  };
+
+  const looksLikeSection = (line, tokens, chordCount) => {
+    if (!line) return false;
+    if (chordCount > 0) return false;
+    if (line.length > 48) return false;
+    // common section words or "Chorus1" style
+    if (/^(intro|verse|chorus|bridge|solo|tag|ending|outro|interlude|pre[-\s]?chorus|turnaround)\b/i.test(line)) return true;
+    if (/^(chorus|verse|bridge|solo)\s*\d+$/i.test(line)) return true;
+    // ALL CAPS markers like DOUBLE-TIME
+    if (/^[A-Z][A-Z0-9\-\s]{3,}$/.test(line) && !/TITLE|COMPOSER|STYLE|TEMPO|TIME|KEY/.test(line)) return true;
+    // "ENDXXXX" marker
+    if (/^END[A-Z0-9\-]+$/.test(line)) return true;
+    return false;
+  };
+
+  const parseHeaderFromLine = (line) => {
+    const m1 = line.match(/^\s*Title:\s*(.*)$/i);
+    if (m1) { meta.title = m1[1].trim(); return true; }
+    const m2 = line.match(/^\s*(Composer|Artist):\s*(.*)$/i);
+    if (m2) { meta.composer = m2[2].trim(); return true; }
+    const m3 = line.match(/^\s*Style:\s*(.*)$/i);
+    if (m3) { meta.style = m3[1].trim(); return true; }
+    const m4 = line.match(/^\s*Tempo:\s*(.*)$/i);
+    if (m4) { meta.tempo = m4[1].trim(); return true; }
+    const m5 = line.match(/^\s*Time:\s*(.*)$/i);
+    if (m5) { meta.time = m5[1].trim(); return true; }
+    const m6 = line.match(/^\s*Key:\s*(.*)$/i);
+    if (m6) { meta.key = m6[1].trim(); return true; }
+    return false;
+  };
+
+  for (let p = 1; p <= pdf.numPages; p++){
+    statusEl.textContent = `Parsing PDF… page ${p}/${pdf.numPages}`;
     const page = await pdf.getPage(p);
-    const viewport = page.getViewport({ scale: 1.25 });
-    const content = await page.getTextContent();
+    const tc = await page.getTextContent();
+    const items = tc.items
+      .map(it => ({
+        str: (it.str ?? "").toString(),
+        x: it.transform[4] ?? 0,
+        y: it.transform[5] ?? 0
+      }))
+      .filter(it => it.str && it.str.trim());
 
-    // Group tokens by approximate row (y-bucket)
+    // Cluster by y into "visual lines"
     const buckets = new Map();
-    for(const it of content.items){
-      const raw = it.str;
-      if(!raw || !raw.trim()) continue;
-
-      const t = normalizeChordToken(raw);
-      if(!t) continue;
-
-      const x = it.transform[4];
-      const y = it.transform[5];
-      const endX = x + (it.width || 0);
-
-      const yKey = Math.round(y / 2) * 2; // bucket
-      if(!buckets.has(yKey)) buckets.set(yKey, []);
-      buckets.get(yKey).push({ t, x, endX });
+    for (const it of items){
+      const yk = Math.round(it.y * 2) / 2; // 0.5pt buckets
+      if (!buckets.has(yk)) buckets.set(yk, []);
+      buckets.get(yk).push(it);
     }
 
-    const yKeys = Array.from(buckets.keys()).sort((a,b)=>b-a); // top-to-bottom in PDF coordinates
-    for(const yKey of yKeys){
-      const items = buckets.get(yKey).sort((a,b)=>a.x-b.x);
-      // Collapse duplicate tokens that often appear (same x,y)
-      const dedup = [];
-      for(const item of items){
-        const last = dedup[dedup.length-1];
-        if(last && Math.abs(last.x-item.x) < 0.5 && last.t === item.t) continue;
-        dedup.push(item);
-      }
-      rows.push({ page: p, y: yKey, items: dedup });
-    }
-  }
+    const yKeys = Array.from(buckets.keys()).sort((a,b) => b-a); // top-to-bottom
+    for (const yk of yKeys){
+      const lineItems = buckets.get(yk).sort((a,b) => a.x-b.x);
+      // Join while preserving short gaps; PDF.js tends to split pipes and chords
+      const rawLine = lineItems.map(it => it.str).join(" ");
+      const line = normLine(rawLine);
+      if (!line) continue;
 
-  // Build fullText for header extraction (used later by caller too)
-  const fullText = rows
-    .map(r => r.items.map(i=>i.t).join(" ").trim())
-    .filter(Boolean)
-    .join("\n");
+      // header lines
+      if (parseHeaderFromLine(line)) continue;
 
-  // Helper: merge close chords into split-bars using X gaps
-  function mergeSplitBarsByX(items){
-    const chordItems = items.filter(i => isChordToken(i.t) || ["%","%%","%1","%2","1.","2."].includes(i.t));
-    if(chordItems.length === 0) return [];
+      const tokens = splitTokens(line);
+      const chordTokens = tokens.filter(t => isChordToken(t));
+      const chordCount = chordTokens.length;
 
-    // Compute gaps between adjacent chord items
-    const gaps = [];
-    for(let i=0;i<chordItems.length-1;i++){
-      gaps.push(Math.max(0, chordItems[i+1].x - chordItems[i].endX));
-    }
-    gaps.sort((a,b)=>a-b);
-    const median = gaps.length ? gaps[Math.floor(gaps.length/2)] : 10;
-    const splitThreshold = Math.max(2.5, Math.min(10, median * 0.45));
-
-    const bars = [];
-    for(const ci of chordItems){
-      const t = ci.t;
-      if(!isChordToken(t) && !["%","%%","%1","%2","1.","2."].includes(t)) continue;
-
-      if(bars.length === 0){
-        bars.push({ text: t, lastEndX: ci.endX, chordCount: isChordToken(t) ? 1 : 0 });
+      // If line has no chords: maybe title / section / ignore
+      if (chordCount === 0){
+        // candidate title line near top of doc
+        if (!meta.title && line.length <= 80 && !line.includes(":") && !/^(page\s*\d+)/i.test(line)){
+          meta.title = line;
+          continue;
+        }
+        if (looksLikeSection(line, tokens, chordCount)){
+          flushBars();
+          let label = line;
+          if (/^END([A-Z0-9\-]+)$/.test(line)){
+            label = "End " + line.replace(/^END/i,"").replace(/_/g," ");
+          }
+          bodyLines.push(`- ${label}`);
+          continue;
+        }
         continue;
       }
 
-      const prev = bars[bars.length-1];
-      const gap = ci.x - prev.lastEndX;
-      const canMerge = isChordToken(t) && prev.chordCount > 0 && prev.chordCount < 3 && gap >= 0 && gap < splitThreshold;
-
-      if(canMerge){
-        prev.text = prev.text + "_" + t;
-        prev.lastEndX = ci.endX;
-        prev.chordCount += 1;
-      }else{
-        bars.push({ text: t, lastEndX: ci.endX, chordCount: isChordToken(t) ? 1 : 0 });
-      }
-    }
-    return bars.map(b => b.text);
-  }
-
-  // Convert rows to CSMPN-ish block text (section labels + 4-bars-per-line)
-  const blocks = [];
-  let chordBarsExtracted = 0;
-
-  for(const r of rows){
-    const lineTokens = r.items.map(i=>i.t).filter(Boolean);
-    if(lineTokens.length === 0) continue;
-
-    // Skip obvious header lines (but do not require headers to exist)
-    const joined = lineTokens.join(" ").trim();
-    if(/^(Title|Composer|Artist|Style|Tempo|Time|Key)\s*:/i.test(joined)) continue;
-    if(/^\s*Page\s+\d+/i.test(joined)) continue;
-
-    const hasChord = lineTokens.some(t => isChordToken(t) || ["%","%%","%1","%2"].includes(t));
-    const likelySectionOnly = !hasChord && lineTokens.every(t => isLikelySectionLabelToken(t));
-
-    // Section-only line
-    if(likelySectionOnly){
-      const label = joined.replace(/\s+/g," ").trim();
-      if(label) blocks.push("- " + label);
-      continue;
-    }
-
-    // Chord line (possibly prefixed with section label tokens)
-    if(hasChord){
-      // Determine label prefix before first chord
-      let firstChordIdx = lineTokens.findIndex(t => isChordToken(t) || ["%","%%","%1","%2"].includes(t));
-      if(firstChordIdx < 0) firstChordIdx = 0;
-
-      const prefix = lineTokens.slice(0, firstChordIdx).filter(t => isLikelySectionLabelToken(t));
-      if(prefix.length){
-        const label = prefix.join(" ").replace(/\s+/g," ").trim();
-        if(label) blocks.push("- " + label);
-      }
-
-      const mergedBars = mergeSplitBarsByX(r.items);
-      if(mergedBars.length){
-        chordBarsExtracted += mergedBars.filter(t=>t && t!=="%").length;
-        const lines = chunkIntoLines(mergedBars, 4);
-        for(const ln of lines){
-          blocks.push(ln.join(" "));
+      // chord line: build bars
+      let bars = [];
+      if (tokens.some(t => isBarToken(t))){
+        let seg = [];
+        for (const t of tokens){
+          if (isBarToken(t)){
+            if (seg.length){
+              bars.push(seg.join("_"));
+              seg = [];
+            } else {
+              // consecutive bars -> empty bar; skip
+            }
+            continue;
+          }
+          if (isChordToken(t)) seg.push(t);
         }
+        if (seg.length) bars.push(seg.join("_"));
+      } else {
+        // No explicit bars: assume each chord is a bar
+        bars = chordTokens.slice();
+      }
+
+      // Append bars
+      for (const b of bars){
+        if (!b) continue;
+        pendingBars.push(b);
       }
     }
   }
 
-  setStatus(`PDF import: ${chordBarsExtracted} bar(s) extracted from ${pdf.numPages} page(s). If any multi-chord bars were missed, add "_" manually (e.g., Dm7_G7).`);
+  flushBars();
 
-  return blocks.join("\n");
+  // Apply normalization / validation to meta and sync UI
+  const hdrText = [
+    meta.title ? `Title: ${meta.title}` : "",
+    meta.composer ? `Composer: ${meta.composer}` : "",
+    meta.style ? `Style: ${meta.style}` : "",
+    meta.tempo ? `Tempo: ${meta.tempo}` : "",
+    meta.time ? `Time: ${meta.time}` : "",
+    meta.key ? `Key: ${meta.key}` : ""
+  ].filter(Boolean).join("\n");
+
+  // This will sanitize and populate form fields.
+  extractHeaderFromText(hdrText, true);
+
+  const hdr = readHeaderInputs();
+  let out = applyHeaderToText("", hdr);
+  if (out && !out.endsWith("\n\n")) out += "\n\n";
+  out += bodyLines.join("\n");
+
+  const chordBars = bodyLines.join(" ").split(/\s+/).filter(t => isChordToken(t) || t.includes("_") || t === "%");
+  statusEl.textContent = `PDF import: ${chordBars.length} bar(s) extracted from ${pdf.numPages} page(s).`;
+
+  return out.trim();
 }
 
-
+// Convert barline-delimited text lines from UG/ChordSheet-like PDFs into CSMPN
 function ugLinesToCSMPN(lines){
   const blocks = [];
 
