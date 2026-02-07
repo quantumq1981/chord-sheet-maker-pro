@@ -163,64 +163,264 @@
     margin: 0 auto;
   }
 
-  /* ===== Flow (barline) renderer ===== */
+  /* ===== ChordSheet layout & typography ===== */
+  .sheetHeader{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:16px;
+    border-bottom:2px solid #111;
+    padding-bottom:8px;
+    margin-bottom:16px;
+  }
+
+  .headerInfo{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+
+  .headerMeta{
+    font-size:14px;
+    font-style:italic;
+    color:#222;
+  }
+
   .songTitle{
     font-size:42px;
     font-weight:900;
-    margin:0 0 6px 0;
+    margin:0;
     letter-spacing:-0.02em;
+    text-transform:uppercase;
   }
 
-  .metaLine{ margin:2px 0; font-size:14px; }
-  .metaLabel{ font-weight:900; }
+  .headerComposer{
+    font-size:14px;
+    font-weight:600;
+  }
+
+  .headerRight{
+    text-align:right;
+    min-width:120px;
+  }
+
+  .tempoLine{
+    font-size:18px;
+    font-weight:700;
+  }
+
+  .timeSig{
+    font-size:18px;
+    font-weight:700;
+  }
 
   .sectionText{
-    margin:14px 0 6px 0;
+    margin:18px 0 6px 0;
     font-size:18px;
     font-weight:900;
+  }
+
+  .labelBox{
+    display:inline-block;
+    border:2px solid #111;
+    padding:2px 8px;
+    border-radius:4px;
+    font-size:16px;
+    font-weight:700;
+  }
+
+  .dividerRow{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin:18px 0 8px 0;
+  }
+
+  .dividerRow .rule{
+    flex:1;
+    height:2px;
+    background:#111;
   }
 
   .barlineRow{
-    display:flex;
-    flex-wrap:wrap;          /* crucial for portrait phones */
-    align-items:baseline;
-    gap:0.45rem;
-    margin: 8px 0;
+    display:grid;
+    grid-template-columns: 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px;
+    align-items:center;
+    gap:0;
+    margin: 12px 0 6px 0;
+    padding-top:8px;
+    position:relative;
   }
 
-  .barSep{
-    font-weight:900;
-    font-size:18px;
-    line-height:1;
+  .barline{
+    position:relative;
+    height:2.2em;
+  }
+
+  .barline::before,
+  .barline::after{
+    content:'';
+    position:absolute;
+    top:0;
+    bottom:0;
+    border-left:2px solid #111;
+  }
+
+  .barline.single::before{
+    left:50%;
+  }
+
+  .barline.double::before{
+    left:40%;
+  }
+
+  .barline.double::after{
+    left:60%;
+  }
+
+  .barline.final::before{
+    left:40%;
+  }
+
+  .barline.final::after{
+    left:65%;
+    border-left-width:4px;
+  }
+
+  .barline.repeat-start::before{
+    left:30%;
+    border-left-width:4px;
+  }
+
+  .barline.repeat-start::after{
+    left:60%;
+  }
+
+  .barline.repeat-start span,
+  .barline.repeat-end span{
+    position:absolute;
+    right:2px;
+    top:45%;
+    width:6px;
+    height:6px;
+    border-radius:50%;
+    background:#111;
+    box-shadow:0 12px 0 #111;
+  }
+
+  .barline.repeat-start span{
+    right:0;
+  }
+
+  .barline.repeat-end::before{
+    left:40%;
+  }
+
+  .barline.repeat-end::after{
+    left:70%;
+    border-left-width:4px;
+  }
+
+  .barline.repeat-end span{
+    left:0;
   }
 
   .measure{
-    display:inline-flex;
-    align-items:baseline;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    font-weight:800;
-    font-size:18px;
-    line-height:1.2;
-    white-space:nowrap;      /* keep chord tokens intact */
-  }
-
-  .measure.split{
-    gap: 0.55rem;
+    display:flex;
+    align-items:flex-end;
+    justify-content:flex-start;
+    min-height:2.2em;
+    padding:0 6px;
+    white-space:nowrap;
   }
 
   .beats{
     display:inline-flex;
-    gap: 0.55rem;
-    align-items:baseline;
-  }
-  .beat{
-    display:inline-block;
+    gap:0.6rem;
+    align-items:flex-end;
+    flex-wrap:wrap;
   }
 
+  .beat{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:2px;
+  }
+
+  .beatAnnotation{
+    font-size:12px;
+    font-style:italic;
+    color:#111;
+  }
+
+  .chord{
+    display:inline-flex;
+    align-items:flex-start;
+    font-family: "Georgia", "Times New Roman", serif;
+    font-weight:700;
+    font-size:22px;
+    line-height:1;
+  }
+
+  .chord-root{
+    font-weight:800;
+    font-size:24px;
+  }
+
+  .chord-quality{
+    font-size:14px;
+    font-variant:small-caps;
+    margin-left:2px;
+    margin-top:2px;
+  }
+
+  .chord-bass{
+    font-size:14px;
+    margin-left:3px;
+  }
+
+  .chord-bass::before{
+    content:"/";
+    margin-right:2px;
+  }
+
+  .musicSymbol{
+    font-size:22px;
+    font-family:"Georgia","Times New Roman",serif;
+  }
+
+  .repeatSymbol{
+    font-size:24px;
+  }
+
+  .endingBracket{
+    grid-row:1;
+    align-self:start;
+    justify-self:stretch;
+    margin-top:-16px;
+    border-top:2px solid #111;
+    height:14px;
+    position:relative;
+  }
+
+  .endingBracket::before{
+    content:'';
+    position:absolute;
+    left:0;
+    top:-2px;
+    height:14px;
+    border-left:2px solid #111;
+  }
 
   .endingLabel{
-    font-weight:900;
-    margin-right:6px;
+    position:absolute;
+    top:-20px;
+    left:4px;
+    font-size:12px;
+    font-weight:700;
+    background:#fff;
+    padding:0 4px;
   }
 
   .annotation{
@@ -262,28 +462,11 @@ body.exporting .sheet{
   font-size: 48px !important;
   font-weight: 900 !important;
   letter-spacing: -0.5px;
-  margin: 0 0 8px 0 !important;
-}
-.metaLine{
-  font-size: 16px !important;
-  line-height: 1.35 !important;
-  margin: 2px 0 !important;
-}
-.metaLabel{
-  font-weight: 800 !important;
-  display: inline-block;
-  min-width: 78px;
 }
 .sectionText{
   font-size: 22px !important;
   font-weight: 900 !important;
   margin: 18px 0 8px 0 !important;
-}
-.barText{
-  font-family: ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
-  font-size: 18px !important;
-  font-weight: 700 !important;
-  line-height: 1.6 !important;
 }
 
 @media print{
@@ -730,6 +913,11 @@ function normalizeBarlineDelimiters(line){
   // ǁ / ‖ / ∥ are treated as double barlines
   return (line || '')
     .replace(/[ǁ‖∥]/g, '||')
+    .replace(/\|\|:/g, ' ||: ')
+    .replace(/:\|\|/g, ' :|| ')
+    .replace(/\|:/g, ' |: ')
+    .replace(/:\|/g, ' :| ')
+    .replace(/\|\]/g, ' |] ')
     .replace(/\|\|/g, ' || ')
     .replace(/\|/g, ' | ')
     .replace(/\s+/g, ' ')
@@ -787,7 +975,7 @@ function tokenizeBars(line){
   // If any token still contains barlines (rare PDF extraction cases), explode them.
   const exploded = [];
   for (const t of out){
-    if (t.includes('|') && t !== '|' && t !== '||'){
+    if (t.includes('|') && !isBarlineToken(t)){
       let buf = '';
       let i = 0;
       while (i < t.length){
@@ -811,12 +999,33 @@ function tokenizeBars(line){
   return exploded;
 }
 
+function isBarlineToken(tok){
+  return ['|', '||', '|:', ':|', '||:', ':||', '|]'].includes(tok);
+}
+
+function mapBarlineToken(tok){
+  switch (tok){
+    case '||':
+      return 'double';
+    case '|:':
+    case '||:':
+      return 'repeat-start';
+    case ':|':
+    case ':||':
+      return 'repeat-end';
+    case '|]':
+      return 'final';
+    default:
+      return 'single';
+  }
+}
+
 function transposeChordToken(tok, semis, pref){
   // structural tokens
   if (!tok) return tok;
   const upper = tok.toUpperCase();
   if (tok === '%' || tok === '%%' || /^%\d+$/.test(tok)) return tok;
-  if (tok === '*' || tok === '||' || tok === '|' ) return tok;
+  if (tok === '*' || isBarlineToken(tok)) return tok;
   if (upper === 'N.C.' || upper === 'NC') return tok;
   if (/^\d+\.$/.test(tok)) return tok; // endings marker token itself
   if (tok.startsWith('"') && tok.endsWith('"')) return tok; // annotation token
@@ -845,7 +1054,10 @@ function transposeChordSimple(ch, semis, pref){
   const upper = s.toUpperCase();
   if (upper === 'N.C.' || upper === 'NC') return s;
 
-  const m = s.match(/^([A-G])([b#]?)(.*?)(?:\/([A-G])([b#]?))?$/);
+  const prefix = ['$', 'o', 'O'].includes(s[0]) ? s[0] : '';
+  const body = prefix ? s.slice(1) : s;
+
+  const m = body.match(/^([A-G])([b#]?)(.*?)(?:\/([A-G])([b#]?))?$/);
   if (!m) return s;
 
   const root = m[1] + (m[2]||'');
@@ -855,7 +1067,8 @@ function transposeChordSimple(ch, semis, pref){
   const trRoot = transposeNote(root, semis, pref);
   const trBass = bass ? transposeNote(bass, semis, pref) : '';
 
-  return trBass ? `${trRoot}${qual}/${trBass}` : `${trRoot}${qual}`;
+  const transposed = trBass ? `${trRoot}${qual}/${trBass}` : `${trRoot}${qual}`;
+  return `${prefix}${transposed}`;
 }
 
 function transposeWholeText(text, semis){
@@ -905,16 +1118,18 @@ function transposeWholeText(text, semis){
 ========================================================= */
 function parseBarStructures(tokens){
   // Returns flat array of bar objects after expanding repeats.
-  // Also consumes UG-style barline tokens: '|' (single) and '||' (double).
+  // Also consumes UG-style barline tokens: '|' (single) and repeat/final variants.
   const out = [];
   let i = 0;
 
-  let pendingDoubleLeft = false;
+  let pendingLeft = null;
 
-  const markDoubleBoundary = () => {
+  const setBoundary = (type) => {
     const prev = out[out.length - 1];
-    if (prev) prev.doubleRight = true;
-    pendingDoubleLeft = true;
+    if (prev && type !== 'repeat-start'){
+      prev.rightBar = type;
+    }
+    pendingLeft = type === 'repeat-end' || type === 'final' ? null : type;
   };
 
   const readTimes = (tok) => {
@@ -923,8 +1138,8 @@ function parseBarStructures(tokens){
   };
 
   const skipBarlines = () => {
-    while (i < tokens.length && (tokens[i] === '|' || tokens[i] === '||')){
-      if (tokens[i] === '||') markDoubleBoundary();
+    while (i < tokens.length && isBarlineToken(tokens[i])){
+      setBoundary(mapBarlineToken(tokens[i]));
       i++;
     }
   };
@@ -932,8 +1147,18 @@ function parseBarStructures(tokens){
   while (i < tokens.length){
     let tok = tokens[i];
 
-    if (tok === '|'){ i++; continue; }
-    if (tok === '||'){ markDoubleBoundary(); i++; continue; }
+    if (isBarlineToken(tok)){
+      setBoundary(mapBarlineToken(tok));
+      i++;
+      continue;
+    }
+
+    if (/^".*"$/.test(tok) && out.length){
+      const prev = out[out.length - 1];
+      prev.token = `${prev.token || ''} ${tok}`.trim();
+      i++;
+      continue;
+    }
 
     // Endings token - associate with next bar (skipping delimiters)
     if (/^\d+\.$/.test(tok)){
@@ -942,8 +1167,14 @@ function parseBarStructures(tokens){
       skipBarlines();
       if (i < tokens.length){
         const nextTok = tokens[i];
-        out.push({type:'bar', token: nextTok, endingLabel, doubleLeft: pendingDoubleLeft || false, doubleRight: false});
-        pendingDoubleLeft = false;
+        out.push({
+          type:'bar',
+          token: nextTok,
+          endingLabel,
+          leftBar: pendingLeft || 'single',
+          rightBar: 'single',
+        });
+        pendingLeft = null;
         i++;
       }
       continue;
@@ -962,8 +1193,7 @@ function parseBarStructures(tokens){
       while (i < tokens.length){
         const t = tokens[i];
 
-        if (t === '|' ){ i++; continue; }
-        if (t === '||'){ i++; continue; }
+        if (isBarlineToken(t)){ i++; continue; }
 
         if (t.endsWith(')') || /\)x\d+$/i.test(t)){
           const before = t.replace(/\)x\d+$/i,'').replace(/\)$/,'');
@@ -987,15 +1217,25 @@ function parseBarStructures(tokens){
 
       for (let rep=0; rep<times; rep++){
         for (const gt of groupTokens){
-          out.push({type:'bar', token: gt, doubleLeft: pendingDoubleLeft || false, doubleRight: false});
-          pendingDoubleLeft = false;
+          out.push({
+            type:'bar',
+            token: gt,
+            leftBar: pendingLeft || 'single',
+            rightBar: 'single',
+          });
+          pendingLeft = null;
         }
       }
       continue;
     }
 
-    out.push({type:'bar', token: tok, doubleLeft: pendingDoubleLeft || false, doubleRight: false});
-    pendingDoubleLeft = false;
+    out.push({
+      type:'bar',
+      token: tok,
+      leftBar: pendingLeft || 'single',
+      rightBar: 'single',
+    });
+    pendingLeft = null;
     i++;
   }
 
@@ -1006,22 +1246,130 @@ function parseBarStructures(tokens){
 /* =========================================================
    Rendering (ChordSheet-style only)
 ========================================================= */
+function formatChordQuality(quality){
+  if (!quality) return '';
+  let q = quality;
+  q = q.replace(/^maj/i, 'MA');
+  q = q.replace(/^ma/i, 'MA');
+  q = q.replace(/dim/i, '°');
+  q = q.replace(/aug/i, '+');
+  return q;
+}
+
+function parseChordToken(token){
+  const raw = token || '';
+  const normalized = normalizeAccidentals(raw);
+  const match = normalized.match(/^([A-G])([b#]?)(.*?)(?:\/([A-G])([b#]?))?$/);
+  if (!match) return null;
+  const root = match[1] + (match[2] || '');
+  const quality = match[3] || '';
+  const bass = match[4] ? (match[4] + (match[5] || '')) : '';
+  const displayRoot = root.replace(/b/g, '♭').replace(/#/g, '♯');
+  const displayBass = bass.replace(/b/g, '♭').replace(/#/g, '♯');
+  return {
+    root: displayRoot,
+    quality: formatChordQuality(quality),
+    bass: displayBass,
+  };
+}
+
+function renderChordToken(token){
+  const parsed = parseChordToken(token);
+  if (!parsed) return `<span class="chord">${escapeHtml(token)}</span>`;
+  const quality = parsed.quality ? `<span class="chord-quality">${escapeHtml(parsed.quality)}</span>` : '';
+  const bass = parsed.bass ? `<span class="chord-bass">${escapeHtml(parsed.bass)}</span>` : '';
+  return `<span class="chord"><span class="chord-root">${escapeHtml(parsed.root)}</span>${quality}${bass}</span>`;
+}
+
+function renderBeatContent(rawBeat){
+  const beat = (rawBeat || '').trim();
+  if (!beat) return `<span class="beat"><span class="chord">&nbsp;</span></span>`;
+
+  const annotationMatch = beat.match(/"([^"]+)"/);
+  const annotation = annotationMatch ? annotationMatch[1] : '';
+  const beatWithoutAnnotation = beat.replace(/"[^"]+"/g, '').trim();
+
+  const renderSymbol = (symbol) => `<span class="musicSymbol">${symbol}</span>`;
+  const symbolMap = {
+    '$': '𝄋',
+    'segno': '𝄋',
+    'o': '𝄌',
+    'O': '𝄌',
+    'coda': '𝄌',
+    'fermata': '𝄐',
+  };
+
+  let chordHtml = '';
+  const normalizedBeat = beatWithoutAnnotation.trim();
+  const prefixSymbol = normalizedBeat[0];
+  const trailingChord = normalizedBeat.slice(1).trim();
+
+  if (!normalizedBeat){
+    chordHtml = `<span class="chord">&nbsp;</span>`;
+  } else if (normalizedBeat === '%'){
+    chordHtml = `<span class="musicSymbol repeatSymbol">𝄎</span>`;
+  } else if (normalizedBeat === '%%'){
+    chordHtml = `<span class="musicSymbol repeatSymbol">𝄏</span>`;
+  } else if (symbolMap[normalizedBeat]){
+    chordHtml = renderSymbol(symbolMap[normalizedBeat]);
+  } else if (symbolMap[prefixSymbol] && trailingChord){
+    chordHtml = `${renderSymbol(symbolMap[prefixSymbol])}${renderChordToken(trailingChord)}`;
+  } else if (normalizedBeat.toUpperCase() === 'N.C.' || normalizedBeat.toUpperCase() === 'NC'){
+    chordHtml = `<span class="chord">${escapeHtml(normalizedBeat)}</span>`;
+  } else if (normalizedBeat.toLowerCase() === 'fine'){
+    chordHtml = `<span class="musicSymbol"><em>fine</em></span>`;
+  } else if (normalizedBeat.toLowerCase().startsWith('d.s')){
+    chordHtml = `<span class="musicSymbol"><em>${escapeHtml(normalizedBeat)}</em></span>`;
+  } else {
+    chordHtml = renderChordToken(normalizedBeat);
+  }
+
+  const annotationHtml = annotation ? `<span class="beatAnnotation">${escapeHtml(annotation)}</span>` : '';
+  return `<span class="beat">${annotationHtml}${chordHtml}</span>`;
+}
+
+function renderBarline(type){
+  const t = type || 'single';
+  const dots = t === 'repeat-start' || t === 'repeat-end' ? '<span></span>' : '';
+  return `<div class="barline ${t}">${dots}</div>`;
+}
+
+function renderEndingSegments(segments){
+  return segments.map((segment) => {
+    const startCol = 2 + segment.start * 2;
+    const endCol = 2 + segment.end * 2 + 1;
+    return `
+      <div class="endingBracket" style="grid-column:${startCol} / ${endCol};">
+        <span class="endingLabel">${escapeHtml(segment.label)}.</span>
+      </div>`;
+  }).join('');
+}
+
 function renderDoc(doc){
   // Q5 VALIDATION: Reset warnings
   validationWarnings = [];
 
   let html = '';
-  if (doc.title){
-    html += `<div class="songTitle">${escapeHtml(doc.title)}</div>`;
-  }
-  const meta = [];
-  if (doc.composer) meta.push(`<div class="metaLine"><span class="metaLabel">Composer:</span> ${escapeHtml(doc.composer)}</div>`);
-  if (doc.style) meta.push(`<div class="metaLine"><span class="metaLabel">Style:</span> ${escapeHtml(doc.style)}</div>`);
-  if (doc.tempo) meta.push(`<div class="metaLine"><span class="metaLabel">Tempo:</span> ${escapeHtml(doc.tempo)}</div>`);
-  if (doc.time) meta.push(`<div class="metaLine"><span class="metaLabel">Time:</span> ${escapeHtml(doc.time)}</div>`);
-  if (doc.key) meta.push(`<div class="metaLine"><span class="metaLabel">Key:</span> ${escapeHtml(doc.key)}</div>`);
-  if (meta.length){
-    html += `<div class="meta">${meta.join('')}</div>`;
+  if (doc.title || doc.style || doc.key || doc.time || doc.tempo || doc.composer){
+    const metaBits = [];
+    if (doc.style) metaBits.push(doc.style);
+    if (doc.key) metaBits.push(`Key of ${doc.key}`);
+    const metaLine = metaBits.length ? `<div class="headerMeta">${escapeHtml(metaBits.join(', '))}</div>` : '';
+    const composerLine = doc.composer ? `<div class="headerComposer">${escapeHtml(doc.composer)}</div>` : '';
+    const tempoLine = doc.tempo ? `<div class="tempoLine">♩=${escapeHtml(doc.tempo)}</div>` : '';
+    const timeLine = doc.time ? `<div class="timeSig">${escapeHtml(doc.time)}</div>` : '';
+    html += `
+      <div class="sheetHeader">
+        <div class="headerInfo">
+          ${metaLine}
+          ${doc.title ? `<div class="songTitle">${escapeHtml(doc.title)}</div>` : ''}
+          ${composerLine}
+        </div>
+        <div class="headerRight">
+          ${tempoLine}
+          ${timeLine}
+        </div>
+      </div>`;
   }
 
   for (const block of doc.blocks){
@@ -1032,7 +1380,7 @@ function renderDoc(doc){
     if (block.type === 'marker'){
       const t = escapeHtml(block.text || '');
       if (block.marker === '-'){
-        html += `<div class="sectionText">${t}</div>`;
+        html += `<div class="sectionText"><span class="labelBox">${t}</span></div>`;
       } else if (block.marker === ':'){
         html += `<div class="sectionText"><span class="labelBox">${t}</span></div>`;
       } else if (block.marker === '='){
@@ -1069,6 +1417,7 @@ function renderBars(tokens){
   const bars = parseBarStructures(tokens);
 
   let html = `<div class="barsBlock">`;
+  let activeEnding = null;
 
   // Render in groups of 4 bars per row (musician-friendly).
   for (let i = 0; i < bars.length; i += 4){
@@ -1076,23 +1425,39 @@ function renderBars(tokens){
 
     // Pad to 4
     while (row.length < 4){
-      row.push({ token: '', doubleLeft: false, doubleRight: false });
+      row.push({ token: '', leftBar: 'single', rightBar: 'single' });
     }
 
-    const startsDouble = !!row[0]?.doubleLeft;
+    const segments = [];
+    let currentLabel = activeEnding;
+    let startIndex = currentLabel ? 0 : null;
+
+    row.forEach((bar, idx) => {
+      if (bar.endingLabel){
+        if (currentLabel !== null && idx > 0){
+          segments.push({ label: currentLabel, start: startIndex, end: idx - 1 });
+        }
+        currentLabel = bar.endingLabel.replace('.', '').trim();
+        startIndex = idx;
+      }
+    });
+    if (currentLabel !== null && startIndex !== null){
+      segments.push({ label: currentLabel, start: startIndex, end: row.length - 1 });
+    }
+    activeEnding = currentLabel;
+    if (row.some((bar) => ['repeat-end', 'final'].includes(bar.rightBar))){
+      activeEnding = null;
+    }
 
     html += `<div class="barlineRow">`;
-    html += `<span class="barSep">${startsDouble ? '||' : '|'}</span>`;
+    html += renderBarline(row[0]?.leftBar || 'single');
 
-    for (const bar of row){
-      const label = bar.endingLabel ? `${bar.endingLabel} ` : '';
-      const txt = label + (bar.token || '');
-      html += renderMeasure(txt);
+    row.forEach((bar) => {
+      html += renderMeasure(bar.token || '');
+      html += renderBarline(bar.rightBar || 'single');
+    });
 
-      // Respect doubleRight boundaries (e.g., from '||' in source)
-      html += `<span class="barSep">${bar.doubleRight ? '||' : '|'}</span>`;
-    }
-
+    html += renderEndingSegments(segments);
     html += `</div>`;
   }
 
@@ -1106,7 +1471,7 @@ function renderMeasure(measureText){
     return `<div class="measure"><div class="beats"><span class="beat"></span></div></div>`;
   }
   const beats = raw.split('_').map(s => s.trim()).filter(Boolean);
-  const beatHtml = (beats.length ? beats : [raw]).map(b => `<span class="beat">${escapeHtml(b)}</span>`).join('');
+  const beatHtml = (beats.length ? beats : [raw]).map((b) => renderBeatContent(b)).join('');
   return `<div class="measure"><div class="beats">${beatHtml}</div></div>`;
 }
 
