@@ -3,7 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ChordSheet CSMPN Builder v1.6.4.2</title>
+<title>ChordSheet CSMPN Builder v1.7.0</title>
+
+<!-- Google Fonts: Patrick Hand SC for fake book title -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Patrick+Hand+SC&display=swap" rel="stylesheet">
 
 <!-- PDF.js (required for UG Pro PDF text extraction) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -24,13 +29,17 @@
     --accent2:#111827;
     --border:#d9d9d9;
     --radius:14px;
+    /* Fake Book configurable defaults */
+    --fb-font-scale:1;
+    --fb-line-spacing:8px;
+    --fb-bars-per-row:4;
   }
 
   *{ box-sizing:border-box; }
 
   body{
     margin:0;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-family: Helvetica, Arial, "Helvetica Neue", sans-serif;
     background:var(--bg);
     color:var(--ink);
   }
@@ -69,7 +78,7 @@
     margin-bottom:4px;
     font-weight:700;
   }
-  .field input{
+  .field input, .field select{
     width:100%;
     padding:10px 10px;
     border:1px solid var(--border);
@@ -94,6 +103,11 @@
   }
   button.accent{ background:var(--accent); color:white; }
   button.secondary{ background:var(--accent2); color:white; }
+  button.outline{
+    background:transparent;
+    color:var(--accent2);
+    border:2px solid var(--border);
+  }
 
   .tips{
     margin-top:8px;
@@ -118,6 +132,42 @@
   .status.err{
     background:#fef2f2;
     border-color:#fca5a5;
+  }
+
+  /* Settings panel */
+  .settingsPanel{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:12px;
+    display:none;
+  }
+  .settingsPanel.open{ display:block; }
+  .settingsPanel h3{
+    margin:0 0 10px 0;
+    font-size:16px;
+    font-weight:800;
+  }
+  .settingsGrid{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap:10px;
+  }
+  .settingsGrid label{
+    display:block;
+    font-size:12px;
+    color:var(--muted);
+    margin-bottom:4px;
+    font-weight:700;
+  }
+  .settingsGrid select{
+    width:100%;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    font-size:14px;
+    background:#fff;
   }
 
   .grid{
@@ -157,104 +207,142 @@
     background:#fff;
     border:1px solid #e5e5e5;
     border-radius:12px;
-    padding:18px;
+    padding:24px 28px;
     box-shadow: 0 1px 0 rgba(0,0,0,0.04);
     max-width: 8.5in;
     margin: 0 auto;
+    font-family: Helvetica, Arial, "Helvetica Neue", sans-serif;
   }
 
-  /* ===== ChordSheet layout & typography ===== */
+  /* ===== Fake Book layout & typography ===== */
   .sheetHeader{
     display:flex;
     justify-content:space-between;
     align-items:flex-start;
     gap:16px;
-    border-bottom:2px solid #111;
-    padding-bottom:8px;
-    margin-bottom:16px;
+    border-bottom:1.5px solid #111;
+    padding-bottom:6px;
+    margin-bottom:14px;
   }
 
   .headerInfo{
     display:flex;
     flex-direction:column;
-    gap:6px;
+    gap:2px;
   }
 
   .headerMeta{
-    font-size:14px;
+    font-size:calc(13px * var(--fb-font-scale));
     font-style:italic;
     color:#222;
+    font-family: Helvetica, Arial, sans-serif;
   }
 
   .songTitle{
-    font-size:42px;
-    font-weight:900;
+    font-family: "Patrick Hand SC", "Georgia", cursive;
+    font-size:calc(32px * var(--fb-font-scale));
+    font-weight:400;
     margin:0;
-    letter-spacing:-0.02em;
+    letter-spacing:0.02em;
     text-transform:uppercase;
+    font-variant:small-caps;
+    line-height:1.1;
   }
 
   .headerComposer{
-    font-size:14px;
+    font-size:calc(13px * var(--fb-font-scale));
     font-weight:600;
+    font-family: Helvetica, Arial, sans-serif;
   }
 
   .headerRight{
     text-align:right;
-    min-width:120px;
+    min-width:80px;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:2px;
   }
 
   .tempoLine{
-    font-size:18px;
+    font-size:calc(16px * var(--fb-font-scale));
     font-weight:700;
+    font-family: Helvetica, Arial, sans-serif;
   }
 
   .timeSig{
-    font-size:18px;
+    font-size:calc(28px * var(--fb-font-scale));
     font-weight:700;
+    font-family: Helvetica, Arial, sans-serif;
+    line-height:1;
+  }
+
+  /* Section labels: rehearsal letter + section name */
+  .sectionBlock{
+    margin:calc(14px * var(--fb-font-scale)) 0 calc(2px * var(--fb-font-scale)) 0;
+  }
+
+  .rehearsalLetter{
+    display:inline-block;
+    border:2px solid #111;
+    padding:1px 6px;
+    border-radius:3px;
+    font-size:calc(14px * var(--fb-font-scale));
+    font-weight:700;
+    font-family: Helvetica, Arial, sans-serif;
+    margin-bottom:2px;
+    line-height:1.3;
   }
 
   .sectionText{
-    margin:18px 0 6px 0;
-    font-size:18px;
-    font-weight:900;
+    margin:2px 0 4px 0;
+    font-size:calc(15px * var(--fb-font-scale));
+    font-weight:700;
+    font-family: Helvetica, Arial, sans-serif;
   }
 
   .labelBox{
     display:inline-block;
-    border:2px solid #111;
-    padding:2px 8px;
-    border-radius:4px;
-    font-size:16px;
+    border:1.5px solid #111;
+    padding:1px 7px;
+    border-radius:3px;
+    font-size:calc(14px * var(--fb-font-scale));
     font-weight:700;
+    font-family: Helvetica, Arial, sans-serif;
+    line-height:1.3;
   }
 
   .dividerRow{
     display:flex;
     align-items:center;
     gap:12px;
-    margin:18px 0 8px 0;
+    margin:14px 0 4px 0;
   }
 
   .dividerRow .rule{
     flex:1;
-    height:2px;
+    height:1.5px;
     background:#111;
   }
 
+  /* Dynamic barline grid: columns generated by JS based on bars-per-row setting */
   .barlineRow{
     display:grid;
-    grid-template-columns: 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px;
     align-items:center;
     gap:0;
-    margin: 12px 0 6px 0;
-    padding-top:8px;
+    margin: var(--fb-line-spacing) 0 0 0;
+    padding-top:4px;
     position:relative;
+  }
+
+  /* Default 4-bar grid (overridden by inline style when bars-per-row changes) */
+  .barlineRow{
+    grid-template-columns: 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px;
   }
 
   .barline{
     position:relative;
-    height:2.2em;
+    height:calc(2.4em * var(--fb-font-scale));
   }
 
   .barline::before,
@@ -263,7 +351,7 @@
     position:absolute;
     top:0;
     bottom:0;
-    border-left:2px solid #111;
+    border-left:1.5px solid #111;
   }
 
   .barline.single::before{
@@ -271,73 +359,95 @@
   }
 
   .barline.double::before{
-    left:40%;
+    left:35%;
   }
 
   .barline.double::after{
     left:60%;
+    border-left-width:3px;
   }
 
   .barline.final::before{
-    left:40%;
+    left:35%;
   }
 
   .barline.final::after{
-    left:65%;
+    left:60%;
     border-left-width:4px;
   }
 
   .barline.repeat-start::before{
-    left:30%;
+    left:20%;
     border-left-width:4px;
   }
 
   .barline.repeat-start::after{
-    left:60%;
+    left:45%;
+    border-left-width:1.5px;
   }
 
-  .barline.repeat-start span,
-  .barline.repeat-end span{
+  .barline.repeat-start .dot-top,
+  .barline.repeat-start .dot-bot,
+  .barline.repeat-end .dot-top,
+  .barline.repeat-end .dot-bot{
     position:absolute;
-    right:2px;
-    top:45%;
-    width:6px;
-    height:6px;
+    width:5px;
+    height:5px;
     border-radius:50%;
     background:#111;
-    box-shadow:0 12px 0 #111;
   }
 
-  .barline.repeat-start span{
+  .barline.repeat-start .dot-top{
     right:0;
+    top:calc(50% - 8px);
+  }
+  .barline.repeat-start .dot-bot{
+    right:0;
+    top:calc(50% + 4px);
   }
 
   .barline.repeat-end::before{
-    left:40%;
+    left:55%;
+    border-left-width:1.5px;
   }
 
   .barline.repeat-end::after{
-    left:70%;
+    left:80%;
     border-left-width:4px;
   }
 
-  .barline.repeat-end span{
+  .barline.repeat-end .dot-top{
     left:0;
+    top:calc(50% - 8px);
+  }
+  .barline.repeat-end .dot-bot{
+    left:0;
+    top:calc(50% + 4px);
+  }
+
+  /* Hidden barlines mode */
+  .barline.hidden::before,
+  .barline.hidden::after{
+    display:none;
   }
 
   .measure{
     display:flex;
-    align-items:flex-end;
+    align-items:center;
     justify-content:flex-start;
-    min-height:2.2em;
+    min-height:calc(2.4em * var(--fb-font-scale));
     padding:0 6px;
     white-space:nowrap;
   }
 
+  .measure.center-align{
+    justify-content:center;
+  }
+
   .beats{
     display:inline-flex;
-    gap:0.6rem;
-    align-items:flex-end;
+    gap:0.5em;
+    align-items:baseline;
     flex-wrap:wrap;
   }
 
@@ -349,58 +459,58 @@
   }
 
   .beatAnnotation{
-    font-size:12px;
+    font-size:calc(11px * var(--fb-font-scale));
     font-style:italic;
     color:#111;
   }
 
   .chord{
     display:inline-flex;
-    align-items:flex-start;
-    font-family: "Georgia", "Times New Roman", serif;
+    align-items:baseline;
+    font-family: Helvetica, Arial, "Helvetica Neue", sans-serif;
     font-weight:700;
-    font-size:22px;
+    font-size:calc(22px * var(--fb-font-scale));
     line-height:1;
   }
 
   .chord-root{
     font-weight:800;
-    font-size:24px;
+    font-size:calc(24px * var(--fb-font-scale));
   }
 
   .chord-quality{
-    font-size:14px;
-    font-variant:small-caps;
-    margin-left:2px;
-    margin-top:2px;
+    font-size:calc(16px * var(--fb-font-scale));
+    margin-left:1px;
+    font-weight:700;
   }
 
   .chord-bass{
-    font-size:14px;
-    margin-left:3px;
+    font-size:calc(18px * var(--fb-font-scale));
+    margin-left:1px;
+    font-weight:700;
   }
 
   .chord-bass::before{
     content:"/";
-    margin-right:2px;
+    margin-right:1px;
   }
 
   .musicSymbol{
-    font-size:22px;
-    font-family:"Georgia","Times New Roman",serif;
+    font-size:calc(22px * var(--fb-font-scale));
+    font-family: Helvetica, Arial, sans-serif;
   }
 
   .repeatSymbol{
-    font-size:24px;
+    font-size:calc(26px * var(--fb-font-scale));
   }
 
   .endingBracket{
     grid-row:1;
     align-self:start;
     justify-self:stretch;
-    margin-top:-16px;
-    border-top:2px solid #111;
-    height:14px;
+    margin-top:-14px;
+    border-top:1.5px solid #111;
+    height:12px;
     position:relative;
   }
 
@@ -408,25 +518,39 @@
     content:'';
     position:absolute;
     left:0;
-    top:-2px;
-    height:14px;
-    border-left:2px solid #111;
+    top:-1.5px;
+    height:12px;
+    border-left:1.5px solid #111;
   }
 
   .endingLabel{
     position:absolute;
-    top:-20px;
+    top:-1px;
     left:4px;
-    font-size:12px;
+    font-size:calc(11px * var(--fb-font-scale));
     font-weight:700;
     background:#fff;
-    padding:0 4px;
+    padding:0 3px;
+    font-family: Helvetica, Arial, sans-serif;
   }
 
   .annotation{
-    margin:8px 0;
-    font-size:15px;
+    margin:6px 0;
+    font-size:calc(14px * var(--fb-font-scale));
     color:#111;
+    font-family: Helvetica, Arial, sans-serif;
+  }
+
+  /* Page footer */
+  .sheetFooter{
+    margin-top:24px;
+    padding-top:8px;
+    border-top:1px solid #ccc;
+    display:flex;
+    justify-content:space-between;
+    font-size:11px;
+    color:#888;
+    font-family: Helvetica, Arial, sans-serif;
   }
 
   .pageBreak{ page-break-before: always; break-before: page; height:1px; }
@@ -438,8 +562,6 @@
     .previewWrap{ position: sticky; top: 12px; align-self: start; }
   }
 
-  /* Print: show only the sheet */
-  
 /* Export fidelity: flatten UI chrome for PDF/PNG captures */
 body.exporting .card{
   border: none !important;
@@ -454,27 +576,15 @@ body.exporting #renderTarget{
   background: #fff !important;
 }
 body.exporting .sheet{
-  padding: 36px 42px !important; /* ~0.5in */
-}
-
-/* Chord-sheet.com-like typography (preview + export) */
-.songTitle{
-  font-size: 48px !important;
-  font-weight: 900 !important;
-  letter-spacing: -0.5px;
-}
-.sectionText{
-  font-size: 22px !important;
-  font-weight: 900 !important;
-  margin: 18px 0 8px 0 !important;
+  padding: 36px 42px !important;
 }
 
 @media print{
     body{ background:white; }
-    .topbar, .card.editorCard, .tips, .status, .btnrow { display:none !important; }
+    .topbar, .card.editorCard, .tips, .status, .btnrow, .settingsPanel { display:none !important; }
     .app{ max-width:none; padding:0; }
     .previewWrap{ border:0; padding:0; }
-    .sheet{ border-radius:0; padding:18px; box-shadow:none; }
+    .sheet{ border-radius:0; padding:24px 36px; box-shadow:none; }
     @page { size: letter; margin: 0.5in; }
     .sheet{ max-width:none; margin:0; border:0; }
   }
@@ -484,7 +594,7 @@ body.exporting .sheet{
 <body>
 <div class="app">
   <div class="topbar">
-    <div class="title">ChordSheet CSMPN Builder v1.6.4.2</div>
+    <div class="title">ChordSheet CSMPN Builder v1.7.0 — Fake Book Edition</div>
 
     <div class="row">
       <div class="field"><label>Title</label><input id="hdrTitle" placeholder="Song title"></div>
@@ -496,33 +606,104 @@ body.exporting .sheet{
     </div>
 
     <div class="btnrow">
-      <button class="accent" id="btnImport">Import File → CSMPN</button>
-      <button class="secondary" id="btnTransposeDown">Transpose -1</button>
-      <button class="secondary" id="btnTransposeUp">Transpose +1</button>
-      <button class="secondary" id="btnTransposeReset">Reset Transpose</button>
-      <button class="accent" id="btnPrint">Print / Save PDF</button>
-      <button class="secondary" id="btnDownloadPdf">Download PDF (iOS)</button>
-      <button class="secondary" id="btnPng">Save Image (PNG)</button>
-      <button class="secondary" id="btnCopy">Copy CSMPN</button>
+      <button class="accent" id="btnImport">Import File</button>
+      <button class="secondary" id="btnTransposeDown">-1</button>
+      <button class="secondary" id="btnTransposeUp">+1</button>
+      <button class="secondary" id="btnTransposeReset">Reset</button>
+      <button class="outline" id="btnSettings">Settings</button>
+      <button class="accent" id="btnPrint">Print / PDF</button>
+      <button class="secondary" id="btnDownloadPdf">Download PDF</button>
+      <button class="secondary" id="btnPng">PNG</button>
+      <button class="secondary" id="btnCopy">Copy</button>
     </div>
 
     <div class="tips">
-      <strong>How to use:</strong>
+      <strong>Fake Book Style:</strong>
       <ul>
-        <li>Import a PDF/TXT/XML, or paste CSMPN in the editor.</li>
-        <li>Each chord token is a bar; four bars render per row automatically.</li>
-        <li>Use <code>_</code> to split a bar (e.g., <code>Bb_Eb7</code>), <code>%</code> to repeat a bar, and <code>(... )x2</code> for repeats.</li>
-        <li>Endings: <code>1. Gm7 C7 2. F7 Bb</code> renders with labels above bars.</li>
-        <li>Print is the primary PDF workflow; "Download PDF (iOS)" provides one-tap mobile export.</li>
-        <li>You can paste/import barline charts using "|" and "ǁ" – they will be interpreted as measure separators.
-If a PDF import yields no chords, it may be image-only (no selectable text).</li>
+        <li>Each chord token = 1 bar. Use <code>_</code> for split bars (e.g., <code>Bb7_A7</code>).</li>
+        <li>Section markers: <code>- Verse</code>, <code>: Chorus</code>, <code>= Bridge</code> with optional rehearsal letters.</li>
+        <li>Repeats: <code>|:</code> and <code>:|</code>, or <code>(A B C D)x2</code>. Endings: <code>1. C D 2. E F</code>.</li>
+        <li><code>%</code> = repeat bar. Use Settings to adjust font size, bars/row, line spacing, and chord styles.</li>
       </ul>
     </div>
 
-    <div id="status" class="status">Ready. v1.6 - PDF import fixes applied.</div>
+    <div id="status" class="status">Ready. v1.7 — Fake Book formatting.</div>
 
-    <!-- hidden file input -->
     <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml" style="display:none" />
+  </div>
+
+  <!-- Fake Book Settings Panel -->
+  <div id="settingsPanel" class="settingsPanel">
+    <h3>Fake Book Settings</h3>
+    <div class="settingsGrid">
+      <div class="field">
+        <label>Font Size</label>
+        <select id="setFontSize">
+          <option value="M" selected>Medium (default)</option>
+          <option value="S">Small</option>
+          <option value="XS">Extra-Small</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Bars Per Row</label>
+        <select id="setBarsPerRow">
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4" selected>4 (default)</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="8">8</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Line Spacing</label>
+        <select id="setLineSpacing">
+          <option value="0">None</option>
+          <option value="2">Tight (2)</option>
+          <option value="4">Compact (4)</option>
+          <option value="8" selected>Default (8)</option>
+          <option value="12">Relaxed (12)</option>
+          <option value="16">Open (16)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Bar Lines</label>
+        <select id="setBarLines">
+          <option value="visible" selected>Visible (default)</option>
+          <option value="hidden">Hidden</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Chord Alignment</label>
+        <select id="setChordAlign">
+          <option value="left" selected>Left (default)</option>
+          <option value="center">Center</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Major 7th Style</label>
+        <select id="setMaj7Style">
+          <option value="ma" selected>ma7 (default)</option>
+          <option value="maj">maj7</option>
+          <option value="triangle">&#916;7</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Minor Chord Style</label>
+        <select id="setMinorStyle">
+          <option value="m" selected>m (default)</option>
+          <option value="min">min</option>
+          <option value="minus">&minus;</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Page Footer</label>
+        <select id="setFooter">
+          <option value="visible" selected>Visible (default)</option>
+          <option value="hidden">Hidden</option>
+        </select>
+      </div>
+    </div>
   </div>
 
   <div class="grid">
@@ -552,7 +733,6 @@ const statusEl = document.getElementById('status');
 // PDF.js worker config (required when loading PDF.js from a CDN on GitHub Pages)
 if (window.pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
   try {
-    // Some Safari/iOS builds treat workerSrc as read-only. Guard and fail soft.
     if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
     }
@@ -571,8 +751,62 @@ const hdr = {
 };
 
 let currentTranspose = 0;
-let notationPreference = 'sharp'; // recomputed from key/text
-let validationWarnings = []; // Q5: Track validation issues
+let notationPreference = 'sharp';
+let validationWarnings = [];
+
+/* =========================================================
+   Fake Book Settings State
+========================================================= */
+const fbSettings = {
+  fontSize: 'M',       // M, S, XS
+  barsPerRow: 4,       // 2-8
+  lineSpacing: 8,      // 0, 2, 4, 8, 12, 16
+  barLines: 'visible', // visible, hidden
+  chordAlign: 'left',  // left, center
+  maj7Style: 'ma',     // ma, maj, triangle
+  minorStyle: 'm',     // m, min, minus
+  footer: 'visible',   // visible, hidden
+};
+
+const FONT_SCALE_MAP = { M: 1, S: 0.85, XS: 0.72 };
+
+function applyFBSettings(){
+  const root = document.documentElement;
+  root.style.setProperty('--fb-font-scale', FONT_SCALE_MAP[fbSettings.fontSize] || 1);
+  root.style.setProperty('--fb-line-spacing', fbSettings.lineSpacing + 'px');
+  root.style.setProperty('--fb-bars-per-row', fbSettings.barsPerRow);
+  updatePreview();
+}
+
+// Wire settings controls
+document.getElementById('btnSettings').addEventListener('click', () => {
+  document.getElementById('settingsPanel').classList.toggle('open');
+});
+
+document.getElementById('setFontSize').addEventListener('change', (e) => {
+  fbSettings.fontSize = e.target.value; applyFBSettings();
+});
+document.getElementById('setBarsPerRow').addEventListener('change', (e) => {
+  fbSettings.barsPerRow = parseInt(e.target.value, 10); applyFBSettings();
+});
+document.getElementById('setLineSpacing').addEventListener('change', (e) => {
+  fbSettings.lineSpacing = parseInt(e.target.value, 10); applyFBSettings();
+});
+document.getElementById('setBarLines').addEventListener('change', (e) => {
+  fbSettings.barLines = e.target.value; applyFBSettings();
+});
+document.getElementById('setChordAlign').addEventListener('change', (e) => {
+  fbSettings.chordAlign = e.target.value; applyFBSettings();
+});
+document.getElementById('setMaj7Style').addEventListener('change', (e) => {
+  fbSettings.maj7Style = e.target.value; applyFBSettings();
+});
+document.getElementById('setMinorStyle').addEventListener('change', (e) => {
+  fbSettings.minorStyle = e.target.value; applyFBSettings();
+});
+document.getElementById('setFooter').addEventListener('change', (e) => {
+  fbSettings.footer = e.target.value; applyFBSettings();
+});
 
 function setStatus(msg, type='info'){
   // Back-compat: older call sites passed boolean (true=error)
@@ -1249,10 +1483,47 @@ function parseBarStructures(tokens){
 function formatChordQuality(quality){
   if (!quality) return '';
   let q = quality;
-  q = q.replace(/^maj/i, 'MA');
-  q = q.replace(/^ma/i, 'MA');
-  q = q.replace(/dim/i, '°');
-  q = q.replace(/aug/i, '+');
+
+  // Half-diminished: m7b5 or ø
+  if (/^m7b5$/i.test(q) || /^ø/i.test(q)){
+    return 'ø7';
+  }
+
+  // Diminished
+  q = q.replace(/^dim/i, '°');
+
+  // Augmented
+  q = q.replace(/^aug/i, '+');
+
+  // Major 7th - respect settings
+  const maj7Re = /^(maj|ma|Δ)(7?)(.*)$/i;
+  const maj7Match = q.match(maj7Re);
+  if (maj7Match){
+    const suffix = (maj7Match[2] || '') + (maj7Match[3] || '');
+    if (fbSettings.maj7Style === 'triangle'){
+      return 'Δ' + suffix;
+    } else if (fbSettings.maj7Style === 'maj'){
+      return 'maj' + suffix;
+    } else {
+      return 'MA' + suffix;
+    }
+  }
+
+  // Minor chord - respect settings
+  // Match minor at start: m, min, mi (but not maj)
+  const minRe = /^(min|mi|m)(\d.*|$)/i;
+  const minMatch = q.match(minRe);
+  if (minMatch && !/^ma/i.test(q)){
+    const suffix = minMatch[2] || '';
+    if (fbSettings.minorStyle === 'min'){
+      return 'min' + suffix;
+    } else if (fbSettings.minorStyle === 'minus'){
+      return '−' + suffix;
+    } else {
+      return 'm' + suffix;
+    }
+  }
+
   return q;
 }
 
@@ -1330,8 +1601,12 @@ function renderBeatContent(rawBeat){
 
 function renderBarline(type){
   const t = type || 'single';
-  const dots = t === 'repeat-start' || t === 'repeat-end' ? '<span></span>' : '';
-  return `<div class="barline ${t}">${dots}</div>`;
+  const hidden = fbSettings.barLines === 'hidden' && t === 'single';
+  const cls = hidden ? 'barline hidden' : `barline ${t}`;
+  if (t === 'repeat-start' || t === 'repeat-end'){
+    return `<div class="${cls}"><span class="dot-top"></span><span class="dot-bot"></span></div>`;
+  }
+  return `<div class="${cls}"></div>`;
 }
 
 function renderEndingSegments(segments){
@@ -1345,19 +1620,35 @@ function renderEndingSegments(segments){
   }).join('');
 }
 
+// Track rehearsal letters for auto-assignment
+let rehearsalLetterIndex = 0;
+const REHEARSAL_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+function renderTimeSig(timeStr){
+  // Render time signature as stacked fraction-style
+  const m = (timeStr || '').match(/^(\d+)\/(\d+)$/);
+  if (!m) return `<div class="timeSig">${escapeHtml(timeStr)}</div>`;
+  return `<div class="timeSig" style="display:flex;flex-direction:column;align-items:center;line-height:0.95;font-size:calc(24px * var(--fb-font-scale));">
+    <span>${escapeHtml(m[1])}</span>
+    <span>${escapeHtml(m[2])}</span>
+  </div>`;
+}
+
 function renderDoc(doc){
-  // Q5 VALIDATION: Reset warnings
   validationWarnings = [];
+  rehearsalLetterIndex = 0;
 
   let html = '';
   if (doc.title || doc.style || doc.key || doc.time || doc.tempo || doc.composer){
+    // ChordSheet.com style: annotation line in parentheses above title
     const metaBits = [];
     if (doc.style) metaBits.push(doc.style);
     if (doc.key) metaBits.push(`Key of ${doc.key}`);
-    const metaLine = metaBits.length ? `<div class="headerMeta">${escapeHtml(metaBits.join(', '))}</div>` : '';
+    const metaStr = metaBits.length ? metaBits.join(', ') : '';
+    const metaLine = metaStr ? `<div class="headerMeta">(${escapeHtml(metaStr)})</div>` : '';
     const composerLine = doc.composer ? `<div class="headerComposer">${escapeHtml(doc.composer)}</div>` : '';
     const tempoLine = doc.tempo ? `<div class="tempoLine">♩=${escapeHtml(doc.tempo)}</div>` : '';
-    const timeLine = doc.time ? `<div class="timeSig">${escapeHtml(doc.time)}</div>` : '';
+    const timeSig = doc.time ? renderTimeSig(doc.time) : '';
     html += `
       <div class="sheetHeader">
         <div class="headerInfo">
@@ -1367,7 +1658,7 @@ function renderDoc(doc){
         </div>
         <div class="headerRight">
           ${tempoLine}
-          ${timeLine}
+          ${timeSig}
         </div>
       </div>`;
   }
@@ -1378,18 +1669,7 @@ function renderDoc(doc){
       continue;
     }
     if (block.type === 'marker'){
-      const t = escapeHtml(block.text || '');
-      if (block.marker === '-'){
-        html += `<div class="sectionText"><span class="labelBox">${t}</span></div>`;
-      } else if (block.marker === ':'){
-        html += `<div class="sectionText"><span class="labelBox">${t}</span></div>`;
-      } else if (block.marker === '='){
-        html += `<div class="dividerRow"><span class="labelBox">${t}</span><div class="rule"></div></div>`;
-      } else if (block.marker === ';'){
-        html += `<div class="annotation">${t}</div>`;
-      } else if (block.marker === '#'){
-        html += `<div class="annotation"><span class="small">#</span> ${t}</div>`;
-      }
+      html += renderSectionMarker(block);
       continue;
     }
     if (block.type === 'bars'){
@@ -1404,7 +1684,16 @@ function renderDoc(doc){
     </div>`;
   }
 
-  // Q5 VALIDATION: Display warnings if any
+  // Page footer
+  if (fbSettings.footer === 'visible' && doc.blocks.length){
+    const now = new Date().toISOString().slice(0,10);
+    html += `<div class="sheetFooter">
+      <span>ChordSheet CSMPN Builder</span>
+      <span>page 1 of 1</span>
+      <span>last edited ${now}</span>
+    </div>`;
+  }
+
   if (validationWarnings.length){
     const warnMsg = validationWarnings.join('\n');
     setStatus(warnMsg, 'warning');
@@ -1413,18 +1702,59 @@ function renderDoc(doc){
   return html;
 }
 
+function renderSectionMarker(block){
+  const t = escapeHtml(block.text || '');
+
+  if (block.marker === '-' || block.marker === ':'){
+    // Fake book style: show rehearsal letter + section name in label boxes
+    const letter = REHEARSAL_LETTERS[rehearsalLetterIndex] || '';
+    rehearsalLetterIndex++;
+    let letterHtml = letter ? `<span class="rehearsalLetter">"${letter}"</span><br>` : '';
+    return `<div class="sectionBlock">${letterHtml}<span class="labelBox">${t}</span></div>`;
+  }
+
+  if (block.marker === '='){
+    // Section divider with label - show as = label
+    const letter = REHEARSAL_LETTERS[rehearsalLetterIndex] || '';
+    rehearsalLetterIndex++;
+    let letterHtml = letter ? `<span class="rehearsalLetter">"${letter}"</span><br>` : '';
+    return `<div class="sectionBlock">${letterHtml}<span class="labelBox">${t}</span></div>`;
+  }
+
+  if (block.marker === ';'){
+    return `<div class="annotation">${t}</div>`;
+  }
+  if (block.marker === '#'){
+    return `<div class="annotation"><span style="font-size:0.85em">#</span> ${t}</div>`;
+  }
+  return '';
+}
+
+function buildGridTemplate(barsPerRow){
+  // Generate CSS grid-template-columns for N bars per row
+  // Pattern: 14px [1fr 14px] repeated N times
+  const cols = ['14px'];
+  for (let i = 0; i < barsPerRow; i++){
+    cols.push('minmax(0, 1fr)');
+    cols.push('14px');
+  }
+  return cols.join(' ');
+}
+
 function renderBars(tokens){
   const bars = parseBarStructures(tokens);
+  const bpr = fbSettings.barsPerRow;
+  const gridTemplate = buildGridTemplate(bpr);
+  const alignClass = fbSettings.chordAlign === 'center' ? ' center-align' : '';
 
   let html = `<div class="barsBlock">`;
   let activeEnding = null;
 
-  // Render in groups of 4 bars per row (musician-friendly).
-  for (let i = 0; i < bars.length; i += 4){
-    const row = bars.slice(i, i + 4);
+  for (let i = 0; i < bars.length; i += bpr){
+    const row = bars.slice(i, i + bpr);
 
-    // Pad to 4
-    while (row.length < 4){
+    // Pad to barsPerRow
+    while (row.length < bpr){
       row.push({ token: '', leftBar: 'single', rightBar: 'single' });
     }
 
@@ -1449,11 +1779,11 @@ function renderBars(tokens){
       activeEnding = null;
     }
 
-    html += `<div class="barlineRow">`;
+    html += `<div class="barlineRow" style="grid-template-columns:${gridTemplate}">`;
     html += renderBarline(row[0]?.leftBar || 'single');
 
     row.forEach((bar) => {
-      html += renderMeasure(bar.token || '');
+      html += renderMeasure(bar.token || '', alignClass);
       html += renderBarline(bar.rightBar || 'single');
     });
 
@@ -1465,14 +1795,15 @@ function renderBars(tokens){
   return html;
 }
 
-function renderMeasure(measureText){
+function renderMeasure(measureText, alignClass){
+  const cls = alignClass || '';
   const raw = (measureText || '').trim();
   if(!raw){
-    return `<div class="measure"><div class="beats"><span class="beat"></span></div></div>`;
+    return `<div class="measure${cls}"><div class="beats"><span class="beat"></span></div></div>`;
   }
   const beats = raw.split('_').map(s => s.trim()).filter(Boolean);
   const beatHtml = (beats.length ? beats : [raw]).map((b) => renderBeatContent(b)).join('');
-  return `<div class="measure"><div class="beats">${beatHtml}</div></div>`;
+  return `<div class="measure${cls}"><div class="beats">${beatHtml}</div></div>`;
 }
 
 
@@ -2136,32 +2467,78 @@ document.getElementById('btnCopy').addEventListener('click', async () => {
    Init
 ========================================================= */
 sourceEl.value = `Title: Sin City Blues
-Composer: Czemba
-Style: Jazz swing
-Tempo: 81
-Time: 4/4
+Style: Slow Blues Swing
+Tempo: 90
+Time: 12/8
 Key: Bb
 
-- Verse
-Bb % Eb7 %
-F7 Bb % %
+- Intro
+|: Bb7 Bb7_A7_D7
+Eb6 Eo7_Go7 Bo7
+Bb7 G7 C7 F9_F13
+Bb6 Eb9 Bb7 F+ :|
 
-: Chorus
-(Bb_Eb7 F7_Bb)x2
+- Verse 1
+|: Bb7 % Eb7 %
+Bb7 B7 Bb7 % :|
+
+- Pre-Chorus
+|: Eb7 Eb7_Eo7
+Bb7_Cm7 Dm7_Dbm7 :|
+
+- Chorus 1
+|: F9 F
+Bb7_G7 C7_F7 :|
+
+- Verse 2
+|: Bb7 Eb7
+Bb7 B7 Bb7 % :|
+
+- Pre-Chorus 2
+|: Eb7 Eb7_Eo7
+Bb7_Cm7 Dm7_Dbm7 :|
+
+- Chorus 2
+|: Cm7_Dm7 Ebmaj7_Eo7
+F9_F13 Bb6_Eb9
+Bb_Bb7 :|
 
 = Bridge
-1. Gm7 C7 2. F7 Bb
+|: Eb7 Eb7_Eo7
+Bb7_Bb7 Bb7_B7_C7_Db7_D7
+Eb7 Eo7_Go7_Bbo7
+Bb7_Bbo7 Ao7_G7
+Cm7_Dm7 Ebmaj7_Eo7
+F9_F13 Bb7_G7
+C7_F7 :|
 
-- Solo Section
-Bb Eb7 F7 Bb
-Gm7 C7 F7 Bb
+- Verse 3
+|: Bb7 % Eb7 %
+Bb7_B7 Bb7 % :|
+
+- Pre-Chorus 3
+|: Eb7 Eb7_Eo7
+Bb7_Cm7 Dm7_Dbm7 :|
+
+= 1st Ending
+|: Cm7_Dm7 Ebmaj7_Eo7
+F9_F13 Bb7_Bb6
+Bb7_A7_Ab7_G7 :|
+
+= 2nd Ending
+|: Cm7_Dm7 Ebmaj7_Eo7
+F9_F13 :|
+
+= CODA
+|: Bb7_Bb6_Eb9 Bb_B13_Bb7 :|
 `;
 
 extractHeaderFromText(sourceEl.value);
 updatePreview();
-setStatus('Ready. v1.6 - PDF import fixes applied.');
+setStatus('Ready. v1.7 — Fake Book formatting.');
 
 // --- Optional self-tests (run manually in console): window.runCSMPNSelfTests() ---
+// v1.7.0: Fake Book Edition
 window.runCSMPNSelfTests = function(){
   const results = [];
   const assert = (name, cond) => results.push({ name, pass: !!cond });
