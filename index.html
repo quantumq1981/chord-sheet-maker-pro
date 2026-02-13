@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ChordSheet CSMPN Builder v1.7.0</title>
+<title>ChordSheet CSMPN Builder v1.8.0</title>
 
 <!-- Google Fonts: Patrick Hand SC for fake book title -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -594,7 +594,7 @@ body.exporting .sheet{
 <body>
 <div class="app">
   <div class="topbar">
-    <div class="title">ChordSheet CSMPN Builder v1.7.0 — Fake Book Edition</div>
+    <div class="title">ChordSheet CSMPN Builder v1.8.0 — Fake Book Edition</div>
 
     <div class="row">
       <div class="field"><label>Title</label><input id="hdrTitle" placeholder="Song title"></div>
@@ -615,6 +615,9 @@ body.exporting .sheet{
       <button class="secondary" id="btnDownloadPdf">Download PDF</button>
       <button class="secondary" id="btnPng">PNG</button>
       <button class="secondary" id="btnCopy">Copy</button>
+      <button class="outline" id="btnExportChordPro">Export ChordPro</button>
+      <button class="outline" id="btnSave">Save</button>
+      <button class="outline" id="btnLoad">Load</button>
     </div>
 
     <div class="tips">
@@ -624,10 +627,11 @@ body.exporting .sheet{
         <li>Section markers: <code>- Verse</code>, <code>: Chorus</code>, <code>= Bridge</code> with optional rehearsal letters.</li>
         <li>Repeats: <code>|:</code> and <code>:|</code>, or <code>(A B C D)x2</code>. Endings: <code>1. C D 2. E F</code>.</li>
         <li><code>%</code> = repeat bar. Use Settings to adjust font size, bars/row, line spacing, and chord styles.</li>
+        <li><strong>Shortcuts:</strong> Ctrl+S Save, Ctrl+P Print, Ctrl+↑/↓ Transpose.</li>
       </ul>
     </div>
 
-    <div id="status" class="status">Ready. v1.7 — Fake Book formatting.</div>
+    <div id="status" class="status">Ready. v1.8 — Fake Book formatting.</div>
 
     <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml" style="display:none" />
   </div>
@@ -770,11 +774,39 @@ const fbSettings = {
 
 const FONT_SCALE_MAP = { M: 1, S: 0.85, XS: 0.72 };
 
+/* Performance: persist settings to localStorage so users don't reconfigure each visit */
+function saveFBSettings(){
+  try { localStorage.setItem('csmpn_settings', JSON.stringify(fbSettings)); } catch(_){}
+}
+function loadFBSettings(){
+  try {
+    const saved = localStorage.getItem('csmpn_settings');
+    if (saved){
+      const parsed = JSON.parse(saved);
+      for (const k of Object.keys(fbSettings)){
+        if (parsed[k] !== undefined) fbSettings[k] = parsed[k];
+      }
+      // Sync UI controls
+      const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+      setEl('setFontSize', fbSettings.fontSize);
+      setEl('setBarsPerRow', String(fbSettings.barsPerRow));
+      setEl('setLineSpacing', String(fbSettings.lineSpacing));
+      setEl('setBarLines', fbSettings.barLines);
+      setEl('setChordAlign', fbSettings.chordAlign);
+      setEl('setMaj7Style', fbSettings.maj7Style);
+      setEl('setMinorStyle', fbSettings.minorStyle);
+      setEl('setFooter', fbSettings.footer);
+    }
+  } catch(_){}
+}
+
 function applyFBSettings(){
   const root = document.documentElement;
   root.style.setProperty('--fb-font-scale', FONT_SCALE_MAP[fbSettings.fontSize] || 1);
   root.style.setProperty('--fb-line-spacing', fbSettings.lineSpacing + 'px');
   root.style.setProperty('--fb-bars-per-row', fbSettings.barsPerRow);
+  _chordParseCache.clear(); // Invalidate cache when chord style settings change
+  saveFBSettings();
   updatePreview();
 }
 
@@ -807,6 +839,15 @@ document.getElementById('setMinorStyle').addEventListener('change', (e) => {
 document.getElementById('setFooter').addEventListener('change', (e) => {
   fbSettings.footer = e.target.value; applyFBSettings();
 });
+
+/* ---- Performance: debounce helper ---- */
+function debounce(fn, ms){
+  let timer;
+  return function(...args){
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
 
 function setStatus(msg, type='info'){
   // Back-compat: older call sites passed boolean (true=error)
@@ -1031,10 +1072,12 @@ for (const k of Object.keys(hdr)){
   });
 }
 
-sourceEl.addEventListener('input', () => {
+const _debouncedPreview = debounce(() => {
   extractHeaderFromText(sourceEl.value);
   updatePreview();
-});
+}, 150);
+
+sourceEl.addEventListener('input', _debouncedPreview);
 
 /* =========================================================
    CSMPN parsing
@@ -1043,9 +1086,9 @@ function detectNotationPreferenceFromKeyOrText(key, text){
   const k = (key||'').toLowerCase();
   if (k.includes('b')) return 'flat';
   if (k.includes('#')) return 'sharp';
-  // fallback: inspect chord tokens
-  if (/[A-G][b]/.test(text)) return 'flat';
-  if (/[A-G]#/.test(text)) return 'sharp';
+  // fallback: inspect chord tokens (require boundary to avoid matching words like "Above")
+  if (/\b[A-G]b(?:[^a-z]|$)/m.test(text)) return 'flat';
+  if (/\b[A-G]#/.test(text)) return 'sharp';
   return 'sharp';
 }
 
@@ -1145,15 +1188,22 @@ function parseCSMPN(text){
 function normalizeBarlineDelimiters(line){
   // Accept UG/ChordSheet barline characters and normalize for tokenization
   // ǁ / ‖ / ∥ are treated as double barlines
+  // Use placeholders to prevent cascade destruction of multi-char barlines
   return (line || '')
     .replace(/[ǁ‖∥]/g, '||')
-    .replace(/\|\|:/g, ' ||: ')
-    .replace(/:\|\|/g, ' :|| ')
-    .replace(/\|:/g, ' |: ')
-    .replace(/:\|/g, ' :| ')
-    .replace(/\|\]/g, ' |] ')
-    .replace(/\|\|/g, ' || ')
+    .replace(/\|\|:/g, ' \x01RSTART\x01 ')
+    .replace(/:\|\|/g, ' \x01REND2\x01 ')
+    .replace(/\|:/g, ' \x01RSINGLE\x01 ')
+    .replace(/:\|/g, ' \x01REND1\x01 ')
+    .replace(/\|\]/g, ' \x01FINAL\x01 ')
+    .replace(/\|\|/g, ' \x01DOUBLE\x01 ')
     .replace(/\|/g, ' | ')
+    .replace(/\x01RSTART\x01/g, '||:')
+    .replace(/\x01REND2\x01/g, ':||')
+    .replace(/\x01RSINGLE\x01/g, '|:')
+    .replace(/\x01REND1\x01/g, ':|')
+    .replace(/\x01FINAL\x01/g, '|]')
+    .replace(/\x01DOUBLE\x01/g, '||')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -1495,11 +1545,11 @@ function formatChordQuality(quality){
   // Augmented
   q = q.replace(/^aug/i, '+');
 
-  // Major 7th - respect settings
-  const maj7Re = /^(maj|ma|Δ)(7?)(.*)$/i;
+  // Major 7th / extended major chords - respect settings (require numeric extension)
+  const maj7Re = /^(maj|ma|Δ)(\d.*)$/i;
   const maj7Match = q.match(maj7Re);
   if (maj7Match){
-    const suffix = (maj7Match[2] || '') + (maj7Match[3] || '');
+    const suffix = maj7Match[2] || '';
     if (fbSettings.maj7Style === 'triangle'){
       return 'Δ' + suffix;
     } else if (fbSettings.maj7Style === 'maj'){
@@ -1527,21 +1577,31 @@ function formatChordQuality(quality){
   return q;
 }
 
+/* Performance: memoize chord parsing — same token returns cached result */
+const _chordParseCache = new Map();
+const CHORD_CACHE_MAX = 512;
+
 function parseChordToken(token){
   const raw = token || '';
+  const cacheKey = raw + '|' + fbSettings.maj7Style + '|' + fbSettings.minorStyle;
+  if (_chordParseCache.has(cacheKey)) return _chordParseCache.get(cacheKey);
+
   const normalized = normalizeAccidentals(raw);
   const match = normalized.match(/^([A-G])([b#]?)(.*?)(?:\/([A-G])([b#]?))?$/);
-  if (!match) return null;
+  if (!match){ _chordParseCache.set(cacheKey, null); return null; }
   const root = match[1] + (match[2] || '');
   const quality = match[3] || '';
   const bass = match[4] ? (match[4] + (match[5] || '')) : '';
   const displayRoot = root.replace(/b/g, '♭').replace(/#/g, '♯');
   const displayBass = bass.replace(/b/g, '♭').replace(/#/g, '♯');
-  return {
+  const result = {
     root: displayRoot,
     quality: formatChordQuality(quality),
     bass: displayBass,
   };
+  if (_chordParseCache.size > CHORD_CACHE_MAX) _chordParseCache.clear();
+  _chordParseCache.set(cacheKey, result);
+  return result;
 }
 
 function renderChordToken(token){
@@ -1687,9 +1747,11 @@ function renderDoc(doc){
   // Page footer
   if (fbSettings.footer === 'visible' && doc.blocks.length){
     const now = new Date().toISOString().slice(0,10);
+    const pageBreaks = doc.blocks.filter(b => b.type === 'pagebreak').length;
+    const totalPages = pageBreaks + 1;
     html += `<div class="sheetFooter">
       <span>ChordSheet CSMPN Builder</span>
-      <span>page 1 of 1</span>
+      <span>page 1 of ${totalPages}</span>
       <span>last edited ${now}</span>
     </div>`;
   }
@@ -1709,7 +1771,7 @@ function renderSectionMarker(block){
     // Fake book style: show rehearsal letter + section name in label boxes
     const letter = REHEARSAL_LETTERS[rehearsalLetterIndex] || '';
     rehearsalLetterIndex++;
-    let letterHtml = letter ? `<span class="rehearsalLetter">"${letter}"</span><br>` : '';
+    let letterHtml = letter ? `<span class="rehearsalLetter">${letter}</span><br>` : '';
     return `<div class="sectionBlock">${letterHtml}<span class="labelBox">${t}</span></div>`;
   }
 
@@ -1717,7 +1779,7 @@ function renderSectionMarker(block){
     // Section divider with label - show as = label
     const letter = REHEARSAL_LETTERS[rehearsalLetterIndex] || '';
     rehearsalLetterIndex++;
-    let letterHtml = letter ? `<span class="rehearsalLetter">"${letter}"</span><br>` : '';
+    let letterHtml = letter ? `<span class="rehearsalLetter">${letter}</span><br>` : '';
     return `<div class="sectionBlock">${letterHtml}<span class="labelBox">${t}</span></div>`;
   }
 
@@ -1730,15 +1792,18 @@ function renderSectionMarker(block){
   return '';
 }
 
+/* Performance: cache grid templates — only 7 possible values (2-8 bars) */
+const _gridTemplateCache = {};
 function buildGridTemplate(barsPerRow){
-  // Generate CSS grid-template-columns for N bars per row
-  // Pattern: 14px [1fr 14px] repeated N times
+  if (_gridTemplateCache[barsPerRow]) return _gridTemplateCache[barsPerRow];
   const cols = ['14px'];
   for (let i = 0; i < barsPerRow; i++){
     cols.push('minmax(0, 1fr)');
     cols.push('14px');
   }
-  return cols.join(' ');
+  const result = cols.join(' ');
+  _gridTemplateCache[barsPerRow] = result;
+  return result;
 }
 
 function renderBars(tokens){
@@ -1904,8 +1969,8 @@ function importUGText(text){
     // Section headings: common UG / chord dump patterns
     let m = raw.match(/^\[(.+?)\]$/); // [Chorus]
     if (m){ out.push(`= ${m[1].trim()}`); continue; }
-    m = raw.match(/^[-=]\s*(.+)$/); // - Intro / = Verse
-    if (m){ out.push(`= ${m[1].trim()}`); continue; }
+    m = raw.match(/^([-=])\s*(.+)$/); // - Intro / = Verse (preserve marker type)
+    if (m){ out.push(`${m[1]} ${m[2].trim()}`); continue; }
     m = raw.match(/^(#{1,6})\s*(.+)$/); // Markdown
     if (m){ out.push(`= ${m[2].trim()}`); continue; }
 
@@ -2464,6 +2529,142 @@ document.getElementById('btnCopy').addEventListener('click', async () => {
 });
 
 /* =========================================================
+   ChordPro Export (inspired by chord-chart-studio/chord-mark-converters)
+========================================================= */
+function exportToChordPro(text){
+  const doc = parseCSMPN(text);
+  const lines = [];
+  if (doc.title) lines.push(`{title: ${doc.title}}`);
+  if (doc.composer) lines.push(`{composer: ${doc.composer}}`);
+  if (doc.key) lines.push(`{key: ${doc.key}}`);
+  if (doc.time) lines.push(`{time: ${doc.time}}`);
+  if (doc.tempo) lines.push(`{tempo: ${doc.tempo}}`);
+  if (lines.length) lines.push('');
+
+  for (const block of doc.blocks){
+    if (block.type === 'marker'){
+      const sectionName = (block.text || '').toLowerCase();
+      if (block.marker === '-' || block.marker === ':'){
+        lines.push(`{start_of_${sectionName.includes('chorus') ? 'chorus' : sectionName.includes('bridge') ? 'bridge' : 'verse'}: ${block.text}}`);
+      } else if (block.marker === '='){
+        lines.push(`{comment: ${block.text}}`);
+      } else {
+        lines.push(`{comment: ${block.text}}`);
+      }
+      continue;
+    }
+    if (block.type === 'bars'){
+      const chordLine = block.tokens
+        .filter(t => !isBarlineToken(t))
+        .map(t => {
+          const stripped = stripTokenDecorators(t);
+          if (!stripped || stripped === '%' || stripped === '%%') return `[${t}]`;
+          return `[${stripped}]`;
+        })
+        .join(' ');
+      lines.push(chordLine);
+    }
+  }
+  return lines.join('\n');
+}
+
+document.getElementById('btnExportChordPro').addEventListener('click', () => {
+  try {
+    const chordPro = exportToChordPro(sourceEl.value);
+    const filename = safeFilename(hdr.title.value?.trim() || 'chart') + '.chopro';
+    const blob = new Blob([chordPro], { type: 'text/plain;charset=utf-8' });
+    downloadBlob(blob, filename);
+    setStatus('Exported as ChordPro (.chopro).');
+  } catch(e) {
+    setStatus('ChordPro export failed: ' + (e?.message || e), 'error');
+  }
+});
+
+/* =========================================================
+   Song Library (inspired by chord-chart-studio localStorage persistence)
+========================================================= */
+function getSongLibrary(){
+  try {
+    const raw = localStorage.getItem('csmpn_library');
+    return raw ? JSON.parse(raw) : [];
+  } catch(_){ return []; }
+}
+
+function saveSongLibrary(library){
+  try { localStorage.setItem('csmpn_library', JSON.stringify(library)); } catch(_){}
+}
+
+document.getElementById('btnSave').addEventListener('click', () => {
+  const text = sourceEl.value || '';
+  const headerData = extractHeaderFromText(text, false);
+  const songTitle = headerData.title || 'Untitled';
+
+  const library = getSongLibrary();
+  const existing = library.findIndex(s => s.title === songTitle);
+  const entry = {
+    title: songTitle,
+    content: text,
+    savedAt: new Date().toISOString(),
+  };
+
+  if (existing >= 0){
+    library[existing] = entry;
+  } else {
+    library.push(entry);
+  }
+  saveSongLibrary(library);
+  setStatus(`Saved "${songTitle}" to library (${library.length} song(s)).`);
+});
+
+document.getElementById('btnLoad').addEventListener('click', () => {
+  const library = getSongLibrary();
+  if (!library.length){
+    setStatus('No saved songs in library.', 'warning');
+    return;
+  }
+
+  // Build a simple song picker
+  const names = library.map((s, i) => `${i + 1}. ${s.title} (${s.savedAt?.slice(0,10) || 'unknown'})`);
+  const choice = prompt('Select a song to load:\\n\\n' + names.join('\\n') + '\\n\\nEnter number:');
+  if (!choice) return;
+  const idx = parseInt(choice, 10) - 1;
+  if (idx < 0 || idx >= library.length){
+    setStatus('Invalid selection.', 'warning');
+    return;
+  }
+  sourceEl.value = library[idx].content;
+  extractHeaderFromText(library[idx].content);
+  updatePreview();
+  setStatus(`Loaded "${library[idx].title}" from library.`);
+});
+
+/* =========================================================
+   Keyboard Shortcuts (inspired by chord-chart-studio UI patterns)
+========================================================= */
+document.addEventListener('keydown', (e) => {
+  // Ctrl/Cmd+S: Save song
+  if ((e.ctrlKey || e.metaKey) && e.key === 's'){
+    e.preventDefault();
+    document.getElementById('btnSave').click();
+  }
+  // Ctrl/Cmd+P: Print
+  if ((e.ctrlKey || e.metaKey) && e.key === 'p'){
+    e.preventDefault();
+    window.print();
+  }
+  // Ctrl/Cmd+Up: Transpose up
+  if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowUp'){
+    e.preventDefault();
+    doTranspose(1);
+  }
+  // Ctrl/Cmd+Down: Transpose down
+  if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowDown'){
+    e.preventDefault();
+    doTranspose(-1);
+  }
+});
+
+/* =========================================================
    Init
 ========================================================= */
 sourceEl.value = `Title: Sin City Blues
@@ -2533,12 +2734,14 @@ F9_F13 :|
 |: Bb7_Bb6_Eb9 Bb_B13_Bb7 :|
 `;
 
+loadFBSettings();
+applyFBSettings();
 extractHeaderFromText(sourceEl.value);
 updatePreview();
-setStatus('Ready. v1.7 — Fake Book formatting.');
+setStatus('Ready. v1.8 — Fake Book formatting.');
 
 // --- Optional self-tests (run manually in console): window.runCSMPNSelfTests() ---
-// v1.7.0: Fake Book Edition
+// v1.8.0: Fake Book Edition
 window.runCSMPNSelfTests = function(){
   const results = [];
   const assert = (name, cond) => results.push({ name, pass: !!cond });
@@ -2562,10 +2765,71 @@ window.runCSMPNSelfTests = function(){
     const b = normalizeBarlineDelimiters("ǁ Bb7 | % |");
     assert("normalize unicode bars", b.includes("||"));
 
+    // BUG FIX: Double barlines not destroyed by single-pipe replacement
+    const b2 = normalizeBarlineDelimiters("Bb7 || Eb7");
+    assert("double barline preserved", b2.includes("||") && !b2.includes("| |"));
+
+    // BUG FIX: Repeat barlines preserved
+    const b3 = normalizeBarlineDelimiters("|: Bb7 Eb7 :|");
+    assert("repeat-start preserved", b3.includes("|:"));
+    assert("repeat-end preserved", b3.includes(":|"));
+
+    // BUG FIX: formatChordQuality — 'maj' alone (no 7) should NOT be styled as maj7
+    const q1 = formatChordQuality('maj');
+    assert("bare maj not treated as maj7", q1 === 'maj');
+    const q2 = formatChordQuality('maj7');
+    assert("maj7 styled correctly", q2 === 'MA7' || q2 === 'maj7' || q2 === 'Δ7');
+    const q3 = formatChordQuality('ma9');
+    assert("ma9 styled correctly", q3 === 'MA9' || q3 === 'maj9' || q3 === 'Δ9');
+
+    // BUG FIX: notation preference false match on words
+    const pref1 = detectNotationPreferenceFromKeyOrText('', 'Above the bridge');
+    assert("notation pref not fooled by words", pref1 === 'sharp');
+    const pref2 = detectNotationPreferenceFromKeyOrText('', 'Bb7 Eb7');
+    assert("notation pref detects flat chords", pref2 === 'flat');
+
+    // BUG FIX: importUGText preserves marker types
+    const ug1 = importUGText("- Intro\nBb7 Eb7 Cm7 F7\n= Bridge\nG7 C7 Am7 D7");
+    assert("importUGText preserves - marker", ug1.includes("- Intro"));
+    assert("importUGText preserves = marker", ug1.includes("= Bridge"));
+
+    // Transposition sanity
+    assert("transpose Bb+1=B", transposeNote('Bb', 1, 'sharp') === 'B');
+    assert("transpose C-1=B", transposeNote('C', -1, 'sharp') === 'B');
+    assert("transpose F#+1=G", transposeNote('F#', 1, 'sharp') === 'G');
+
+    // parseCSMPN basic
+    const doc = parseCSMPN("Title: Test\nKey: C\n- Verse\nC G Am F");
+    assert("parseCSMPN title", doc.title === "Test");
+    assert("parseCSMPN key", doc.key === "C");
+    assert("parseCSMPN has marker block", doc.blocks[0]?.type === "marker");
+    assert("parseCSMPN has bars block", doc.blocks[1]?.type === "bars");
+
+    // ChordPro export
+    const cp = exportToChordPro("Title: Test\nKey: C\n- Verse\nC G Am F");
+    assert("chordPro export title", cp.includes("{title: Test}"));
+    assert("chordPro export key", cp.includes("{key: C}"));
+    assert("chordPro export chords", cp.includes("[C]") && cp.includes("[G]"));
+
+    // isChordToken tests
+    assert("isChordToken Bb7", isChordToken("Bb7"));
+    assert("isChordToken Cmaj7", isChordToken("Cmaj7"));
+    assert("isChordToken N.C.", isChordToken("N.C."));
+    assert("isChordToken %", isChordToken("%"));
+    assert("!isChordToken 'the'", !isChordToken("the"));
+    assert("!isChordToken 'Verse'", !isChordToken("Verse"));
+
+    // Page count in footer
+    const docPages = parseCSMPN("Title: T\n- V1\nC G Am F\n+\n- V2\nD A Bm G");
+    assert("page break detected", docPages.blocks.filter(b=>b.type==='pagebreak').length === 1);
+
   }catch(e){
     results.push({ name: "exception", pass: false, error: e?.message || String(e) });
   }
   console.table(results);
+  const passed = results.filter(r => r.pass).length;
+  const total = results.length;
+  console.log(`Self-tests: ${passed}/${total} passed` + (passed === total ? ' ✓' : ' ✗ FAILURES'));
   return results;
 };
 
