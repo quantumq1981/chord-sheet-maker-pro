@@ -1,44 +1,84 @@
-# AGENT_REPORT
+# AGENT REPORT
 
-## What changed
-- Added `abcjs` CDN dependency and a hidden parse container (`#abc-hidden`) so ABC can be parsed/mined without touching the visible renderer.
-- Extended file import acceptance/routing to detect `.abc` and `text/plain` with a `K:` header, then route through a new ABC miner and existing `SongModel -> toCSMPN -> textarea -> preview` flow.
-- Implemented `mineABCToSongModel(abcText)` and helper functions to mine ABC metadata (`T`, `C`, `M`, `K`, `Q`) and bar-level chords from quoted tokens (`"Am"` etc.), grouped by `P:` section labels (or `- Main` fallback).
-- Added a layered ABC extraction fallback with `ABCJS.renderAbc(...)` to try mining chord annotations when text-scan bars are too sparse, while warning and proceeding safely if no reliable chord data is exposed.
-- Added explicit ABC import error reporting (`console.warn` + user-facing `ABC import failed: ...`) without changing fake-book rendering/layout logic.
+## Summary of changes
+- Refined the UG Pro text miner to replace strict density-only gating with a **strict validity** chord-line classifier:
+  - Added `isLikelyUGChordLine(line)` that scores each token as chord, structural, or noise.
+  - Structural tokens include UG/tab notation like barlines, separators, parens, `%`, `xN`, `N.C.`, `stop`, `break`.
+  - Accepts lines primarily composed of chords + structure and avoids lyric/noise lines.
+- Added explicit structural-token regex constant: `RE_UG_STRUCTURAL_TOKEN`.
+- Updated `mineUGProTextToSongModel(text)` to:
+  - Use strict-validity chord-line gating instead of raw `density >= 0.75`.
+  - Support sparse valid lines (including short single-chord lines) through classifier rules.
+  - Keep barline-aware segmentation for `| ... |` and `_` joins for multi-chord segments.
+  - Expand trailing `xN` repeats into concrete bars (e.g., `C G x2` => `C G C G`) instead of preserving symbolic repeats.
+- Router refinement:
+  - Retained fallback to legacy `importUGText` on sparse output/errors.
+  - Kept fallback warning in console but removed user-facing error status for UG miner fallback failures to keep it quiet in normal usage.
 
-## Anchors (functions + approximate line ranges)
-- `fileInput.addEventListener('change', ...)` import router updates: ~1958-2021
-- `mineABCToSongModel(abcText)`: ~2160-2236
-- `firstABCHeaderValue(lines, letter)`: ~2238-2246
-- `normalizeABCKey(rawKey)`: ~2248-2259
-- `parseABCTempo(qValue)`: ~2261-2268
-- `ensureABCSection(sectionMap, labelRaw)`: ~2270-2276
-- `fallbackMineABCWithAbcjs(abcText)`: ~2278-2310
+## Anchors (function names + approx line ranges)
+- Text router integration (`// txt` block): ~2009-2033
+- `RE_UG_STRUCTURAL_TOKEN`: ~2093
+- `isLikelyUGChordLine`: ~2095-2130
+- `mineUGProTextToSongModel`: ~2132-2220
 
-## How to test
-1. Open the app in a browser.
-2. Click **Import File** and choose a file named `test-blues.abc` with this exact content:
+## Test steps + sample UG text cases
+1. Ran a Node VM harness (with DOM stubs) that executes the page script, then calls `mineUGProTextToSongModel` directly and serializes via `toCSMPN({barsPerRow:4})`.
 
-   ```abc
-   X:1
-   T:Test Blues
-   C:Chris
-   M:4/4
-   Q:1/4=120
-   K:Bb
-   P:Intro
-   "Bb7" B2 B2 | "Eb7" e2 e2 | "Bb7" B2 B2 | "F7" F2 F2 |
-   P:Verse
-   "Bb7" B2 B2 | "Eb7" e2 e2 | "Bb7" B2 B2 | "F7" F2 F2 |
-   ```
-3. Confirm metadata fields populate as expected: Title `Test Blues`, Composer `Chris`, Time `4/4`, Key `Bb`, Tempo near `120`.
-4. Confirm generated CSMPN appears in source textarea with section labels and bars.
-5. Confirm preview updates in existing fake-book grid (no layout/render behavior changes expected).
-6. Re-test imports for `.pdf`, `.txt`, and `.musicxml`/`.xml` to ensure existing routes still function.
+### Case 1 — Standard UG chord block
+Input:
+```
+[Intro]
+Am  D7  G  C
 
-## Risks / known limitations
-- ABC chord mining is intentionally pragmatic: it primarily extracts quoted chord symbols per measure; files without quoted chords may yield sparse bars.
-- `P:` handling maps to simple section labels and does not implement full multi-part ABC playback semantics.
-- Repeat handling is minimal and marker-preserving only; no full repeat expansion engine is added.
-- `abcjs` fallback chord extraction depends on internal object shape and may not expose all chord annotations consistently across ABC variants.
+[Verse]
+Am  D7  G  C
+F   G   C  C
+```
+Observed:
+- Sections: `- Intro`, `- Verse`
+- Correct bars mined and grouped in CSMPN output.
+
+### Case 2 — Barline separated
+Input:
+```
+[Chorus]
+| Am  D7 | G  C |
+| F  G | C |
+```
+Observed:
+- Segments mined as bars with split chords joined: `Am_D7`, `G_C`, `F_G`, `C`.
+
+### Case 3 — Lyrics ignored
+Input:
+```
+[Verse]
+Am D7 G C
+I woke up this morning feeling fine
+F G C C
+```
+Observed:
+- Lyric line rejected by strict validity classifier; chord lines mined.
+
+### Case 4 — Sparse chord line with structural text
+Input:
+```
+[Verse]
+C (stop) Am
+G
+```
+Observed:
+- Line accepted; bars mined as `C`, `Am`, `G`.
+
+### Case 5 — Trailing multiplier
+Input:
+```
+[Outro]
+C G Am F x2
+```
+Observed:
+- Repeat expanded in model to 8 bars: `C G Am F C G Am F`.
+
+## Edge cases / risks
+- Structural whitelist is intentionally permissive for tab notation and could still admit some non-musical short marker lines; chord requirement mitigates this.
+- `xN` expansion currently duplicates the entire mined phrase from that line; phrase-local repeat semantics beyond line scope are intentionally not inferred.
+- If UG text has very unconventional section labels, they may be ignored and mined under the current section.

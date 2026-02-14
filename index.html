@@ -2007,7 +2007,26 @@ fileInput.addEventListener('change', async () => {
     }
 
     // txt
-    const csmpn = detectChordPro(text) ? importChordPro(text) : importUGText(text);
+    let csmpn = '';
+    if (detectChordPro(text)){
+      csmpn = importChordPro(text);
+    } else if (isLikelyUGProText(text)){
+      try {
+        const ugSong = mineUGProTextToSongModel(text);
+        const totalBars = countSongModelBars(ugSong);
+        if (totalBars >= 4){
+          csmpn = ugSong.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
+        } else {
+          console.warn(`UG miner produced only ${totalBars} bars, falling back to legacy importer.`);
+          csmpn = importUGText(text);
+        }
+      } catch (ugErr) {
+        console.warn(ugErr);
+        csmpn = importUGText(text);
+      }
+    } else {
+      csmpn = importUGText(text);
+    }
     sourceEl.value = csmpn;
     extractHeaderFromText(csmpn);
     updatePreview();
@@ -2022,6 +2041,169 @@ fileInput.addEventListener('change', async () => {
 
 function detectChordPro(text){
   return /\{\s*(title|key|tempo|time)\s*:/i.test(text);
+}
+
+function countSongModelBars(song){
+  if (!(song instanceof SongModel) || !Array.isArray(song.sections)) return 0;
+  return song.sections.reduce((sum, sec) => {
+    const bars = Array.isArray(sec?.bars) ? sec.bars.filter(Boolean).length : 0;
+    return sum + bars;
+  }, 0);
+}
+
+function isLikelyUGProText(text){
+  const lines = (text || '').replace(/\r/g, '').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return false;
+  const hasBracketSections = lines.some((line) => /^\[(verse|chorus|bridge|intro|solo|outro|pre-?chorus|refrain)[^\]]*\]$/i.test(line));
+  let chordLikeLines = 0;
+  for (const line of lines){
+    if (/^\[.+\]$/.test(line)) continue;
+    if (isLikelyUGChordLine(line)) chordLikeLines++;
+  }
+  return hasBracketSections || chordLikeLines >= 2;
+}
+
+function parseUGMetaLine(song, line){
+  const m = line.match(/^\s*(title|song|artist|composer|key|tempo|bpm|time|time\s*signature)\s*:\s*(.+)\s*$/i);
+  if (!m) return false;
+  const label = m[1].toLowerCase().replace(/\s+/g, ' ').trim();
+  const value = m[2].trim();
+  if (!value) return true;
+  if (label === 'title' || label === 'song') song.meta.title = song.meta.title || value;
+  else if (label === 'artist' || label === 'composer') song.meta.composer = song.meta.composer || value;
+  else if (label === 'key') song.meta.key = song.meta.key || value;
+  else if (label === 'tempo' || label === 'bpm') song.meta.tempo = song.meta.tempo || value.replace(/\s*bpm\s*$/i, '').trim();
+  else if (label === 'time' || label === 'time signature') song.meta.time = song.meta.time || value;
+  return true;
+}
+
+function parseUGSectionHeader(line){
+  let m = line.match(/^\s*\[(verse|chorus|bridge|intro|solo|outro|pre-?chorus|refrain)(?:\s*[^\]]*)\]\s*$/i);
+  if (m) return m[1].replace(/\s+/g, ' ').trim();
+  m = line.match(/^\s*(verse|chorus|bridge|intro|solo|outro|pre-?chorus|refrain)\s*:?\s*$/i);
+  if (m) return m[1].replace(/\s+/g, ' ').trim();
+  return '';
+}
+
+const RE_UG_STRUCTURAL_TOKEN = /^([\|\/\\\[\]\(\)\{\}\.,:;%\-]+|x\d+|\(x\d+\)|n\.c\.?|stop|break)$/i;
+
+function isLikelyUGChordLine(line){
+  const text = (line || '').trim();
+  if (!text) return false;
+
+  const tokens = tokenizeBars(text).filter(Boolean);
+  if (!tokens.length) return false;
+
+  let validCount = 0;
+  let chordCount = 0;
+
+  for (const tok of tokens){
+    if (isBarlineToken(tok)){
+      validCount++;
+      continue;
+    }
+    if (normalizeChordToken(tok)){
+      chordCount++;
+      validCount++;
+      continue;
+    }
+    if (RE_UG_STRUCTURAL_TOKEN.test(tok)){
+      validCount++;
+    }
+  }
+
+  if (!chordCount) return false;
+
+  const validityRatio = validCount / tokens.length;
+  if (validityRatio >= 0.9) return true;
+  if (validityRatio === 1 && chordCount >= 1) return true;
+  if (chordCount >= 2 && validityRatio >= 0.5) return true;
+  if (chordCount === 1 && text.length < 10 && validityRatio >= 0.8) return true;
+  return false;
+}
+
+function mineUGProTextToSongModel(text){
+  const song = new SongModel();
+  const lines = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+  let currentSection = { label: '- Main', bars: [] };
+  song.sections.push(currentSection);
+
+  const ensureSection = (name) => {
+    const clean = (name || '').trim();
+    if (!clean) return;
+    currentSection = { label: `- ${clean}`, bars: [] };
+    song.sections.push(currentSection);
+  };
+
+  for (const line0 of lines){
+    const line = (line0 || '').trim();
+    if (!line) continue;
+
+    if (parseUGMetaLine(song, line)) continue;
+
+    const sectionName = parseUGSectionHeader(line);
+    if (sectionName){
+      ensureSection(sectionName);
+      continue;
+    }
+
+    const tokens = tokenizeBars(line).filter(Boolean);
+    if (!tokens.length) continue;
+    const nonBarTokens = tokens.filter((tok) => !isBarlineToken(tok));
+    if (!nonBarTokens.length) continue;
+    if (!isLikelyUGChordLine(line)) continue;
+
+    const repeatMatch = line.match(/\bx\s*(\d+)\s*$/i);
+    const repeatCount = repeatMatch ? parseInt(repeatMatch[1], 10) : 1;
+    const contentTokens = repeatMatch
+      ? tokens.filter((tok) => !/^x\d+$/i.test(tok) && !/^\(x\d+\)$/i.test(tok))
+      : tokens;
+
+    const hasBarlines = contentTokens.some((tok) => isBarlineToken(tok));
+    const minedBars = [];
+
+    if (hasBarlines){
+      let segment = [];
+      const flushSegment = () => {
+        if (!segment.length) return;
+        const segmentChords = segment.map((tok) => normalizeChordToken(tok)).filter(Boolean);
+        if (!segmentChords.length){
+          segment = [];
+          return;
+        }
+        minedBars.push(segmentChords.length >= 2 ? segmentChords.join('_') : segmentChords[0]);
+        segment = [];
+      };
+      for (const tok of contentTokens){
+        if (isBarlineToken(tok)){
+          flushSegment();
+          continue;
+        }
+        segment.push(tok);
+      }
+      flushSegment();
+    } else {
+      minedBars.push(...contentTokens.map((tok) => normalizeChordToken(tok)).filter(Boolean));
+    }
+
+    if (!minedBars.length) continue;
+    if (Number.isFinite(repeatCount) && repeatCount > 1){
+      for (let i = 0; i < repeatCount; i++){
+        currentSection.bars.push(...minedBars);
+      }
+      continue;
+    }
+
+    currentSection.bars.push(...minedBars);
+  }
+
+  song.sections = song.sections.filter((section, idx) => section.bars.length || idx === 0 || section.label);
+  if (song.sections.length > 1 && !song.sections[0].bars.length && song.sections[0].label === '- Main'){
+    song.sections.shift();
+  }
+
+  return song;
 }
 
 function importUGText(text){
