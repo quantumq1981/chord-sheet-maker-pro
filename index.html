@@ -917,6 +917,69 @@ function normalizeAccidentals(s){
     .trim();
 }
 
+class SongModel {
+  constructor(){
+    this.meta = {
+      title: '',
+      composer: '',
+      style: '',
+      key: '',
+      tempo: '',
+      time: ''
+    };
+    this.sections = [];
+  }
+
+  toCSMPN(options = {}){
+    const barsPerRowRaw = Number(options?.barsPerRow ?? fbSettings?.barsPerRow ?? 4);
+    const barsPerRow = Number.isFinite(barsPerRowRaw) && barsPerRowRaw > 0 ? Math.floor(barsPerRowRaw) : 4;
+    const out = [];
+
+    if (this.meta.title) out.push(`Title: ${this.meta.title}`);
+    if (this.meta.composer) out.push(`Composer: ${this.meta.composer}`);
+    if (this.meta.style) out.push(`Style: ${this.meta.style}`);
+    if (this.meta.key) out.push(`Key: ${this.meta.key}`);
+    if (this.meta.tempo) out.push(`Tempo: ${this.meta.tempo}`);
+    if (this.meta.time) out.push(`Time: ${this.meta.time}`);
+
+    if (out.length && this.sections.length) out.push('');
+
+    for (const section of this.sections){
+      const label = (section?.label || '').trim();
+      if (label){
+        const lead = label[0];
+        out.push(lead === '-' || lead === ':' || lead === '=' ? label : `- ${label}`);
+      }
+
+      const bars = Array.isArray(section?.bars)
+        ? section.bars.map((bar) => (bar ?? '').toString().trim()).filter(Boolean)
+        : [];
+
+      for (let i = 0; i < bars.length; i += barsPerRow){
+        out.push(bars.slice(i, i + barsPerRow).join(' '));
+      }
+      if (bars.length) out.push('');
+    }
+
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+}
+
+function mapMusicXMLFifthsToKey(fifthsValue, mode){
+  const fifths = Number(fifthsValue);
+  if (!Number.isFinite(fifths)) return '';
+  const majorMap = {
+    '-7':'Cb','-6':'Gb','-5':'Db','-4':'Ab','-3':'Eb','-2':'Bb','-1':'F',
+    '0':'C','1':'G','2':'D','3':'A','4':'E','5':'B','6':'F#','7':'C#'
+  };
+  const minorMap = {
+    '-7':'Abm','-6':'Ebm','-5':'Bbm','-4':'Fm','-3':'Cm','-2':'Gm','-1':'Dm',
+    '0':'Am','1':'Em','2':'Bm','3':'F#m','4':'C#m','5':'G#m','6':'D#m','7':'A#m'
+  };
+  const isMinor = (mode || '').trim().toLowerCase() === 'minor';
+  return isMinor ? (minorMap[String(fifths)] || '') : (majorMap[String(fifths)] || '');
+}
+
 /* =========================================================
    Phase-1 fixes: Header <-> Source bidirectional sync
 ========================================================= */
@@ -1899,6 +1962,8 @@ fileInput.addEventListener('change', async () => {
   try{
     setStatus(`Importing ${file.name}...`);
     const name = file.name.toLowerCase();
+    const type = (file.type || '').toLowerCase();
+
     if (name.endsWith('.pdf')){
       const csmpn = await importUGProPDF(file);
       sourceEl.value = csmpn;
@@ -1906,15 +1971,20 @@ fileInput.addEventListener('change', async () => {
       updatePreview();
       return;
     }
-    if (name.endsWith('.xml') || name.endsWith('.musicxml')){
+
+    if (name.endsWith('.musicxml') || name.endsWith('.xml') || type.includes('musicxml') || type.includes('xml')){
       const text = await file.text();
-      const csmpn = importMusicXML(text);
-      sourceEl.value = csmpn;
-      extractHeaderFromText(csmpn);
-      updatePreview();
-      setStatus('Imported MusicXML.');
+      const song = importMusicXML(text);
+      if (song instanceof SongModel){
+        const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
+        sourceEl.value = csmpn;
+        extractHeaderFromText(csmpn);
+        updatePreview();
+        setStatus('Imported MusicXML.');
+      }
       return;
     }
+
     // txt
     const text = await file.text();
     const csmpn = detectChordPro(text) ? importChordPro(text) : importUGText(text);
@@ -1924,7 +1994,7 @@ fileInput.addEventListener('change', async () => {
     setStatus('Imported text.');
   }catch(err){
     console.error(err);
-    setStatus(`Import failed: ${err?.message || err}`, true);
+    setStatus(`Import failed: ${err?.message || err}`, 'error');
   }
 });
 
@@ -2065,40 +2135,66 @@ function importChordPro(text){
 }
 
 function importMusicXML(xmlText){
-  const parser = new DOMParser();
-  const xml = parser.parseFromString(xmlText, "application/xml");
-  const title = xml.querySelector("work > work-title")?.textContent?.trim() || '';
-  const composer = xml.querySelector("identification creator[type='composer']")?.textContent?.trim() || '';
-  const keyFifths = xml.querySelector("key fifths")?.textContent?.trim();
-  const timeBeats = xml.querySelector("time beats")?.textContent?.trim();
-  const timeBeatType = xml.querySelector("time beat-type")?.textContent?.trim();
-
-  const out = [];
-  if (title) out.push(`Title: ${title}`);
-  if (composer) out.push(`Composer: ${composer}`);
-  if (timeBeats && timeBeatType) out.push(`Time: ${timeBeats}/${timeBeatType}`);
-
-  // measures
-  const measures = [...xml.querySelectorAll("measure")];
-  const bars = [];
-  for (const meas of measures){
-    const harmonies = [...meas.querySelectorAll("harmony")];
-    if (!harmonies.length){
-      bars.push('%'); // simile (or *), conservative
-      continue;
+  try{
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlText, 'application/xml');
+    const parseError = xml.querySelector('parsererror');
+    if (parseError){
+      throw new Error(parseError.textContent?.trim() || 'Invalid XML');
     }
-    // take first harmony as bar chord; if multiple, split bar
-    const chords = harmonies.map(h => harmonyToChord(h)).filter(Boolean);
-    if (chords.length === 1) bars.push(chords[0]);
-    else bars.push(chords.join('_'));
-  }
 
-  // chunk into 4 per line
-  for (let i=0;i<bars.length;i+=4){
-    out.push(bars.slice(i,i+4).join(' '));
+    const song = new SongModel();
+    song.meta.title =
+      xml.querySelector('work > work-title')?.textContent?.trim() ||
+      xml.querySelector('movement-title')?.textContent?.trim() ||
+      xml.querySelector('credit credit-words')?.textContent?.trim() ||
+      '';
+
+    song.meta.composer =
+      xml.querySelector("identification creator[type='composer']")?.textContent?.trim() ||
+      xml.querySelector('identification creator')?.textContent?.trim() ||
+      '';
+
+    const firstAttributes = xml.querySelector('measure attributes');
+    const timeBeats = firstAttributes?.querySelector('time beats')?.textContent?.trim();
+    const timeBeatType = firstAttributes?.querySelector('time beat-type')?.textContent?.trim();
+    if (timeBeats && timeBeatType){
+      song.meta.time = `${timeBeats}/${timeBeatType}`;
+    }
+
+    const keyFifths = firstAttributes?.querySelector('key fifths')?.textContent?.trim();
+    const keyMode = firstAttributes?.querySelector('key mode')?.textContent?.trim();
+    song.meta.key = mapMusicXMLFifthsToKey(keyFifths, keyMode);
+
+    const tempoNode = xml.querySelector('sound[tempo]') || xml.querySelector('direction sound[tempo]');
+    const tempoValue = tempoNode?.getAttribute('tempo');
+    if (tempoValue){
+      const tempoNum = Number(tempoValue);
+      song.meta.tempo = Number.isFinite(tempoNum) ? String(Math.round(tempoNum)) : '';
+    }
+
+    const measures = [...xml.querySelectorAll('measure')];
+    const bars = [];
+    for (const meas of measures){
+      const harmonies = [...meas.querySelectorAll('harmony')];
+      const chords = harmonies.map((h) => normalizeChordToken(harmonyToChord(h))).filter(Boolean);
+      if (!chords.length){
+        bars.push('%');
+      } else if (chords.length === 1){
+        bars.push(chords[0]);
+      } else {
+        bars.push(chords.join('_'));
+      }
+    }
+
+    song.sections.push({ label: '- Main', bars });
+    setStatus(`Imported MusicXML: ${measures.length} measure(s).`);
+    return song;
+  }catch(err){
+    console.warn('MusicXML import failed:', err);
+    setStatus(`MusicXML import failed: ${err?.message || err}`, 'error');
+    throw err;
   }
-  setStatus(`Imported MusicXML: ${measures.length} measure(s).`);
-  return out.join('\n');
 }
 
 function harmonyToChord(h){
@@ -2797,6 +2893,20 @@ window.runCSMPNSelfTests = function(){
     assert("transpose Bb+1=B", transposeNote('Bb', 1, 'sharp') === 'B');
     assert("transpose C-1=B", transposeNote('C', -1, 'sharp') === 'B');
     assert("transpose F#+1=G", transposeNote('F#', 1, 'sharp') === 'G');
+
+    // SongModel serialization + MusicXML mining
+    const songModel = new SongModel();
+    songModel.meta.title = 'SongModel Test';
+    songModel.sections.push({ label: 'Verse', bars: ['C', 'G', 'Am', 'F', 'Dm'] });
+    const smText = songModel.toCSMPN({ barsPerRow: 4 });
+    assert('SongModel prefixes plain section labels', smText.includes('- Verse'));
+    assert('SongModel chunks by barsPerRow', smText.includes('C G Am F\nDm'));
+
+    const xmlSong = importMusicXML(`<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1"><work><work-title>XML Tune</work-title></work><identification><creator type="composer">Jane Doe</creator></identification><part id="P1"><measure number="1"><attributes><divisions>1</divisions><key><fifths>-1</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time></attributes><harmony><root><root-step>B</root-step><root-alter>-1</root-alter></root><kind text="7">dominant</kind></harmony></measure><measure number="2"><harmony><root><root-step>E</root-step><root-alter>-1</root-alter></root><kind>major</kind></harmony><harmony><root><root-step>F</root-step></root><kind>minor-seventh</kind></harmony></measure></part></score-partwise>`);
+    assert('importMusicXML returns SongModel', xmlSong instanceof SongModel);
+    assert('MusicXML title mined', xmlSong.meta.title === 'XML Tune');
+    assert('MusicXML key mined', xmlSong.meta.key === 'Bb');
+    assert('MusicXML bar split with _', xmlSong.sections[0]?.bars[1] === 'Eb_Fm7');
 
     // parseCSMPN basic
     const doc = parseCSMPN("Title: Test\nKey: C\n- Verse\nC G Am F");
