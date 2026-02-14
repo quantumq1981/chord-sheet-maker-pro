@@ -19,6 +19,9 @@
 <!-- jsPDF for optional PDF export (print remains the primary PDF workflow) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
+<!-- abcjs for ABC import parsing/mining -->
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.2.2/dist/abcjs-basic-min.js"></script>
+
 <style>
   :root{
     --bg:#f5f5f5;
@@ -592,6 +595,7 @@ body.exporting .sheet{
 </head>
 
 <body>
+<div id="abc-hidden" style="display:none"></div>
 <div class="app">
   <div class="topbar">
     <div class="title">ChordSheet CSMPN Builder v1.8.0 — Fake Book Edition</div>
@@ -633,7 +637,7 @@ body.exporting .sheet{
 
     <div id="status" class="status">Ready. v1.8 — Fake Book formatting.</div>
 
-    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml" style="display:none" />
+    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.abc" style="display:none" />
   </div>
 
   <!-- Fake Book Settings Panel -->
@@ -1972,8 +1976,25 @@ fileInput.addEventListener('change', async () => {
       return;
     }
 
+    const text = await file.text();
+
+    if (name.endsWith('.abc') || (type.includes('text/plain') && /(^|\n)\s*K\s*:/i.test(text))){
+      try {
+        const song = mineABCToSongModel(text);
+        const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
+        sourceEl.value = csmpn;
+        extractHeaderFromText(csmpn);
+        updatePreview();
+        setStatus('Imported ABC.');
+      } catch (abcErr) {
+        console.warn(abcErr);
+        setStatus(`ABC import failed: ${abcErr?.message || abcErr}`, 'error');
+        throw abcErr;
+      }
+      return;
+    }
+
     if (name.endsWith('.musicxml') || name.endsWith('.xml') || type.includes('musicxml') || type.includes('xml')){
-      const text = await file.text();
       const song = importMusicXML(text);
       if (song instanceof SongModel){
         const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
@@ -1986,7 +2007,6 @@ fileInput.addEventListener('change', async () => {
     }
 
     // txt
-    const text = await file.text();
     const csmpn = detectChordPro(text) ? importChordPro(text) : importUGText(text);
     sourceEl.value = csmpn;
     extractHeaderFromText(csmpn);
@@ -1994,7 +2014,9 @@ fileInput.addEventListener('change', async () => {
     setStatus('Imported text.');
   }catch(err){
     console.error(err);
-    setStatus(`Import failed: ${err?.message || err}`, 'error');
+    if (!String(err?.message || '').startsWith('ABC import failed:')){
+      setStatus(`Import failed: ${err?.message || err}`, 'error');
+    }
   }
 });
 
@@ -2132,6 +2154,156 @@ function importChordPro(text){
   }
   setStatus(`Imported ChordPro.`);
   return out.join('\n').replace(/\n{3,}/g,'\n\n');
+}
+
+
+function mineABCToSongModel(abcText){
+  const song = new SongModel();
+  const text = (abcText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = text.split('\n');
+
+  song.meta.title = firstABCHeaderValue(lines, 'T');
+  song.meta.composer = firstABCHeaderValue(lines, 'C');
+  song.meta.time = firstABCHeaderValue(lines, 'M') || '4/4';
+  song.meta.key = normalizeABCKey(firstABCHeaderValue(lines, 'K'));
+  song.meta.tempo = parseABCTempo(firstABCHeaderValue(lines, 'Q'));
+
+  const sectionMap = new Map();
+  let currentSection = ensureABCSection(sectionMap, 'Main');
+
+  const hasMusicLikeContent = lines.some((line) => {
+    const trimmed = (line || '').trim();
+    if (!trimmed) return false;
+    if (/^[A-Za-z]:/.test(trimmed)) return false;
+    return /[A-Ga-gz"|]/.test(trimmed);
+  });
+
+  for (const line0 of lines){
+    const line = (line0 || '').trim();
+    if (!line || line.startsWith('%')) continue;
+
+    const partMatch = line.match(/^P\s*:\s*(.+)$/i);
+    if (partMatch){
+      currentSection = ensureABCSection(sectionMap, partMatch[1]);
+      continue;
+    }
+
+    if (/^[A-Za-z]\s*:/.test(line)) continue;
+
+    const measures = line.split(/\|+/).map((m) => m.trim());
+    for (const measure of measures){
+      if (!measure) continue;
+      const chordMatches = [...measure.matchAll(/"([^"]+)"/g)]
+        .map((m) => normalizeChordToken(m[1] || ''))
+        .filter(Boolean);
+      if (!chordMatches.length){
+        if ((/\|\s*:\s*$/.test(line) || /^\s*:\s*\|/.test(line)) && currentSection.bars.length){
+          currentSection.bars.push('%');
+        }
+        continue;
+      }
+      currentSection.bars.push(chordMatches.length === 1 ? chordMatches[0] : chordMatches.join('_'));
+    }
+
+    if (/\|:/.test(line)) currentSection.bars.push('|:');
+    if (/:\|/.test(line)) currentSection.bars.push(':|');
+  }
+
+  let totalBars = 0;
+  for (const sec of sectionMap.values()) totalBars += sec.bars.length;
+
+  if (totalBars < 4 && hasMusicLikeContent){
+    try {
+      const parsedBars = fallbackMineABCWithAbcjs(text);
+      if (parsedBars.length){
+        if (!currentSection.bars.length) currentSection = ensureABCSection(sectionMap, 'Main');
+        currentSection.bars.push(...parsedBars);
+      }
+    } catch (err) {
+      console.warn('ABCJS parse fallback warning:', err);
+    }
+  }
+
+  song.sections = [...sectionMap.values()].filter((sec) => sec.bars.length);
+  if (!song.sections.length){
+    song.sections = [{ label: '- Main', bars: [] }];
+  }
+  return song;
+}
+
+function firstABCHeaderValue(lines, letter){
+  const re = new RegExp(`^${letter}\\s*:\\s*(.+)$`, 'i');
+  for (const line0 of lines){
+    const line = (line0 || '').trim();
+    const m = line.match(re);
+    if (m) return m[1].trim();
+  }
+  return '';
+}
+
+function normalizeABCKey(rawKey){
+  const key = (rawKey || '').trim();
+  if (!key) return '';
+  const m = key.match(/^([A-Ga-g])([#b]?)(.*)$/);
+  if (!m) return key;
+  const root = m[1].toUpperCase();
+  const acc = m[2] || '';
+  const rest = (m[3] || '').trim();
+  if (!rest) return `${root}${acc}`;
+  if (/^(m|min|minor)$/i.test(rest)) return `${root}${acc}m`;
+  return `${root}${acc}${rest}`;
+}
+
+function parseABCTempo(qValue){
+  const q = (qValue || '').trim();
+  if (!q) return '';
+  const m = q.match(/=\s*(\d{2,3})/);
+  if (m) return String(parseInt(m[1], 10));
+  const n = q.match(/\b(\d{2,3})\b/);
+  return n ? String(parseInt(n[1], 10)) : '';
+}
+
+function ensureABCSection(sectionMap, labelRaw){
+  const cleaned = (labelRaw || 'Main').replace(/^[-:=]+\s*/, '').trim() || 'Main';
+  const key = cleaned.toLowerCase();
+  if (!sectionMap.has(key)){
+    sectionMap.set(key, { label: `- ${cleaned}`, bars: [] });
+  }
+  return sectionMap.get(key);
+}
+
+function fallbackMineABCWithAbcjs(abcText){
+  const bars = [];
+  if (!window.ABCJS || typeof window.ABCJS.renderAbc !== 'function') return bars;
+
+  const hidden = document.getElementById('abc-hidden');
+  if (!hidden) return bars;
+
+  const tunes = window.ABCJS.renderAbc('abc-hidden', abcText, { add_classes: true });
+  if (!Array.isArray(tunes)) return bars;
+
+  for (const tune of tunes){
+    const lines = tune?.lines || [];
+    for (const line of lines){
+      const staffs = line?.staff || [];
+      for (const staff of staffs){
+        const voices = staff?.voices || [];
+        for (const voice of voices){
+          for (const event of voice){
+            const chord = event?.chord?.find((c) => c?.name)?.name || event?.gchord;
+            if (chord){
+              bars.push(normalizeChordToken(String(chord)));
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (!bars.length){
+    console.warn('ABCJS fallback parse produced no chord annotations; proceeding with text-mined ABC bars.');
+  }
+  return bars.filter(Boolean);
 }
 
 function importMusicXML(xmlText){
