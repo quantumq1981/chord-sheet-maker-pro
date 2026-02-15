@@ -584,7 +584,7 @@ body.exporting .sheet{
 
 @media print{
     body{ background:white; }
-    .topbar, .card.editorCard, .tips, .status, .btnrow, .settingsPanel, .diagnosticsPanel, #feature-modal { display:none !important; }
+    .topbar, .card.editorCard, .tips, .status, .btnrow, .settingsPanel, .diagnosticsPanel, #feature-modal, .mode-toggle-wrap { display:none !important; }
     .app{ max-width:none; padding:0; }
     .previewWrap{ border:0; padding:0; }
     .sheet{ border-radius:0; padding:24px 36px; box-shadow:none; }
@@ -750,6 +750,64 @@ body.exporting .sheet{
   body.exporting #feature-modal{
     display:none !important;
   }
+
+  /* ===== User / Power Mode Toggle ===== */
+  .mode-toggle-wrap{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:10px;
+  }
+  .mode-toggle-label{
+    font-size:12px;
+    font-weight:700;
+    color:var(--muted);
+    cursor:pointer;
+    user-select:none;
+    -webkit-user-select:none;
+    transition:color 0.15s;
+  }
+  .mode-toggle-label.active{
+    color:var(--ink);
+  }
+  .mode-switch{
+    position:relative;
+    width:42px;
+    height:24px;
+    background:var(--border);
+    border-radius:12px;
+    cursor:pointer;
+    transition:background 0.2s;
+    border:none;
+    padding:0;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .mode-switch.power{
+    background:var(--accent);
+  }
+  .mode-switch .mode-knob{
+    position:absolute;
+    top:3px;
+    left:3px;
+    width:18px;
+    height:18px;
+    background:#fff;
+    border-radius:50%;
+    transition:transform 0.2s;
+    box-shadow:0 1px 3px rgba(0,0,0,0.2);
+  }
+  .mode-switch.power .mode-knob{
+    transform:translateX(18px);
+  }
+
+  /* User-mode: hide power-only elements */
+  body.user-mode .power-only{
+    display:none !important;
+  }
+  /* Power-mode: show everything, hide user-only elements */
+  body.power-mode .user-only{
+    display:none !important;
+  }
 </style>
 </head>
 
@@ -758,6 +816,16 @@ body.exporting .sheet{
 <div class="app">
   <div class="topbar">
     <div class="title">ChordSheet CSMPN Builder v1.8.0 — Fake Book Edition</div>
+
+    <!-- User / Power Mode Toggle -->
+    <div class="mode-toggle-wrap">
+      <span class="mode-toggle-label active" id="labelUser">User</span>
+      <button class="mode-switch" id="modeSwitch" title="Toggle between User and Power mode">
+        <span class="mode-knob"></span>
+      </button>
+      <span class="mode-toggle-label" id="labelPower">Power</span>
+      <button class="info-btn" onclick="openFeatureInfo('modeToggle')" title="About User / Power Mode">ⓘ</button>
+    </div>
 
     <div class="row">
       <div class="field"><label>Title</label><input id="hdrTitle" placeholder="Song title"></div>
@@ -778,13 +846,13 @@ body.exporting .sheet{
       <button class="secondary" id="btnDownloadPdf">Download PDF</button>
       <button class="secondary" id="btnPng">PNG</button>
       <button class="secondary" id="btnCopy">Copy</button>
-      <button class="outline" id="btnExportChordPro">Export ChordPro</button>
+      <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
       <button class="outline" id="btnSave">Save</button>
       <button class="outline" id="btnLoad">Load</button>
-      <button class="diagnosticsToggle" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
+      <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
     </div>
 
-    <div class="tips">
+    <div class="tips power-only">
       <strong>Fake Book Style:</strong>
       <ul>
         <li>Each chord token = 1 bar. Use <code>_</code> for split bars (e.g., <code>Bb7_A7</code>).</li>
@@ -797,8 +865,8 @@ body.exporting .sheet{
 
     <div id="status" class="status">Ready. v1.8 — Fake Book formatting.</div>
 
-    <!-- Import Diagnostics Panel (collapsible) -->
-    <div id="diagnosticsPanel" class="diagnosticsPanel">
+    <!-- Import Diagnostics Panel (collapsible, power-mode only) -->
+    <div id="diagnosticsPanel" class="diagnosticsPanel power-only">
       <h4>Import Details</h4>
       <div id="diagnosticsContent">
         <div class="diag-empty">No import data yet. Import a file to see details.</div>
@@ -831,7 +899,7 @@ body.exporting .sheet{
           <option value="8">8</option>
         </select>
       </div>
-      <div class="field">
+      <div class="field power-only">
         <label>Line Spacing</label>
         <select id="setLineSpacing">
           <option value="0">None</option>
@@ -842,14 +910,14 @@ body.exporting .sheet{
           <option value="16">Open (16)</option>
         </select>
       </div>
-      <div class="field">
+      <div class="field power-only">
         <label>Bar Lines</label>
         <select id="setBarLines">
           <option value="visible" selected>Visible (default)</option>
           <option value="hidden">Hidden</option>
         </select>
       </div>
-      <div class="field">
+      <div class="field power-only">
         <label>Chord Alignment</label>
         <select id="setChordAlign">
           <option value="left" selected>Left (default)</option>
@@ -872,7 +940,7 @@ body.exporting .sheet{
           <option value="minus">&minus;</option>
         </select>
       </div>
-      <div class="field">
+      <div class="field power-only">
         <label>Page Footer</label>
         <select id="setFooter">
           <option value="visible" selected>Visible (default)</option>
@@ -1017,6 +1085,10 @@ const featureInfo = {
   diagnostics: {
     title: "Import Details",
     body: "Shows how your file was interpreted \u2014 which format was detected, how many sections and bars were found, any lines that were skipped, and how long the import took."
+  },
+  modeToggle: {
+    title: "User / Power Mode",
+    body: "User mode shows a clean, simplified interface with just the essential settings. Power mode reveals advanced settings (line spacing, bar lines, chord alignment, footer), import diagnostics, syntax tips, and ChordPro export. Your choice is saved between sessions."
   }
 };
 
@@ -1047,6 +1119,48 @@ document.getElementById('btnDiagnostics').addEventListener('click', function(){
   const panel = document.getElementById('diagnosticsPanel');
   panel.classList.toggle('open');
   this.classList.toggle('open');
+});
+
+/* =========================================================
+   User Mode / Power Mode Toggle
+========================================================= */
+let appMode = 'user'; // 'user' or 'power'
+
+function applyAppMode(mode){
+  appMode = mode;
+  document.body.classList.remove('user-mode', 'power-mode');
+  document.body.classList.add(mode + '-mode');
+  const sw = document.getElementById('modeSwitch');
+  const labelUser = document.getElementById('labelUser');
+  const labelPower = document.getElementById('labelPower');
+  if (mode === 'power'){
+    sw.classList.add('power');
+    labelUser.classList.remove('active');
+    labelPower.classList.add('active');
+  } else {
+    sw.classList.remove('power');
+    labelUser.classList.add('active');
+    labelPower.classList.remove('active');
+  }
+  try { localStorage.setItem('csmpn_appMode', mode); } catch(_){}
+}
+
+function loadAppMode(){
+  try {
+    const saved = localStorage.getItem('csmpn_appMode');
+    if (saved === 'power' || saved === 'user') return saved;
+  } catch(_){}
+  return 'user';
+}
+
+document.getElementById('modeSwitch').addEventListener('click', function(){
+  applyAppMode(appMode === 'power' ? 'user' : 'power');
+});
+document.getElementById('labelUser').addEventListener('click', function(){
+  applyAppMode('user');
+});
+document.getElementById('labelPower').addEventListener('click', function(){
+  applyAppMode('power');
 });
 
 /* =========================================================
@@ -3531,6 +3645,7 @@ F9_F13 :|
 
 loadFBSettings();
 applyFBSettings();
+applyAppMode(loadAppMode());
 extractHeaderFromText(sourceEl.value);
 updatePreview();
 setStatus('Ready. v1.8 — Fake Book formatting.');
