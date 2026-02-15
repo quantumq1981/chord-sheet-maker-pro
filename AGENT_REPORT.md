@@ -1,84 +1,80 @@
-# AGENT REPORT
+# AGENT REPORT — Codex Agent Prompt #4
 
-## Summary of changes
-- Refined the UG Pro text miner to replace strict density-only gating with a **strict validity** chord-line classifier:
-  - Added `isLikelyUGChordLine(line)` that scores each token as chord, structural, or noise.
-  - Structural tokens include UG/tab notation like barlines, separators, parens, `%`, `xN`, `N.C.`, `stop`, `break`.
-  - Accepts lines primarily composed of chords + structure and avoids lyric/noise lines.
-- Added explicit structural-token regex constant: `RE_UG_STRUCTURAL_TOKEN`.
-- Updated `mineUGProTextToSongModel(text)` to:
-  - Use strict-validity chord-line gating instead of raw `density >= 0.75`.
-  - Support sparse valid lines (including short single-chord lines) through classifier rules.
-  - Keep barline-aware segmentation for `| ... |` and `_` joins for multi-chord segments.
-  - Expand trailing `xN` repeats into concrete bars (e.g., `C G x2` => `C G C G`) instead of preserving symbolic repeats.
-- Router refinement:
-  - Retained fallback to legacy `importUGText` on sparse output/errors.
-  - Kept fallback warning in console but removed user-facing error status for UG miner fallback failures to keep it quiet in normal usage.
+## Summary of Changes
 
-## Anchors (function names + approx line ranges)
-- Text router integration (`// txt` block): ~2009-2033
-- `RE_UG_STRUCTURAL_TOKEN`: ~2093
-- `isLikelyUGChordLine`: ~2095-2130
-- `mineUGProTextToSongModel`: ~2132-2220
+Two UI-only enhancements added to `index.html` without modifying rendering logic (`renderDoc`, Fake Book layout, or export/print/PDF/PNG functionality):
 
-## Test steps + sample UG text cases
-1. Ran a Node VM harness (with DOM stubs) that executes the page script, then calls `mineUGProTextToSongModel` directly and serializes via `toCSMPN({barsPerRow:4})`.
+### 1. Import Diagnostics Surfacing Panel
+- **Global state object** `importDiagnostics` tracks: miner type, sections detected, total bars, ignored lines, warnings array, and import duration (ms).
+- **Collapsible panel** (`#diagnosticsPanel`) with smooth CSS transition, initially hidden.
+- **Toggle button** ("Import Details") appears in the button row only after a successful import.
+- Each miner path (PDF, MusicXML, ABC, ChordPro, UG Pro Text, Plain Text) is instrumented with `performance.now()` timing and post-import counting.
+- Panel displays diagnostics in a clean grid layout with optional warnings list.
+- Mobile-friendly: small font, responsive grid, iOS tap-safe.
 
-### Case 1 — Standard UG chord block
-Input:
-```
-[Intro]
-Am  D7  G  C
+### 2. Feature Info Pop-Up System
+- **Single reusable modal** (`#feature-modal`) with backdrop overlay, centered content, and close button.
+- **`featureInfo` content map** with musician-friendly explanations for: Bars Per Row, Major 7th Style, Minor Chord Style, Fake Book Layout, Import, and Import Details (diagnostics).
+- **ⓘ info buttons** added next to: Import button, Bars Per Row, Major 7th Style, Minor Chord Style, and Fake Book Settings heading.
+- Modal closes via: Close button, backdrop click, or Escape key.
+- No external libraries used. Pure CSS + vanilla JS.
 
-[Verse]
-Am  D7  G  C
-F   G   C  C
-```
-Observed:
-- Sections: `- Intro`, `- Verse`
-- Correct bars mined and grouped in CSMPN output.
+## Anchors (function names / sections)
 
-### Case 2 — Barline separated
-Input:
-```
-[Chorus]
-| Am  D7 | G  C |
-| F  G | C |
-```
-Observed:
-- Segments mined as bars with split chords joined: `Am_D7`, `G_C`, `F_G`, `C`.
+| What | Location |
+|------|----------|
+| CSS: `.diagnosticsToggle`, `.diagnosticsPanel` | Style block (after `@media print`) |
+| CSS: `#feature-modal`, `.info-btn` | Style block (after diagnostics CSS) |
+| CSS: export hiding rules | `body.exporting` rules |
+| HTML: diagnostics toggle button | Button row (`#btnDiagnostics`) |
+| HTML: diagnostics panel | `#diagnosticsPanel` div |
+| HTML: feature modal | `#feature-modal` div (before `<script>`) |
+| HTML: ⓘ buttons | Settings labels + import button |
+| JS: `importDiagnostics` state | After `validationWarnings` declaration |
+| JS: `resetDiagnostics()` | Resets state before each import |
+| JS: `updateDiagnosticsPanel()` | Renders diagnostics HTML into panel |
+| JS: `featureInfo` map | Feature explanation content |
+| JS: `openFeatureInfo(key)` | Opens modal with content for given key |
+| JS: `closeFeatureInfo()` | Closes modal |
+| JS: modal event wiring | Click/Escape listeners |
+| JS: diagnostics toggle wiring | `#btnDiagnostics` click handler |
+| JS: miner instrumentation | `fileInput` change handler (~line 2254+) |
 
-### Case 3 — Lyrics ignored
-Input:
-```
-[Verse]
-Am D7 G C
-I woke up this morning feeling fine
-F G C C
-```
-Observed:
-- Lyric line rejected by strict validity classifier; chord lines mined.
+## How to Test
 
-### Case 4 — Sparse chord line with structural text
-Input:
-```
-[Verse]
-C (stop) Am
-G
-```
-Observed:
-- Line accepted; bars mined as `C`, `Am`, `G`.
+### Import Diagnostics
+1. **UG Pro Text import**: Import a `.txt` file with UG-style chord content. After import, the "Import Details" button appears. Click it to expand the panel showing: miner = "UG Pro Text", section count, bar count, ignored lines > 0, duration in ms.
+2. **MusicXML import**: Import a `.musicxml` or `.xml` file. Diagnostics should show miner = "MusicXML", ignored lines = 0.
+3. **ABC import**: Import a `.abc` file. Diagnostics should show miner = "ABC Notation".
+4. **PDF import**: Import a PDF with chord content. Diagnostics should show miner = "PDF".
+5. **ChordPro import**: Import a ChordPro file (`.txt` with `{title:...}` directives). Miner = "ChordPro".
 
-### Case 5 — Trailing multiplier
-Input:
-```
-[Outro]
-C G Am F x2
-```
-Observed:
-- Repeat expanded in model to 8 bars: `C G Am F C G Am F`.
+### Feature Info Pop-Ups
+1. Tap/click any ⓘ button next to settings labels or the Import button.
+2. Modal opens with title and explanation text.
+3. Close via: "Close" button, clicking backdrop, or pressing Escape.
+4. On iOS: tap ⓘ → modal opens cleanly, no scroll lock issues.
 
-## Edge cases / risks
-- Structural whitelist is intentionally permissive for tab notation and could still admit some non-musical short marker lines; chord requirement mitigates this.
-- `xN` expansion currently duplicates the entire mined phrase from that line; phrase-local repeat semantics beyond line scope are intentionally not inferred.
-- If UG text has very unconventional section labels, they may be ignored and mined under the current section.
+### Non-Regression
+1. **Export/Print/PDF/PNG**: All export buttons still work. Diagnostics panel and modal are hidden during export via `body.exporting` CSS rules.
+2. **Print**: Diagnostics panel and modal hidden via `@media print` rules.
+3. **Fake Book preview**: No layout shifts — diagnostics panel is outside the preview area.
+4. **Settings**: All settings still function. Info buttons are inline with labels and don't affect layout.
+
+## Edge Cases
+- If no file has been imported, the diagnostics toggle button is hidden (`display:none`).
+- If a miner fails and falls back (e.g., UG miner → legacy), the warning is captured in `importDiagnostics.warnings[]` and displayed in the panel.
+- Modal prevents body scroll interaction via backdrop overlay.
+- Multiple rapid imports correctly reset diagnostics before each new import.
+
+## Performance Impact
+- **Negligible.** Diagnostics instrumentation adds only `performance.now()` calls (sub-microsecond) and one post-import pass to count sections/bars from already-parsed CSMPN data.
+- Feature info modal is a single DOM element reused for all info pop-ups — no dynamic element creation.
+- No new external libraries. No new network requests.
+
+## No Changes To
+- `renderDoc()` — untouched
+- Fake Book layout logic — untouched
+- Export/Print/PDF/PNG handlers — untouched (only CSS hiding rules added)
+- `parseCSMPN()`, `parseBarStructures()`, `renderBars()` — untouched
+- Mining logic internals — untouched (only wrapped with timing/counting)

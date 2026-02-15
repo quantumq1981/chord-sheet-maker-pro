@@ -584,12 +584,171 @@ body.exporting .sheet{
 
 @media print{
     body{ background:white; }
-    .topbar, .card.editorCard, .tips, .status, .btnrow, .settingsPanel { display:none !important; }
+    .topbar, .card.editorCard, .tips, .status, .btnrow, .settingsPanel, .diagnosticsPanel, #feature-modal { display:none !important; }
     .app{ max-width:none; padding:0; }
     .previewWrap{ border:0; padding:0; }
     .sheet{ border-radius:0; padding:24px 36px; box-shadow:none; }
     @page { size: letter; margin: 0.5in; }
     .sheet{ max-width:none; margin:0; border:0; }
+  }
+
+  /* ===== Import Diagnostics Panel ===== */
+  .diagnosticsToggle{
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+    background:transparent;
+    color:var(--muted);
+    border:1.5px solid var(--border);
+    border-radius:10px;
+    padding:6px 12px;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    transition:background 0.15s;
+  }
+  .diagnosticsToggle:hover{
+    background:#f0f0f0;
+  }
+  .diagnosticsToggle .arrow{
+    display:inline-block;
+    transition:transform 0.2s;
+    font-size:10px;
+  }
+  .diagnosticsToggle.open .arrow{
+    transform:rotate(90deg);
+  }
+  .diagnosticsPanel{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:0 14px;
+    margin-bottom:12px;
+    max-height:0;
+    overflow:hidden;
+    transition:max-height 0.3s ease, padding 0.3s ease;
+  }
+  .diagnosticsPanel.open{
+    max-height:400px;
+    padding:14px;
+  }
+  .diagnosticsPanel h4{
+    margin:0 0 8px 0;
+    font-size:14px;
+    font-weight:800;
+    color:var(--ink);
+  }
+  .diagnosticsPanel .diag-grid{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    gap:4px 12px;
+    font-size:13px;
+  }
+  .diagnosticsPanel .diag-label{
+    color:var(--muted);
+    font-weight:700;
+  }
+  .diagnosticsPanel .diag-value{
+    color:var(--ink);
+  }
+  .diagnosticsPanel .diag-warnings{
+    margin-top:8px;
+    padding:0 0 0 16px;
+    font-size:12px;
+    color:var(--muted);
+    line-height:1.5;
+  }
+  .diagnosticsPanel .diag-warnings li{
+    margin-bottom:2px;
+  }
+  .diagnosticsPanel .diag-empty{
+    font-size:13px;
+    color:var(--muted);
+    font-style:italic;
+  }
+
+  /* ===== Feature Info Modal ===== */
+  #feature-modal{
+    position:fixed;
+    top:0;left:0;right:0;bottom:0;
+    z-index:9999;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(0,0,0,0.4);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.2s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #feature-modal.visible{
+    opacity:1;
+    pointer-events:auto;
+  }
+  #feature-modal .modal-content{
+    background:#fff;
+    border-radius:var(--radius);
+    padding:24px 22px 18px 22px;
+    max-width:380px;
+    width:calc(100% - 32px);
+    box-shadow:0 8px 32px rgba(0,0,0,0.18);
+    position:relative;
+  }
+  #feature-modal .modal-content h3{
+    margin:0 0 10px 0;
+    font-size:17px;
+    font-weight:800;
+    color:var(--ink);
+  }
+  #feature-modal .modal-content p{
+    margin:0 0 16px 0;
+    font-size:14px;
+    color:var(--muted);
+    line-height:1.5;
+  }
+  #feature-modal #modal-close{
+    background:var(--accent);
+    color:#fff;
+    border:0;
+    border-radius:10px;
+    padding:8px 20px;
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+  }
+
+  /* Info buttons (ⓘ) */
+  .info-btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:20px;
+    height:20px;
+    border-radius:50%;
+    background:transparent;
+    border:1.5px solid var(--border);
+    color:var(--muted);
+    font-size:12px;
+    font-weight:700;
+    cursor:pointer;
+    padding:0;
+    margin-left:4px;
+    vertical-align:middle;
+    line-height:1;
+    -webkit-tap-highlight-color:transparent;
+    transition:background 0.15s, color 0.15s;
+  }
+  .info-btn:hover{
+    background:var(--accent);
+    color:#fff;
+    border-color:var(--accent);
+  }
+
+  /* Hide diagnostics in export mode */
+  body.exporting .diagnosticsPanel,
+  body.exporting .diagnosticsToggle,
+  body.exporting #feature-modal{
+    display:none !important;
   }
 </style>
 </head>
@@ -610,7 +769,7 @@ body.exporting .sheet{
     </div>
 
     <div class="btnrow">
-      <button class="accent" id="btnImport">Import File</button>
+      <button class="accent" id="btnImport">Import File</button><button class="info-btn" onclick="openFeatureInfo('import')" title="About Import">ⓘ</button>
       <button class="secondary" id="btnTransposeDown">-1</button>
       <button class="secondary" id="btnTransposeUp">+1</button>
       <button class="secondary" id="btnTransposeReset">Reset</button>
@@ -622,6 +781,7 @@ body.exporting .sheet{
       <button class="outline" id="btnExportChordPro">Export ChordPro</button>
       <button class="outline" id="btnSave">Save</button>
       <button class="outline" id="btnLoad">Load</button>
+      <button class="diagnosticsToggle" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
     </div>
 
     <div class="tips">
@@ -637,12 +797,20 @@ body.exporting .sheet{
 
     <div id="status" class="status">Ready. v1.8 — Fake Book formatting.</div>
 
+    <!-- Import Diagnostics Panel (collapsible) -->
+    <div id="diagnosticsPanel" class="diagnosticsPanel">
+      <h4>Import Details</h4>
+      <div id="diagnosticsContent">
+        <div class="diag-empty">No import data yet. Import a file to see details.</div>
+      </div>
+    </div>
+
     <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.abc" style="display:none" />
   </div>
 
   <!-- Fake Book Settings Panel -->
   <div id="settingsPanel" class="settingsPanel">
-    <h3>Fake Book Settings</h3>
+    <h3>Fake Book Settings <button class="info-btn" onclick="openFeatureInfo('fakeBookLayout')" title="About Fake Book Layout">ⓘ</button></h3>
     <div class="settingsGrid">
       <div class="field">
         <label>Font Size</label>
@@ -653,7 +821,7 @@ body.exporting .sheet{
         </select>
       </div>
       <div class="field">
-        <label>Bars Per Row</label>
+        <label>Bars Per Row <button class="info-btn" onclick="openFeatureInfo('barsPerRow')" title="About Bars Per Row">ⓘ</button></label>
         <select id="setBarsPerRow">
           <option value="2">2</option>
           <option value="3">3</option>
@@ -689,7 +857,7 @@ body.exporting .sheet{
         </select>
       </div>
       <div class="field">
-        <label>Major 7th Style</label>
+        <label>Major 7th Style <button class="info-btn" onclick="openFeatureInfo('major7Style')" title="About Major 7th Style">ⓘ</button></label>
         <select id="setMaj7Style">
           <option value="ma" selected>ma7 (default)</option>
           <option value="maj">maj7</option>
@@ -697,7 +865,7 @@ body.exporting .sheet{
         </select>
       </div>
       <div class="field">
-        <label>Minor Chord Style</label>
+        <label>Minor Chord Style <button class="info-btn" onclick="openFeatureInfo('minorStyle')" title="About Minor Chord Style">ⓘ</button></label>
         <select id="setMinorStyle">
           <option value="m" selected>m (default)</option>
           <option value="min">min</option>
@@ -727,6 +895,15 @@ body.exporting .sheet{
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Feature Info Modal (reusable) -->
+<div id="feature-modal">
+  <div class="modal-content">
+    <h3 id="modal-title"></h3>
+    <p id="modal-body"></p>
+    <button id="modal-close">Close</button>
   </div>
 </div>
 
@@ -761,6 +938,116 @@ const hdr = {
 let currentTranspose = 0;
 let notationPreference = 'sharp';
 let validationWarnings = [];
+
+/* =========================================================
+   Import Diagnostics State
+========================================================= */
+let importDiagnostics = {
+  miner: null,
+  sections: 0,
+  bars: 0,
+  ignoredLines: 0,
+  warnings: [],
+  durationMs: 0
+};
+
+function resetDiagnostics(){
+  importDiagnostics = {
+    miner: null,
+    sections: 0,
+    bars: 0,
+    ignoredLines: 0,
+    warnings: [],
+    durationMs: 0
+  };
+}
+
+function updateDiagnosticsPanel(){
+  const panel = document.getElementById('diagnosticsContent');
+  const toggle = document.getElementById('btnDiagnostics');
+  if (!importDiagnostics.miner){
+    toggle.style.display = 'none';
+    panel.innerHTML = '<div class="diag-empty">No import data yet. Import a file to see details.</div>';
+    return;
+  }
+  toggle.style.display = '';
+  let html = '<div class="diag-grid">';
+  html += `<span class="diag-label">Import Source:</span><span class="diag-value">${escapeHtml(importDiagnostics.miner)}</span>`;
+  html += `<span class="diag-label">Sections Detected:</span><span class="diag-value">${importDiagnostics.sections}</span>`;
+  html += `<span class="diag-label">Total Bars:</span><span class="diag-value">${importDiagnostics.bars}</span>`;
+  if (importDiagnostics.ignoredLines > 0){
+    html += `<span class="diag-label">Ignored Lines:</span><span class="diag-value">${importDiagnostics.ignoredLines}</span>`;
+  }
+  html += `<span class="diag-label">Import Time:</span><span class="diag-value">${importDiagnostics.durationMs} ms</span>`;
+  html += '</div>';
+  if (importDiagnostics.warnings.length){
+    html += '<ul class="diag-warnings">';
+    for (const w of importDiagnostics.warnings){
+      html += `<li>${escapeHtml(w)}</li>`;
+    }
+    html += '</ul>';
+  }
+  panel.innerHTML = html;
+}
+
+/* =========================================================
+   Feature Info Pop-Up System
+========================================================= */
+const featureInfo = {
+  barsPerRow: {
+    title: "Bars Per Row",
+    body: "Controls how many measures appear on each line. Use 4 for traditional fake book style, or increase for compact charts. Fewer bars per row gives more breathing room on the page."
+  },
+  major7Style: {
+    title: "Major 7th Style",
+    body: "Choose how major seventh chords are displayed: ma7 (common in jazz lead sheets), maj7 (spelled out), or \u03947 (triangle notation, used in many real books). This affects appearance only \u2014 the underlying chord stays the same."
+  },
+  minorStyle: {
+    title: "Minor Chord Style",
+    body: "Choose how minor chords are shown: m (most common), min (spelled out), or \u2212 (minus sign, traditional in some European charts). Visual preference only."
+  },
+  fakeBookLayout: {
+    title: "Fake Book Layout",
+    body: "This format treats each chord as a measure unless split with an underscore (_). Designed to mimic professional real books and fake books used by working musicians."
+  },
+  import: {
+    title: "Import",
+    body: "Imports chords from PDF, MusicXML, ABC notation, ChordPro, or plain text files. The app extracts harmonic structure and rebuilds it in clean fake book format. Supported sources include Ultimate Guitar exports, iReal Pro charts, and standard lead sheet PDFs."
+  },
+  diagnostics: {
+    title: "Import Details",
+    body: "Shows how your file was interpreted \u2014 which format was detected, how many sections and bars were found, any lines that were skipped, and how long the import took."
+  }
+};
+
+function openFeatureInfo(key){
+  const info = featureInfo[key];
+  if (!info) return;
+  const modal = document.getElementById('feature-modal');
+  document.getElementById('modal-title').textContent = info.title;
+  document.getElementById('modal-body').textContent = info.body;
+  modal.classList.add('visible');
+}
+
+function closeFeatureInfo(){
+  document.getElementById('feature-modal').classList.remove('visible');
+}
+
+// Wire modal close
+document.getElementById('modal-close').addEventListener('click', closeFeatureInfo);
+document.getElementById('feature-modal').addEventListener('click', function(e){
+  if (e.target === this) closeFeatureInfo();
+});
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape') closeFeatureInfo();
+});
+
+// Wire diagnostics toggle
+document.getElementById('btnDiagnostics').addEventListener('click', function(){
+  const panel = document.getElementById('diagnosticsPanel');
+  panel.classList.toggle('open');
+  this.classList.toggle('open');
+});
 
 /* =========================================================
    Fake Book Settings State
@@ -1964,78 +2251,136 @@ fileInput.addEventListener('change', async () => {
   const file = fileInput.files && fileInput.files[0];
   if (!file) return;
   try{
+    resetDiagnostics();
+    const importStart = performance.now();
     setStatus(`Importing ${file.name}...`);
     const name = file.name.toLowerCase();
     const type = (file.type || '').toLowerCase();
 
     if (name.endsWith('.pdf')){
+      importDiagnostics.miner = 'PDF';
       const csmpn = await importUGProPDF(file);
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      // Count sections/bars from generated CSMPN
+      const diagDoc = parseCSMPN(csmpn);
+      const diagMarkers = diagDoc.blocks.filter(b => b.type === 'marker');
+      importDiagnostics.sections = diagMarkers.length || 1;
+      importDiagnostics.bars = diagDoc.blocks
+        .filter(b => b.type === 'bars')
+        .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
       sourceEl.value = csmpn;
       extractHeaderFromText(csmpn);
       updatePreview();
+      updateDiagnosticsPanel();
       return;
     }
 
     const text = await file.text();
+    const totalLines = text.split(/\r?\n/).length;
 
     if (name.endsWith('.abc') || (type.includes('text/plain') && /(^|\n)\s*K\s*:/i.test(text))){
+      importDiagnostics.miner = 'ABC Notation';
       try {
         const song = mineABCToSongModel(text);
+        importDiagnostics.sections = song.sections.length;
+        importDiagnostics.bars = countSongModelBars(song);
+        const contentLines = text.split(/\r?\n/).filter(l => l.trim() && !/^[A-Za-z]\s*:/.test(l.trim()) && !l.trim().startsWith('%')).length;
+        importDiagnostics.ignoredLines = Math.max(0, totalLines - contentLines);
         const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
+        importDiagnostics.durationMs = Math.round(performance.now() - importStart);
         sourceEl.value = csmpn;
         extractHeaderFromText(csmpn);
         updatePreview();
         setStatus('Imported ABC.');
       } catch (abcErr) {
+        importDiagnostics.warnings.push('ABC parse error: ' + (abcErr?.message || abcErr));
+        importDiagnostics.durationMs = Math.round(performance.now() - importStart);
         console.warn(abcErr);
         setStatus(`ABC import failed: ${abcErr?.message || abcErr}`, 'error');
         throw abcErr;
       }
+      updateDiagnosticsPanel();
       return;
     }
 
     if (name.endsWith('.musicxml') || name.endsWith('.xml') || type.includes('musicxml') || type.includes('xml')){
+      importDiagnostics.miner = 'MusicXML';
       const song = importMusicXML(text);
       if (song instanceof SongModel){
+        importDiagnostics.sections = song.sections.length;
+        importDiagnostics.bars = countSongModelBars(song);
+        importDiagnostics.ignoredLines = 0;
+        importDiagnostics.durationMs = Math.round(performance.now() - importStart);
         const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
         sourceEl.value = csmpn;
         extractHeaderFromText(csmpn);
         updatePreview();
         setStatus('Imported MusicXML.');
       }
+      updateDiagnosticsPanel();
       return;
     }
 
     // txt
     let csmpn = '';
+    let usedMiner = 'Text';
     if (detectChordPro(text)){
+      usedMiner = 'ChordPro';
+      importDiagnostics.miner = 'ChordPro';
       csmpn = importChordPro(text);
     } else if (isLikelyUGProText(text)){
+      usedMiner = 'UG Pro Text';
+      importDiagnostics.miner = 'UG Pro Text';
       try {
         const ugSong = mineUGProTextToSongModel(text);
         const totalBars = countSongModelBars(ugSong);
         if (totalBars >= 4){
+          importDiagnostics.sections = ugSong.sections.length;
+          importDiagnostics.bars = totalBars;
           csmpn = ugSong.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
         } else {
+          importDiagnostics.warnings.push(`UG miner produced only ${totalBars} bars, fell back to legacy importer`);
           console.warn(`UG miner produced only ${totalBars} bars, falling back to legacy importer.`);
           csmpn = importUGText(text);
         }
       } catch (ugErr) {
+        importDiagnostics.warnings.push('UG miner error: ' + (ugErr?.message || ugErr));
         console.warn(ugErr);
         csmpn = importUGText(text);
       }
     } else {
+      importDiagnostics.miner = 'Plain Text';
       csmpn = importUGText(text);
     }
+
+    // Count ignored lines for text imports
+    const textLines = text.split(/\r?\n/).filter(l => l.trim());
+    const csmpnLines = csmpn.split(/\r?\n/).filter(l => l.trim());
+    const chordLineCount = csmpnLines.filter(l => !/^(Title|Composer|Artist|Style|Tempo|Time|Key)\s*:/i.test(l.trim()) && !/^[=\-:#;]/.test(l.trim())).length;
+    importDiagnostics.ignoredLines = Math.max(0, textLines.length - csmpnLines.length);
+
+    // If sections/bars not yet counted (legacy path), count from CSMPN
+    if (!importDiagnostics.sections || !importDiagnostics.bars){
+      const diagDoc = parseCSMPN(csmpn);
+      const diagMarkers = diagDoc.blocks.filter(b => b.type === 'marker');
+      importDiagnostics.sections = diagMarkers.length || 1;
+      importDiagnostics.bars = diagDoc.blocks
+        .filter(b => b.type === 'bars')
+        .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
+    }
+
+    importDiagnostics.durationMs = Math.round(performance.now() - importStart);
     sourceEl.value = csmpn;
     extractHeaderFromText(csmpn);
     updatePreview();
+    updateDiagnosticsPanel();
     setStatus('Imported text.');
   }catch(err){
     console.error(err);
     if (!String(err?.message || '').startsWith('ABC import failed:')){
       setStatus(`Import failed: ${err?.message || err}`, 'error');
     }
+    updateDiagnosticsPanel();
   }
 });
 
