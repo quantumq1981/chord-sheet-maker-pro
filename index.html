@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>ChordSheet CSMPN Builder v1.8.0</title>
 
 <!-- Google Fonts: Patrick Hand SC for fake book title -->
@@ -40,8 +40,13 @@
 
   *{ box-sizing:border-box; }
 
+  html{
+    -webkit-text-size-adjust:100%;
+  }
+
   body{
     margin:0;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     font-family: Helvetica, Arial, "Helvetica Neue", sans-serif;
     background:var(--bg);
     color:var(--ink);
@@ -557,6 +562,125 @@
   }
 
   .pageBreak{ page-break-before: always; break-before: page; height:1px; }
+
+  /* ===== Mobile Responsive (Portrait) ===== */
+  @media screen and (max-width: 480px){
+    .app{ padding:8px; }
+    .topbar{ padding:10px; }
+    .title{ font-size:16px; margin-bottom:6px; }
+
+    /* Header fields: single column on small phones */
+    .row{
+      grid-template-columns:1fr;
+      gap:6px;
+    }
+
+    /* Buttons: smaller, wrap tightly */
+    .btnrow{ gap:6px; }
+    button{
+      padding:10px 10px;
+      font-size:13px;
+      border-radius:10px;
+    }
+
+    /* Settings grid: 2 columns minimum */
+    .settingsGrid{
+      grid-template-columns: repeat(2, 1fr);
+      gap:8px;
+    }
+
+    /* Sheet: tighter padding */
+    .sheet{
+      padding:16px 12px;
+      border-radius:8px;
+    }
+
+    /* Song title scales down */
+    .songTitle{
+      font-size:calc(24px * var(--fb-font-scale));
+    }
+
+    /* Chord bars: horizontal scroll instead of stacking */
+    .barlineRow{
+      overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
+      flex-wrap:nowrap;
+      padding-bottom:4px;
+    }
+    .measure{
+      flex-shrink:0;
+      min-width:60px;
+    }
+
+    /* Chord font scaling: 15% smaller in portrait */
+    .beats{
+      font-size:calc(0.85 * var(--fb-font-scale) * 18px);
+    }
+
+    /* Mode toggle: compact */
+    .mode-toggle-wrap{ margin-bottom:6px; }
+
+    /* Preview card: minimal padding */
+    .previewWrap{ padding:8px; }
+    .card{ padding:10px; }
+
+    /* Feature modal: full width on small screens */
+    #feature-modal .modal-content{
+      max-width:calc(100% - 24px);
+      padding:18px 16px 14px 16px;
+    }
+  }
+
+  /* ===== Mobile Responsive (Landscape) ===== */
+  @media screen and (orientation: landscape) and (max-height: 500px){
+    .app{ padding:6px; }
+    .topbar{ padding:8px; }
+    .title{ font-size:15px; margin-bottom:4px; }
+
+    /* Header fields: 3 columns in landscape */
+    .row{
+      grid-template-columns: repeat(3, 1fr);
+      gap:6px;
+    }
+
+    /* Buttons: compact */
+    button{
+      padding:8px 10px;
+      font-size:13px;
+    }
+
+    /* Sheet: use full width, readable font */
+    .sheet{
+      max-width:none;
+      padding:12px 16px;
+      font-size:14px;
+    }
+
+    /* Chord bars get full width in landscape */
+    .barlineRow{
+      width:100%;
+    }
+
+    /* Status bar: compact */
+    .status{
+      padding:6px 10px;
+      font-size:13px;
+    }
+
+    /* Mode toggle: inline compact */
+    .mode-toggle-wrap{ margin-bottom:4px; }
+  }
+
+  /* ===== Tablet Responsive ===== */
+  @media screen and (min-width: 481px) and (max-width: 979px){
+    .row{
+      grid-template-columns: repeat(3, 1fr);
+      gap:8px;
+    }
+    .settingsGrid{
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
 
   /* Desktop: side-by-side editor and preview */
   @media (min-width: 980px){
