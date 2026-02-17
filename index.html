@@ -36,6 +36,7 @@
     --fb-font-scale:1;
     --fb-line-spacing:8px;
     --fb-bars-per-row:4;
+    --fb-chord-color:#0044cc;
   }
 
   *{ box-sizing:border-box; }
@@ -225,18 +226,22 @@
   /* ===== Fake Book layout & typography ===== */
   .sheetHeader{
     display:flex;
-    justify-content:space-between;
-    align-items:flex-start;
-    gap:16px;
-    border-bottom:1.5px solid #111;
-    padding-bottom:6px;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:4px;
+    border-bottom:1px solid #ddd;
+    padding-bottom:8px;
     margin-bottom:14px;
+    position:relative;
   }
 
   .headerInfo{
     display:flex;
     flex-direction:column;
+    align-items:center;
     gap:2px;
+    width:100%;
   }
 
   .headerMeta{
@@ -264,6 +269,9 @@
   }
 
   .headerRight{
+    position:absolute;
+    top:0;
+    right:0;
     text-align:right;
     min-width:80px;
     display:flex;
@@ -288,6 +296,13 @@
   /* Section labels: rehearsal letter + section name */
   .sectionBlock{
     margin:calc(14px * var(--fb-font-scale)) 0 calc(2px * var(--fb-font-scale)) 0;
+    background:#f0f0f0;
+    padding:4px 8px;
+    border-radius:3px;
+    width:100%;
+    display:flex;
+    align-items:center;
+    gap:8px;
   }
 
   .rehearsalLetter{
@@ -341,6 +356,8 @@
     margin: var(--fb-line-spacing) 0 0 0;
     padding-top:4px;
     position:relative;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
   }
 
   /* Default 4-bar grid (overridden by inline style when bars-per-row changes) */
@@ -351,6 +368,7 @@
   .barline{
     position:relative;
     height:calc(2.4em * var(--fb-font-scale));
+    flex-shrink:0;
   }
 
   .barline::before,
@@ -446,6 +464,7 @@
     min-height:calc(2.4em * var(--fb-font-scale));
     padding:0 6px;
     white-space:nowrap;
+    flex-shrink:0;
   }
 
   .measure.center-align{
@@ -456,7 +475,8 @@
     display:inline-flex;
     gap:0.5em;
     align-items:baseline;
-    flex-wrap:wrap;
+    flex-wrap:nowrap;
+    white-space:nowrap;
   }
 
   .beat{
@@ -479,6 +499,7 @@
     font-weight:700;
     font-size:calc(22px * var(--fb-font-scale));
     line-height:1;
+    color:var(--fb-chord-color);
   }
 
   .chord-root{
@@ -606,6 +627,8 @@
       -webkit-overflow-scrolling:touch;
       flex-wrap:nowrap;
       padding-bottom:4px;
+      /* Mobile portrait: scale to 2 bars per row */
+      grid-template-columns: 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px !important;
     }
     .measure{
       flex-shrink:0;
@@ -649,10 +672,12 @@
       font-size:13px;
     }
 
-    /* Sheet: use full width, readable font */
+    /* Sheet: use full width, readable font + safe area for notch */
     .sheet{
       max-width:none;
       padding:12px 16px;
+      padding-left:max(16px, env(safe-area-inset-left));
+      padding-right:max(16px, env(safe-area-inset-right));
       font-size:14px;
     }
 
@@ -680,6 +705,10 @@
     .settingsGrid{
       grid-template-columns: repeat(3, 1fr);
     }
+    /* Tablet: scale to 3 bars per row */
+    .barlineRow{
+      grid-template-columns: 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px !important;
+    }
   }
 
   /* Desktop: side-by-side editor and preview */
@@ -705,6 +734,13 @@ body.exporting #renderTarget{
 body.exporting .sheet{
   padding: 36px 42px !important;
 }
+/* Restore full bars-per-row during export (override mobile media queries) */
+body.exporting .barlineRow{
+  overflow-x: visible !important;
+}
+body.exporting .sectionBlock{
+  background: #f0f0f0 !important;
+}
 
 @media print{
     body{ background:white; }
@@ -714,6 +750,8 @@ body.exporting .sheet{
     .sheet{ border-radius:0; padding:24px 36px; box-shadow:none; }
     @page { size: letter; margin: 0.5in; }
     .sheet{ max-width:none; margin:0; border:0; }
+    /* Ensure barline rows don't clip in print */
+    .barlineRow{ overflow-x:visible !important; }
   }
 
   /* ===== Import Diagnostics Panel ===== */
@@ -2363,7 +2401,7 @@ function renderSectionMarker(block){
     // Fake book style: show rehearsal letter + section name in label boxes
     const letter = REHEARSAL_LETTERS[rehearsalLetterIndex] || '';
     rehearsalLetterIndex++;
-    let letterHtml = letter ? `<span class="rehearsalLetter">${letter}</span><br>` : '';
+    let letterHtml = letter ? `<span class="rehearsalLetter">${letter}</span>` : '';
     return `<div class="sectionBlock">${letterHtml}<span class="labelBox">${t}</span></div>`;
   }
 
@@ -2371,7 +2409,7 @@ function renderSectionMarker(block){
     // Section divider with label - show as = label
     const letter = REHEARSAL_LETTERS[rehearsalLetterIndex] || '';
     rehearsalLetterIndex++;
-    let letterHtml = letter ? `<span class="rehearsalLetter">${letter}</span><br>` : '';
+    let letterHtml = letter ? `<span class="rehearsalLetter">${letter}</span>` : '';
     return `<div class="sectionBlock">${letterHtml}<span class="labelBox">${t}</span></div>`;
   }
 
