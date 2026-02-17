@@ -1,23 +1,38 @@
-# AGENT REPORT — Codex Agent Prompt #4
+# AGENT REPORT — Codex Agent Prompt #4 (Updated)
 
 ## Summary of Changes
 
-Two UI-only enhancements added to `index.html` without modifying rendering logic (`renderDoc`, Fake Book layout, or export/print/PDF/PNG functionality):
+Three UI-only enhancements added to `index.html` without modifying rendering logic (`renderDoc`, Fake Book layout, or export/print/PDF/PNG functionality):
 
 ### 1. Import Diagnostics Surfacing Panel
 - **Global state object** `importDiagnostics` tracks: miner type, sections detected, total bars, ignored lines, warnings array, and import duration (ms).
 - **Collapsible panel** (`#diagnosticsPanel`) with smooth CSS transition, initially hidden.
-- **Toggle button** ("Import Details") appears in the button row only after a successful import.
+- **Toggle button** ("Import Details") appears in the button row only after a successful import (Power mode only).
 - Each miner path (PDF, MusicXML, ABC, ChordPro, UG Pro Text, Plain Text) is instrumented with `performance.now()` timing and post-import counting.
 - Panel displays diagnostics in a clean grid layout with optional warnings list.
 - Mobile-friendly: small font, responsive grid, iOS tap-safe.
 
 ### 2. Feature Info Pop-Up System
 - **Single reusable modal** (`#feature-modal`) with backdrop overlay, centered content, and close button.
-- **`featureInfo` content map** with musician-friendly explanations for: Bars Per Row, Major 7th Style, Minor Chord Style, Fake Book Layout, Import, and Import Details (diagnostics).
-- **ⓘ info buttons** added next to: Import button, Bars Per Row, Major 7th Style, Minor Chord Style, and Fake Book Settings heading.
+- **`featureInfo` content map** with musician-friendly explanations for: Bars Per Row, Major 7th Style, Minor Chord Style, Fake Book Layout, Import, Import Details, and User/Power Mode.
+- **Info buttons** added next to: Import button, Bars Per Row, Major 7th Style, Minor Chord Style, Fake Book Settings heading, and the mode toggle.
 - Modal closes via: Close button, backdrop click, or Escape key.
 - No external libraries used. Pure CSS + vanilla JS.
+
+### 3. User Mode / Power Mode Toggle
+- **Toggle switch** at the top of the interface, below the app title.
+- **User mode (default):** Clean, simplified interface showing only essential controls:
+  - Core settings: Font Size, Bars Per Row, Major 7th Style, Minor Chord Style
+  - All import/export/print/transpose buttons (except ChordPro export)
+  - Info pop-ups remain available
+- **Power mode:** Full interface with everything visible:
+  - Advanced settings: Line Spacing, Bar Lines, Chord Alignment, Page Footer
+  - Import Diagnostics panel toggle and panel
+  - Syntax tips reference
+  - ChordPro Export button
+- **Persisted to localStorage** (`csmpn_appMode`) — survives page reloads.
+- Clickable labels ("User" / "Power") in addition to the toggle knob.
+- Hidden during print and export.
 
 ## Anchors (function names / sections)
 
@@ -25,51 +40,63 @@ Two UI-only enhancements added to `index.html` without modifying rendering logic
 |------|----------|
 | CSS: `.diagnosticsToggle`, `.diagnosticsPanel` | Style block (after `@media print`) |
 | CSS: `#feature-modal`, `.info-btn` | Style block (after diagnostics CSS) |
-| CSS: export hiding rules | `body.exporting` rules |
-| HTML: diagnostics toggle button | Button row (`#btnDiagnostics`) |
-| HTML: diagnostics panel | `#diagnosticsPanel` div |
+| CSS: `.mode-toggle-wrap`, `.mode-switch` | Style block (after info-btn CSS) |
+| CSS: `body.user-mode .power-only` | Mode visibility rules |
+| CSS: export/print hiding rules | `body.exporting` and `@media print` rules |
+| HTML: mode toggle | `.mode-toggle-wrap` div (below title) |
+| HTML: diagnostics toggle button | Button row (`#btnDiagnostics`, `power-only`) |
+| HTML: diagnostics panel | `#diagnosticsPanel` div (`power-only`) |
 | HTML: feature modal | `#feature-modal` div (before `<script>`) |
-| HTML: ⓘ buttons | Settings labels + import button |
+| HTML: info buttons | Settings labels, import button, mode toggle |
+| HTML: `power-only` tagged elements | Tips, diagnostics, advanced settings fields, ChordPro export |
 | JS: `importDiagnostics` state | After `validationWarnings` declaration |
 | JS: `resetDiagnostics()` | Resets state before each import |
 | JS: `updateDiagnosticsPanel()` | Renders diagnostics HTML into panel |
-| JS: `featureInfo` map | Feature explanation content |
+| JS: `featureInfo` map | Feature explanation content (7 entries) |
 | JS: `openFeatureInfo(key)` | Opens modal with content for given key |
 | JS: `closeFeatureInfo()` | Closes modal |
-| JS: modal event wiring | Click/Escape listeners |
-| JS: diagnostics toggle wiring | `#btnDiagnostics` click handler |
-| JS: miner instrumentation | `fileInput` change handler (~line 2254+) |
+| JS: `appMode`, `applyAppMode()` | Mode state + DOM class toggling |
+| JS: `loadAppMode()` | Reads persisted mode from localStorage |
+| JS: mode switch event wiring | Click handlers for switch + labels |
+| JS: miner instrumentation | `fileInput` change handler |
 
 ## How to Test
 
-### Import Diagnostics
-1. **UG Pro Text import**: Import a `.txt` file with UG-style chord content. After import, the "Import Details" button appears. Click it to expand the panel showing: miner = "UG Pro Text", section count, bar count, ignored lines > 0, duration in ms.
-2. **MusicXML import**: Import a `.musicxml` or `.xml` file. Diagnostics should show miner = "MusicXML", ignored lines = 0.
-3. **ABC import**: Import a `.abc` file. Diagnostics should show miner = "ABC Notation".
-4. **PDF import**: Import a PDF with chord content. Diagnostics should show miner = "PDF".
-5. **ChordPro import**: Import a ChordPro file (`.txt` with `{title:...}` directives). Miner = "ChordPro".
+### User / Power Mode Toggle
+1. **Default state**: Page loads in User mode — tips, diagnostics, advanced settings (Line Spacing, Bar Lines, Chord Alignment, Footer), and ChordPro Export are hidden.
+2. **Switch to Power**: Click the toggle or "Power" label — all hidden elements appear.
+3. **Switch back**: Click toggle or "User" label — elements hide again.
+4. **Persistence**: Reload page — mode persists from previous session.
+5. **Info button**: Tap the info button next to the toggle — modal explains both modes.
 
-### Feature Info Pop-Ups
-1. Tap/click any ⓘ button next to settings labels or the Import button.
+### Import Diagnostics (Power Mode)
+1. Switch to Power mode.
+2. **UG Pro Text import**: Import a `.txt` file. "Import Details" button appears. Click to expand panel showing: miner = "UG Pro Text", section count, bar count, ignored lines > 0, duration in ms.
+3. **MusicXML import**: Diagnostics show miner = "MusicXML", ignored lines = 0.
+4. **ABC import**: Miner = "ABC Notation".
+5. **PDF import**: Miner = "PDF".
+6. **ChordPro import**: Miner = "ChordPro".
+
+### Feature Info Pop-Ups (Both Modes)
+1. Tap/click any info button next to settings labels or the Import button.
 2. Modal opens with title and explanation text.
 3. Close via: "Close" button, clicking backdrop, or pressing Escape.
-4. On iOS: tap ⓘ → modal opens cleanly, no scroll lock issues.
+4. On iOS: tap opens cleanly, no scroll lock issues.
 
 ### Non-Regression
-1. **Export/Print/PDF/PNG**: All export buttons still work. Diagnostics panel and modal are hidden during export via `body.exporting` CSS rules.
-2. **Print**: Diagnostics panel and modal hidden via `@media print` rules.
-3. **Fake Book preview**: No layout shifts — diagnostics panel is outside the preview area.
-4. **Settings**: All settings still function. Info buttons are inline with labels and don't affect layout.
+1. **Export/Print/PDF/PNG**: All export buttons still work. Mode toggle, diagnostics panel, and modal are hidden during export/print.
+2. **Fake Book preview**: No layout shifts.
+3. **Settings**: All settings function in both modes. Hidden settings retain their values when toggling modes.
+4. **User mode completeness**: All core functionality (import, transpose, print, PDF, PNG, copy, save, load) remains accessible in User mode.
 
 ## Edge Cases
-- If no file has been imported, the diagnostics toggle button is hidden (`display:none`).
-- If a miner fails and falls back (e.g., UG miner → legacy), the warning is captured in `importDiagnostics.warnings[]` and displayed in the panel.
-- Modal prevents body scroll interaction via backdrop overlay.
-- Multiple rapid imports correctly reset diagnostics before each new import.
+- If user imports a file while in User mode, diagnostics are still collected internally — switching to Power mode after import reveals the data.
+- Advanced settings values persist even when hidden in User mode (they're just CSS-hidden, not removed).
+- The mode toggle itself is always visible (never gated by either mode).
+- `power-only` CSS class uses `display:none !important` to ensure clean hiding regardless of element's default display type.
 
 ## Performance Impact
-- **Negligible.** Diagnostics instrumentation adds only `performance.now()` calls (sub-microsecond) and one post-import pass to count sections/bars from already-parsed CSMPN data.
-- Feature info modal is a single DOM element reused for all info pop-ups — no dynamic element creation.
+- **Negligible.** Mode toggle adds/removes a single CSS class on `<body>`. All visibility is handled by CSS, not JS DOM manipulation.
 - No new external libraries. No new network requests.
 
 ## No Changes To
