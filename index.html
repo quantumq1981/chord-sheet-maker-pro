@@ -8,7 +8,9 @@
 <!-- Google Fonts: Patrick Hand SC for fake book title -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Patrick+Hand+SC&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Patrick+Hand+SC&family=Caveat:wght@400;700&family=Kalam:wght@300;400;700&family=Architects+Daughter&family=Handlee&family=Permanent+Marker&display=swap" rel="stylesheet">
+<!-- GNU FreeSerif for extended Unicode music symbols -->
+<link href="https://fonts.cdnfonts.com/css/freeserif" rel="stylesheet">
 
 <!-- PDF.js (required for UG Pro PDF text extraction) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -37,6 +39,8 @@
     --fb-line-spacing:8px;
     --fb-bars-per-row:4;
     --fb-chord-color:#0044cc;
+    --fb-headline-font: "Patrick Hand SC", Georgia, cursive;
+    --fb-body-font: Helvetica, Arial, "Helvetica Neue", sans-serif;
   }
 
   *{ box-sizing:border-box; }
@@ -220,7 +224,7 @@
     box-shadow: 0 1px 0 rgba(0,0,0,0.04);
     max-width: 8.5in;
     margin: 0 auto;
-    font-family: Helvetica, Arial, "Helvetica Neue", sans-serif;
+    font-family: var(--fb-body-font);
   }
 
   /* ===== Fake Book layout & typography ===== */
@@ -248,11 +252,11 @@
     font-size:calc(13px * var(--fb-font-scale));
     font-style:italic;
     color:#222;
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
   }
 
   .songTitle{
-    font-family: "Patrick Hand SC", "Georgia", cursive;
+    font-family: var(--fb-headline-font);
     font-size:calc(32px * var(--fb-font-scale));
     font-weight:400;
     margin:0;
@@ -265,7 +269,7 @@
   .headerComposer{
     font-size:calc(13px * var(--fb-font-scale));
     font-weight:600;
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
   }
 
   .headerRight{
@@ -283,13 +287,13 @@
   .tempoLine{
     font-size:calc(16px * var(--fb-font-scale));
     font-weight:700;
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
   }
 
   .timeSig{
     font-size:calc(28px * var(--fb-font-scale));
     font-weight:700;
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
     line-height:1;
   }
 
@@ -312,7 +316,7 @@
     border-radius:3px;
     font-size:calc(14px * var(--fb-font-scale));
     font-weight:700;
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
     margin-bottom:2px;
     line-height:1.3;
   }
@@ -321,7 +325,7 @@
     margin:2px 0 4px 0;
     font-size:calc(15px * var(--fb-font-scale));
     font-weight:700;
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
   }
 
   .labelBox{
@@ -331,7 +335,7 @@
     border-radius:3px;
     font-size:calc(14px * var(--fb-font-scale));
     font-weight:700;
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
     line-height:1.3;
   }
 
@@ -495,7 +499,7 @@
   .chord{
     display:inline-flex;
     align-items:baseline;
-    font-family: Helvetica, Arial, "Helvetica Neue", sans-serif;
+    font-family: var(--fb-body-font);
     font-weight:700;
     font-size:calc(22px * var(--fb-font-scale));
     line-height:1;
@@ -526,7 +530,7 @@
 
   .musicSymbol{
     font-size:calc(22px * var(--fb-font-scale));
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
   }
 
   .repeatSymbol{
@@ -560,14 +564,14 @@
     font-weight:700;
     background:#fff;
     padding:0 3px;
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
   }
 
   .annotation{
     margin:6px 0;
     font-size:calc(14px * var(--fb-font-scale));
     color:#111;
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
   }
 
   /* Page footer */
@@ -579,7 +583,7 @@
     justify-content:space-between;
     font-size:11px;
     color:#888;
-    font-family: Helvetica, Arial, sans-serif;
+    font-family: var(--fb-body-font);
   }
 
   .pageBreak{ page-break-before: always; break-before: page; height:1px; }
@@ -733,10 +737,17 @@ body.exporting #renderTarget{
 }
 body.exporting .sheet{
   padding: 36px 42px !important;
+  max-width: 8.5in !important;
+  width: 8.5in !important;
+  overflow: hidden !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 /* Restore full bars-per-row during export (override mobile media queries) */
 body.exporting .barlineRow{
   overflow-x: visible !important;
+  /* Reset any mobile grid overrides */
+  grid-template-columns: var(--export-grid-template) !important;
 }
 body.exporting .sectionBlock{
   background: #f0f0f0 !important;
@@ -1142,6 +1153,30 @@ body.exporting .sectionBlock{
         <label>Chord Color</label>
         <input type="color" id="setChordColor" value="#0044cc" style="height:36px;padding:2px;">
       </div>
+      <div class="field">
+        <label>Headline Font</label>
+        <select id="setHeadlineFont">
+          <option value="patrickhand" selected>Patrick Hand SC (default)</option>
+          <option value="caveat">Caveat</option>
+          <option value="kalam">Kalam</option>
+          <option value="architects">Architects Daughter</option>
+          <option value="permanent">Permanent Marker</option>
+          <option value="handlee">Handlee</option>
+          <option value="freeserif">FreeSerif (Unicode)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Body / Chord Font</label>
+        <select id="setBodyFont">
+          <option value="helvetica" selected>Helvetica / Arial (default)</option>
+          <option value="kalam">Kalam (handwritten)</option>
+          <option value="caveat">Caveat (handwritten)</option>
+          <option value="handlee">Handlee (handwritten)</option>
+          <option value="architects">Architects Daughter</option>
+          <option value="freesans">FreeSans (GNU Unicode)</option>
+          <option value="freeserif">FreeSerif (GNU Unicode)</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -1376,9 +1411,31 @@ const fbSettings = {
   bgColor: '#ffffff',  // sheet background
   fgColor: '#111111',  // font/foreground color
   chordColor: '#0044cc', // chord color
+  headlineFont: 'patrickhand', // font for song title
+  bodyFont: 'helvetica',       // font for body/chords/section headers
 };
 
 const FONT_SCALE_MAP = { M: 1, S: 0.85, XS: 0.72 };
+
+/* Font family maps — key: setting value, value: CSS font-family string */
+const HEADLINE_FONT_MAP = {
+  patrickhand: '"Patrick Hand SC", Georgia, cursive',
+  caveat: '"Caveat", cursive',
+  kalam: '"Kalam", cursive',
+  architects: '"Architects Daughter", cursive',
+  permanent: '"Permanent Marker", cursive',
+  handlee: '"Handlee", cursive',
+  freeserif: '"FreeSerif", Georgia, serif',
+};
+const BODY_FONT_MAP = {
+  helvetica: 'Helvetica, Arial, "Helvetica Neue", sans-serif',
+  kalam: '"Kalam", cursive',
+  caveat: '"Caveat", cursive',
+  handlee: '"Handlee", cursive',
+  architects: '"Architects Daughter", cursive',
+  freesans: '"FreeSans", Helvetica, Arial, sans-serif',
+  freeserif: '"FreeSerif", Georgia, serif',
+};
 
 /* Performance: persist settings to localStorage so users don't reconfigure each visit */
 function saveFBSettings(){
@@ -1408,6 +1465,8 @@ function loadFBSettings(){
       setEl('setBgColor', fbSettings.bgColor);
       setEl('setFgColor', fbSettings.fgColor);
       setEl('setChordColor', fbSettings.chordColor);
+      setEl('setHeadlineFont', fbSettings.headlineFont);
+      setEl('setBodyFont', fbSettings.bodyFont);
     }
   } catch(_){}
 }
@@ -1418,6 +1477,9 @@ function applyFBSettings(){
   root.style.setProperty('--fb-line-spacing', fbSettings.lineSpacing + 'px');
   root.style.setProperty('--fb-bars-per-row', fbSettings.barsPerRow);
   root.style.setProperty('--fb-chord-color', fbSettings.chordColor || '#0044cc');
+  // Apply font families via CSS custom properties
+  root.style.setProperty('--fb-headline-font', HEADLINE_FONT_MAP[fbSettings.headlineFont] || HEADLINE_FONT_MAP.patrickhand);
+  root.style.setProperty('--fb-body-font', BODY_FONT_MAP[fbSettings.bodyFont] || BODY_FONT_MAP.helvetica);
   // Apply custom colors to the sheet
   const sheetEl = document.querySelector('.sheet');
   if (sheetEl){
@@ -1480,6 +1542,12 @@ document.getElementById('setFgColor').addEventListener('input', (e) => {
 });
 document.getElementById('setChordColor').addEventListener('input', (e) => {
   fbSettings.chordColor = e.target.value; applyFBSettings();
+});
+document.getElementById('setHeadlineFont').addEventListener('change', (e) => {
+  fbSettings.headlineFont = e.target.value; applyFBSettings();
+});
+document.getElementById('setBodyFont').addEventListener('change', (e) => {
+  fbSettings.bodyFont = e.target.value; applyFBSettings();
 });
 
 /* ---- Performance: debounce helper ---- */
@@ -3605,36 +3673,73 @@ document.getElementById('btnDownloadPdf').addEventListener('click', async () => 
   try{
     document.body.classList.add('exporting');
     setStatus('Rendering PDF…');
+
+    // Set the grid template for export so mobile overrides don't interfere
+    const bpr = fbSettings.barsPerRow;
+    const gridTemplate = buildGridTemplate(bpr);
+    document.documentElement.style.setProperty('--export-grid-template', gridTemplate);
+
+    // Brief layout settle for the browser to apply exporting styles
+    await new Promise(r => setTimeout(r, 50));
+
+    // Render at scale 2 for crisp output; constrain to the sheet element width
+    const sheetEl = document.querySelector('.sheet');
+    const renderWidth = sheetEl ? sheetEl.offsetWidth : previewEl.offsetWidth;
     const canvas = await html2canvas(previewEl, {
       scale: 2,
-      backgroundColor: '#ffffff',
+      width: renderWidth,
+      backgroundColor: fbSettings.bgColor || '#ffffff',
       logging: false,
-      useCORS: true
+      useCORS: true,
+      windowWidth: renderWidth
     });
 
-    const imgData = canvas.toDataURL('image/png');
     const { jsPDF } = window.jspdf;
-
-    const pdf = new jsPDF({ orientation: fbSettings.pageOrientation || 'portrait', unit: 'pt', format: 'letter' });
+    const orientation = fbSettings.pageOrientation || 'portrait';
+    const pdf = new jsPDF({ orientation: orientation, unit: 'pt', format: 'letter' });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 36; // 0.5 inch
 
-    const imgProps = pdf.getImageProperties(imgData);
-    const imgWidth = pageWidth - margin * 2;
-    const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+    const printableWidth = pageWidth - margin * 2;
+    const printableHeight = pageHeight - margin * 2;
 
-    let heightLeft = imgHeight;
-    let position = margin;
+    // Scale image to fit within the printable area width
+    const imgProps = pdf.getImageProperties(canvas.toDataURL('image/png'));
+    const scale = printableWidth / imgProps.width;
+    const imgWidth = printableWidth;
+    const imgHeight = imgProps.height * scale;
 
-    pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
+    // If content fits on one page, just place it
+    if (imgHeight <= printableHeight){
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, margin, imgWidth, imgHeight);
+    } else {
+      // Multi-page: slice the canvas into page-sized chunks
+      const pxPerPt = canvas.width / imgWidth;
+      const pageContentHeight = printableHeight * pxPerPt;
+      let srcY = 0;
+      let pageNum = 0;
 
-    heightLeft -= (pageHeight - margin * 2);
-    while (heightLeft > 0){
-      pdf.addPage();
-      position = margin - (imgHeight - heightLeft);
-      pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
-      heightLeft -= (pageHeight - margin * 2);
+      while (srcY < canvas.height){
+        if (pageNum > 0) pdf.addPage();
+        const sliceHeight = Math.min(pageContentHeight, canvas.height - srcY);
+
+        // Create a slice canvas for this page
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = sliceHeight;
+        const ctx = sliceCanvas.getContext('2d');
+        ctx.fillStyle = fbSettings.bgColor || '#ffffff';
+        ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        ctx.drawImage(canvas, 0, srcY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+
+        const sliceData = sliceCanvas.toDataURL('image/png');
+        const sliceDrawHeight = (sliceHeight / pxPerPt);
+        pdf.addImage(sliceData, 'PNG', margin, margin, imgWidth, sliceDrawHeight);
+
+        srcY += pageContentHeight;
+        pageNum++;
+      }
     }
 
     const filename = safeFilename(hdr.title.value?.trim() || 'chart') + '.pdf';
@@ -3655,7 +3760,13 @@ document.getElementById('btnPng').addEventListener('click', async () => {
   try{
     document.body.classList.add('exporting');
     setStatus('Rendering PNG...');
-    const canvas = await html2canvas(previewEl, {scale: 2, backgroundColor: '#ffffff'});
+    const bpr = fbSettings.barsPerRow;
+    const gridTemplate = buildGridTemplate(bpr);
+    document.documentElement.style.setProperty('--export-grid-template', gridTemplate);
+    await new Promise(r => setTimeout(r, 50));
+    const pngSheetEl = document.querySelector('.sheet');
+    const pngRenderWidth = pngSheetEl ? pngSheetEl.offsetWidth : previewEl.offsetWidth;
+    const canvas = await html2canvas(previewEl, {scale: 2, backgroundColor: fbSettings.bgColor || '#ffffff', width: pngRenderWidth, windowWidth: pngRenderWidth});
     const filename = safeFilename(hdr.title.value?.trim() || 'chordsheet') + '.png';
 
     await new Promise((resolve, reject) => {
