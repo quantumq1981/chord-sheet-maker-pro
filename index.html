@@ -748,7 +748,6 @@ body.exporting .sectionBlock{
     .app{ max-width:none; padding:0; }
     .previewWrap{ border:0; padding:0; }
     .sheet{ border-radius:0; padding:24px 36px; box-shadow:none; }
-    @page { size: letter; margin: 0.5in; }
     .sheet{ max-width:none; margin:0; border:0; }
     /* Ensure barline rows don't clip in print */
     .barlineRow{ overflow-x:visible !important; }
@@ -971,6 +970,7 @@ body.exporting .sectionBlock{
     display:none !important;
   }
 </style>
+<style id="dynamicPageStyle">@media print { @page { size: letter portrait; margin: 0.5in; } }</style>
 </head>
 
 <body>
@@ -1102,12 +1102,45 @@ body.exporting .sectionBlock{
           <option value="minus">&minus;</option>
         </select>
       </div>
+      <div class="field">
+        <label>Diminished Style</label>
+        <select id="setDimStyle">
+          <option value="degree" selected>&deg; (default)</option>
+          <option value="dim">dim</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Half-Dim Style</label>
+        <select id="setHalfDimStyle">
+          <option value="slashed" selected>&oslash; (default)</option>
+          <option value="m7b5">m7b5</option>
+        </select>
+      </div>
+      <div class="field power-only">
+        <label>Page Orientation</label>
+        <select id="setPageOrientation">
+          <option value="portrait" selected>Portrait (default)</option>
+          <option value="landscape">Landscape</option>
+        </select>
+      </div>
       <div class="field power-only">
         <label>Page Footer</label>
         <select id="setFooter">
           <option value="visible" selected>Visible (default)</option>
           <option value="hidden">Hidden</option>
         </select>
+      </div>
+      <div class="field power-only">
+        <label>Background Color</label>
+        <input type="color" id="setBgColor" value="#ffffff" style="height:36px;padding:2px;">
+      </div>
+      <div class="field power-only">
+        <label>Font Color</label>
+        <input type="color" id="setFgColor" value="#111111" style="height:36px;padding:2px;">
+      </div>
+      <div class="field power-only">
+        <label>Chord Color</label>
+        <input type="color" id="setChordColor" value="#0044cc" style="height:36px;padding:2px;">
       </div>
     </div>
   </div>
@@ -1336,7 +1369,13 @@ const fbSettings = {
   chordAlign: 'left',  // left, center
   maj7Style: 'ma',     // ma, maj, triangle
   minorStyle: 'm',     // m, min, minus
+  dimStyle: 'degree',  // degree (°), dim
+  halfDimStyle: 'slashed', // slashed (ø), m7b5
   footer: 'visible',   // visible, hidden
+  pageOrientation: 'portrait', // portrait, landscape
+  bgColor: '#ffffff',  // sheet background
+  fgColor: '#111111',  // font/foreground color
+  chordColor: '#0044cc', // chord color
 };
 
 const FONT_SCALE_MAP = { M: 1, S: 0.85, XS: 0.72 };
@@ -1362,7 +1401,13 @@ function loadFBSettings(){
       setEl('setChordAlign', fbSettings.chordAlign);
       setEl('setMaj7Style', fbSettings.maj7Style);
       setEl('setMinorStyle', fbSettings.minorStyle);
+      setEl('setDimStyle', fbSettings.dimStyle);
+      setEl('setHalfDimStyle', fbSettings.halfDimStyle);
+      setEl('setPageOrientation', fbSettings.pageOrientation);
       setEl('setFooter', fbSettings.footer);
+      setEl('setBgColor', fbSettings.bgColor);
+      setEl('setFgColor', fbSettings.fgColor);
+      setEl('setChordColor', fbSettings.chordColor);
     }
   } catch(_){}
 }
@@ -1372,6 +1417,18 @@ function applyFBSettings(){
   root.style.setProperty('--fb-font-scale', FONT_SCALE_MAP[fbSettings.fontSize] || 1);
   root.style.setProperty('--fb-line-spacing', fbSettings.lineSpacing + 'px');
   root.style.setProperty('--fb-bars-per-row', fbSettings.barsPerRow);
+  root.style.setProperty('--fb-chord-color', fbSettings.chordColor || '#0044cc');
+  // Apply custom colors to the sheet
+  const sheetEl = document.querySelector('.sheet');
+  if (sheetEl){
+    sheetEl.style.background = fbSettings.bgColor || '#ffffff';
+    sheetEl.style.color = fbSettings.fgColor || '#111111';
+  }
+  // Apply page orientation to print style
+  const orientStyle = document.getElementById('dynamicPageStyle');
+  if (orientStyle){
+    orientStyle.textContent = `@media print { @page { size: letter ${fbSettings.pageOrientation || 'portrait'}; margin: 0.5in; } }`;
+  }
   _chordParseCache.clear(); // Invalidate cache when chord style settings change
   saveFBSettings();
   updatePreview();
@@ -1405,6 +1462,24 @@ document.getElementById('setMinorStyle').addEventListener('change', (e) => {
 });
 document.getElementById('setFooter').addEventListener('change', (e) => {
   fbSettings.footer = e.target.value; applyFBSettings();
+});
+document.getElementById('setDimStyle').addEventListener('change', (e) => {
+  fbSettings.dimStyle = e.target.value; applyFBSettings();
+});
+document.getElementById('setHalfDimStyle').addEventListener('change', (e) => {
+  fbSettings.halfDimStyle = e.target.value; applyFBSettings();
+});
+document.getElementById('setPageOrientation').addEventListener('change', (e) => {
+  fbSettings.pageOrientation = e.target.value; applyFBSettings();
+});
+document.getElementById('setBgColor').addEventListener('input', (e) => {
+  fbSettings.bgColor = e.target.value; applyFBSettings();
+});
+document.getElementById('setFgColor').addEventListener('input', (e) => {
+  fbSettings.fgColor = e.target.value; applyFBSettings();
+});
+document.getElementById('setChordColor').addEventListener('input', (e) => {
+  fbSettings.chordColor = e.target.value; applyFBSettings();
 });
 
 /* ---- Performance: debounce helper ---- */
@@ -2164,13 +2239,22 @@ function formatChordQuality(quality){
   if (!quality) return '';
   let q = quality;
 
-  // Half-diminished: m7b5 or ø
+  // Half-diminished: m7b5 or ø — respect settings
   if (/^m7b5$/i.test(q) || /^ø/i.test(q)){
+    if (fbSettings.halfDimStyle === 'm7b5'){
+      return 'm7b5';
+    }
     return 'ø7';
   }
 
-  // Diminished
-  q = q.replace(/^dim/i, '°');
+  // Diminished — respect settings
+  if (/^dim/i.test(q)){
+    if (fbSettings.dimStyle === 'dim'){
+      // keep as-is (dim7, dim, etc.)
+    } else {
+      q = q.replace(/^dim/i, '°');
+    }
+  }
 
   // Augmented
   q = q.replace(/^aug/i, '+');
@@ -2213,7 +2297,7 @@ const CHORD_CACHE_MAX = 512;
 
 function parseChordToken(token){
   const raw = token || '';
-  const cacheKey = raw + '|' + fbSettings.maj7Style + '|' + fbSettings.minorStyle;
+  const cacheKey = raw + '|' + fbSettings.maj7Style + '|' + fbSettings.minorStyle + '|' + fbSettings.dimStyle + '|' + fbSettings.halfDimStyle;
   if (_chordParseCache.has(cacheKey)) return _chordParseCache.get(cacheKey);
 
   const normalized = normalizeAccidentals(raw);
@@ -2510,6 +2594,13 @@ function updatePreview(){
 
   const doc = parseCSMPN(text);
   previewEl.innerHTML = renderDoc(doc);
+
+  // Apply custom colors to the rendered sheet
+  const sheetEl = document.querySelector('.sheet');
+  if (sheetEl){
+    sheetEl.style.background = fbSettings.bgColor || '#ffffff';
+    sheetEl.style.color = fbSettings.fgColor || '#111111';
+  }
 }
 
 /* =========================================================
@@ -3524,7 +3615,7 @@ document.getElementById('btnDownloadPdf').addEventListener('click', async () => 
     const imgData = canvas.toDataURL('image/png');
     const { jsPDF } = window.jspdf;
 
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+    const pdf = new jsPDF({ orientation: fbSettings.pageOrientation || 'portrait', unit: 'pt', format: 'letter' });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 36; // 0.5 inch
