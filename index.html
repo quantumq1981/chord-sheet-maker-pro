@@ -537,6 +537,40 @@
     font-size:calc(26px * var(--fb-font-scale));
   }
 
+  .restSymbol{
+    font-size:calc(26px * var(--fb-font-scale));
+  }
+
+  .pushMark{
+    font-size:calc(14px * var(--fb-font-scale));
+    color:var(--fb-chord-color);
+    margin-right:1px;
+    vertical-align:baseline;
+  }
+
+  .diamondMark{
+    font-size:calc(16px * var(--fb-font-scale));
+    margin-left:2px;
+    vertical-align:middle;
+  }
+
+  .fermataMark{
+    font-size:calc(18px * var(--fb-font-scale));
+    margin-left:2px;
+  }
+
+  .tieMark{
+    font-size:calc(14px * var(--fb-font-scale));
+    margin-left:1px;
+  }
+
+  .strokeMarks{
+    font-size:calc(14px * var(--fb-font-scale));
+    margin-left:2px;
+    letter-spacing:1px;
+    color:var(--fb-chord-color);
+  }
+
   .endingBracket{
     grid-row:1;
     align-self:start;
@@ -1948,10 +1982,17 @@ function parseCSMPN(text){
       continue;
     }
 
-    // chord line
-    const tokens = tokenizeBars(line0);
+    // chord line — detect leading X for bar indentation
+    let indentLevel = 0;
+    let chordLine = line0;
+    const indentMatch = line.match(/^(X+)\s*(.*)/);
+    if (indentMatch){
+      indentLevel = indentMatch[1].length;
+      chordLine = indentMatch[2];
+    }
+    const tokens = tokenizeBars(chordLine);
     if (tokens.length){
-      doc.blocks.push({type:'bars', tokens});
+      doc.blocks.push({type:'bars', tokens, indent: indentLevel});
     }
   }
 
@@ -2084,6 +2125,8 @@ function transposeChordToken(tok, semis, pref){
   if (tok === '%' || tok === '%%' || /^%\d+$/.test(tok)) return tok;
   if (tok === '*' || isBarlineToken(tok)) return tok;
   if (upper === 'N.C.' || upper === 'NC') return tok;
+  if (/^r[124]$/i.test(tok)) return tok; // rest tokens
+  if (upper === 'FINE' || /^D\.?C\.?/i.test(tok) || /^D\.?S\.?/i.test(tok) || /^DACAPO/i.test(tok) || /^DALSEGNO/i.test(tok)) return tok;
   if (/^\d+\.$/.test(tok)) return tok; // endings marker token itself
   if (tok.startsWith('"') && tok.endsWith('"')) return tok; // annotation token
 
@@ -2327,8 +2370,9 @@ function formatChordQuality(quality){
   // Augmented
   q = q.replace(/^aug/i, '+');
 
-  // Major 7th / extended major chords - respect settings (require numeric extension)
-  const maj7Re = /^(maj|ma|Δ)(\d.*)$/i;
+  // Major 7th / extended major chords - respect settings
+  // Accepts: maj7, ma7, Δ7, M7, j7 (all with numeric extension)
+  const maj7Re = /^(maj|ma|Δ|M|j)(\d.*)$/;
   const maj7Match = q.match(maj7Re);
   if (maj7Match){
     const suffix = maj7Match[2] || '';
@@ -2342,8 +2386,19 @@ function formatChordQuality(quality){
   }
 
   // Minor chord - respect settings
-  // Match minor at start: m, min, mi (but not maj)
-  const minRe = /^(min|mi|m)(\d.*|$)/i;
+  // Accepts: m, mi, min, ami, amin at start (but not maj)
+  // Also handles "-" as minor indicator
+  if (q === '-' || q.startsWith('-')){
+    const suffix = q.length > 1 ? q.slice(1) : '';
+    if (fbSettings.minorStyle === 'min'){
+      return 'min' + suffix;
+    } else if (fbSettings.minorStyle === 'minus'){
+      return '−' + suffix;
+    } else {
+      return 'm' + suffix;
+    }
+  }
+  const minRe = /^(amin|ami|min|mi|m)(\d.*|$)/i;
   const minMatch = q.match(minRe);
   if (minMatch && !/^ma/i.test(q)){
     const suffix = minMatch[2] || '';
@@ -2364,15 +2419,39 @@ const _chordParseCache = new Map();
 const CHORD_CACHE_MAX = 512;
 
 function parseChordToken(token){
-  const raw = token || '';
+  let raw = token || '';
   const cacheKey = raw + '|' + fbSettings.maj7Style + '|' + fbSettings.minorStyle + '|' + fbSettings.dimStyle + '|' + fbSettings.halfDimStyle;
   if (_chordParseCache.has(cacheKey)) return _chordParseCache.get(cacheKey);
 
+  // Lowercase root = minor: a → Am, bb → Bbm, etc.
+  let impliedMinor = false;
+  if (/^[a-g]/.test(raw)){
+    raw = raw[0].toUpperCase() + raw.slice(1);
+    // Only add minor if quality doesn't already start with m/min/dim/aug/etc.
+    const rest = raw.slice(1).replace(/^[b#]/, '');
+    if (!rest || /^\d/.test(rest) || rest === '-'){
+      impliedMinor = true;
+    }
+  }
+
   const normalized = normalizeAccidentals(raw);
+  // Support */G blank chord with bass
+  const blankBassMatch = normalized.match(/^\*(?:\/([A-G])([b#]?))?$/);
+  if (blankBassMatch){
+    const bass = blankBassMatch[1] ? (blankBassMatch[1] + (blankBassMatch[2] || '')) : '';
+    const displayBass = bass.replace(/b/g, '♭').replace(/#/g, '♯');
+    const result = { root: '', quality: '', bass: displayBass, isBlank: true };
+    _chordParseCache.set(cacheKey, result);
+    return result;
+  }
+
   const match = normalized.match(/^([A-G])([b#]?)(.*?)(?:\/([A-G])([b#]?))?$/);
   if (!match){ _chordParseCache.set(cacheKey, null); return null; }
   const root = match[1] + (match[2] || '');
-  const quality = match[3] || '';
+  let quality = match[3] || '';
+  // Lowercase root implied minor: prepend 'm' if no quality or numeric-only
+  if (impliedMinor && !quality) quality = 'm';
+  else if (impliedMinor && /^\d/.test(quality)) quality = 'm' + quality;
   const bass = match[4] ? (match[4] + (match[5] || '')) : '';
   const displayRoot = root.replace(/b/g, '♭').replace(/#/g, '♯');
   const displayBass = bass.replace(/b/g, '♭').replace(/#/g, '♯');
@@ -2389,6 +2468,11 @@ function parseChordToken(token){
 function renderChordToken(token){
   const parsed = parseChordToken(token);
   if (!parsed) return `<span class="chord">${escapeHtml(token)}</span>`;
+  // Blank chord with bass (*/G) — show slash only
+  if (parsed.isBlank){
+    const bass = parsed.bass ? `<span class="chord-bass">${escapeHtml(parsed.bass)}</span>` : '';
+    return `<span class="chord">${bass}</span>`;
+  }
   const quality = parsed.quality ? `<span class="chord-quality">${escapeHtml(parsed.quality)}</span>` : '';
   const bass = parsed.bass ? `<span class="chord-bass">${escapeHtml(parsed.bass)}</span>` : '';
   return `<span class="chord"><span class="chord-root">${escapeHtml(parsed.root)}</span>${quality}${bass}</span>`;
@@ -2413,16 +2497,68 @@ function renderBeatContent(rawBeat){
   };
 
   let chordHtml = '';
-  const normalizedBeat = beatWithoutAnnotation.trim();
+  let normalizedBeat = beatWithoutAnnotation.trim();
+
+  // --- Push notation: < or << before a chord ---
+  let pushHtml = '';
+  if (normalizedBeat.startsWith('<<')){
+    pushHtml = '<span class="musicSymbol pushMark">&laquo;</span>';
+    normalizedBeat = normalizedBeat.slice(2).trim();
+  } else if (normalizedBeat.startsWith('<') && normalizedBeat.length > 1 && normalizedBeat[1] !== '>'){
+    pushHtml = '<span class="musicSymbol pushMark">&lsaquo;</span>';
+    normalizedBeat = normalizedBeat.slice(1).trim();
+  }
+
+  // --- Suffix detection: diamond(<>), fermata, stroke(,), tie(^) ---
+  let suffixHtml = '';
+  let chordPart = normalizedBeat;
+
+  // Diamond: "Cm7<>" or "Cm7 diamond"
+  if (chordPart.endsWith('<>')){
+    chordPart = chordPart.slice(0, -2).trim();
+    suffixHtml += '<span class="musicSymbol diamondMark">&#9671;</span>';
+  } else if (/\s+diamond$/i.test(chordPart)){
+    chordPart = chordPart.replace(/\s+diamond$/i, '').trim();
+    suffixHtml += '<span class="musicSymbol diamondMark">&#9671;</span>';
+  }
+
+  // Fermata suffix: "E7 fermata"
+  if (/\s+fermata$/i.test(chordPart)){
+    chordPart = chordPart.replace(/\s+fermata$/i, '').trim();
+    suffixHtml += '<span class="musicSymbol fermataMark">𝄐</span>';
+  }
+
+  // Tie: trailing ^
+  if (chordPart.endsWith('^')){
+    chordPart = chordPart.slice(0, -1).trim();
+    suffixHtml += '<span class="musicSymbol tieMark">&#8978;</span>';
+  }
+
+  // Stroke: trailing commas (count them for multiple strokes)
+  const strokeMatch = chordPart.match(/(,+)$/);
+  if (strokeMatch){
+    chordPart = chordPart.slice(0, -strokeMatch[1].length).trim();
+    const strokeCount = strokeMatch[1].length;
+    suffixHtml += '<span class="strokeMarks">' + '&#x2215;'.repeat(strokeCount) + '</span>';
+  }
+
+  normalizedBeat = chordPart;
   const prefixSymbol = normalizedBeat[0];
   const trailingChord = normalizedBeat.slice(1).trim();
 
   if (!normalizedBeat){
     chordHtml = `<span class="chord">&nbsp;</span>`;
+  // --- Rests: r1 (whole), r2 (half), r4 (quarter) ---
+  } else if (/^r[124]$/i.test(normalizedBeat)){
+    const restMap = { 'r1': '𝄻', 'r2': '𝄼', 'r4': '𝄽' };
+    const restSym = restMap[normalizedBeat.toLowerCase()] || '𝄽';
+    chordHtml = `<span class="musicSymbol restSymbol">${restSym}</span>`;
   } else if (normalizedBeat === '%'){
     chordHtml = `<span class="musicSymbol repeatSymbol">𝄎</span>`;
   } else if (normalizedBeat === '%%'){
     chordHtml = `<span class="musicSymbol repeatSymbol">𝄏</span>`;
+  } else if (/^%\d+$/.test(normalizedBeat)){
+    chordHtml = `<span class="musicSymbol repeatSymbol">𝄎<sup>${normalizedBeat.slice(1)}</sup></span>`;
   } else if (symbolMap[normalizedBeat]){
     chordHtml = renderSymbol(symbolMap[normalizedBeat]);
   } else if (symbolMap[prefixSymbol] && trailingChord){
@@ -2430,15 +2566,18 @@ function renderBeatContent(rawBeat){
   } else if (normalizedBeat.toUpperCase() === 'N.C.' || normalizedBeat.toUpperCase() === 'NC'){
     chordHtml = `<span class="chord">${escapeHtml(normalizedBeat)}</span>`;
   } else if (normalizedBeat.toLowerCase() === 'fine'){
-    chordHtml = `<span class="musicSymbol"><em>fine</em></span>`;
-  } else if (normalizedBeat.toLowerCase().startsWith('d.s')){
+    chordHtml = `<span class="musicSymbol"><em>Fine</em></span>`;
+  // --- D.C. and D.S. variants ---
+  } else if (/^d\.?c\.?/i.test(normalizedBeat) || /^dacapo/i.test(normalizedBeat)){
+    chordHtml = `<span class="musicSymbol"><em>${escapeHtml(normalizedBeat)}</em></span>`;
+  } else if (/^d\.?s\.?/i.test(normalizedBeat) || /^dalsegno/i.test(normalizedBeat)){
     chordHtml = `<span class="musicSymbol"><em>${escapeHtml(normalizedBeat)}</em></span>`;
   } else {
     chordHtml = renderChordToken(normalizedBeat);
   }
 
   const annotationHtml = annotation ? `<span class="beatAnnotation">${escapeHtml(annotation)}</span>` : '';
-  return `<span class="beat">${annotationHtml}${chordHtml}</span>`;
+  return `<span class="beat">${annotationHtml}${pushHtml}${chordHtml}${suffixHtml}</span>`;
 }
 
 function renderBarline(type){
@@ -2515,7 +2654,7 @@ function renderDoc(doc){
       continue;
     }
     if (block.type === 'bars'){
-      html += renderBars(block.tokens);
+      html += renderBars(block.tokens, block.indent || 0);
       continue;
     }
   }
@@ -2588,13 +2727,14 @@ function buildGridTemplate(barsPerRow){
   return result;
 }
 
-function renderBars(tokens){
+function renderBars(tokens, indent){
   const bars = parseBarStructures(tokens);
   const bpr = fbSettings.barsPerRow;
   const gridTemplate = buildGridTemplate(bpr);
   const alignClass = fbSettings.chordAlign === 'center' ? ' center-align' : '';
+  const indentStyle = indent ? ` style="margin-left:${indent * 2}em"` : '';
 
-  let html = `<div class="barsBlock">`;
+  let html = `<div class="barsBlock"${indentStyle}>`;
   let activeEnding = null;
 
   for (let i = 0; i < bars.length; i += bpr){
@@ -3367,6 +3507,13 @@ function stripTokenDecorators(t){
     .replace(/^\(+/,'')
     .replace(/\)+$/,'')
     .replace(/x\d+$/i,'')
+    .replace(/^<{1,2}/,'')       // push notation prefix
+    .replace(/<>$/,'')            // diamond suffix
+    .replace(/\s+diamond$/i,'')   // diamond word suffix
+    .replace(/\s+fermata$/i,'')   // fermata suffix
+    .replace(/\^$/,'')            // tie suffix
+    .replace(/,+$/,'')            // stroke suffixes
+    .replace(/"[^"]*"/g,'')       // annotations
     .trim();
 }
 
@@ -3384,11 +3531,16 @@ function isChordLikeToken(tok){
 
   if (t === '%' || t === '%%' || /^%\d+$/.test(t)) return true;
   if (t === '*') return true;
+  if (/^r[124]$/i.test(t)) return true;
   const upper = t.toUpperCase();
   if (upper === 'N.C.' || upper === 'NC') return true;
+  if (upper === 'FINE' || /^D\.?C\.?/i.test(t) || /^D\.?S\.?/i.test(t) || /^DACAPO/i.test(t) || /^DALSEGNO/i.test(t)) return true;
 
   t = stripTokenDecorators(t);
   if (!t) return false;
+
+  // Lowercase root = minor (e.g., a, bb, eb7)
+  if (/^[a-g]/.test(t)) t = t[0].toUpperCase() + t.slice(1);
 
   const m = t.match(/^([A-G])([b#]?)(.*)$/);
   if (!m) return false;
@@ -3403,6 +3555,8 @@ function isChordLikeToken(tok){
     rl.startsWith('m') ||
     rl.startsWith('maj') ||
     rl.startsWith('min') ||
+    rl.startsWith('ami') ||
+    rl === '-' || rl.startsWith('-') ||
     rl.startsWith('dim') ||
     rl.startsWith('aug') ||
     rl.startsWith('sus') ||
