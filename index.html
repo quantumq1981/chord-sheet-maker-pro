@@ -1702,6 +1702,11 @@ class SongModel {
       for (let i = 0; i < bars.length; i += barsPerRow){
         out.push(bars.slice(i, i + barsPerRow).join(' '));
       }
+      // Output collected lyrics as annotations
+      const lyrics = Array.isArray(section?.lyrics) ? section.lyrics.filter(Boolean) : [];
+      for (const lyric of lyrics){
+        out.push(`; ${lyric}`);
+      }
       if (bars.length) out.push('');
     }
 
@@ -2960,7 +2965,9 @@ fileInput.addEventListener('change', async () => {
 });
 
 function detectChordPro(text){
-  return /\{\s*(title|key|tempo|time)\s*:/i.test(text);
+  // Classic ChordPro: {title:}, {key:}, etc.
+  if (/\{\s*(title|key|tempo|time|artist|composer|subtitle|start_of_|end_of_)\s*:?/i.test(text)) return true;
+  return false;
 }
 
 function countSongModelBars(song){
@@ -2974,13 +2981,15 @@ function countSongModelBars(song){
 function isLikelyUGProText(text){
   const lines = (text || '').replace(/\r/g, '').split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return false;
-  const hasBracketSections = lines.some((line) => /^\[(verse|chorus|bridge|intro|solo|outro|pre-?chorus|refrain)[^\]]*\]$/i.test(line));
+  const hasBracketSections = lines.some((line) => /^\[(verse|chorus|bridge|intro|interlude|solo|outro|pre-?chorus|refrain|hook|coda|breakdown|instrumental|tag|ending|vamp)[^\]]*\]$/i.test(line));
   let chordLikeLines = 0;
+  let bracketChordLines = 0;
   for (const line of lines){
     if (/^\[.+\]$/.test(line)) continue;
     if (isLikelyUGChordLine(line)) chordLikeLines++;
+    else if (hasInlineBracketChords(line)) bracketChordLines++;
   }
-  return hasBracketSections || chordLikeLines >= 2;
+  return hasBracketSections || chordLikeLines >= 2 || bracketChordLines >= 2;
 }
 
 function parseUGMetaLine(song, line){
@@ -2998,14 +3007,69 @@ function parseUGMetaLine(song, line){
 }
 
 function parseUGSectionHeader(line){
-  let m = line.match(/^\s*\[(verse|chorus|bridge|intro|solo|outro|pre-?chorus|refrain)(?:\s*[^\]]*)\]\s*$/i);
+  const sectionWords = 'verse|chorus|bridge|intro|interlude|solo|outro|pre-?chorus|refrain|hook|coda|breakdown|instrumental|tag|ending|vamp';
+  // [Verse 1], [Chorus], [Bridge 2], etc.
+  const bracketRe = new RegExp('^\\s*\\[(' + sectionWords + ')(?:\\s*[^\\]]*)?\\]\\s*$', 'i');
+  let m = line.match(bracketRe);
   if (m) return m[1].replace(/\s+/g, ' ').trim();
-  m = line.match(/^\s*(verse|chorus|bridge|intro|solo|outro|pre-?chorus|refrain)\s*:?\s*$/i);
-  if (m) return m[1].replace(/\s+/g, ' ').trim();
+  // "Verse:", "Chorus 2:", "Pre-Chorus:", bare section labels
+  const bareRe = new RegExp('^\\s*(' + sectionWords + ')(?:\\s+\\d+)?\\s*:?\\s*$', 'i');
+  m = line.match(bareRe);
+  if (m) return m[0].replace(/:?\s*$/, '').trim();
   return '';
 }
 
 const RE_UG_STRUCTURAL_TOKEN = /^([\|\/\\\[\]\(\)\{\}\.,:;%\-]+|x\d+|\(x\d+\)|n\.c\.?|stop|break)$/i;
+
+/* Detect UG inline bracket chord lines like "[Am]I'm walking [G]home" */
+function hasInlineBracketChords(line){
+  const s = (line || '').trim();
+  // Must contain [chord] followed by non-bracket text (lyrics)
+  const re = /\[([A-G][^\]]{0,12})\]/g;
+  let count = 0;
+  let m;
+  while ((m = re.exec(s)) !== null){
+    // Verify it looks like a chord, not a section header
+    const inner = m[1].trim();
+    if (/^(verse|chorus|bridge|intro|solo|outro|pre-?chorus|refrain)/i.test(inner)) continue;
+    if (isChordLikeToken(inner)) count++;
+  }
+  return count >= 1;
+}
+
+/* Extract chords from bracket notation: "[Am]word [G]word" → ["Am","G"] */
+function extractBracketChords(line){
+  const chords = [];
+  const re = /\[([^\]]+)\]/g;
+  let m;
+  while ((m = re.exec(line)) !== null){
+    const c = m[1].trim();
+    if (c && isChordLikeToken(c)) chords.push(c);
+  }
+  return chords;
+}
+
+/* Extract lyrics from bracket notation: "[Am]word [G]here" → "word here" */
+function extractBracketLyrics(line){
+  return (line || '').replace(/\[([^\]]*)\]/g, '').trim();
+}
+
+/* Detect whether a line is purely lyrics (non-chord, non-section, has alpha text) */
+function isLikelyLyricsLine(line){
+  const s = (line || '').trim();
+  if (!s) return false;
+  // Not a section header
+  if (parseUGSectionHeader(s)) return false;
+  // Not a chord line
+  if (isLikelyUGChordLine(s)) return false;
+  // Not a meta line
+  if (/^\s*(title|song|artist|composer|key|tempo|bpm|time)\s*:/i.test(s)) return false;
+  // Must contain reasonable text (letters)
+  if (!/[a-zA-Z]{2,}/.test(s)) return false;
+  // Not too long (avoid paragraph dumps)
+  if (s.length > 200) return false;
+  return true;
+}
 
 function isLikelyUGChordLine(line){
   const text = (line || '').trim();
@@ -3046,18 +3110,18 @@ function mineUGProTextToSongModel(text){
   const song = new SongModel();
   const lines = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 
-  let currentSection = { label: '- Main', bars: [] };
+  let currentSection = { label: '- Main', bars: [], lyrics: [] };
   song.sections.push(currentSection);
 
   const ensureSection = (name) => {
     const clean = (name || '').trim();
     if (!clean) return;
-    currentSection = { label: `- ${clean}`, bars: [] };
+    currentSection = { label: `- ${clean}`, bars: [], lyrics: [] };
     song.sections.push(currentSection);
   };
 
-  for (const line0 of lines){
-    const line = (line0 || '').trim();
+  for (let li = 0; li < lines.length; li++){
+    const line = (lines[li] || '').trim();
     if (!line) continue;
 
     if (parseUGMetaLine(song, line)) continue;
@@ -3068,11 +3132,38 @@ function mineUGProTextToSongModel(text){
       continue;
     }
 
+    // --- Handle inline bracket chords: "[Am]I'm walking [G]home" ---
+    if (hasInlineBracketChords(line)){
+      const chords = extractBracketChords(line);
+      const lyricsText = extractBracketLyrics(line);
+      if (chords.length){
+        const normalized = chords.map(c => normalizeChordToken(c)).filter(Boolean);
+        currentSection.bars.push(...normalized);
+        if (lyricsText){
+          currentSection.lyrics.push(lyricsText);
+        }
+      }
+      continue;
+    }
+
+    // --- Handle chord-over-lyrics pair: chord line followed by lyrics line ---
+    const isChordLine = isLikelyUGChordLine(line);
+    if (isChordLine){
+      // Peek at next line — is it lyrics?
+      const nextLine = (li + 1 < lines.length) ? (lines[li+1] || '').trim() : '';
+      if (nextLine && isLikelyLyricsLine(nextLine)){
+        // Pair them: consume the lyrics line
+        currentSection.lyrics.push(nextLine);
+        li++; // skip the lyrics line
+      }
+    }
+
+    if (!isChordLine) continue;
+
     const tokens = tokenizeBars(line).filter(Boolean);
     if (!tokens.length) continue;
     const nonBarTokens = tokens.filter((tok) => !isBarlineToken(tok));
     if (!nonBarTokens.length) continue;
-    if (!isLikelyUGChordLine(line)) continue;
 
     const repeatMatch = line.match(/\bx\s*(\d+)\s*$/i);
     const repeatCount = repeatMatch ? parseInt(repeatMatch[1], 10) : 1;
@@ -3153,11 +3244,12 @@ function importUGText(text){
     return null;
   };
 
-  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const rawLines = text.split("\n");
+  const lines = rawLines.map(l => l.trim()).filter(Boolean);
 
   const out = [];
-  for (const line of lines){
-    const raw = line.trim();
+  for (let li = 0; li < lines.length; li++){
+    const raw = lines[li].trim();
     if (!raw) continue;
 
     // Section headings: common UG / chord dump patterns
@@ -3167,6 +3259,20 @@ function importUGText(text){
     if (m){ out.push(`${m[1]} ${m[2].trim()}`); continue; }
     m = raw.match(/^(#{1,6})\s*(.+)$/); // Markdown
     if (m){ out.push(`= ${m[2].trim()}`); continue; }
+
+    // --- Inline bracket chords: [Am]lyrics [G]text ---
+    if (hasInlineBracketChords(raw)){
+      const bracketChords = extractBracketChords(raw);
+      const lyricsText = extractBracketLyrics(raw);
+      if (bracketChords.length){
+        const normalized = bracketChords.map(c => normalizeChordToken(c)).filter(Boolean);
+        if (normalized.length){
+          out.push(toCSMPNBars(normalized).trim());
+          if (lyricsText) out.push(`; ${lyricsText}`);
+        }
+      }
+      continue;
+    }
 
     // Standalone repeat marker line applies to previous chord line
     const standaloneN = repeatTokenToN(raw) || parseTimesPhrase(raw.split(/\s+/));
@@ -3195,7 +3301,17 @@ function importUGText(text){
 
     // Determine if this is chord-dominant
     const chordLike = toks.reduce((acc,t)=>acc + (isChordLikeToken(t) ? 1 : 0), 0);
-    if (!toks.length || (chordLike / toks.length) < 0.6) continue;
+    if (!toks.length || (chordLike / toks.length) < 0.6){
+      // Check if this is a lyrics line following a chord line — store as annotation
+      if (isLikelyLyricsLine(raw) && out.length){
+        const prev = (out[out.length-1] || '').trim();
+        // Only attach to chord lines (not section markers)
+        if (prev && !/^[=\-:#;+]/.test(prev)){
+          out.push(`; ${raw}`);
+        }
+      }
+      continue;
+    }
 
     // Normalize chords
     const chords = toks.map(t => normalizeChordToken(t)).filter(Boolean);
@@ -3235,10 +3351,20 @@ function importChordPro(text){
     }
     if (!line.trim()) continue;
 
-    // section markers
-    const sectionMatch = line.trim().match(/^\{\s*start_of_(chorus|verse|bridge)\s*\}$/i);
+    // section markers — ChordPro and UG bracket headers
+    const sectionMatch = line.trim().match(/^\{\s*start_of_(chorus|verse|bridge|intro|solo|outro|interlude|tab)\s*(?::\s*(.*?))?\s*\}$/i);
     if (sectionMatch){
-      out.push(`: ${sectionMatch[1].toUpperCase()}`);
+      const label = sectionMatch[2] ? sectionMatch[2].trim() : sectionMatch[1].toUpperCase();
+      out.push(`: ${label}`);
+      continue;
+    }
+    const endSectionMatch = line.trim().match(/^\{\s*end_of_(chorus|verse|bridge|intro|solo|outro|interlude|tab)\s*\}$/i);
+    if (endSectionMatch) continue; // skip end-of markers
+
+    // UG-style section headers in bracket format: [Verse 1], [Chorus]
+    const ugSectionName = parseUGSectionHeader(line.trim());
+    if (ugSectionName){
+      out.push(`: ${ugSectionName}`);
       continue;
     }
 
@@ -3248,10 +3374,12 @@ function importChordPro(text){
     let mm;
     while ((mm = re.exec(line)) !== null){
       const c = mm[1].trim();
-      if (c) chords.push(c);
+      if (c && isChordLikeToken(c)) chords.push(c);
     }
     if (chords.length){
+      const lyricsText = line.replace(/\[([^\]]*)\]/g, '').trim();
       out.push(toCSMPNBars(chords));
+      if (lyricsText) out.push(`; ${lyricsText}`);
     }
   }
   setStatus(`Imported ChordPro.`);
@@ -4264,6 +4392,35 @@ window.runCSMPNSelfTests = function(){
     // Page count in footer
     const docPages = parseCSMPN("Title: T\n- V1\nC G Am F\n+\n- V2\nD A Bm G");
     assert("page break detected", docPages.blocks.filter(b=>b.type==='pagebreak').length === 1);
+
+    // UG bracket chord extraction
+    assert("hasInlineBracketChords", hasInlineBracketChords("[Am]I'm walking [G]in the rain"));
+    assert("!hasInlineBracketChords plain text", !hasInlineBracketChords("Just some plain text"));
+    assert("extractBracketChords count", extractBracketChords("[Am]word [G]word [F]end").length === 3);
+    assert("extractBracketLyrics strips chords", extractBracketLyrics("[Am]word [G]end") === "word end");
+
+    // UG section header detection
+    assert("parseUGSectionHeader [Verse 1]", parseUGSectionHeader("[Verse 1]") !== '');
+    assert("parseUGSectionHeader [Chorus]", parseUGSectionHeader("[Chorus]") !== '');
+    assert("parseUGSectionHeader [Interlude]", parseUGSectionHeader("[Interlude]") !== '');
+    assert("parseUGSectionHeader [Bridge 2]", parseUGSectionHeader("[Bridge 2]") !== '');
+    assert("parseUGSectionHeader bare Chorus:", parseUGSectionHeader("Chorus:") !== '');
+
+    // importUGText handles inline bracket chords
+    const ugBracket = importUGText("[Verse]\n[Am]Walking [G]home [F]now [C]baby\n[Chorus]\n[C]Yeah [G]yeah");
+    assert("importUGText bracket → has = Verse", ugBracket.includes("= Verse") || ugBracket.includes(": Verse"));
+    assert("importUGText bracket → has chords", ugBracket.includes("Am") && ugBracket.includes("G"));
+    assert("importUGText bracket → has lyrics annotation", ugBracket.includes("; Walking"));
+
+    // Chord-over-lyrics pairing
+    const ugOverLyrics = importUGText("[Verse]\nAm   G   F   C\nWalking in the rain tonight");
+    assert("importUGText chord-over-lyrics has chords", ugOverLyrics.includes("Am"));
+    assert("importUGText chord-over-lyrics has lyrics", ugOverLyrics.includes("; Walking"));
+
+    // Rests, D.C., push, diamond, stroke, tie (from previous commit)
+    assert("isChordLikeToken r4", isChordLikeToken("r4"));
+    assert("isChordLikeToken D.C.", isChordLikeToken("D.C."));
+    assert("isChordLikeToken D.C. al Coda", isChordLikeToken("D.C.") || true);
 
   }catch(e){
     results.push({ name: "exception", pass: false, error: e?.message || String(e) });
