@@ -3538,13 +3538,100 @@ function fallbackMineABCWithAbcjs(abcText){
   return bars.filter(Boolean);
 }
 
+/* Regex-based MusicXML fallback — used when DOMParser is unavailable (Node.js / tests). */
+function importMusicXMLRegex(xmlText){
+  const song = new SongModel();
+  const t = xmlText || '';
+
+  // Helper: extract text content of a tag
+  const tag = (src, name) => {
+    const re = new RegExp('<' + name + '[^>]*>([^<]*)</' + name + '>', 'i');
+    const m = src.match(re);
+    return m ? m[1].trim() : '';
+  };
+
+  // Helper: extract an attribute value
+  const attr = (src, tagName, attrName) => {
+    const re = new RegExp('<' + tagName + '[^>]*\\b' + attrName + '=["\']([^"\']*)["\']', 'i');
+    const m = src.match(re);
+    return m ? m[1].trim() : '';
+  };
+
+  // Meta
+  song.meta.title = tag(t, 'work-title') || tag(t, 'movement-title') || '';
+  const creatorMatch = t.match(/<creator[^>]*type=["']composer["'][^>]*>([^<]*)<\/creator>/i);
+  song.meta.composer = creatorMatch ? creatorMatch[1].trim() : (tag(t, 'creator') || '');
+
+  // Time signature
+  const attrBlock = t.match(/<attributes>([\s\S]*?)<\/attributes>/i);
+  if (attrBlock){
+    const beats = tag(attrBlock[1], 'beats');
+    const beatType = tag(attrBlock[1], 'beat-type');
+    if (beats && beatType) song.meta.time = `${beats}/${beatType}`;
+    const fifths = tag(attrBlock[1], 'fifths');
+    const mode = tag(attrBlock[1], 'mode');
+    song.meta.key = mapMusicXMLFifthsToKey(fifths, mode);
+  }
+
+  // Tempo
+  const tempoMatch = t.match(/<sound[^>]*tempo=["']([^"']+)["']/i);
+  if (tempoMatch){
+    const tempoNum = Number(tempoMatch[1]);
+    song.meta.tempo = Number.isFinite(tempoNum) ? String(Math.round(tempoNum)) : '';
+  }
+
+  // Measures → bars
+  const measureRe = /<measure\b[^>]*>([\s\S]*?)<\/measure>/gi;
+  const bars = [];
+  let mm;
+  while ((mm = measureRe.exec(t)) !== null){
+    const mContent = mm[1];
+    // Extract <harmony> blocks
+    const harmRe = /<harmony>([\s\S]*?)<\/harmony>/gi;
+    const chords = [];
+    let hm;
+    while ((hm = harmRe.exec(mContent)) !== null){
+      const hBlock = hm[1];
+      const step = tag(hBlock, 'root-step');
+      const alterRaw = tag(hBlock, 'root-alter');
+      if (!step) continue;
+      const acc = alterRaw === '1' ? '#' : (alterRaw === '-1' ? 'b' : '');
+      let qual = attr(hBlock, 'kind', 'text') || tag(hBlock, 'kind') || '';
+      const kindMap = {
+        'major':'', 'minor':'m', 'dominant':'7', 'major-seventh':'maj7',
+        'minor-seventh':'m7', 'diminished':'dim', 'diminished-seventh':'dim7',
+        'augmented':'aug', 'half-diminished':'m7b5'
+      };
+      if (qual in kindMap) qual = kindMap[qual];
+      let chord = `${step}${acc}${qual}`;
+      const bassStep = tag(hBlock, 'bass-step');
+      const bassAlter = tag(hBlock, 'bass-alter');
+      if (bassStep){
+        const bassAcc = bassAlter === '1' ? '#' : (bassAlter === '-1' ? 'b' : '');
+        chord += `/${bassStep}${bassAcc}`;
+      }
+      const norm = normalizeChordToken(chord);
+      if (norm) chords.push(norm);
+    }
+    if (!chords.length) bars.push('%');
+    else if (chords.length === 1) bars.push(chords[0]);
+    else bars.push(chords.join('_'));
+  }
+
+  song.sections.push({ label: '- Main', bars });
+  return song;
+}
+
 function importMusicXML(xmlText){
   try{
     const parser = new DOMParser();
     const xml = parser.parseFromString(xmlText, 'application/xml');
     const parseError = xml.querySelector('parsererror');
-    if (parseError){
-      throw new Error(parseError.textContent?.trim() || 'Invalid XML');
+    // Fallback: if DOMParser doesn't produce useful results (e.g. Node.js stub),
+    // use regex-based extraction instead.
+    const hasMeasures = xml.querySelectorAll('measure').length > 0;
+    if (parseError || !hasMeasures){
+      return importMusicXMLRegex(xmlText);
     }
 
     const song = new SongModel();
@@ -3595,6 +3682,8 @@ function importMusicXML(xmlText){
     setStatus(`Imported MusicXML: ${measures.length} measure(s).`);
     return song;
   }catch(err){
+    // Attempt regex fallback before giving up
+    try { return importMusicXMLRegex(xmlText); } catch(_){}
     console.warn('MusicXML import failed:', err);
     setStatus(`MusicXML import failed: ${err?.message || err}`, 'error');
     throw err;
@@ -4364,7 +4453,7 @@ window.runCSMPNSelfTests = function(){
     assert('SongModel prefixes plain section labels', smText.includes('- Verse'));
     assert('SongModel chunks by barsPerRow', smText.includes('C G Am F\nDm'));
 
-    const xmlSong = importMusicXML(`<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1"><work><work-title>XML Tune</work-title></work><identification><creator type="composer">Jane Doe</creator></identification><part id="P1"><measure number="1"><attributes><divisions>1</divisions><key><fifths>-1</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time></attributes><harmony><root><root-step>B</root-step><root-alter>-1</root-alter></root><kind text="7">dominant</kind></harmony></measure><measure number="2"><harmony><root><root-step>E</root-step><root-alter>-1</root-alter></root><kind>major</kind></harmony><harmony><root><root-step>F</root-step></root><kind>minor-seventh</kind></harmony></measure></part></score-partwise>`);
+    const xmlSong = importMusicXML(`<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1"><work><work-title>XML Tune</work-title></work><identification><creator type="composer">Jane Doe</creator></identification><part id="P1"><measure number="1"><attributes><divisions>1</divisions><key><fifths>-2</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time></attributes><harmony><root><root-step>B</root-step><root-alter>-1</root-alter></root><kind text="7">dominant</kind></harmony></measure><measure number="2"><harmony><root><root-step>E</root-step><root-alter>-1</root-alter></root><kind>major</kind></harmony><harmony><root><root-step>F</root-step></root><kind>minor-seventh</kind></harmony></measure></part></score-partwise>`);
     assert('importMusicXML returns SongModel', xmlSong instanceof SongModel);
     assert('MusicXML title mined', xmlSong.meta.title === 'XML Tune');
     assert('MusicXML key mined', xmlSong.meta.key === 'Bb');
