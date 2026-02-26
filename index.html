@@ -1053,7 +1053,7 @@ body.exporting .sectionBlock{
       <button class="secondary" id="btnDownloadPdf">Download PDF</button>
       <button class="secondary" id="btnPng">PNG</button>
       <button class="secondary" id="btnCopy">Copy</button>
-      <button class="outline power-only" id="btnConvertChordMark">ChordMark → Fake Book</button>
+      <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
       <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
       <button class="outline" id="btnSave">Save</button>
       <button class="outline" id="btnLoad">Load</button>
@@ -2910,7 +2910,7 @@ fileInput.addEventListener('change', async () => {
     if (detectChordMark(text)){
       usedMiner = 'ChordMark';
       importDiagnostics.miner = 'ChordMark';
-      csmpn = importChordMarkToFakeBook(text);
+      csmpn = importChordMarkToCSMPN(text);
     } else if (detectChordPro(text)){
       usedMiner = 'ChordPro';
       importDiagnostics.miner = 'ChordPro';
@@ -2986,7 +2986,7 @@ function detectChordMark(text){
   return (hasPipeBars && (hasSectionHeadings || hasMetadata));
 }
 
-function normalizeFakeBookSectionLabel(label){
+function normalizeCSMPNSectionLabel(label){
   const s = String(label || '').trim();
   if (!s) return '';
   const lower = s.toLowerCase();
@@ -2999,7 +2999,7 @@ function normalizeFakeBookSectionLabel(label){
   return s.replace(/\s+/g, ' ').trim();
 }
 
-function importChordMarkToFakeBook(text){
+function importChordMarkToCSMPN(text){
   const lines = String(text || '').replace(/\r/g, '').split('\n');
   const out = [];
   let hadBars = false;
@@ -3023,12 +3023,12 @@ function importChordMarkToFakeBook(text){
 
     const headingHash = line.match(/^#{1,6}\s+(.+)$/);
     if (headingHash){
-      out.push(`: ${normalizeFakeBookSectionLabel(headingHash[1])}`);
+      out.push(`: ${normalizeCSMPNSectionLabel(headingHash[1])}`);
       continue;
     }
     const headingBracket = line.match(/^\[([^\]]+)\]$/);
     if (headingBracket){
-      out.push(`: ${normalizeFakeBookSectionLabel(headingBracket[1])}`);
+      out.push(`: ${normalizeCSMPNSectionLabel(headingBracket[1])}`);
       continue;
     }
 
@@ -4363,18 +4363,18 @@ document.getElementById('btnExportChordPro').addEventListener('click', () => {
 document.getElementById('btnConvertChordMark').addEventListener('click', async () => {
   const input = sourceEl.value || '';
   if (!input.trim()){
-    setStatus('Paste ChordMark text first, then run ChordMark → Fake Book.', 'warning');
+    setStatus('Paste ChordMark text first, then run ChordMark → CSMPN.', 'warning');
     return;
   }
-  const converted = importChordMarkToFakeBook(input);
+  const converted = importChordMarkToCSMPN(input);
   sourceEl.value = converted;
   extractHeaderFromText(converted);
   updatePreview();
   try{
     await navigator.clipboard.writeText(converted);
-    setStatus('Converted ChordMark to Fake Book format and copied to clipboard.');
+    setStatus('Converted ChordMark to Fake Book / CSMPN format and copied to clipboard.');
   }catch(_){
-    setStatus('Converted ChordMark to Fake Book format.');
+    setStatus('Converted ChordMark to Fake Book / CSMPN format.');
   }
 });
 
@@ -4624,9 +4624,9 @@ window.runCSMPNSelfTests = function(){
     assert("chordPro export key", cp.includes("{key: C}"));
     assert("chordPro export chords", cp.includes("[C]") && cp.includes("[G]"));
 
-    // ChordMark -> Fake Book conversion
+    // ChordMark -> Fake Book / CSMPN conversion
     const cm = "Title: CM Tune\nKey: D\n# Verse\n| D | A/C# Bm | G | A |\n# Chorus\n| Bm | G | D A | D |";
-    const cmOut = importChordMarkToFakeBook(cm);
+    const cmOut = importChordMarkToCSMPN(cm);
     assert("detectChordMark true", detectChordMark(cm) === true);
     assert("ChordMark title preserved", cmOut.includes("Title: CM Tune"));
     assert("ChordMark section converted", cmOut.includes(": Verse") && cmOut.includes(": Chorus"));
