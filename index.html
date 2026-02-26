@@ -2961,7 +2961,8 @@ fileInput.addEventListener('change', async () => {
     extractHeaderFromText(csmpn);
     updatePreview();
     updateDiagnosticsPanel();
-    setStatus('Imported text.');
+    // Report which miner processed the imported text (e.g. ChordPro, ChordMark, UG Pro).
+    setStatus('Imported ' + usedMiner + '.');
   }catch(err){
     console.error(err);
     if (!String(err?.message || '').startsWith('ABC import failed:')){
@@ -2972,8 +2973,11 @@ fileInput.addEventListener('change', async () => {
 });
 
 function detectChordPro(text){
-  // Classic ChordPro: {title:}, {key:}, etc.
-  if (/\{\s*(title|key|tempo|time|artist|composer|subtitle|start_of_|end_of_)\s*:?/i.test(text)) return true;
+  // Classic ChordPro: detect presence of directives, meta data or environment markers.
+  // Expanded to include common directives and meta-data names such as subtitle, sorttitle, lyricist,
+  // arranger, copyright, album, year, duration, capo, meta and comment variants.
+  const proRe = /\{\s*(title|subtitle|sorttitle|artist|composer|lyricist|arranger|copyright|album|year|key|time|tempo|duration|capo|meta|comment|comment_italic|comment_box|highlight|start_of_|end_of_)\s*:?/i;
+  if (proRe.test(text)) return true;
   return false;
 }
 
@@ -3439,58 +3443,165 @@ function importUGText(text){
 }
 
 function importChordPro(text){
-  const lines = text.replace(/\r/g,'').split('\n');
+  const lines = text.replace(/\r/g, '').split('\n');
   const out = [];
-  for (const line0 of lines){
+  // Process each line and build output; header entries are prepended via unshift.
+  for (const line0 of lines) {
     const line = normalizeAccidentals(line0);
+    const trimmed = line.trim();
+    if (!trimmed) continue;
 
-    // directives
-    const m = line.match(/^\{\s*([a-z_]+)\s*:\s*(.*?)\s*\}$/i);
-    if (m){
+    // Match standard {name: value} directives
+    const m = trimmed.match(/^\{\s*([a-z_]+)\s*:\s*(.*?)\s*\}$/i);
+    if (m) {
       const k = m[1].toLowerCase();
       const v = m[2].trim();
-      if (k === 'title') out.unshift(`Title: ${v}`);
-      if (k === 'composer' || k === 'artist') out.unshift(`Composer: ${v}`);
-      if (k === 'key') out.unshift(`Key: ${v}`);
-      if (k === 'time') out.unshift(`Time: ${v}`);
-      if (k === 'tempo') out.unshift(`Tempo: ${v}`);
+      // Handle environment directives of the form {start_of_xxx: ...} and {end_of_xxx}
+      if (k.startsWith('start_of_')) {
+        const envName = k.substring('start_of_'.length);
+        let label = v || envName;
+        // allow optional label="..." or label=...
+        const labelMatch = label.match(/^label\s*=\s*(.*)/i);
+        if (labelMatch) {
+          label = labelMatch[1].trim();
+        }
+        // Strip surrounding quotes
+        label = label.replace(/^['"]|['"]$/g, '');
+        // Replace underscores with spaces and title-case
+        label = label.replace(/_/g, ' ');
+        label = label.split(/\s+/).map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : '').join(' ');
+        out.push(`: ${label}`);
+        continue;
+      }
+      if (k.startsWith('end_of_')) {
+        // Ignore end-of environment directives
+        continue;
+      }
+      // Handle meta directive (e.g. {meta: name value})
+      if (k === 'meta') {
+        const m2 = v.match(/^([a-z_]+)\s+(.*)$/i);
+        if (m2) {
+          const metaName = m2[1].toLowerCase();
+          const metaVal = m2[2].trim();
+          if (metaName === 'title') {
+            out.unshift(`Title: ${metaVal}`);
+          } else if (['artist', 'composer', 'lyricist', 'arranger'].includes(metaName)) {
+            out.unshift(`Composer: ${metaVal}`);
+          } else if (metaName === 'key') {
+            out.unshift(`Key: ${metaVal}`);
+          } else if (metaName === 'time') {
+            out.unshift(`Time: ${metaVal}`);
+          } else if (metaName === 'tempo') {
+            out.unshift(`Tempo: ${metaVal}`);
+          } else {
+            const nameUC = metaName.charAt(0).toUpperCase() + metaName.slice(1);
+            out.push(`; ${nameUC}: ${metaVal}`);
+          }
+        }
+        continue;
+      }
+      // Title directive
+      if (k === 'title') {
+        out.unshift(`Title: ${v}`);
+        continue;
+      }
+      // Subtitle directive -> store as comment
+      if (k === 'subtitle') {
+        out.push(`; Subtitle: ${v}`);
+        continue;
+      }
+      // Sorttitle directive -> treat same as title
+      if (k === 'sorttitle') {
+        out.unshift(`Title: ${v}`);
+        continue;
+      }
+      // Artist/Composer/Lyricist/Arranger -> unify under Composer header
+      if (['artist', 'composer', 'lyricist', 'arranger'].includes(k)) {
+        out.unshift(`Composer: ${v}`);
+        continue;
+      }
+      // Key directive
+      if (k === 'key') {
+        out.unshift(`Key: ${v}`);
+        continue;
+      }
+      // Time directive
+      if (k === 'time') {
+        out.unshift(`Time: ${v}`);
+        continue;
+      }
+      // Tempo directive
+      if (k === 'tempo') {
+        out.unshift(`Tempo: ${v}`);
+        continue;
+      }
+      // Duration or Capo or Album or Year or Copyright directives -> comment lines
+      if (['duration', 'capo', 'album', 'year', 'copyright'].includes(k)) {
+        const nameUC = k.charAt(0).toUpperCase() + k.slice(1);
+        out.push(`; ${nameUC}: ${v}`);
+        continue;
+      }
+      // Comment directives
+      if (['comment', 'comment_italic', 'comment_box', 'highlight'].includes(k)) {
+        out.push(`; ${v}`);
+        continue;
+      }
+      // Unhandled directives: preserve content as comment
+      out.push(`; ${k}: ${v}`);
       continue;
     }
-    if (!line.trim()) continue;
 
-    // section markers — ChordPro and UG bracket headers
-    const sectionMatch = line.trim().match(/^\{\s*start_of_(chorus|verse|bridge|intro|solo|outro|interlude|tab)\s*(?::\s*(.*?))?\s*\}$/i);
-    if (sectionMatch){
-      const label = sectionMatch[2] ? sectionMatch[2].trim() : sectionMatch[1].toUpperCase();
+    // Environment start directives {start_of_X ...}
+    const startMatch = trimmed.match(/^\{\s*start_of_([a-z0-9_]+)\s*(?::\s*(.*?))?\s*\}$/i);
+    if (startMatch) {
+      const envName = startMatch[1];
+      let label = startMatch[2] ? startMatch[2].trim() : envName;
+      const labelMatch = label.match(/^label\s*=\s*(.*)/i);
+      if (labelMatch) {
+        label = labelMatch[1].trim();
+      }
+      label = label.replace(/^['"]|['"]$/g, '');
+      label = label.replace(/_/g, ' ');
+      label = label.split(/\s+/).map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : '').join(' ');
       out.push(`: ${label}`);
       continue;
     }
-    const endSectionMatch = line.trim().match(/^\{\s*end_of_(chorus|verse|bridge|intro|solo|outro|interlude|tab)\s*\}$/i);
-    if (endSectionMatch) continue; // skip end-of markers
+    // Environment end directives {end_of_X}
+    const endMatch = trimmed.match(/^\{\s*end_of_([a-z0-9_]+)\s*\}$/i);
+    if (endMatch) {
+      continue;
+    }
+    // Lines starting with hash (#) are comments -> preserve as comment line
+    if (trimmed.startsWith('#')) {
+      const cv = trimmed.slice(1).trim();
+      if (cv) out.push(`; ${cv}`);
+      continue;
+    }
 
     // UG-style section headers in bracket format: [Verse 1], [Chorus]
-    const ugSectionName = parseUGSectionHeader(line.trim());
-    if (ugSectionName){
+    const ugSectionName = parseUGSectionHeader(trimmed);
+    if (ugSectionName) {
       out.push(`: ${ugSectionName}`);
       continue;
     }
 
-    // extract chords in []
+    // Extract chords in [] and separate from lyrics
     const chords = [];
     const re = /\[([^\]]+)\]/g;
     let mm;
-    while ((mm = re.exec(line)) !== null){
+    while ((mm = re.exec(line)) !== null) {
       const c = mm[1].trim();
       if (c && isChordLikeToken(c)) chords.push(c);
     }
-    if (chords.length){
+    if (chords.length) {
+      // Remove chord annotations (text in square brackets) to leave only lyrics.
       const lyricsText = line.replace(/\[([^\]]*)\]/g, '').trim();
       out.push(toCSMPNBars(chords));
       if (lyricsText) out.push(`; ${lyricsText}`);
     }
   }
   setStatus(`Imported ChordPro.`);
-  return out.join('\n').replace(/\n{3,}/g,'\n\n');
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
 
