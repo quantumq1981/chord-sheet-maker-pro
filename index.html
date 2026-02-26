@@ -1053,6 +1053,7 @@ body.exporting .sectionBlock{
       <button class="secondary" id="btnDownloadPdf">Download PDF</button>
       <button class="secondary" id="btnPng">PNG</button>
       <button class="secondary" id="btnCopy">Copy</button>
+      <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
       <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
       <button class="outline" id="btnSave">Save</button>
       <button class="outline" id="btnLoad">Load</button>
@@ -1080,7 +1081,7 @@ body.exporting .sectionBlock{
       </div>
     </div>
 
-    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.abc" style="display:none" />
+    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.abc,.chordmark,.cmark" style="display:none" />
   </div>
 
   <!-- Fake Book Settings Panel -->
@@ -2906,7 +2907,11 @@ fileInput.addEventListener('change', async () => {
     // txt
     let csmpn = '';
     let usedMiner = 'Text';
-    if (detectChordPro(text)){
+    if (detectChordMark(text)){
+      usedMiner = 'ChordMark';
+      importDiagnostics.miner = 'ChordMark';
+      csmpn = importChordMarkToCSMPN(text);
+    } else if (detectChordPro(text)){
       usedMiner = 'ChordPro';
       importDiagnostics.miner = 'ChordPro';
       csmpn = importChordPro(text);
@@ -2970,6 +2975,106 @@ function detectChordPro(text){
   // Classic ChordPro: {title:}, {key:}, etc.
   if (/\{\s*(title|key|tempo|time|artist|composer|subtitle|start_of_|end_of_)\s*:?/i.test(text)) return true;
   return false;
+}
+
+function detectChordMark(text){
+  const lines = String(text || '').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return false;
+  const hasPipeBars = lines.some((line) => /^\|.*\|$/.test(line) || /^\|:/.test(line) || /:\|$/.test(line));
+  const hasSectionHeadings = lines.some((line) => /^#{1,6}\s+/.test(line) || /^\[[^\]]+\]$/.test(line));
+  const hasMetadata = lines.some((line) => /^(title|artist|composer|key|tempo|time|meter|style)\s*:/i.test(line));
+  return (hasPipeBars && (hasSectionHeadings || hasMetadata));
+}
+
+function normalizeCSMPNSectionLabel(label){
+  const s = String(label || '').trim();
+  if (!s) return '';
+  const lower = s.toLowerCase();
+  if (/^verse\b/.test(lower)) return 'Verse';
+  if (/^pre[-\s]?chorus\b/.test(lower)) return 'Pre-Chorus';
+  if (/^chorus\b|^refrain\b|^hook\b/.test(lower)) return 'Chorus';
+  if (/^bridge\b/.test(lower)) return 'Bridge';
+  if (/^intro\b/.test(lower)) return 'Intro';
+  if (/^outro\b|^ending\b|^tag\b|^coda\b/.test(lower)) return 'Outro';
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function importChordMarkToCSMPN(text){
+  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  const out = [];
+  let hadBars = false;
+  const meta = { title:'', composer:'', key:'', time:'', tempo:'' };
+
+  for (const rawLine of lines){
+    const line = normalizeAccidentals(rawLine || '').trim();
+    if (!line) continue;
+
+    const m = line.match(/^(title|song|artist|composer|key|tempo|bpm|time|meter)\s*:\s*(.+)$/i);
+    if (m){
+      const k = m[1].toLowerCase();
+      const v = m[2].trim();
+      if (k === 'title' || k === 'song') meta.title = meta.title || v;
+      else if (k === 'artist' || k === 'composer') meta.composer = meta.composer || v;
+      else if (k === 'key') meta.key = meta.key || v;
+      else if (k === 'time' || k === 'meter') meta.time = meta.time || v;
+      else if (k === 'tempo' || k === 'bpm') meta.tempo = meta.tempo || v.replace(/\s*bpm\s*$/i, '').trim();
+      continue;
+    }
+
+    const headingHash = line.match(/^#{1,6}\s+(.+)$/);
+    if (headingHash){
+      out.push(`: ${normalizeCSMPNSectionLabel(headingHash[1])}`);
+      continue;
+    }
+    const headingBracket = line.match(/^\[([^\]]+)\]$/);
+    if (headingBracket){
+      out.push(`: ${normalizeCSMPNSectionLabel(headingBracket[1])}`);
+      continue;
+    }
+
+    if (line.includes('|')){
+      const chunks = line
+        .replace(/^\|+/, '')
+        .replace(/\|+$/, '')
+        .split('|')
+        .map((c) => c.trim())
+        .filter(Boolean);
+
+      const tokens = [];
+      for (const chunk of chunks){
+        if (chunk === ':' || chunk === '|:' || chunk === ':|') continue;
+        const inner = chunk.split(/\s+/).map((t) => normalizeChordToken(t)).filter(Boolean);
+        if (!inner.length) continue;
+        tokens.push(inner.join('_'));
+      }
+      if (tokens.length){
+        out.push(tokens.join(' '));
+        hadBars = true;
+      }
+      continue;
+    }
+
+    const toks = line.split(/\s+/).map((t) => normalizeChordToken(t)).filter(Boolean);
+    if (toks.length >= 2){
+      out.push(toCSMPNBars(toks).trim());
+      hadBars = true;
+    }
+  }
+
+  if (!hadBars) return importUGText(text);
+
+  const metaLines = [];
+  if (meta.title) metaLines.push(`Title: ${meta.title}`);
+  if (meta.composer) metaLines.push(`Composer: ${meta.composer}`);
+  if (meta.key) metaLines.push(`Key: ${meta.key}`);
+  if (meta.time) metaLines.push(`Time: ${meta.time}`);
+  if (meta.tempo) metaLines.push(`Tempo: ${meta.tempo}`);
+
+  return [...metaLines, metaLines.length ? '' : null, ...out]
+    .filter(v => v !== null && String(v).trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function countSongModelBars(song){
@@ -4255,6 +4360,24 @@ document.getElementById('btnExportChordPro').addEventListener('click', () => {
   }
 });
 
+document.getElementById('btnConvertChordMark').addEventListener('click', async () => {
+  const input = sourceEl.value || '';
+  if (!input.trim()){
+    setStatus('Paste ChordMark text first, then run ChordMark → CSMPN.', 'warning');
+    return;
+  }
+  const converted = importChordMarkToCSMPN(input);
+  sourceEl.value = converted;
+  extractHeaderFromText(converted);
+  updatePreview();
+  try{
+    await navigator.clipboard.writeText(converted);
+    setStatus('Converted ChordMark to Fake Book / CSMPN format and copied to clipboard.');
+  }catch(_){
+    setStatus('Converted ChordMark to Fake Book / CSMPN format.');
+  }
+});
+
 /* =========================================================
    Song Library (inspired by chord-chart-studio localStorage persistence)
 ========================================================= */
@@ -4500,6 +4623,14 @@ window.runCSMPNSelfTests = function(){
     assert("chordPro export title", cp.includes("{title: Test}"));
     assert("chordPro export key", cp.includes("{key: C}"));
     assert("chordPro export chords", cp.includes("[C]") && cp.includes("[G]"));
+
+    // ChordMark -> Fake Book / CSMPN conversion
+    const cm = "Title: CM Tune\nKey: D\n# Verse\n| D | A/C# Bm | G | A |\n# Chorus\n| Bm | G | D A | D |";
+    const cmOut = importChordMarkToCSMPN(cm);
+    assert("detectChordMark true", detectChordMark(cm) === true);
+    assert("ChordMark title preserved", cmOut.includes("Title: CM Tune"));
+    assert("ChordMark section converted", cmOut.includes(": Verse") && cmOut.includes(": Chorus"));
+    assert("ChordMark split bars converted", cmOut.includes("A/C#_Bm") && cmOut.includes("D_A"));
 
     // isChordToken tests
     assert("isChordToken Bb7", isChordToken("Bb7"));
