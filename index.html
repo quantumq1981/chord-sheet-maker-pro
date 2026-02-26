@@ -2857,7 +2857,7 @@ fileInput.addEventListener('change', async () => {
       return;
     }
 
-    const text = await file.text();
+    const text = await readImportedTextFile(file);
     const totalLines = text.split(/\r?\n/).length;
 
     if (name.endsWith('.abc') || (type.includes('text/plain') && /(^|\n)\s*K\s*:/i.test(text))){
@@ -3538,6 +3538,34 @@ function fallbackMineABCWithAbcjs(abcText){
   return bars.filter(Boolean);
 }
 
+function normalizeMusicXMLText(rawText){
+  if (typeof rawText !== 'string') return '';
+  // UTF-16 MusicXML can appear as UTF-8-decoded text with interleaved NULs.
+  return rawText.includes('\u0000') ? rawText.replace(/\u0000/g, '') : rawText;
+}
+
+async function readImportedTextFile(file){
+  if (!file) return '';
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!bytes.length) return '';
+
+  // BOM-aware decode for MusicXML and other text imports.
+  if (bytes.length >= 2){
+    if (bytes[0] === 0xFF && bytes[1] === 0xFE){
+      return new TextDecoder('utf-16le').decode(bytes);
+    }
+    if (bytes[0] === 0xFE && bytes[1] === 0xFF){
+      return new TextDecoder('utf-16be').decode(bytes);
+    }
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF){
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+
+  const utf8Text = new TextDecoder('utf-8').decode(bytes);
+  return normalizeMusicXMLText(utf8Text);
+}
+
 /* Regex-based MusicXML fallback — used when DOMParser is unavailable (Node.js / tests). */
 function importMusicXMLRegex(xmlText){
   const song = new SongModel();
@@ -3624,14 +3652,15 @@ function importMusicXMLRegex(xmlText){
 
 function importMusicXML(xmlText){
   try{
+    const normalizedText = normalizeMusicXMLText(xmlText || '');
     const parser = new DOMParser();
-    const xml = parser.parseFromString(xmlText, 'application/xml');
+    const xml = parser.parseFromString(normalizedText, 'application/xml');
     const parseError = xml.querySelector('parsererror');
     // Fallback: if DOMParser doesn't produce useful results (e.g. Node.js stub),
     // use regex-based extraction instead.
     const hasMeasures = xml.querySelectorAll('measure').length > 0;
     if (parseError || !hasMeasures){
-      return importMusicXMLRegex(xmlText);
+      return importMusicXMLRegex(normalizedText);
     }
 
     const song = new SongModel();
@@ -3683,7 +3712,7 @@ function importMusicXML(xmlText){
     return song;
   }catch(err){
     // Attempt regex fallback before giving up
-    try { return importMusicXMLRegex(xmlText); } catch(_){}
+    try { return importMusicXMLRegex(normalizeMusicXMLText(xmlText)); } catch(_){}
     console.warn('MusicXML import failed:', err);
     setStatus(`MusicXML import failed: ${err?.message || err}`, 'error');
     throw err;
