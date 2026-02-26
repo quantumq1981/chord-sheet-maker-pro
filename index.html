@@ -2377,8 +2377,10 @@ function formatChordQuality(quality){
 
   // Major 7th / extended major chords - respect settings
   // Accepts: maj7, ma7, Δ7, M7, j7 (all with numeric extension)
-  const maj7Re = /^(maj|ma|Δ|M|j)(\d.*)$/;
-  const maj7Match = q.match(maj7Re);
+  // Case-insensitive for maj/ma, case-sensitive for M/j to avoid conflicts with minor
+  const maj7Re = /^(maj|ma|Δ)(\d.*)$/i;
+  const maj7Re2 = /^(M|j)(\d.*)$/;
+  const maj7Match = q.match(maj7Re) || q.match(maj7Re2);
   if (maj7Match){
     const suffix = maj7Match[2] || '';
     if (fbSettings.maj7Style === 'triangle'){
@@ -3696,10 +3698,10 @@ function isChordLikeToken(tok){
   if (!startsOk) return false;
 
   if (/^[a-z]+$/i.test(rest) && rest.length > 3){
-    if (!/^(maj|min|dim|aug|sus|add|alt|omit|no|m)$/.test(rl)) return false;
+    if (!/^(maj|min|ami|amin|dim|aug|sus|add|alt|omit|no|m)$/.test(rl)) return false;
   }
 
-  return /^[A-Za-z0-9#b\/()+.,-ΔøØ°º]*$/.test(rest);
+  return /^[A-Za-z0-9#b\/()+.,\-ΔøØ°º]*$/.test(rest);
 }
 
 function isChordLikeTokenPDF(tok){
@@ -4420,7 +4422,7 @@ window.runCSMPNSelfTests = function(){
     // Rests, D.C., push, diamond, stroke, tie (from previous commit)
     assert("isChordLikeToken r4", isChordLikeToken("r4"));
     assert("isChordLikeToken D.C.", isChordLikeToken("D.C."));
-    assert("isChordLikeToken D.C. al Coda", isChordLikeToken("D.C.") || true);
+    assert("isChordLikeToken D.C.", isChordLikeToken("D.C."));
 
   }catch(e){
     results.push({ name: "exception", pass: false, error: e?.message || String(e) });
