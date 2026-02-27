@@ -1044,7 +1044,14 @@ body.exporting .sectionBlock{
     </div>
 
     <div class="btnrow">
+      <!-- Auto-detect import remains for backwards compatibility -->
       <button class="accent" id="btnImport">Import File</button><button class="info-btn" onclick="openFeatureInfo('import')" title="About Import">ⓘ</button>
+      <!-- New dedicated import buttons for supported formats -->
+      <button class="accent" id="btnImportMusicXML">Import MusicXML</button>
+      <button class="accent" id="btnImportChordPro">Import ChordPro</button>
+      <button class="accent" id="btnImportChordMark">Import ChordMark</button>
+      <button class="accent" id="btnImportUG">Import UG</button>
+
       <button class="secondary" id="btnTransposeDown">-1</button>
       <button class="secondary" id="btnTransposeUp">+1</button>
       <button class="secondary" id="btnTransposeReset">Reset</button>
@@ -1082,6 +1089,11 @@ body.exporting .sectionBlock{
     </div>
 
     <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.abc,.chordmark,.cmark" style="display:none" />
+    <!-- Dedicated hidden file inputs for each format -->
+    <input id="fileInputMusicXML" type="file" accept=".musicxml,.xml" style="display:none" />
+    <input id="fileInputChordPro" type="file" accept=".pro,.chordpro,.txt" style="display:none" />
+    <input id="fileInputChordMark" type="file" accept=".chordmark,.cmark,.txt" style="display:none" />
+    <input id="fileInputUG" type="file" accept=".txt,.crd" style="display:none" />
   </div>
 
   <!-- Fake Book Settings Panel -->
@@ -1130,6 +1142,14 @@ body.exporting .sectionBlock{
         <select id="setChordAlign">
           <option value="left" selected>Left (default)</option>
           <option value="center">Center</option>
+        </select>
+      </div>
+      <!-- Option: include or hide lyrics comment lines in CSMPN output -->
+      <div class="field">
+        <label>Lyrics Lines</label>
+        <select id="setIncludeLyrics">
+          <option value="true" selected>Include</option>
+          <option value="false">Hide</option>
         </select>
       </div>
       <div class="field">
@@ -1375,6 +1395,223 @@ document.getElementById('modal-close').addEventListener('click', closeFeatureInf
 document.getElementById('feature-modal').addEventListener('click', function(e){
   if (e.target === this) closeFeatureInfo();
 });
+
+// ====================================================================
+//   Dedicated Import Buttons and File Inputs
+//   Each format gets its own button and hidden file input, enabling
+//   users to explicitly choose the importer instead of relying on
+//   auto-detection. These handlers mirror the logic used in the
+//   primary import routine but force the appropriate parser.
+// ====================================================================
+
+// MusicXML import
+const fileInputMusicXML = document.getElementById('fileInputMusicXML');
+document.getElementById('btnImportMusicXML').addEventListener('click', () => {
+  fileInputMusicXML.value = '';
+  fileInputMusicXML.click();
+});
+fileInputMusicXML.addEventListener('change', async () => {
+  const file = fileInputMusicXML.files && fileInputMusicXML.files[0];
+  if (!file) return;
+  try {
+    resetDiagnostics();
+    const importStart = performance.now();
+    setStatus(`Importing ${file.name}...`);
+    const text = await readImportedTextFile(file);
+    importDiagnostics.miner = 'MusicXML';
+    const song = importMusicXML(text);
+    if (song instanceof SongModel) {
+      importDiagnostics.sections = song.sections.length;
+      importDiagnostics.bars = countSongModelBars(song);
+      importDiagnostics.ignoredLines = 0;
+      const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      const finalCsmpn = filterLyricsLines(csmpn);
+      sourceEl.value = finalCsmpn;
+      extractHeaderFromText(finalCsmpn);
+      updatePreview();
+      setStatus('Imported MusicXML.');
+    } else {
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      setStatus('MusicXML import failed: invalid SongModel', 'error');
+    }
+    updateDiagnosticsPanel();
+  } catch(err) {
+    console.error(err);
+    setStatus(`Import failed: ${err?.message || err}`, 'error');
+    updateDiagnosticsPanel();
+  }
+});
+
+// ChordPro import
+const fileInputChordPro = document.getElementById('fileInputChordPro');
+document.getElementById('btnImportChordPro').addEventListener('click', () => {
+  fileInputChordPro.value = '';
+  fileInputChordPro.click();
+});
+fileInputChordPro.addEventListener('change', async () => {
+  const file = fileInputChordPro.files && fileInputChordPro.files[0];
+  if (!file) return;
+  try {
+    resetDiagnostics();
+    const importStart = performance.now();
+    setStatus(`Importing ${file.name}...`);
+    const text = await readImportedTextFile(file);
+    importDiagnostics.miner = 'ChordPro';
+    let csmpn = '';
+    try {
+      csmpn = importChordPro(text);
+    } catch (cpErr) {
+      importDiagnostics.warnings.push('ChordPro import error: ' + (cpErr?.message || cpErr));
+      console.warn(cpErr);
+      csmpn = '';
+    }
+    if (csmpn) {
+      // Count sections/bars from generated CSMPN
+      const diagDoc = parseCSMPN(csmpn);
+      const diagMarkers = diagDoc.blocks.filter(b => b.type === 'marker');
+      importDiagnostics.sections = diagMarkers.length || 1;
+      importDiagnostics.bars = diagDoc.blocks
+        .filter(b => b.type === 'bars')
+        .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
+      // Estimate ignored lines: difference between non-empty lines
+      const textLines = text.split(/\r?\n/).filter(l => l.trim());
+      const csmpnLines = csmpn.split(/\r?\n/).filter(l => l.trim());
+      importDiagnostics.ignoredLines = Math.max(0, textLines.length - csmpnLines.length);
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      const finalCsmpn = filterLyricsLines(csmpn);
+      sourceEl.value = finalCsmpn;
+      extractHeaderFromText(finalCsmpn);
+      updatePreview();
+      setStatus('Imported ChordPro.');
+    } else {
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      setStatus('ChordPro import failed.', 'error');
+    }
+    updateDiagnosticsPanel();
+  } catch(err) {
+    console.error(err);
+    setStatus(`Import failed: ${err?.message || err}`, 'error');
+    updateDiagnosticsPanel();
+  }
+});
+
+// ChordMark import
+const fileInputChordMark = document.getElementById('fileInputChordMark');
+document.getElementById('btnImportChordMark').addEventListener('click', () => {
+  fileInputChordMark.value = '';
+  fileInputChordMark.click();
+});
+fileInputChordMark.addEventListener('change', async () => {
+  const file = fileInputChordMark.files && fileInputChordMark.files[0];
+  if (!file) return;
+  try {
+    resetDiagnostics();
+    const importStart = performance.now();
+    setStatus(`Importing ${file.name}...`);
+    const text = await readImportedTextFile(file);
+    importDiagnostics.miner = 'ChordMark';
+    let csmpn = '';
+    try {
+      csmpn = importChordMarkToCSMPN(text);
+    } catch (cmErr) {
+      importDiagnostics.warnings.push('ChordMark import error: ' + (cmErr?.message || cmErr));
+      console.warn(cmErr);
+      csmpn = '';
+    }
+    if (csmpn) {
+      // Count sections/bars using parseCSMPN
+      const diagDoc = parseCSMPN(csmpn);
+      const diagMarkers = diagDoc.blocks.filter(b => b.type === 'marker');
+      importDiagnostics.sections = diagMarkers.length || 1;
+      importDiagnostics.bars = diagDoc.blocks
+        .filter(b => b.type === 'bars')
+        .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
+      // Estimate ignored lines
+      const textLines = text.split(/\r?\n/).filter(l => l.trim());
+      const csmpnLines = csmpn.split(/\r?\n/).filter(l => l.trim());
+      importDiagnostics.ignoredLines = Math.max(0, textLines.length - csmpnLines.length);
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      const finalCsmpn = filterLyricsLines(csmpn);
+      sourceEl.value = finalCsmpn;
+      extractHeaderFromText(finalCsmpn);
+      updatePreview();
+      setStatus('Imported ChordMark.');
+    } else {
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      setStatus('ChordMark import failed.', 'error');
+    }
+    updateDiagnosticsPanel();
+  } catch(err) {
+    console.error(err);
+    setStatus(`Import failed: ${err?.message || err}`, 'error');
+    updateDiagnosticsPanel();
+  }
+});
+
+// Ultimate Guitar (UG) import
+const fileInputUG = document.getElementById('fileInputUG');
+document.getElementById('btnImportUG').addEventListener('click', () => {
+  fileInputUG.value = '';
+  fileInputUG.click();
+});
+fileInputUG.addEventListener('change', async () => {
+  const file = fileInputUG.files && fileInputUG.files[0];
+  if (!file) return;
+  try {
+    resetDiagnostics();
+    const importStart = performance.now();
+    setStatus(`Importing ${file.name}...`);
+    const text = await readImportedTextFile(file);
+    let csmpn = '';
+    if (isLikelyUGProText(text)) {
+      importDiagnostics.miner = 'UG Pro Text';
+      try {
+        const ugSong = mineUGProTextToSongModel(text);
+        const totalBars = countSongModelBars(ugSong);
+        if (totalBars >= 4) {
+          importDiagnostics.sections = ugSong.sections.length;
+          importDiagnostics.bars = totalBars;
+          csmpn = ugSong.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
+        } else {
+          importDiagnostics.warnings.push(`UG miner produced only ${totalBars} bars, fell back to legacy importer`);
+          csmpn = importUGText(text);
+        }
+      } catch (ugErr) {
+        importDiagnostics.warnings.push('UG miner error: ' + (ugErr?.message || ugErr));
+        console.warn(ugErr);
+        csmpn = importUGText(text);
+      }
+    } else {
+      importDiagnostics.miner = 'UG Text';
+      csmpn = importUGText(text);
+    }
+    // If sections/bars not yet counted (legacy path), count from CSMPN
+    if (!importDiagnostics.sections || !importDiagnostics.bars) {
+      const diagDoc = parseCSMPN(csmpn);
+      const diagMarkers = diagDoc.blocks.filter(b => b.type === 'marker');
+      importDiagnostics.sections = diagMarkers.length || 1;
+      importDiagnostics.bars = diagDoc.blocks
+        .filter(b => b.type === 'bars')
+        .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
+    }
+    // Estimate ignored lines
+    const textLines = text.split(/\r?\n/).filter(l => l.trim());
+    const csmpnLines = csmpn.split(/\r?\n/).filter(l => l.trim());
+    importDiagnostics.ignoredLines = Math.max(0, textLines.length - csmpnLines.length);
+    importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+    const finalCsmpn = filterLyricsLines(csmpn);
+    sourceEl.value = finalCsmpn;
+    extractHeaderFromText(finalCsmpn);
+    updatePreview();
+    setStatus('Imported UG.');
+    updateDiagnosticsPanel();
+  } catch(err) {
+    console.error(err);
+    setStatus(`Import failed: ${err?.message || err}`, 'error');
+    updateDiagnosticsPanel();
+  }
+});
 document.addEventListener('keydown', function(e){
   if (e.key === 'Escape') closeFeatureInfo();
 });
@@ -1448,6 +1685,9 @@ const fbSettings = {
   chordColor: '#0044cc', // chord color
   headlineFont: 'patrickhand', // font for song title
   bodyFont: 'helvetica',       // font for body/chords/section headers
+  // Whether to include lyrics lines (prefixed with ';') in the CSMPN output.
+  // True = keep lyrics as comment lines; False = omit lyrics completely.
+  includeLyrics: true,
 };
 
 const FONT_SCALE_MAP = { M: 1, S: 0.85, XS: 0.72 };
@@ -1502,6 +1742,7 @@ function loadFBSettings(){
       setEl('setChordColor', fbSettings.chordColor);
       setEl('setHeadlineFont', fbSettings.headlineFont);
       setEl('setBodyFont', fbSettings.bodyFont);
+      setEl('setIncludeLyrics', String(fbSettings.includeLyrics));
     }
   } catch(_){}
 }
@@ -1585,6 +1826,13 @@ document.getElementById('setBodyFont').addEventListener('change', (e) => {
   fbSettings.bodyFont = e.target.value; applyFBSettings();
 });
 
+// Lyrics include/hide toggle
+document.getElementById('setIncludeLyrics').addEventListener('change', (e) => {
+  fbSettings.includeLyrics = (e.target.value === 'true');
+  saveFBSettings();
+  updatePreview();
+});
+
 /* ---- Performance: debounce helper ---- */
 function debounce(fn, ms){
   let timer;
@@ -1619,6 +1867,24 @@ function escapeHtml(s){
     .replaceAll('>','&gt;')
     .replaceAll('"','&quot;')
     .replaceAll("'","&#039;");
+}
+
+/**
+ * Remove comment lines (lyrics) from a CSMPN string if the includeLyrics setting is false.
+ * Lyrics lines in CSMPN are prefixed with ';'. When the includeLyrics setting is
+ * enabled (true), the original CSMPN is returned unchanged. When disabled, all
+ * lines starting with ';' (ignoring leading whitespace) are stripped out. This
+ * function does not modify bar/section content.
+ *
+ * @param {string} csmpn The chord sheet in CSMPN format.
+ * @returns {string} Filtered CSMPN based on fbSettings.includeLyrics.
+ */
+function filterLyricsLines(csmpn){
+  // Only filter if includeLyrics is explicitly set to false
+  if (fbSettings.includeLyrics !== false) return csmpn;
+  const lines = String(csmpn || '').split(/\r?\n/);
+  // Keep lines that do not begin with ';' after trimming whitespace
+  return lines.filter(l => !l.trim().startsWith(';')).join('\n');
 }
 
 function safeFilename(name, fallback='chart'){
@@ -2803,7 +3069,10 @@ function renderMeasure(measureText, alignClass){
 
 
 function updatePreview(){
-  const text = sourceEl.value || '';
+  // Determine the text to render. When the user has disabled lyrics via settings,
+  // filter out comment lines starting with ';'. Otherwise use the raw source.
+  const original = sourceEl.value || '';
+  const text = (fbSettings.includeLyrics === false) ? filterLyricsLines(original) : original;
   const keyMatch = text.match(/^Key:\s*(.+)$/im);
   const key = keyMatch ? keyMatch[1].trim() : '';
   notationPreference = detectNotationPreferenceFromKeyOrText(key, text);
@@ -2851,8 +3120,9 @@ fileInput.addEventListener('change', async () => {
       importDiagnostics.bars = diagDoc.blocks
         .filter(b => b.type === 'bars')
         .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
-      sourceEl.value = csmpn;
-      extractHeaderFromText(csmpn);
+      const finalCsmpn = filterLyricsLines(csmpn);
+      sourceEl.value = finalCsmpn;
+      extractHeaderFromText(finalCsmpn);
       updatePreview();
       updateDiagnosticsPanel();
       return;
@@ -2871,8 +3141,9 @@ fileInput.addEventListener('change', async () => {
         importDiagnostics.ignoredLines = Math.max(0, totalLines - contentLines);
         const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-        sourceEl.value = csmpn;
-        extractHeaderFromText(csmpn);
+        const finalCsmpn = filterLyricsLines(csmpn);
+        sourceEl.value = finalCsmpn;
+        extractHeaderFromText(finalCsmpn);
         updatePreview();
         setStatus('Imported ABC.');
       } catch (abcErr) {
@@ -2895,8 +3166,9 @@ fileInput.addEventListener('change', async () => {
         importDiagnostics.ignoredLines = 0;
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);
         const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
-        sourceEl.value = csmpn;
-        extractHeaderFromText(csmpn);
+        const finalCsmpn = filterLyricsLines(csmpn);
+        sourceEl.value = finalCsmpn;
+        extractHeaderFromText(finalCsmpn);
         updatePreview();
         setStatus('Imported MusicXML.');
       }
@@ -2957,8 +3229,9 @@ fileInput.addEventListener('change', async () => {
     }
 
     importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-    sourceEl.value = csmpn;
-    extractHeaderFromText(csmpn);
+    const finalCsmpn = filterLyricsLines(csmpn);
+    sourceEl.value = finalCsmpn;
+    extractHeaderFromText(finalCsmpn);
     updatePreview();
     updateDiagnosticsPanel();
     // Report which miner processed the imported text (e.g. ChordPro, ChordMark, UG Pro).
