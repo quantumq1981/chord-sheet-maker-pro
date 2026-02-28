@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>ChordSheet CSMPN Builder v1.9.0</title>
+<title>ChordSheet CSMPN Builder v1.10.0</title>
 
 <!-- Google Fonts: Patrick Hand SC for fake book title -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1094,6 +1094,7 @@ body.exporting .sectionBlock{
       <button class="accent power-only" id="btnImportOnSong">Import OnSong</button>
       <button class="accent power-only" id="btnImportOpenSong">Import OpenSong XML</button>
       <button class="accent power-only" id="btnImportOpenLyrics">Import OpenLyrics XML</button>
+      <button class="accent power-only" id="btnImportIRealPro">Import iReal Pro</button>
 
       <button class="secondary" id="btnTransposeDown">-1</button>
       <button class="secondary" id="btnTransposeUp">+1</button>
@@ -1132,7 +1133,7 @@ body.exporting .sectionBlock{
       </div>
     </div>
 
-    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro" style="display:none" />
+    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.irealb" style="display:none" />
     <!-- Dedicated hidden file inputs for each format -->
     <input id="fileInputMusicXML" type="file" accept=".musicxml,.xml,.mxl" style="display:none" />
     <input id="fileInputChordPro" type="file" accept=".pro,.chordpro,.cho,.chopro,.txt" style="display:none" />
@@ -1141,6 +1142,7 @@ body.exporting .sectionBlock{
     <input id="fileInputOnSong" type="file" accept=".onsong,.txt,.chopro,.chordpro" style="display:none" />
     <input id="fileInputOpenSong" type="file" accept=".opensong,.xml,.txt" style="display:none" />
     <input id="fileInputOpenLyrics" type="file" accept=".xml,.lyrics" style="display:none" />
+    <input id="fileInputIRealPro" type="file" accept=".irealb,.txt" style="display:none" />
   </div>
 
   <!-- Fake Book Settings Panel -->
@@ -1412,7 +1414,7 @@ const featureInfo = {
   },
   import: {
     title: "Import",
-    body: "Imports chords from PDF, MusicXML, MXL (compressed MusicXML), ABC notation, ChordPro, OnSong, OpenSong XML, OpenLyrics XML, ChordMark, or plain text files. The app extracts harmonic structure and rebuilds it in clean fake book format. Supported sources include Ultimate Guitar exports, church worship apps, and standard lead sheet PDFs. Power mode exposes dedicated per-format buttons for OnSong, OpenSong XML, and OpenLyrics XML."
+    body: "Imports chords from PDF, MusicXML, MXL (compressed MusicXML), ABC notation, ChordPro, OnSong, OpenSong XML, OpenLyrics XML, iReal Pro (irealb://), ChordMark, or plain text files. The app extracts harmonic structure and rebuilds it in clean fake book format. Supported sources include Ultimate Guitar exports, church worship apps, iReal Pro jazz charts, and standard lead sheet PDFs. Power mode exposes dedicated per-format buttons for OnSong, OpenSong XML, OpenLyrics XML, and iReal Pro."
   },
   notation: {
     title: "VexFlow Notation Blocks",
@@ -1773,6 +1775,43 @@ fileInputOpenLyrics.addEventListener('change', async () => {
       setStatus(`Imported OpenLyrics XML (${importDiagnostics.bars} bars).`);
     } else {
       setStatus('OpenLyrics import failed.', 'error');
+    }
+    updateDiagnosticsPanel();
+  } catch(err){
+    console.error(err);
+    setStatus(`Import failed: ${err?.message || err}`, 'error');
+    updateDiagnosticsPanel();
+  }
+});
+
+// iReal Pro import
+const fileInputIRealPro = document.getElementById('fileInputIRealPro');
+document.getElementById('btnImportIRealPro').addEventListener('click', () => {
+  fileInputIRealPro.value = '';
+  fileInputIRealPro.click();
+});
+fileInputIRealPro.addEventListener('change', async () => {
+  const file = fileInputIRealPro.files && fileInputIRealPro.files[0];
+  if (!file) return;
+  try {
+    resetDiagnostics();
+    const importStart = performance.now();
+    setStatus(`Importing ${file.name}...`);
+    const text = await readImportedTextFile(file);
+    importDiagnostics.miner = 'iReal Pro';
+    const song = importIRealPro(text.trim());
+    if (song instanceof SongModel){
+      importDiagnostics.sections = song.sections.length;
+      importDiagnostics.bars = countSongModelBars(song);
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
+      const finalCsmpn = filterLyricsLines(csmpn);
+      sourceEl.value = finalCsmpn;
+      extractHeaderFromText(finalCsmpn);
+      updatePreview();
+      setStatus(`Imported iReal Pro (${importDiagnostics.bars} chords).`);
+    } else {
+      setStatus('iReal Pro import failed — no chords found.', 'error');
     }
     updateDiagnosticsPanel();
   } catch(err){
@@ -3420,6 +3459,31 @@ fileInput.addEventListener('change', async () => {
     const totalLines = text.split(/\r?\n/).length;
 
     // OnSong: .onsong extension or ChordPro-like text with OnSong characteristics
+    // iReal Pro: .irealb extension or text starting with irealb://
+    if (name.endsWith('.irealb') || isIRealProURL(text)){
+      importDiagnostics.miner = 'iReal Pro';
+      try {
+        const song = importIRealPro(text.trim());
+        if (song instanceof SongModel){
+          importDiagnostics.sections = song.sections.length;
+          importDiagnostics.bars = countSongModelBars(song);
+          importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+          const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
+          const finalCsmpn = filterLyricsLines(csmpn);
+          sourceEl.value = finalCsmpn;
+          extractHeaderFromText(finalCsmpn);
+          updatePreview();
+          setStatus(`Imported iReal Pro (${importDiagnostics.bars} chords).`);
+        } else {
+          setStatus('iReal Pro import failed — no chords found.', 'error');
+        }
+      } catch(irErr){
+        setStatus(`iReal Pro import failed: ${irErr?.message || irErr}`, 'error');
+      }
+      updateDiagnosticsPanel();
+      return;
+    }
+
     if (name.endsWith('.onsong')){
       importDiagnostics.miner = 'OnSong';
       const csmpn = importOnSong(text);
@@ -4772,6 +4836,259 @@ function isOpenSongXML(text){
   return /<song>/.test(text) && /<lyrics>/.test(text) && !isOpenLyricsXML(text);
 }
 
+/* =========================================================
+   iReal Pro Import — irealb:// URL scheme
+   Parses iReal Pro chord charts exported as irealb:// links.
+   Supports single-song URLs and multi-song playlist URLs.
+   Uses 50-char block unscrambling for newer exports.
+   No external library required — pure JS.
+========================================================= */
+
+// Unscramble iReal Pro chord strings (50-char block reversal)
+function _irUnscramble(s) {
+  if (s.length <= 50) return s;
+  let result = '';
+  let pos = 0;
+  while (pos < s.length) {
+    const end = Math.min(pos + 50, s.length);
+    result = s.slice(pos, end) + result; // prepend each block — reverses order
+    pos += 50;
+  }
+  return result;
+}
+
+// Convert an iReal Pro chord token to CSMPN notation
+function _irConvertChordName(raw) {
+  const s = (raw || '').trim();
+  if (!s) return '';
+  if (s === 'n' || s === 'NC' || s === 'N.C.') return 'N.C.';
+  if (s === 'x' || s === 'r') return '%';
+  if (s === 'p' || s === 'W') return '';
+  if (!/^[A-G]/.test(s)) return '';
+
+  return s
+    // Major 7th variants (longest first to avoid partial match)
+    .replace(/\^13/g, 'maj13')
+    .replace(/\^9/g,  'maj9')
+    .replace(/\^7/g,  'maj7')
+    .replace(/\^/g,   'maj')
+    // Minor variants (longest specific first)
+    .replace(/^([A-G][b#]?)-M7/, '$1mM7')
+    .replace(/^([A-G][b#]?)-13/, '$1m13')
+    .replace(/^([A-G][b#]?)-11/, '$1m11')
+    .replace(/^([A-G][b#]?)-9/,  '$1m9')
+    .replace(/^([A-G][b#]?)-6/,  '$1m6')
+    .replace(/^([A-G][b#]?)-7/,  '$1m7')
+    .replace(/^([A-G][b#]?)-/,   '$1m')
+    // Half-diminished: h → m7b5
+    .replace(/^([A-G][b#]?)h7?/, '$1m7b5')
+    // Diminished (o7 before o)
+    .replace(/^([A-G][b#]?)o7/,  '$1dim7')
+    .replace(/^([A-G][b#]?)o/,   '$1dim')
+    // Augmented
+    .replace(/^([A-G][b#]?)\+/,  '$1aug')
+    // Suspended: sus (not sus2) → sus4
+    .replace(/sus(?!2)/g, 'sus4');
+}
+
+// Parse one iReal Pro song string (URL-encoded, = delimited) into a SongModel
+function _irParseSong(raw) {
+  const song = new SongModel();
+  let decoded;
+  try { decoded = decodeURIComponent(raw.replace(/\+/g, ' ')); }
+  catch(_) { decoded = raw; }
+
+  // Format: Title=Composer=Style=Key=n=ChordString[=...]
+  const eqIdx = [];
+  for (let k = 0; k < decoded.length; k++) { if (decoded[k] === '=') eqIdx.push(k); }
+  if (eqIdx.length < 5) return song;
+
+  song.meta.title    = decoded.slice(0, eqIdx[0]).trim();
+  song.meta.composer = decoded.slice(eqIdx[0] + 1, eqIdx[1]).trim();
+  const style        = decoded.slice(eqIdx[1] + 1, eqIdx[2]).trim();
+  song.meta.key      = decoded.slice(eqIdx[2] + 1, eqIdx[3]).trim();
+  // eqIdx[3]+1..eqIdx[4] = literal 'n'
+  let chordStr = decoded.slice(eqIdx[4] + 1).replace(/=\s*$/, '').trim();
+
+  if (style) song.meta.style = style;
+
+  chordStr = _irUnscramble(chordStr);
+
+  const TIME_SIG_MAP = {
+    '44':'4/4','34':'3/4','64':'6/4','54':'5/4','24':'2/4',
+    '22':'2/2','12':'12/8','98':'9/8','38':'3/8','58':'5/8'
+  };
+  const SECTION_LABELS = {
+    A:'Section A', B:'Section B', C:'Section C', D:'Section D',
+    i:'Intro', v:'Verse', T:'Tag'
+  };
+
+  let currSection = { label: '- Main', bars: [] };
+  song.sections.push(currSection);
+  let pendingChords = [];
+
+  const flushChords = () => {
+    if (!pendingChords.length) return;
+    currSection.bars.push(...pendingChords);
+    pendingChords = [];
+  };
+  const addBarline = () => {
+    flushChords();
+    if (currSection.bars.length && currSection.bars[currSection.bars.length - 1] !== '|') {
+      currSection.bars.push('|');
+    }
+  };
+
+  let i = 0;
+  const cs = chordStr;
+  const n = cs.length;
+
+  while (i < n) {
+    // Time signature: T + 2 digits
+    if (cs[i] === 'T' && i + 2 < n && /\d/.test(cs[i+1]) && /\d/.test(cs[i+2])) {
+      const ts = TIME_SIG_MAP[cs[i+1] + cs[i+2]];
+      if (ts) song.meta.time = ts;
+      i += 3; continue;
+    }
+
+    // Section marker: *A..*D, *i, *v, *T
+    if (cs[i] === '*' && i + 1 < n && /[A-DivT]/.test(cs[i+1])) {
+      addBarline();
+      // Remove trailing barline from section if it's empty
+      if (currSection.bars.length === 1 && currSection.bars[0] === '|') currSection.bars = [];
+      const labelText = SECTION_LABELS[cs[i+1]] || ('Section ' + cs[i+1].toUpperCase());
+      currSection = { label: `- ${labelText}`, bars: [] };
+      song.sections.push(currSection);
+      i += 2; continue;
+    }
+
+    // Numbered endings N1/N2/N3 — flush and skip
+    if (cs[i] === 'N' && i + 1 < n && /[123]/.test(cs[i+1])) {
+      addBarline(); i += 2; continue;
+    }
+
+    // Barline tokens: | { } [ ]
+    if ('|{}[]'.includes(cs[i])) { addBarline(); i++; continue; }
+
+    // Final barline Z
+    if (cs[i] === 'Z') { addBarline(); i++; continue; }
+
+    // Control tokens to skip: S (segno), Q (coda), f (fermata)
+    if (cs[i] === 'S' || cs[i] === 'Q' || cs[i] === 'f') { i++; continue; }
+
+    // W (whole-bar fill) — skip
+    if (cs[i] === 'W') { i++; continue; }
+
+    // p (pause) — skip
+    if (cs[i] === 'p') { i++; continue; }
+
+    // x (bar repeat) — only when not part of a chord root
+    if (cs[i] === 'x' && (i === 0 || !/[A-G]/.test(cs[i-1]))) {
+      pendingChords.push('%'); i++; continue;
+    }
+
+    // r (2-bar repeat)
+    if (cs[i] === 'r') { pendingChords.push('%'); i++; continue; }
+
+    // n (no chord) — only when not part of a chord quality
+    if (cs[i] === 'n' && (i === 0 || !/[A-G]/.test(cs[i-1]))) {
+      pendingChords.push('N.C.'); i++; continue;
+    }
+
+    // Alternate chord in parentheses — skip
+    if (cs[i] === '(') {
+      const close = cs.indexOf(')', i);
+      i = close === -1 ? i + 1 : close + 1; continue;
+    }
+
+    // Space — beat separator
+    if (cs[i] === ' ') { i++; continue; }
+
+    // Chord token: starts with A-G
+    if (/[A-G]/.test(cs[i])) {
+      let chord = cs[i]; i++;
+      // Accidental: flat (b) for valid flat roots Bb/Eb/Ab/Db/Gb, or any sharp
+      if (i < n && cs[i] === '#') { chord += cs[i]; i++; }
+      else if (i < n && cs[i] === 'b' && 'BEADG'.includes(chord)) { chord += cs[i]; i++; }
+
+      // Collect quality until next chord root, barline, or control token
+      let quality = '';
+      while (i < n) {
+        const c = cs[i];
+        if ('|{}[]Z*SQf '.includes(c)) break;
+        // Stop at next chord root (uppercase A-G) when quality is non-empty and ends with
+        // a char that typically concludes a quality (digit, lowercase letter)
+        if (/[A-G]/.test(c) && quality.length > 0) break;
+        quality += c; i++;
+      }
+      const converted = _irConvertChordName(chord + quality.trimEnd());
+      if (converted === 'N.C.' || converted === '%') { pendingChords.push(converted); }
+      else if (converted) { pendingChords.push(normalizeChordToken(converted) || converted); }
+      continue;
+    }
+
+    i++; // skip unknown chars
+  }
+
+  // Flush any remaining pending chords
+  flushChords();
+
+  // Clean up sections: remove leading/trailing barlines
+  for (const sec of song.sections) {
+    while (sec.bars.length && sec.bars[0] === '|') sec.bars.shift();
+    while (sec.bars.length && sec.bars[sec.bars.length - 1] === '|') sec.bars.pop();
+  }
+
+  // Drop empty sections (keep at least one)
+  const nonEmpty = song.sections.filter(s => s.bars.length > 0);
+  song.sections = nonEmpty.length ? nonEmpty : [{ label: '- Main', bars: [] }];
+
+  return song;
+}
+
+// Detect whether text is an iReal Pro URL
+function isIRealProURL(text) {
+  return /^irealb:\/\//i.test((text || '').trim());
+}
+
+// Import one or more songs from an irealb:// URL.
+// Returns a SongModel (single song or merged playlist).
+function importIRealPro(text) {
+  const url = (text || '').trim();
+  if (!isIRealProURL(url)) throw new Error('Not an iReal Pro URL (must start with irealb://)');
+  const body = url.replace(/^irealb:\/\//i, '');
+
+  // Songs separated by ===; playlist title may appear as a plain segment
+  const parts = body.split('===');
+  const songs = [];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    // Valid song parts have at least 5 = delimiters
+    if ((trimmed.match(/=/g) || []).length < 5) continue;
+    const song = _irParseSong(trimmed);
+    if (song.meta.title || song.sections.some(s => s.bars.length > 0)) songs.push(song);
+  }
+
+  if (!songs.length) return null;
+  if (songs.length === 1) return songs[0];
+
+  // Playlist: merge into one SongModel with labelled sections per song
+  const merged = new SongModel();
+  merged.meta.title    = 'iReal Pro Playlist';
+  merged.meta.composer = '';
+  merged.meta.key      = songs[0].meta.key || '';
+  for (const song of songs) {
+    for (const sec of song.sections) {
+      merged.sections.push({
+        ...sec,
+        label: `- ${song.meta.title || 'Song'}: ${sec.label.replace(/^-\s*/, '')}`
+      });
+    }
+  }
+  return merged;
+}
+
 async function readImportedTextFile(file){
   if (!file) return '';
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -5660,10 +5977,10 @@ applyFBSettings();
 applyAppMode(loadAppMode());
 extractHeaderFromText(sourceEl.value);
 updatePreview();
-setStatus('Ready. v1.9 — MXL, OnSong, OpenSong, OpenLyrics, VexFlow notation blocks.');
+setStatus('Ready. v1.10 — iReal Pro (irealb://), MXL, OnSong, OpenSong, OpenLyrics, VexFlow.');
 
 // --- Optional self-tests (run manually in console): window.runCSMPNSelfTests() ---
-// v1.9.0: MXL, OnSong, OpenSong XML, OpenLyrics XML, VexFlow notation blocks
+// v1.10.0: iReal Pro (irealb://), MXL, OnSong, OpenSong XML, OpenLyrics XML, VexFlow notation blocks
 window.runCSMPNSelfTests = function(){
   const results = [];
   const assert = (name, cond) => results.push({ name, pass: !!cond });
@@ -5839,6 +6156,48 @@ window.runCSMPNSelfTests = function(){
     assert("isOpenLyricsXML does not match OpenSong", !isOpenLyricsXML(openSongXML));
     assert("isOpenSongXML detects OpenSong", isOpenSongXML(openSongXML));
     assert("isOpenSongXML does not match OpenLyrics", !isOpenSongXML(openLyricsXML));
+
+    // ---- iReal Pro import ----
+    // isIRealProURL detection
+    assert("isIRealProURL detects irealb://", isIRealProURL("irealb://Test=Me=Swing=C=n=|C7  F7|G7  C7|Z"));
+    assert("isIRealProURL rejects plain text", !isIRealProURL("Just a chord sheet"));
+
+    // _irConvertChordName quality conversions
+    assert("_irConvertChordName ^7 → maj7", _irConvertChordName("C^7") === "Cmaj7");
+    assert("_irConvertChordName - → m", _irConvertChordName("C-") === "Cm");
+    assert("_irConvertChordName -7 → m7", _irConvertChordName("C-7") === "Cm7");
+    assert("_irConvertChordName h → m7b5", _irConvertChordName("Dh") === "Dm7b5");
+    assert("_irConvertChordName o7 → dim7", _irConvertChordName("Bo7") === "Bdim7");
+    assert("_irConvertChordName o → dim", _irConvertChordName("Eo") === "Edim");
+    assert("_irConvertChordName + → aug", _irConvertChordName("G+") === "Gaug");
+    assert("_irConvertChordName sus → sus4", _irConvertChordName("Fsus") === "Fsus4");
+    assert("_irConvertChordName ^9 → maj9", _irConvertChordName("Bb^9") === "Bbmaj9");
+
+    // _irUnscramble round-trip (≤50 chars should pass through unchanged)
+    const short = "C7 F7 G7";
+    assert("_irUnscramble ≤50 unchanged", _irUnscramble(short) === short);
+
+    // Basic iReal Pro URL parsing
+    const irSimple = "irealb://Autumn%20Leaves=Joseph%20Kosma=Medium%20Swing=Eb=n=T44{Cm7%20%20%20Fm7|Bb7%20%20%20Eb7|Ab7%20%20%20Dh7|G7%20%20%20%20%20%20%20%20}Z";
+    const irSong = importIRealPro(irSimple);
+    assert("importIRealPro returns SongModel", irSong instanceof SongModel);
+    assert("importIRealPro title extracted", irSong.meta.title === 'Autumn Leaves');
+    assert("importIRealPro composer extracted", irSong.meta.composer === 'Joseph Kosma');
+    assert("importIRealPro key extracted", irSong.meta.key === 'Eb');
+    assert("importIRealPro time sig extracted", irSong.meta.time === '4/4');
+    assert("importIRealPro has chords", irSong.sections.some(s => s.bars.includes('Cm7') || s.bars.includes('Bb7')));
+
+    // iReal Pro with section markers
+    const irSections = "irealb://TestSong=Author=Swing=C=n=T44*A{C7%20%20%20F7|G7%20%20%20C7}*B{Am7%20%20Dm7|G7%20%20%20Cmaj7}Z";
+    const irSecSong = importIRealPro(irSections);
+    assert("importIRealPro section A created", irSecSong.sections.some(s => s.label.includes('Section A')));
+    assert("importIRealPro section B created", irSecSong.sections.some(s => s.label.includes('Section B')));
+
+    // iReal Pro chord name conversion in live parse
+    const irHalfDim = "irealb://HalfDimTest=Test=Jazz=C=n=Dh7%20%20%20G7b9|Cm7%20%20%20%20%20%20%20%20Z";
+    const irHdSong = importIRealPro(irHalfDim);
+    assert("importIRealPro half-dim h → m7b5",
+      irHdSong.sections.some(s => s.bars.some(b => b === 'Dm7b5' || b.includes('m7b5'))));
 
   }catch(e){
     results.push({ name: "exception", pass: false, error: e?.message || String(e) });
