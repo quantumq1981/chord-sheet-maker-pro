@@ -1,0 +1,504 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid #cbd5e1;
+  background: #ffffff;
+}
+
+.top-bar .hint {
+  margin-right: auto;
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.upload-btn {
+  position: relative;
+  border: 1px solid #334155;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: #f1f5f9;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.upload-btn input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+button {
+  border: 1px solid #94a3b8;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.5rem;
+  background: #fff;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #f8fafc;
+}
+
+button:disabled,
+select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error-banner {
+  margin: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #dc2626;
+  border-radius: 0.5rem;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.score-viewport {
+  border: 2px dashed #cbd5e1;
+  border-radius: 0.75rem;
+  background: #fff;
+  overflow: auto;
+  padding: 1rem;
+  position: relative;
+}
+
+.score-viewport.dragging {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.placeholder {
+  color: #64748b;
+}
+
+.score-container {
+  min-height: 70vh;
+}
+
+.side-panel {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 1rem;
+  overflow: auto;
+}
+
+.side-panel h2 {
+  margin-top: 0;
+}
+
+.side-panel ul {
+  padding-left: 1.1rem;
+}
+
+.export-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.side-panel select {
+  width: 100%;
+  border: 1px solid #94a3b8;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.export-actions {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.export-feedback {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.export-feedback.success {
+  border: 1px solid #16a34a;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.export-feedback.error {
+  border: 1px solid #dc2626;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.pdf-ready-box {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid #16a34a;
+  border-radius: 0.5rem;
+  background: #f0fdf4;
+}
+
+.pdf-ready-title {
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+  color: #166534;
+}
+
+.pdf-ready-actions {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.pdf-ready-actions a {
+  display: inline-block;
+  text-decoration: none;
+  border: 1px solid #94a3b8;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  color: #0f172a;
+  background: #fff;
+}
+
+.open-pdf-link {
+  border-color: #16a34a !important;
+  background: #dcfce7 !important;
+  color: #166534 !important;
+  font-weight: 600;
+}
+
+@media print {
+  body {
+    margin: 0;
+  }
+
+  .top-bar,
+  .side-panel,
+  .error-banner,
+  .hint,
+  .export-feedback,
+  .pdf-ready-box,
+  .placeholder,
+  button,
+  select,
+  label {
+    display: none !important;
+  }
+
+  .content-grid {
+    display: block !important;
+    padding: 0 !important;
+  }
+
+  .score-viewport {
+    border: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .score-container {
+    width: 100% !important;
+    min-height: 0 !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .top-bar {
+    flex-wrap: wrap;
+  }
+
+  .top-bar .hint {
+    width: 100%;
+    order: 2;
+  }
+}
+
+.chordpro-options-grid {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.chordpro-options-grid input,
+.chordpro-options-grid select,
+.chordpro-output {
+  width: 100%;
+  border: 1px solid #94a3b8;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.5rem;
+}
+
+.chordpro-output {
+  margin-top: 0.75rem;
+  min-height: 180px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.84rem;
+  white-space: pre;
+  overflow: auto;
+}
+
+.warning-block {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #d97706;
+  border-radius: 0.5rem;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.warning-block ul {
+  margin: 0.4rem 0 0;
+}
+
+.hint-text {
+  margin: 0.5rem 0 0.75rem;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+/* ── Mode badge (shown in top bar) ───────────────────────────────────────── */
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.mode-badge--notation {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.mode-badge--chart {
+  background: #fdf4ff;
+  border-color: #d8b4fe;
+  color: #7e22ce;
+}
+
+/* ── Transpose controls ───────────────────────────────────────────────────── */
+
+.transpose-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.transpose-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  min-width: 5rem;
+}
+
+.transpose-value {
+  min-width: 2.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Chord chart viewport ─────────────────────────────────────────────────── */
+
+.chord-chart-viewport {
+  flex: 1;
+  overflow: auto;
+  padding: 1.5rem 2rem;
+  background: #fff;
+  border: 2px dashed #cbd5e1;
+  border-radius: 0.75rem;
+}
+
+/* ── ChordChart component ─────────────────────────────────────────────────── */
+
+.chord-chart {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: #0f172a;
+  max-width: 900px;
+}
+
+/* Header */
+.cc-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.cc-title {
+  margin: 0 0 0.15rem;
+  font-size: 1.4rem;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.cc-artist {
+  margin: 0 0 0.35rem;
+  font-style: italic;
+  color: #475569;
+}
+
+.cc-subtitle {
+  margin: 0 0 0.35rem;
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.cc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: #334155;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.cc-meta span {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.35rem;
+  padding: 0.1rem 0.45rem;
+}
+
+/* Sections */
+.cc-section {
+  margin-bottom: 1.25rem;
+}
+
+.cc-section-label {
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7c3aed;
+  margin-bottom: 0.35rem;
+}
+
+/* Lines */
+.cc-line {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 0.1rem;
+}
+
+/* Chord-only line */
+.cc-chords-only {
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.cc-chords-only__cell {
+  display: inline-block;
+}
+
+/* Lyrics-only line */
+.cc-lyrics-only {
+  color: #0f172a;
+}
+
+/* Mixed chord+lyric line */
+.cc-mixed {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+/* Each chord/lyric pair stacked vertically */
+.cc-pair {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: bottom;
+  margin-right: 0;
+}
+
+.cc-pair__chord {
+  min-height: 1.3em;
+  line-height: 1.2;
+  white-space: pre;
+}
+
+.cc-pair__lyric {
+  white-space: pre;
+}
+
+/* Chord text styling (shared) */
+.cc-chord {
+  color: #1d4ed8;
+  font-weight: 700;
+  padding-right: 0.3em;
+}
+
+/* Comment line */
+.cc-comment {
+  font-style: italic;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+/* Empty state */
+.cc-empty {
+  color: #64748b;
+  font-style: italic;
+}
+
+/* ── Download ChordPro button area in chart mode ──────────────────────────── */
+
+.chart-actions {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+@media print {
+  .chord-chart-viewport {
+    border: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+  .chord-chart {
+    max-width: 100%;
+  }
+}
