@@ -795,7 +795,7 @@ body.exporting .sectionBlock{
 
 @media print{
     body{ background:white; }
-    .topbar, .card.editorCard, .tips, .status, .btnrow, .settingsPanel, .diagnosticsPanel, #feature-modal, .mode-toggle-wrap { display:none !important; }
+    .topbar, .card.editorCard, .tips, .status, .btnrow, .settingsPanel, .diagnosticsPanel, #feature-modal, #pin-modal, .mode-toggle-wrap { display:none !important; }
     .app{ max-width:none; padding:0; }
     .previewWrap{ border:0; padding:0; }
     .sheet{ border-radius:0; padding:24px 36px; box-shadow:none; }
@@ -959,9 +959,86 @@ body.exporting .sectionBlock{
   /* Hide diagnostics in export mode */
   body.exporting .diagnosticsPanel,
   body.exporting .diagnosticsToggle,
-  body.exporting #feature-modal{
+  body.exporting #feature-modal,
+  body.exporting #pin-modal{
     display:none !important;
   }
+
+  /* ===== Power Mode PIN Modal ===== */
+  #pin-modal{
+    position:fixed;
+    top:0;left:0;right:0;bottom:0;
+    z-index:10000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(0,0,0,0.45);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.2s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #pin-modal.visible{
+    opacity:1;
+    pointer-events:auto;
+  }
+  #pin-modal .pin-content{
+    background:#fff;
+    border-radius:var(--radius);
+    padding:24px 22px 18px 22px;
+    max-width:320px;
+    width:calc(100% - 32px);
+    box-shadow:0 8px 32px rgba(0,0,0,0.2);
+    text-align:center;
+  }
+  #pin-modal .pin-content h3{
+    margin:0 0 8px 0;
+    font-size:17px;
+    font-weight:800;
+    color:var(--ink);
+  }
+  #pin-modal .pin-content p{
+    margin:0 0 14px 0;
+    font-size:13px;
+    color:var(--muted);
+    line-height:1.5;
+  }
+  #pin-input{
+    font-size:22px;
+    letter-spacing:8px;
+    text-align:center;
+    width:100%;
+    border:2px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+    margin-bottom:8px;
+    outline:none;
+    font-family:monospace;
+  }
+  #pin-input:focus{ border-color:var(--accent); }
+  #pin-error{
+    color:#dc2626;
+    font-size:12px;
+    font-weight:700;
+    min-height:18px;
+    margin-bottom:10px;
+  }
+  .pin-btn-row{
+    display:flex;
+    gap:8px;
+    justify-content:center;
+  }
+  .pin-btn-row button{
+    flex:1;
+    padding:9px 0;
+    border-radius:10px;
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    border:0;
+  }
+  #pin-submit{ background:var(--accent); color:#fff; }
+  #pin-cancel{ background:var(--border); color:var(--ink); }
 
   /* ===== User / Power Mode Toggle ===== */
   .mode-toggle-wrap{
@@ -1257,6 +1334,14 @@ body.exporting .sectionBlock{
         <label>Chord Color</label>
         <input type="color" id="setChordColor" value="#0044cc" style="height:36px;padding:2px;">
       </div>
+      <div class="field power-only">
+        <label>Power Mode PIN</label>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <button id="btnSetPin" style="font-size:12px;padding:6px 12px;border-radius:8px;background:var(--accent);color:#fff;border:0;cursor:pointer;font-weight:700;">Set PIN</button>
+          <button id="btnClearPin" style="font-size:12px;padding:6px 12px;border-radius:8px;background:var(--border);color:var(--ink);border:0;cursor:pointer;font-weight:700;">Clear PIN</button>
+          <span id="pinStatus" style="font-size:12px;color:var(--muted);"></span>
+        </div>
+      </div>
       <div class="field">
         <label>Headline Font</label>
         <select id="setHeadlineFont">
@@ -1306,6 +1391,20 @@ body.exporting .sectionBlock{
     <h3 id="modal-title"></h3>
     <p id="modal-body"></p>
     <button id="modal-close">Close</button>
+  </div>
+</div>
+
+<!-- Power Mode PIN Modal -->
+<div id="pin-modal">
+  <div class="pin-content">
+    <h3 id="pin-modal-title">Power Mode Locked</h3>
+    <p id="pin-modal-desc">Enter the PIN to unlock Power Mode.</p>
+    <input type="password" id="pin-input" maxlength="16" placeholder="PIN" autocomplete="off" inputmode="numeric" />
+    <div id="pin-error"></div>
+    <div class="pin-btn-row">
+      <button id="pin-submit">Unlock</button>
+      <button id="pin-cancel">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -1822,7 +1921,13 @@ fileInputIRealPro.addEventListener('change', async () => {
 });
 
 document.addEventListener('keydown', function(e){
-  if (e.key === 'Escape') closeFeatureInfo();
+  if (e.key === 'Escape'){
+    closeFeatureInfo();
+    if (document.getElementById('pin-modal').classList.contains('visible')){
+      _pendingNewPin = null;
+      closePinModal();
+    }
+  }
 });
 
 // Wire diagnostics toggle
@@ -1830,6 +1935,118 @@ document.getElementById('btnDiagnostics').addEventListener('click', function(){
   const panel = document.getElementById('diagnosticsPanel');
   panel.classList.toggle('open');
   this.classList.toggle('open');
+});
+
+/* =========================================================
+   Power Mode PIN Access Control
+========================================================= */
+const PIN_STORAGE_KEY = 'csmpn_powerPin';
+let _pinMode = 'verify'; // 'verify' | 'set-new' | 'set-confirm'
+let _pinOnUnlock = null;
+let _pendingNewPin = null;
+
+function loadPowerPin(){
+  try { return localStorage.getItem(PIN_STORAGE_KEY) || null; } catch(_){ return null; }
+}
+function savePowerPin(pin){
+  try { localStorage.setItem(PIN_STORAGE_KEY, pin); } catch(_){}
+}
+function clearPowerPin(){
+  try { localStorage.removeItem(PIN_STORAGE_KEY); } catch(_){}
+}
+
+function updatePinStatusLabel(){
+  const el = document.getElementById('pinStatus');
+  const btnClear = document.getElementById('btnClearPin');
+  if (el) el.textContent = loadPowerPin() ? 'PIN is active' : 'No PIN set';
+  if (btnClear) btnClear.disabled = !loadPowerPin();
+}
+
+function openPinModal(mode, onUnlock){
+  _pinMode = mode;
+  _pinOnUnlock = onUnlock || null;
+  const input = document.getElementById('pin-input');
+  const errorEl = document.getElementById('pin-error');
+  input.value = '';
+  errorEl.textContent = '';
+  if (mode === 'verify'){
+    document.getElementById('pin-modal-title').textContent = 'Power Mode Locked';
+    document.getElementById('pin-modal-desc').textContent = 'Enter the PIN to unlock Power Mode.';
+    document.getElementById('pin-submit').textContent = 'Unlock';
+  } else if (mode === 'set-new'){
+    _pendingNewPin = null;
+    document.getElementById('pin-modal-title').textContent = 'Set Power Mode PIN';
+    document.getElementById('pin-modal-desc').textContent = 'Choose a PIN to protect Power Mode access.';
+    document.getElementById('pin-submit').textContent = 'Next';
+  } else if (mode === 'set-confirm'){
+    document.getElementById('pin-modal-title').textContent = 'Confirm New PIN';
+    document.getElementById('pin-modal-desc').textContent = 'Re-enter the PIN to confirm.';
+    document.getElementById('pin-submit').textContent = 'Save PIN';
+  }
+  document.getElementById('pin-modal').classList.add('visible');
+  setTimeout(function(){ input.focus(); }, 60);
+}
+
+function closePinModal(){
+  document.getElementById('pin-modal').classList.remove('visible');
+  _pinOnUnlock = null;
+  // _pendingNewPin kept intentionally for set-confirm flow
+}
+
+function handlePinSubmit(){
+  const input = document.getElementById('pin-input');
+  const errorEl = document.getElementById('pin-error');
+  const val = input.value;
+  if (!val){ errorEl.textContent = 'Please enter a PIN.'; return; }
+
+  if (_pinMode === 'verify'){
+    if (val === loadPowerPin()){
+      closePinModal();
+      if (_pinOnUnlock) _pinOnUnlock();
+    } else {
+      errorEl.textContent = 'Incorrect PIN. Try again.';
+      input.value = '';
+      input.focus();
+    }
+  } else if (_pinMode === 'set-new'){
+    _pendingNewPin = val;
+    document.getElementById('pin-modal').classList.remove('visible');
+    setTimeout(function(){ openPinModal('set-confirm'); }, 80);
+  } else if (_pinMode === 'set-confirm'){
+    if (val === _pendingNewPin){
+      savePowerPin(val);
+      _pendingNewPin = null;
+      closePinModal();
+      updatePinStatusLabel();
+      setStatus('Power Mode PIN saved.');
+    } else {
+      errorEl.textContent = 'PINs do not match. Try again.';
+      input.value = '';
+      input.focus();
+    }
+  }
+}
+
+document.getElementById('pin-submit').addEventListener('click', handlePinSubmit);
+document.getElementById('pin-cancel').addEventListener('click', function(){
+  _pendingNewPin = null;
+  closePinModal();
+});
+document.getElementById('pin-input').addEventListener('keydown', function(e){
+  if (e.key === 'Enter'){ e.preventDefault(); handlePinSubmit(); }
+  if (e.key === 'Escape'){ _pendingNewPin = null; closePinModal(); }
+});
+document.getElementById('pin-modal').addEventListener('click', function(e){
+  if (e.target === this){ _pendingNewPin = null; closePinModal(); }
+});
+
+document.getElementById('btnSetPin').addEventListener('click', function(){
+  openPinModal('set-new');
+});
+document.getElementById('btnClearPin').addEventListener('click', function(){
+  clearPowerPin();
+  updatePinStatusLabel();
+  setStatus('Power Mode PIN cleared.');
 });
 
 /* =========================================================
@@ -1864,14 +2081,22 @@ function loadAppMode(){
   return 'user';
 }
 
+function switchToMode(mode){
+  if (mode === 'power' && loadPowerPin() && appMode !== 'power'){
+    openPinModal('verify', function(){ applyAppMode('power'); });
+  } else {
+    applyAppMode(mode);
+  }
+}
+
 document.getElementById('modeSwitch').addEventListener('click', function(){
-  applyAppMode(appMode === 'power' ? 'user' : 'power');
+  switchToMode(appMode === 'power' ? 'user' : 'power');
 });
 document.getElementById('labelUser').addEventListener('click', function(){
-  applyAppMode('user');
+  switchToMode('user');
 });
 document.getElementById('labelPower').addEventListener('click', function(){
-  applyAppMode('power');
+  switchToMode('power');
 });
 
 /* =========================================================
@@ -6027,6 +6252,7 @@ F9_F13 :|
 loadFBSettings();
 applyFBSettings();
 applyAppMode(loadAppMode());
+updatePinStatusLabel();
 extractHeaderFromText(sourceEl.value);
 updatePreview();
 setStatus('Ready. v1.10 — iReal Pro (irealb://), MXL, OnSong, OpenSong, OpenLyrics, VexFlow.');
