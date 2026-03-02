@@ -17,8 +17,9 @@ import {
   asSourceFormat,
 } from './ingest/sniffFormat';
 import { parseChordChart } from './parsers/chordProParser';
+import { serializeChordProDocument } from './parsers/serializeChordPro';
 import type { ChordChartDocument } from './models/ChordChartModel';
-import ChordChart, { transposeChord } from './renderers/ChordChart';
+import ChordChart from './renderers/ChordChart';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -344,61 +345,9 @@ function deriveProFilename(loadedFilename: string): string {
 }
 
 /** Serialize a ChordChartDocument back to canonical ChordPro text. */
+/** @deprecated Use serializeChordProDocument from parsers/serializeChordPro instead. */
 function serializeChordProFromDocument(doc: ChordChartDocument, transposeSteps: number): string {
-  const lines: string[] = [];
-
-  if (doc.title)    lines.push(`{title: ${doc.title}}`);
-  if (doc.artist)   lines.push(`{artist: ${doc.artist}}`);
-  if (doc.subtitle) lines.push(`{subtitle: ${doc.subtitle}}`);
-  if (doc.key) {
-    const displayKey = transposeSteps !== 0 ? transposeChord(doc.key, transposeSteps) : doc.key;
-    lines.push(`{key: ${displayKey}}`);
-  }
-  if (doc.capo)  lines.push(`{capo: ${doc.capo}}`);
-  if (doc.tempo) lines.push(`{tempo: ${doc.tempo}}`);
-  if (doc.time)  lines.push(`{time: ${doc.time}}`);
-
-  for (const section of doc.sections) {
-    lines.push('');
-    if (section.type !== 'unknown') {
-      const directive = section.type === 'chorus' ? 'chorus'
-        : section.type === 'verse' ? 'verse'
-        : section.type === 'bridge' ? 'bridge'
-        : section.type === 'grid' ? 'grid'
-        : section.type;
-      if (section.label) {
-        lines.push(`{start_of_${directive}: ${section.label}}`);
-      } else {
-        lines.push(`{start_of_${directive}}`);
-      }
-    }
-
-    for (const line of section.lines) {
-      const parts: string[] = [];
-      for (const token of line.tokens) {
-        if (token.kind === 'chord') {
-          const displayed = transposeSteps !== 0 ? transposeChord(token.text, transposeSteps) : token.text;
-          parts.push(`[${displayed}]`);
-        } else if (token.kind === 'lyric') {
-          parts.push(token.text);
-        } else if (token.kind === 'comment') {
-          parts.push(`{comment: ${token.text}}`);
-        }
-      }
-      lines.push(parts.join(''));
-    }
-
-    if (section.type !== 'unknown') {
-      const directive = section.type === 'chorus' ? 'chorus'
-        : section.type === 'verse' ? 'verse'
-        : section.type === 'bridge' ? 'bridge'
-        : section.type === 'grid' ? 'grid'
-        : section.type;
-      lines.push(`{end_of_${directive}}`);
-    }
-  }
-
-  return lines.join('\n').trimStart();
+  return serializeChordProDocument(doc, transposeSteps);
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────

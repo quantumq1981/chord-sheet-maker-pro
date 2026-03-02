@@ -132,6 +132,56 @@ export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): Detected
   return { format: 'unknown' };
 }
 
+/**
+ * Sniff the format of a plain text string (no binary / file-extension
+ * information available).  Useful when the raw bytes aren't accessible
+ * (e.g. text pasted directly into an editor).
+ *
+ * Detection order mirrors `sniffFormatFromBytes` but skips the ZIP/MXL and
+ * file-extension branches since neither applies to bare text.
+ */
+export function sniffFormatFromText(text: string): DetectedFormat {
+  const head = text.slice(0, 2048);
+
+  // MusicXML embedded in text
+  if (head.includes('<score-partwise') || head.includes('<score-timewise')) {
+    return { format: 'musicxml' };
+  }
+
+  // ChordPro directives
+  if (CHORDPRO_DIRECTIVE_RE.test(head)) {
+    return { format: 'chordpro' };
+  }
+
+  // UG-style section headers
+  if (UG_SECTION_RE.test(head)) {
+    return { format: 'ultimateguitar' };
+  }
+
+  // Inline bracket chords
+  if (BRACKET_CHORD_RE.test(head)) {
+    return { format: 'chordpro' };
+  }
+
+  // Chord-over-words heuristic
+  const lines = head.split('\n');
+  let chordLines = 0;
+  let textLines = 0;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (isChordLine(line)) {
+      chordLines++;
+    } else {
+      textLines++;
+    }
+  }
+  if (chordLines >= 2 && chordLines >= textLines * 0.25) {
+    return { format: 'chords-over-words' };
+  }
+
+  return { format: 'unknown' };
+}
+
 export function isMusicXmlFormat(detected: DetectedFormat): boolean {
   return detected.format === 'musicxml' || detected.format === 'mxl';
 }
