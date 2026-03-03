@@ -366,6 +366,9 @@ export default function App() {
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
   const didAutoFitRef = useRef(false);
   const xmlLoadedRef = useRef('');
+  // Tracks nested dragenter/dragleave events so child elements don't falsely
+  // clear the `isDragging` visual state.
+  const dragDepthRef = useRef(0);
   const [loadedXmlText, setLoadedXmlText] = useState('');
   const [isMxl, setIsMxl] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -557,9 +560,26 @@ export default function App() {
     [loadFile],
   );
 
+  const onDragEnter = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    if (dragDepthRef.current === 1) setIsDragging(true);
+  }, []);
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault(); // required to allow drop
+  }, []);
+
+  const onDragLeave = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragging(false);
+  }, []);
+
   const onDrop = useCallback(
-    async (event: React.DragEvent<HTMLDivElement>) => {
+    async (event: React.DragEvent) => {
       event.preventDefault();
+      dragDepthRef.current = 0;
       setIsDragging(false);
       const file = event.dataTransfer.files?.[0];
       if (!file) return;
@@ -868,22 +888,37 @@ export default function App() {
         {appMode !== 'chord-chart' ? (
           <section
             className={`score-viewport ${isDragging ? 'dragging' : ''}`}
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
             onDrop={onDrop}
           >
-            {appMode === 'empty' && (
-              <p className="placeholder">Upload a MusicXML / MXL file or a ChordPro / text chord chart.</p>
+            {isDragging && (
+              <div className="drop-overlay" aria-hidden>
+                <span>Drop to load</span>
+              </div>
+            )}
+            {appMode === 'empty' && !isDragging && (
+              <p className="placeholder">
+                Drop a file here, or use the file picker below.<br />
+                Supports MusicXML / MXL and ChordPro / text chord charts.
+              </p>
             )}
             <div ref={containerRef} className="score-container" />
           </section>
         ) : (
           <section
             className={`chord-chart-viewport ${isDragging ? 'dragging' : ''}`}
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
             onDrop={onDrop}
           >
+            {isDragging && (
+              <div className="drop-overlay" aria-hidden>
+                <span>Drop to load</span>
+              </div>
+            )}
             {chartDocument && (
               <ChordChart document={chartDocument} transposeSteps={transposeSteps} />
             )}
