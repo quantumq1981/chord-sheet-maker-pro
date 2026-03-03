@@ -486,6 +486,27 @@ select:disabled {
   overflow-x: auto;
 }
 
+/* Guitar Pro tab section — pre-formatted ASCII tab rows produced by
+   TabSectionBlock.  The horizontal scroll on mobile prevents layout breaks. */
+.cc-tab {
+  margin-bottom: 1.5rem;
+}
+
+.cc-tab-row {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  margin: 0 0 0.9rem 0;
+  padding: 0.5rem 0.75rem;
+  background: #f8f5ff;
+  border-left: 3px solid #7c3aed;
+  border-radius: 0 4px 4px 0;
+  overflow-x: auto;
+  /* Prevent the browser from collapsing adjacent spaces */
+  white-space: pre;
+}
+
 .cc-section-label {
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.78rem;

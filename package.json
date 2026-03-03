@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@coderline/alphatab": "^1.8.1",
     "jspdf": "^2.5.2",
     "jszip": "^3.10.1",
     "opensheetmusicdisplay": "^1.8.9",

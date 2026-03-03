@@ -28,6 +28,7 @@ import type {
   ChartSection,
   ChartLine,
   ChartToken,
+  TabColumn,
 } from '../models/ChordChartModel';
 
 // ─── Transpose helpers ────────────────────────────────────────────────────────
@@ -165,7 +166,109 @@ function LineRow({ line, steps }: LineProps) {
   );
 }
 
+// ─── Tab section rendering ────────────────────────────────────────────────────
+
+/**
+ * Number of beat-columns to pack into one visual tab row.
+ * 16 columns ≈ 2 bars of 4/4 at quarter-note resolution.
+ */
+const TAB_COLS_PER_ROW = 16;
+
+/**
+ * Standard string label order for a 6-string guitar (high → low).
+ * Extended with numbers for 7-/8-string instruments.
+ */
+const STRING_LABELS = ['e', 'B', 'G', 'D', 'A', 'E', '7', '8', '9'] as const;
+
+/**
+ * Build one ASCII tab row (6+ string lines) from a slice of TabColumns.
+ *
+ * Column width is determined by the widest fret number in that column so
+ * every line stays aligned.  The right edge of each cell is padded with '-'.
+ */
+function buildTabRow(columns: TabColumn[], stringCount: number): string[] {
+  if (columns.length === 0 || stringCount === 0) return [];
+
+  // Pre-compute the character width of each column
+  const colWidths = columns.map((col) =>
+    col.strings.reduce((w: number, f: number | null) => {
+      if (f === null || f === -1) return Math.max(w, 1);
+      return Math.max(w, String(f).length);
+    }, 1),
+  );
+
+  const lines: string[] = [];
+  for (let s = 0; s < stringCount; s++) {
+    const name = STRING_LABELS[s] ?? `S${s + 1}`;
+    let line = `${name}|`;
+    for (let c = 0; c < columns.length; c++) {
+      const fret: number | null = columns[c].strings[s] ?? null;
+      let cell: string;
+      if (fret === null) {
+        cell = '-'.repeat(colWidths[c]);
+      } else if (fret === -1) {
+        cell = 'x' + '-'.repeat(Math.max(0, colWidths[c] - 1));
+      } else {
+        const fs = String(fret);
+        cell = fs + '-'.repeat(Math.max(0, colWidths[c] - fs.length));
+      }
+      line += cell;
+    }
+    line += '|';
+    lines.push(line);
+  }
+  return lines;
+}
+
+interface TabSectionProps {
+  section: ChartSection;
+  steps: number;
+}
+
+function TabSectionBlock({ section, steps }: TabSectionProps) {
+  const rawColumns = section.tabColumns ?? [];
+  if (rawColumns.length === 0) return null;
+
+  const stringCount = rawColumns.reduce((m, c) => Math.max(m, c.strings.length), 0);
+
+  // Apply transposition: shift every non-null, non-muted fret by `steps`.
+  // Fret numbers are clamped to ≥ 0 (can't go below the nut).
+  const columns: TabColumn[] = steps === 0
+    ? rawColumns
+    : rawColumns.map((col) => ({
+        strings: col.strings.map((f) =>
+          f !== null && f >= 0 ? Math.max(0, f + steps) : f,
+        ),
+      }));
+
+  // Slice into rows
+  const rows: TabColumn[][] = [];
+  for (let i = 0; i < columns.length; i += TAB_COLS_PER_ROW) {
+    rows.push(columns.slice(i, i + TAB_COLS_PER_ROW));
+  }
+
+  const label = section.label ?? 'Tab';
+
+  return (
+    <div className="cc-section cc-tab" data-type="tab">
+      <div className="cc-section-label">{label}</div>
+      {rows.map((row, ri) => (
+        <pre key={ri} className="cc-tab-row">
+          {buildTabRow(row, stringCount).join('\n')}
+        </pre>
+      ))}
+    </div>
+  );
+}
+
+// ─── Section block ─────────────────────────────────────────────────────────────
+
 function SectionBlock({ section, steps }: { section: ChartSection; steps: number }) {
+  // Tab sections have their own specialised renderer
+  if (section.type === 'tab' && section.tabColumns?.length) {
+    return <TabSectionBlock section={section} steps={steps} />;
+  }
+
   const label = section.label ?? (section.type !== 'unknown' ? section.type : undefined);
   return (
     <div className="cc-section" data-type={section.type}>
