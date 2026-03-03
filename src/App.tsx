@@ -50,7 +50,7 @@ type ExportFeedback = {
 
 type ChordProModeUi = 'auto' | 'lyrics-inline' | 'grid-only';
 type ChordProBracketUi = 'separate' | 'combined';
-type ChordProRepeatUi = 'none' | 'simple-unroll';
+type ChordProRepeatUi = 'none' | 'simple-unroll' | 'full-unroll';
 
 type ChordProUiState = {
   barsPerLine: number;
@@ -319,7 +319,7 @@ function buildChordProOptionsFromUI(uiState: ChordProUiState) {
     separate: 'separate', combined: 'combined',
   };
   const repeatMap: Record<ChordProRepeatUi, RepeatStrategy> = {
-    none: 'none', 'simple-unroll': 'simple-unroll',
+    none: 'none', 'simple-unroll': 'simple-unroll', 'full-unroll': 'full-unroll',
   };
 
   return {
@@ -1006,6 +1006,7 @@ export default function App() {
                   onChange={(e) => setChordProUi((p) => ({ ...p, repeatStrategy: e.target.value as ChordProRepeatUi }))}>
                   <option value="none">None</option>
                   <option value="simple-unroll">Simple Unroll</option>
+                  <option value="full-unroll">Full Unroll (Volta)</option>
                 </select>
               </div>
 
