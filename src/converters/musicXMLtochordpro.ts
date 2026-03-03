@@ -80,6 +80,12 @@ export interface ConverterDiagnostics {
   endingsFound: number;
   barsPerLine: number;
   formatModeResolved: "lyrics-inline" | "grid-only";
+  /** Number of mid-song key signature changes detected (0 if none). */
+  keyChanges: number;
+  /** Number of mid-song time signature changes detected (0 if none). */
+  timeChanges: number;
+  /** True when the first measure appears to be a pickup/anacrusis bar. */
+  hasPickupBar: boolean;
 }
 
 export interface HarmonyEvent {
@@ -133,9 +139,10 @@ const KIND_SUFFIX_MAP: Record<string, string> = {
   // Sixths
   "major-sixth": "6",
   "minor-sixth": "m6",
-  // Sevenths
+  // Seventh family
   dominant: "7",
   "major-seventh": "maj7",
+  "augmented-major-seventh": "augmaj7",
   "minor-seventh": "m7",
   "diminished-seventh": "dim7",
   "augmented-seventh": "aug7",
@@ -153,9 +160,17 @@ const KIND_SUFFIX_MAP: Record<string, string> = {
   "dominant-13th": "13",
   "major-13th": "maj13",
   "minor-13th": "m13",
-  // Other
+  // Power / pedal
   power: "5",
   pedal: "ped",
+  // No quality (root only)
+  none: "",
+  // Classical augmented-sixth chords (some notation apps emit these)
+  Neapolitan: "N6",
+  Italian: "It+6",
+  French: "Fr+6",
+  German: "Gr+6",
+  Tristan: "Tr",
 };
 
 export function getDefaultConvertOptions(): ConvertOptions {
@@ -240,6 +255,9 @@ export function convertMusicXmlToChordPro(
     endingsFound: 0,
     barsPerLine: mergedOptions.barsPerLine,
     formatModeResolved: "grid-only",
+    keyChanges: 0,
+    timeChanges: 0,
+    hasPickupBar: false,
   };
 
   if (parseIssue) {
@@ -263,6 +281,26 @@ export function convertMusicXmlToChordPro(
 
     const measures = buildMeasureData(xmlDoc, selectedLyricPartId);
     diagnostics.measuresCount = measures.length;
+
+    // Detect mid-song attribute changes and pickup bar
+    const attrChanges = detectAttributeChanges(xmlDoc);
+    diagnostics.keyChanges = attrChanges.keyChanges;
+    diagnostics.timeChanges = attrChanges.timeChanges;
+    diagnostics.hasPickupBar = detectPickupBar(measures);
+
+    if (attrChanges.keyChanges > 0) {
+      warnings.push(
+        `Mid-song key change detected (${attrChanges.keyChanges} change${attrChanges.keyChanges > 1 ? "s" : ""}); only the opening key is reflected in the output.`
+      );
+    }
+    if (attrChanges.timeChanges > 0) {
+      warnings.push(
+        `Mid-song time signature change detected (${attrChanges.timeChanges} change${attrChanges.timeChanges > 1 ? "s" : ""}); grid quantization uses the opening time signature.`
+      );
+    }
+    if (diagnostics.hasPickupBar) {
+      warnings.push("First measure appears to be a pickup/anacrusis bar (shorter than subsequent measures).");
+    }
 
     const verseSet = new Set<string>();
     let hasAnyLyrics = false;
@@ -546,6 +584,7 @@ function renderGrid(
   const slotsPerMeasure = resolveGridSlotsPerMeasure(options, timeSignature);
   let measuresWithMultipleChords = 0;
   let totalCollisions = 0;
+  const droppedChordNames: string[] = [];
 
   const measureTexts = measures.map((measure) => {
     const slots = Array(slotsPerMeasure).fill(".");
@@ -561,6 +600,7 @@ function renderGrid(
       const slotIndex = Math.max(0, Math.min(slotsPerMeasure - 1, slotIndexRaw));
       if (slots[slotIndex] !== ".") {
         totalCollisions += 1;
+        droppedChordNames.push(harmony.chordText);
         continue;
       }
       slots[slotIndex] = `[${harmony.chordText}]`;
@@ -571,12 +611,15 @@ function renderGrid(
 
   if (measuresWithMultipleChords > 0) {
     warnings.push(
-      `Grid quantized to ${slotsPerMeasure} slots/measure; ${measuresWithMultipleChords} measures contain multiple chord changes.`
+      `Grid quantized to ${slotsPerMeasure} slots/measure; ${measuresWithMultipleChords} measure${measuresWithMultipleChords > 1 ? "s" : ""} contain multiple chord changes.`
     );
   }
   if (totalCollisions > 0) {
+    const preview = droppedChordNames.length <= 6
+      ? droppedChordNames.join(", ")
+      : `${droppedChordNames.slice(0, 6).join(", ")} … (${droppedChordNames.length - 6} more)`;
     warnings.push(
-      `Chord collisions within same slot: ${totalCollisions}. Consider higher grid resolution.`
+      `${totalCollisions} chord${totalCollisions > 1 ? "s" : ""} dropped due to grid slot collisions (${preview}). Switch to lyrics-inline mode or increase grid resolution.`
     );
   }
 
@@ -730,11 +773,52 @@ function harmonyToChordText(harmonyEl: Element): string {
   const kindValue = kindEl?.textContent?.trim() ?? "major";
   const suffix = kindText && kindText.length > 0 ? kindText : (KIND_SUFFIX_MAP[kindValue] ?? kindValue);
 
+  // Parse <degree> elements for added/altered chord tones (e.g. add9, b5, #11)
+  const degreeStr = parseDegreeModifications(harmonyEl);
+
   const bassStep = harmonyEl.querySelector(":scope > bass > bass-step")?.textContent?.trim();
   const bassAlter = parseIntText(harmonyEl.querySelector(":scope > bass > bass-alter")?.textContent, 0);
   const bass = bassStep ? `${bassStep}${accidentalFromAlter(bassAlter)}` : "";
 
-  return `${root}${suffix}${bass ? `/${bass}` : ""}`;
+  return `${root}${suffix}${degreeStr}${bass ? `/${bass}` : ""}`;
+}
+
+/**
+ * Parse `<degree>` children of a `<harmony>` element and return a string
+ * representing added or altered chord tones, e.g. "add9", "b5", "#11".
+ *
+ * MusicXML degree types:
+ *   add      — adds a tone not implied by the chord quality (e.g., Cadd9)
+ *   alter    — modifies an existing tone (e.g., C7b5, C7#11)
+ *   subtract — removes a tone; not representable in plain text notation, skipped
+ */
+function parseDegreeModifications(harmonyEl: Element): string {
+  const degrees = [...harmonyEl.querySelectorAll(":scope > degree")];
+  if (degrees.length === 0) {
+    return "";
+  }
+
+  const parts: string[] = [];
+  for (const degree of degrees) {
+    const value = parseIntText(degree.querySelector("degree-value")?.textContent, 0);
+    const alter = parseIntText(degree.querySelector("degree-alter")?.textContent, 0);
+    const type = degree.querySelector("degree-type")?.textContent?.trim() ?? "add";
+
+    if (value <= 0 || type === "subtract") {
+      continue;
+    }
+
+    const acc = alter > 0 ? "#".repeat(alter) : alter < 0 ? "b".repeat(-alter) : "";
+
+    if (type === "add") {
+      parts.push(`add${acc}${value}`);
+    } else if (type === "alter") {
+      // Altered extensions: b5, #11, b13, etc.
+      parts.push(`${acc}${value}`);
+    }
+  }
+
+  return parts.join("");
 }
 
 function resolveMeasureOrder(
@@ -768,6 +852,60 @@ function resolveMeasureOrder(
     ...duplicatedRange,
     ...baseOrder.slice(endIdx + 1),
   ];
+}
+
+/**
+ * Scan all `<attributes>` elements across the whole score and count how many
+ * times the key or time signature changes after its first appearance.
+ */
+function detectAttributeChanges(xmlDoc: Document): { keyChanges: number; timeChanges: number } {
+  const allAttributes = [...xmlDoc.querySelectorAll("part > measure > attributes")];
+  let lastKey: string | undefined;
+  let lastTime: string | undefined;
+  let keyChanges = 0;
+  let timeChanges = 0;
+
+  for (const attrs of allAttributes) {
+    const fifthsText = attrs.querySelector("key > fifths")?.textContent?.trim();
+    const modeText = attrs.querySelector("key > mode")?.textContent?.trim();
+    const beatsText = attrs.querySelector("time > beats")?.textContent?.trim();
+    const beatTypeText = attrs.querySelector("time > beat-type")?.textContent?.trim();
+
+    if (fifthsText !== undefined) {
+      const key = buildKeySignature(fifthsText, modeText) ?? fifthsText;
+      if (lastKey !== undefined && key !== lastKey) {
+        keyChanges++;
+      }
+      lastKey = key;
+    }
+
+    if (beatsText !== undefined && beatTypeText !== undefined) {
+      const time = `${beatsText}/${beatTypeText}`;
+      if (lastTime !== undefined && time !== lastTime) {
+        timeChanges++;
+      }
+      lastTime = time;
+    }
+  }
+
+  return { keyChanges, timeChanges };
+}
+
+/**
+ * Return true when the first measure is a pickup/anacrusis — i.e. its total
+ * duration is meaningfully shorter than the second measure's duration.
+ */
+function detectPickupBar(measures: MeasureData[]): boolean {
+  if (measures.length < 2) {
+    return false;
+  }
+  const first = measures[0];
+  const second = measures[1];
+  return (
+    second.durationDivisions > 0 &&
+    first.durationDivisions > 0 &&
+    first.durationDivisions < second.durationDivisions * 0.75
+  );
 }
 
 function parseEndings(measureEl: Element): number[] {
