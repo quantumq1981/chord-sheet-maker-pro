@@ -486,6 +486,26 @@ select:disabled {
   overflow-x: auto;
 }
 
+/* ASCII tab blocks produced by the Guitar Pro parser. */
+.cc-tab-section {
+  border-left: 3px solid #7c3aed;
+  padding-left: 0.75rem;
+}
+
+.cc-tab-row {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.83rem;
+  line-height: 1.5;
+  background: #f8f4ff;
+  border: 1px solid #e9d5ff;
+  border-radius: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  overflow-x: auto;
+  white-space: pre;
+}
+
 .cc-section-label {
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.78rem;

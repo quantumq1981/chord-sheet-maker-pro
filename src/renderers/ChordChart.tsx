@@ -28,6 +28,7 @@ import type {
   ChartSection,
   ChartLine,
   ChartToken,
+  TabColumn,
 } from '../models/ChordChartModel';
 
 // ─── Transpose helpers ────────────────────────────────────────────────────────
@@ -165,7 +166,63 @@ function LineRow({ line, steps }: LineProps) {
   );
 }
 
+// ─── ASCII tab renderer ────────────────────────────────────────────────────────
+
+/** Standard string names for 6/7-string guitars; fallback to numbers. */
+const STRING_NAMES: Record<number, string[]> = {
+  4: ['G', 'D', 'A', 'E'],
+  5: ['B', 'G', 'D', 'A', 'E'],
+  6: ['e', 'B', 'G', 'D', 'A', 'E'],
+  7: ['e', 'B', 'G', 'D', 'A', 'E', 'B'],
+};
+
+/** Format a single fret value as a 2-character tab cell. */
+function fretToCell(fret: number | null, steps: number): string {
+  if (fret === null) return '--';
+  if (fret === -1) return 'x-';
+  const t = Math.max(0, Math.min(24, fret + steps));
+  return t < 10 ? `-${t}` : String(t).slice(0, 2);
+}
+
+const COLS_PER_ROW = 16;
+
+function TabSectionBlock({ section, steps }: { section: ChartSection & { tabColumns: TabColumn[] }; steps: number }) {
+  const cols = section.tabColumns;
+  const numStrings = cols[0]?.strings.length ?? 0;
+  if (numStrings === 0) return null;
+
+  const names = STRING_NAMES[numStrings] ?? Array.from({ length: numStrings }, (_, i) => String(i + 1));
+  const label = section.label ?? (section.type !== 'unknown' ? section.type : undefined);
+
+  const rows: TabColumn[][] = [];
+  for (let i = 0; i < cols.length; i += COLS_PER_ROW) {
+    rows.push(cols.slice(i, i + COLS_PER_ROW));
+  }
+
+  return (
+    <div className="cc-section cc-tab-section" data-type="tab">
+      {label && <div className="cc-section-label">{label}</div>}
+      {rows.map((row, rowIdx) => (
+        <pre key={rowIdx} className="cc-tab-row">
+          {names.map((name, si) =>
+            `${name}|${row.map((col) => fretToCell(col.strings[si] ?? null, steps)).join('')}|`,
+          ).join('\n')}
+        </pre>
+      ))}
+    </div>
+  );
+}
+
 function SectionBlock({ section, steps }: { section: ChartSection; steps: number }) {
+  if (section.type === 'tab' && section.tabColumns && section.tabColumns.length > 0) {
+    return (
+      <TabSectionBlock
+        section={section as ChartSection & { tabColumns: TabColumn[] }}
+        steps={steps}
+      />
+    );
+  }
+
   const label = section.label ?? (section.type !== 'unknown' ? section.type : undefined);
   return (
     <div className="cc-section" data-type={section.type}>

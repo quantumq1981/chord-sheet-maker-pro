@@ -21,6 +21,7 @@ import type {
 } from '../models/ChordChartModel';
 import type { SourceFormat } from '../ingest/sniffFormat';
 import { parseAbcNotation } from './abcParser';
+import { sectionTypeFromLabel, normalizeLineEndings } from '../utils/sectionUtils';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -87,25 +88,6 @@ const CHORD_TOKEN_RE =
   /^[A-G][#b]?(?:m(?:aj)?|M|maj|min|dim|aug|sus[24]?|add\d*)?(?:\d+)?(?:\/[A-G][#b]?)?$/;
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
-
-function normalizeLineEndings(text: string): string {
-  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-}
-
-function sectionTypeFromLabel(label: string): SectionType {
-  const l = label.toLowerCase();
-  if (l.includes('chorus')) return 'chorus';
-  if (l.includes('verse')) return 'verse';
-  if (l.includes('bridge')) return 'bridge';
-  if (l.includes('intro')) return 'intro';
-  if (l.includes('outro')) return 'outro';
-  if (l.includes('pre-chorus') || l.includes('prechorus')) return 'pre-chorus';
-  if (l.includes('interlude')) return 'interlude';
-  if (l.includes('solo')) return 'solo';
-  if (l.includes('grid')) return 'grid';
-  if (l.includes('tab')) return 'tab';
-  return 'unknown';
-}
 
 /** Flush a section into the document, ignoring fully-empty sections. */
 function flushSection(doc: ChordChartDocument, section: ChartSection): void {
