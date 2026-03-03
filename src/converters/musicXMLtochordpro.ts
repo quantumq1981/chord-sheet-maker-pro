@@ -87,6 +87,8 @@ export interface ConverterDiagnostics {
   timeChanges: number;
   /** True when the first measure appears to be a pickup/anacrusis bar. */
   hasPickupBar: boolean;
+  /** Unique section labels found (from rehearsal marks or direction text). Empty when none. */
+  sectionsDetected: string[];
 }
 
 export interface HarmonyEvent {
@@ -112,6 +114,8 @@ export interface MeasureData {
   repeatStart?: boolean;
   repeatEnd?: boolean;
   endings?: number[];
+  /** Section label parsed from a rehearsal mark or recognised direction word at this measure. */
+  sectionLabel?: string;
 }
 
 export interface MeasureRenderResult {
@@ -259,6 +263,7 @@ export function convertMusicXmlToChordPro(
     keyChanges: 0,
     timeChanges: 0,
     hasPickupBar: false,
+    sectionsDetected: [],
   };
 
   if (parseIssue) {
@@ -364,19 +369,48 @@ export function convertMusicXmlToChordPro(
       }
     }
 
+    // Group measures by section label so each section gets its own header comment.
+    const measureGroups = groupBySection(orderedMeasures);
+    const sectionLabelSet = new Set<string>();
+    for (const m of orderedMeasures) {
+      if (m.sectionLabel) {
+        sectionLabelSet.add(m.sectionLabel);
+      }
+    }
+    diagnostics.sectionsDetected = [...sectionLabelSet].sort();
+
     if (formatModeResolved === "lyrics-inline") {
       const verseKeys = diagnostics.versesDetected.length > 0 ? diagnostics.versesDetected : ["1"];
-      const rendered = renderLyricsInline(orderedMeasures, verseKeys, mergedOptions);
-      if (lines.length > 0 && rendered.length > 0) {
-        lines.push("");
+
+      for (let gi = 0; gi < measureGroups.length; gi++) {
+        const group = measureGroups[gi];
+        const rendered = renderLyricsInline(group.measures, verseKeys, mergedOptions);
+        if (rendered.length === 0) {
+          continue;
+        }
+        if (lines.length > 0) {
+          lines.push("");
+        }
+        if (group.sectionLabel) {
+          lines.push(`{comment: ${group.sectionLabel}}`);
+        }
+        lines.push(...rendered);
       }
-      lines.push(...rendered);
     } else {
-      const rendered = renderGrid(orderedMeasures, mergedOptions, warnings, metadata.time);
-      if (lines.length > 0 && rendered.length > 0) {
-        lines.push("");
+      for (let gi = 0; gi < measureGroups.length; gi++) {
+        const group = measureGroups[gi];
+        const rendered = renderGrid(group.measures, mergedOptions, warnings, metadata.time);
+        if (rendered.length === 0) {
+          continue;
+        }
+        if (lines.length > 0) {
+          lines.push("");
+        }
+        if (group.sectionLabel) {
+          lines.push(`{comment: ${group.sectionLabel}}`);
+        }
+        lines.push(...rendered);
       }
-      lines.push(...rendered);
     }
 
     if (
@@ -530,6 +564,7 @@ function buildMeasureData(
       .some((repeat) => (repeat.getAttribute("direction") ?? "") === "backward");
 
     const endings = parseEndings(measureEl);
+    const sectionLabel = parseDirectionLabel(measureEl);
 
     result.push({
       measureIndex,
@@ -539,6 +574,7 @@ function buildMeasureData(
       repeatStart: repeatStart || undefined,
       repeatEnd: repeatEnd || undefined,
       endings: endings.length > 0 ? endings : undefined,
+      sectionLabel,
     });
   });
 
@@ -1035,6 +1071,80 @@ function detectPickupBar(measures: MeasureData[]): boolean {
     first.durationDivisions > 0 &&
     first.durationDivisions < second.durationDivisions * 0.75
   );
+}
+
+/**
+ * Return a section label for a measure when it contains a rehearsal mark or a
+ * direction `<words>` element that matches a well-known section keyword.
+ *
+ * Rehearsal marks (e.g. "A", "B", "Verse", "Chorus") are always captured.
+ * Direction words are captured only when they start with a recognised keyword
+ * so that tempo/dynamic markings ("Slowly", "mf") are ignored.
+ */
+function parseDirectionLabel(measureEl: Element): string | undefined {
+  // Rehearsal marks take highest priority (e.g. <rehearsal>Chorus</rehearsal>)
+  const rehearsalEl = measureEl.querySelector("direction direction-type rehearsal");
+  if (rehearsalEl) {
+    const text = rehearsalEl.textContent?.trim();
+    if (text && text.length > 0 && text.length <= 32) {
+      return text;
+    }
+  }
+
+  // Direction <words> that begin with a recognised section keyword
+  const wordEls = [...measureEl.querySelectorAll("direction direction-type words")];
+  for (const wordEl of wordEls) {
+    const text = wordEl.textContent?.trim();
+    if (!text || text.length > 40) {
+      continue;
+    }
+    if (
+      /^(verse|chorus|refrain|bridge|intro|outro|coda|tag|hook|vamp|interlude|pre.?chorus|break|solo|ending)/i.test(
+        text
+      )
+    ) {
+      return text;
+    }
+  }
+
+  return undefined;
+}
+
+interface MeasureGroup {
+  sectionLabel?: string;
+  measures: MeasureData[];
+}
+
+/**
+ * Split an ordered list of measures into contiguous groups, starting a new
+ * group each time a measure carries a `sectionLabel`.  Measures without a
+ * label continue in the current group.
+ */
+function groupBySection(measures: MeasureData[]): MeasureGroup[] {
+  if (measures.length === 0) {
+    return [];
+  }
+
+  const groups: MeasureGroup[] = [];
+  let current: MeasureGroup = { measures: [] };
+
+  for (const measure of measures) {
+    if (measure.sectionLabel !== undefined && current.measures.length > 0) {
+      // Flush the current group and start a new one at this section boundary.
+      groups.push(current);
+      current = { sectionLabel: measure.sectionLabel, measures: [] };
+    } else if (measure.sectionLabel !== undefined && current.sectionLabel === undefined) {
+      // First measure carries a label — annotate the current (still empty) group.
+      current.sectionLabel = measure.sectionLabel;
+    }
+    current.measures.push(measure);
+  }
+
+  if (current.measures.length > 0) {
+    groups.push(current);
+  }
+
+  return groups;
 }
 
 function parseEndings(measureEl: Element): number[] {

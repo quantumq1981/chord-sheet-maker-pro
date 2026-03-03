@@ -1058,6 +1058,12 @@ export default function App() {
                   {chordProDiagnostics.hasPickupBar && (
                     <span className="diag-badge diag-badge--info">pickup bar</span>
                   )}
+                  {chordProDiagnostics.sectionsDetected.length > 0 && (
+                    <span className="diag-badge diag-badge--info"
+                      title={chordProDiagnostics.sectionsDetected.join(', ')}>
+                      {chordProDiagnostics.sectionsDetected.length} section{chordProDiagnostics.sectionsDetected.length > 1 ? 's' : ''}
+                    </span>
+                  )}
                 </p>
               )}
 
