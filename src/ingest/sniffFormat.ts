@@ -15,7 +15,7 @@
  *   7. File-extension fallback        → chordpro or unknown
  */
 
-export type SourceFormat = 'chordpro' | 'ultimateguitar' | 'chords-over-words';
+export type SourceFormat = 'chordpro' | 'ultimateguitar' | 'chords-over-words' | 'abc';
 
 export type DetectedFormat =
   | { format: 'mxl' }
@@ -23,6 +23,7 @@ export type DetectedFormat =
   | { format: 'chordpro' }
   | { format: 'ultimateguitar' }
   | { format: 'chords-over-words' }
+  | { format: 'abc' }
   | { format: 'pdf' }
   | { format: 'unknown' };
 
@@ -46,6 +47,9 @@ const UG_SECTION_RE =
 
 // Inline bracket chord, e.g. [Am7], [F#/A], [Bbmaj7]
 const BRACKET_CHORD_RE = /\[[A-G][#b]?[^\]\n]{0,10}\]/;
+
+// ABC notation: X: index field (always present and first) + typical header fields
+const ABC_HEADER_RE = /^X\s*:\s*\d/m;
 
 function hasZipMagic(bytes: Uint8Array): boolean {
   return (
@@ -112,22 +116,27 @@ export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): Detected
     return { format: 'musicxml' };
   }
 
-  // 3. ChordPro directives
+  // 3. ABC notation — X: index field is a reliable unique signature
+  if (ABC_HEADER_RE.test(head) || ext === 'abc') {
+    return { format: 'abc' };
+  }
+
+  // 4. ChordPro directives
   if (CHORDPRO_DIRECTIVE_RE.test(head)) {
     return { format: 'chordpro' };
   }
 
-  // 4. UG-style section headers
+  // 5. UG-style section headers
   if (UG_SECTION_RE.test(head)) {
     return { format: 'ultimateguitar' };
   }
 
-  // 5. Inline bracket chords (without UG sections → treat as ChordPro)
+  // 6. Inline bracket chords (without UG sections → treat as ChordPro)
   if (BRACKET_CHORD_RE.test(head)) {
     return { format: 'chordpro' };
   }
 
-  // 6. Chord-over-words heuristic: count chord-only lines vs text lines
+  // 7. Chord-over-words heuristic: count chord-only lines vs text lines
   const lines = head.split('\n');
   let chordLines = 0;
   let textLines = 0;
@@ -143,7 +152,7 @@ export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): Detected
     return { format: 'chords-over-words' };
   }
 
-  // 7. Extension fallback for known chord-chart extensions
+  // 8. Extension fallback for known chord-chart extensions
   if (['cho', 'chopro', 'chord', 'crd', 'pro'].includes(ext)) {
     return { format: 'chordpro' };
   }
@@ -165,6 +174,11 @@ export function sniffFormatFromText(text: string): DetectedFormat {
   // MusicXML embedded in text
   if (head.includes('<score-partwise') || head.includes('<score-timewise')) {
     return { format: 'musicxml' };
+  }
+
+  // ABC notation
+  if (ABC_HEADER_RE.test(head)) {
+    return { format: 'abc' };
   }
 
   // ChordPro directives
@@ -213,7 +227,8 @@ export function isChordChartFormat(detected: DetectedFormat): boolean {
   return (
     detected.format === 'chordpro' ||
     detected.format === 'ultimateguitar' ||
-    detected.format === 'chords-over-words'
+    detected.format === 'chords-over-words' ||
+    detected.format === 'abc'
   );
 }
 
@@ -221,7 +236,8 @@ export function asSourceFormat(detected: DetectedFormat): SourceFormat | null {
   if (
     detected.format === 'chordpro' ||
     detected.format === 'ultimateguitar' ||
-    detected.format === 'chords-over-words'
+    detected.format === 'chords-over-words' ||
+    detected.format === 'abc'
   ) {
     return detected.format;
   }

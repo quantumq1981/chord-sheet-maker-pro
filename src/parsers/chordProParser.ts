@@ -20,6 +20,7 @@ import type {
   SectionType,
 } from '../models/ChordChartModel';
 import type { SourceFormat } from '../ingest/sniffFormat';
+import { parseAbcNotation } from './abcParser';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -394,8 +395,9 @@ export function parseChordsOverWords(text: string): ChordChartDocument {
  */
 export function parseChordChart(text: string, sourceFormat: SourceFormat): ChordChartDocument {
   switch (sourceFormat) {
-    case 'ultimateguitar':   return parseUltimateGuitar(text);
+    case 'ultimateguitar':    return parseUltimateGuitar(text);
     case 'chords-over-words': return parseChordsOverWords(text);
-    default:                 return parseChordPro(text);
+    case 'abc':               return parseAbcNotation(text);
+    default:                  return parseChordPro(text);
   }
 }
