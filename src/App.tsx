@@ -73,6 +73,8 @@ const FILE_INPUT_ACCEPT = [
   '.cho', '.chopro', '.chord', '.crd', '.pro',
   // Generic text (UG-style, chords-over-words)
   '.txt',
+  // ABC notation (folk / traditional music)
+  '.abc',
   // PDF (UG exports, chord sheets exported from notation apps, etc.)
   '.pdf', 'application/pdf',
 ].join(',');
@@ -523,6 +525,7 @@ export default function App() {
           chordpro: 'ChordPro',
           ultimateguitar: 'Ultimate Guitar',
           'chords-over-words': 'Chords over Words',
+          abc: 'ABC Notation',
         };
 
         setLoadedFilename(file.name);
@@ -579,8 +582,8 @@ export default function App() {
 
       } else {
         setRenderError(
-          'Unsupported file type. Upload .xml, .musicxml, .mxl (notation), ' +
-          '.cho, .chopro, .crd, .pro, .txt (chord chart), or .pdf (UG / chord-sheet PDF).'
+          'Unsupported file type. Upload .xml/.mxl (notation), ' +
+          '.cho/.pro/.abc/.txt (chord chart), or .pdf.'
         );
       }
     } catch (error) {
@@ -911,7 +914,7 @@ export default function App() {
 
         {appMode === 'empty' && (
           <span className="hint">
-            Drag &amp; drop .xml / .musicxml / .mxl (notation) or .cho / .pro / .txt (chord chart)
+            Drag &amp; drop .xml / .mxl (notation) or .cho / .pro / .abc / .txt / .pdf (chord chart)
           </span>
         )}
 
