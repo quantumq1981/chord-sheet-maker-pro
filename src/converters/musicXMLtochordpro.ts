@@ -9,7 +9,8 @@ export type ChordProFormatMode =
 
 export type RepeatStrategy =
   | "none"
-  | "simple-unroll";
+  | "simple-unroll"
+  | "full-unroll";
 
 export type ChordBracketStyle =
   | "separate"
@@ -828,30 +829,158 @@ function resolveMeasureOrder(
   diagnostics: ConverterDiagnostics
 ): number[] {
   const baseOrder = measures.map((measure) => measure.measureIndex);
-  if (options.repeatStrategy !== "simple-unroll") {
+
+  if (options.repeatStrategy === "none") {
     return baseOrder;
   }
 
-  if (diagnostics.endingsFound > 0) {
-    warnings.push("unsupported endings");
-    return baseOrder;
+  if (options.repeatStrategy === "simple-unroll") {
+    // Legacy path: bail out when volta endings are present.
+    if (diagnostics.endingsFound > 0) {
+      warnings.push(
+        "Repeat endings (volta brackets) found but not supported by Simple Unroll — switch to Full Unroll for volta expansion."
+      );
+      return baseOrder;
+    }
+
+    const startIdx = measures.findIndex((measure) => measure.repeatStart);
+    if (startIdx < 0) {
+      return baseOrder;
+    }
+    const endIdx = measures.findIndex((measure, index) => index > startIdx && measure.repeatEnd);
+    if (endIdx < 0) {
+      return baseOrder;
+    }
+
+    const duplicatedRange = baseOrder.slice(startIdx, endIdx + 1);
+    return [
+      ...baseOrder.slice(0, endIdx + 1),
+      ...duplicatedRange,
+      ...baseOrder.slice(endIdx + 1),
+    ];
   }
 
-  const startIdx = measures.findIndex((measure) => measure.repeatStart);
-  if (startIdx < 0) {
-    return baseOrder;
-  }
-  const endIdx = measures.findIndex((measure, index) => index > startIdx && measure.repeatEnd);
-  if (endIdx < 0) {
-    return baseOrder;
+  if (options.repeatStrategy === "full-unroll") {
+    return fullUnrollWithVolta(measures, warnings);
   }
 
-  const duplicatedRange = baseOrder.slice(startIdx, endIdx + 1);
-  return [
-    ...baseOrder.slice(0, endIdx + 1),
-    ...duplicatedRange,
-    ...baseOrder.slice(endIdx + 1),
-  ];
+  return baseOrder;
+}
+
+/**
+ * Volta-aware repeat unroller.
+ *
+ * Processes the measure list in order and, whenever it encounters a
+ * repeat-start barline, it:
+ *   1. Locates the matching backward-repeat barline (`repeatEnd`).
+ *   2. Scans forward past that barline to collect any additional volta-bracket
+ *      measures (MusicXML often places 2nd-ending measures after the backward
+ *      barline in source order).
+ *   3. Splits the section into a *body* (measures with no ending markers) and
+ *      per-ending groups (keyed by the ending number in `MeasureData.endings`).
+ *   4. Emits one pass for each ending number in ascending order:
+ *        body + ending-1 measures, then body + ending-2 measures, etc.
+ *   5. For sections with no endings at all the section is simply doubled.
+ *
+ * Nested repeats and edge cases (missing repeat-end, etc.) fall back to
+ * including the affected measures in source order with a warning.
+ */
+function fullUnrollWithVolta(measures: MeasureData[], warnings: string[]): number[] {
+  const result: number[] = [];
+  let i = 0;
+  let expansionCount = 0;
+
+  while (i < measures.length) {
+    const measure = measures[i];
+
+    if (!measure.repeatStart) {
+      result.push(measure.measureIndex);
+      i++;
+      continue;
+    }
+
+    // Locate the first backward-repeat barline after this repeat-start.
+    const repeatStartIdx = i;
+    let repeatEndIdx = -1;
+    for (let j = i; j < measures.length; j++) {
+      if (measures[j].repeatEnd) {
+        repeatEndIdx = j;
+        break;
+      }
+    }
+
+    if (repeatEndIdx < 0) {
+      // No matching repeat-end — emit as-is and keep scanning.
+      warnings.push(
+        `Repeat section starting at measure ${measure.measureIndex + 1} has no matching end barline; emitted once.`
+      );
+      result.push(measure.measureIndex);
+      i++;
+      continue;
+    }
+
+    // Scan past the backward-repeat barline to include any trailing
+    // volta-bracket measures (e.g. the 2nd-ending block that follows).
+    let sectionEndIdx = repeatEndIdx;
+    for (let j = repeatEndIdx + 1; j < measures.length; j++) {
+      if (measures[j].endings && measures[j].endings!.length > 0) {
+        sectionEndIdx = j;
+      } else {
+        break;
+      }
+    }
+
+    const sectionMeasures = measures.slice(repeatStartIdx, sectionEndIdx + 1);
+
+    // Find where volta endings first appear within this section.
+    const firstEndingOffset = sectionMeasures.findIndex(
+      (m) => m.endings && m.endings.length > 0
+    );
+
+    if (firstEndingOffset < 0) {
+      // No endings — simple double (play the section twice).
+      const indices = sectionMeasures.map((m) => m.measureIndex);
+      result.push(...indices, ...indices);
+      expansionCount++;
+      i = sectionEndIdx + 1;
+      continue;
+    }
+
+    // Body = measures before the first ending bracket.
+    const body = sectionMeasures.slice(0, firstEndingOffset).map((m) => m.measureIndex);
+
+    // Group measures by ending number (a measure can appear in multiple groups
+    // when its endings[] contains multiple values, e.g. [1, 2]).
+    const endingGroups = new Map<number, number[]>();
+    for (const m of sectionMeasures) {
+      if (!m.endings || m.endings.length === 0) {
+        continue;
+      }
+      for (const endNum of m.endings) {
+        const group = endingGroups.get(endNum) ?? [];
+        group.push(m.measureIndex);
+        endingGroups.set(endNum, group);
+      }
+    }
+
+    const sortedEndingNums = [...endingGroups.keys()].sort((a, b) => a - b);
+
+    // Emit one pass per ending: body + ending-N measures.
+    for (const endNum of sortedEndingNums) {
+      result.push(...body, ...(endingGroups.get(endNum) ?? []));
+    }
+
+    expansionCount++;
+    i = sectionEndIdx + 1;
+  }
+
+  if (expansionCount > 0) {
+    warnings.push(
+      `${expansionCount} repeat section${expansionCount > 1 ? "s" : ""} fully expanded (volta-aware).`
+    );
+  }
+
+  return result;
 }
 
 /**
