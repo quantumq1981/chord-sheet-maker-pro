@@ -143,6 +143,41 @@ select:disabled {
   gap: 0.5rem;
 }
 
+/* Accent button: "View as Fakebook" — stands out from plain export buttons */
+.export-actions .btn-primary {
+  background: #2563eb;
+  color: #fff;
+  border-color: #1d4ed8;
+  font-weight: 600;
+}
+.export-actions .btn-primary:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+.export-actions .btn-primary:disabled {
+  background: #93c5fd;
+  border-color: #93c5fd;
+  color: #fff;
+}
+
+/* Back-to-notation link-style button above the chord-chart panel */
+.back-to-notation-btn {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  text-align: left;
+}
+.back-to-notation-btn:hover {
+  background: #dbeafe;
+}
+
 .export-feedback {
   margin-top: 0.75rem;
   padding: 0.6rem 0.75rem;

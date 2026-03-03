@@ -792,10 +792,29 @@ export default function App() {
       setChordProDiagnostics(result.diagnostics);
       if (result.error) { showExportError(`ChordPro generated with issues: ${result.error}`); return; }
       showExportSuccess('ChordPro generated.');
+      return result.chordPro;
     } catch (error) {
       showExportError(`ChordPro conversion failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [chordProUi, loadedFilename, loadedXmlText, showExportError, showExportSuccess]);
+    return undefined;
+  }, [loadedXmlText, loadedFilename, chordProUi, showExportError, showExportSuccess]);
+
+  // ── MusicXML → Fakebook (generate ChordPro then switch to chord-chart view) ──
+  const viewAsFakebook = useCallback(async () => {
+    // Reuse existing ChordPro text if it's already been generated, otherwise generate fresh
+    let pro = chordProText;
+    if (!pro) {
+      pro = await generateChordPro() ?? '';
+      if (!pro) return;
+    }
+    const doc = parseChordChart(pro, 'chordpro');
+    setChartDocument(doc);
+    setTransposeSteps(0);
+    setDetectedFormatLabel('MusicXML (Fakebook)');
+    setRenderError('');
+    setExportFeedback(null);
+    setAppMode('chord-chart');
+  }, [chordProText, generateChordPro]);
 
   const copyChordPro = useCallback(async (text: string) => {
     if (!text) { showExportError('Nothing to copy.'); return; }
@@ -970,6 +989,16 @@ export default function App() {
           {/* ── Chord-chart mode panel ── */}
           {appMode === 'chord-chart' && chartDocument && (
             <>
+              {/* If source was MusicXML, allow jumping back to the notation view */}
+              {loadedXmlText && (
+                <button
+                  type="button"
+                  className="back-to-notation-btn"
+                  onClick={() => setAppMode('notation')}
+                >
+                  ← Back to Notation
+                </button>
+              )}
               <h2>Chart Info</h2>
               <ul>
                 <li><strong>File:</strong> {loadedFilename}</li>
@@ -1090,6 +1119,15 @@ export default function App() {
               <div className="export-actions">
                 <button type="button" onClick={() => void generateChordPro()} disabled={!canExportNotation}>
                   Generate ChordPro
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => void viewAsFakebook()}
+                  disabled={!canExportNotation}
+                  title="Convert to ChordPro and switch to fakebook lead-sheet view"
+                >
+                  View as Fakebook
                 </button>
                 <button type="button" onClick={() => void copyChordPro(chordProText)} disabled={!chordProText}>
                   Copy
