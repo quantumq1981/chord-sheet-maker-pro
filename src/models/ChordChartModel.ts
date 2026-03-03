@@ -67,6 +67,7 @@ export interface ChordChartDocument {
   capo?: string;
   tempo?: string;
   time?: string;
+  genre?: string;
   sections: ChartSection[];
   /** Which parser produced this document. */
   sourceFormat: SourceFormat;

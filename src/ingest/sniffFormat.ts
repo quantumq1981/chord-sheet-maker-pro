@@ -23,10 +23,14 @@ export type DetectedFormat =
   | { format: 'chordpro' }
   | { format: 'ultimateguitar' }
   | { format: 'chords-over-words' }
+  | { format: 'pdf' }
   | { format: 'unknown' };
 
 // ZIP local-file magic: PK\x03\x04
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04] as const;
+
+// PDF magic: %PDF
+const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46] as const;
 
 // Canonical chord token pattern (root + optional quality + optional bass)
 const CHORD_TOKEN_RE =
@@ -53,6 +57,16 @@ function hasZipMagic(bytes: Uint8Array): boolean {
   );
 }
 
+function hasPdfMagic(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === PDF_MAGIC[0] &&
+    bytes[1] === PDF_MAGIC[1] &&
+    bytes[2] === PDF_MAGIC[2] &&
+    bytes[3] === PDF_MAGIC[3]
+  );
+}
+
 function fileExtension(filename: string): string {
   const dot = filename.lastIndexOf('.');
   return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : '';
@@ -75,12 +89,17 @@ function isChordLine(line: string): boolean {
  * @param filename  Original filename, used for extension fallback.
  */
 export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): DetectedFormat {
-  // 1. ZIP magic → MXL
+  const ext = fileExtension(filename);
+
+  // 1a. PDF magic bytes or .pdf extension → PDF
+  if (hasPdfMagic(bytes) || ext === 'pdf') {
+    return { format: 'pdf' };
+  }
+
+  // 1b. ZIP magic → MXL
   if (hasZipMagic(bytes)) {
     return { format: 'mxl' };
   }
-
-  const ext = fileExtension(filename);
 
   // Decode up to 2 KB for text-based heuristics
   const head = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 2048));
@@ -184,6 +203,10 @@ export function sniffFormatFromText(text: string): DetectedFormat {
 
 export function isMusicXmlFormat(detected: DetectedFormat): boolean {
   return detected.format === 'musicxml' || detected.format === 'mxl';
+}
+
+export function isPdfFormat(detected: DetectedFormat): boolean {
+  return detected.format === 'pdf';
 }
 
 export function isChordChartFormat(detected: DetectedFormat): boolean {

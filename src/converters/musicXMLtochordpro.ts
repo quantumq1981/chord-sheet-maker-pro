@@ -73,6 +73,7 @@ export interface ConverterDiagnostics {
   composer?: string;
   key?: string;
   time?: string;
+  tempo?: string;
   measuresCount: number;
   versesDetected: string[];
   hasAnyLyrics: boolean;
@@ -130,6 +131,7 @@ interface ParsedMetadata {
   composer?: string;
   key?: string;
   time?: string;
+  tempo?: string;
 }
 
 const KIND_SUFFIX_MAP: Record<string, string> = {
@@ -281,6 +283,7 @@ export function convertMusicXmlToChordPro(
     diagnostics.composer = metadata.composer;
     diagnostics.key = metadata.key;
     diagnostics.time = metadata.time;
+    diagnostics.tempo = metadata.tempo;
 
     const selectedLyricPartId = selectLyricPart(xmlDoc);
     diagnostics.selectedLyricPartId = selectedLyricPartId;
@@ -358,14 +361,19 @@ export function convertMusicXmlToChordPro(
       if (metadata.title) {
         lines.push(`{title: ${metadata.title}}`);
       }
+      // Use {artist:} — the canonical ChordPro directive — rather than
+      // {composer:} which parsers outside this project won't recognise.
       if (metadata.composer) {
-        lines.push(`{composer: ${metadata.composer}}`);
+        lines.push(`{artist: ${metadata.composer}}`);
       }
       if (mergedOptions.keyPolicy === "emit-if-known" && metadata.key) {
         lines.push(`{key: ${metadata.key}}`);
       }
       if (mergedOptions.timePolicy === "emit-if-known" && metadata.time) {
         lines.push(`{time: ${metadata.time}}`);
+      }
+      if (metadata.tempo) {
+        lines.push(`{tempo: ${metadata.tempo}}`);
       }
     }
 
@@ -458,11 +466,26 @@ function parseMetadata(xmlDoc: Document): ParsedMetadata {
   const beatType = firstAttributes?.querySelector("time > beat-type")?.textContent?.trim();
   const time = beats && beatType ? `${beats}/${beatType}` : undefined;
 
+  // Tempo: look for the first <sound tempo="..."> in any <direction>
+  let tempo: string | undefined;
+  const soundEls = xmlDoc.querySelectorAll("direction > sound[tempo], sound[tempo]");
+  for (const el of soundEls) {
+    const raw = el.getAttribute("tempo");
+    if (raw) {
+      const bpm = Math.round(Number(raw));
+      if (Number.isFinite(bpm) && bpm > 0) {
+        tempo = String(bpm);
+        break;
+      }
+    }
+  }
+
   return {
     title: title?.trim() || undefined,
     composer,
     key,
     time,
+    tempo,
   };
 }
 

@@ -407,6 +407,18 @@ select:disabled {
   margin-bottom: 1.25rem;
 }
 
+/* Tab sections (guitar tablature) render in a fixed-width font so the
+   ASCII tab grid aligns correctly. */
+.cc-section[data-type="tab"] .cc-line,
+.cc-section[data-type="solo"] .cc-line {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.85rem;
+  white-space: pre;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
 .cc-section-label {
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.78rem;

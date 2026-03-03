@@ -12,10 +12,13 @@ import {
 } from './converters/musicXMLtochordpro';
 import {
   sniffFormatFromBytes,
+  sniffFormatFromText,
   isMusicXmlFormat,
   isChordChartFormat,
+  isPdfFormat,
   asSourceFormat,
 } from './ingest/sniffFormat';
+import { extractTextFromPdf } from './ingest/extractTextFromPdf';
 import { parseChordChart } from './parsers/chordProParser';
 import { serializeChordProDocument } from './parsers/serializeChordPro';
 import type { ChordChartDocument } from './models/ChordChartModel';
@@ -70,6 +73,8 @@ const FILE_INPUT_ACCEPT = [
   '.cho', '.chopro', '.chord', '.crd', '.pro',
   // Generic text (UG-style, chords-over-words)
   '.txt',
+  // PDF (UG exports, chord sheets exported from notation apps, etc.)
+  '.pdf', 'application/pdf',
 ].join(',');
 
 // ─── OSMD helpers ─────────────────────────────────────────────────────────────
@@ -535,10 +540,44 @@ export default function App() {
         xmlLoadedRef.current = '';
         setAppMode('chord-chart');
 
+      } else if (isPdfFormat(detected)) {
+        // ── PDF path: extract text then re-sniff ──
+        const pdfText = await extractTextFromPdf(arrayBuffer);
+        const reDetected = sniffFormatFromText(pdfText);
+        const sourceFormat = isChordChartFormat(reDetected)
+          ? (asSourceFormat(reDetected) ?? 'ultimateguitar')
+          : 'ultimateguitar'; // default: assume UG when we can't tell
+
+        const doc = parseChordChart(pdfText, sourceFormat);
+
+        const pdfFormatLabels: Record<string, string> = {
+          chordpro: 'ChordPro (PDF)',
+          ultimateguitar: 'Ultimate Guitar (PDF)',
+          'chords-over-words': 'Chords over Words (PDF)',
+        };
+
+        setLoadedFilename(file.name);
+        setChartDocument(doc);
+        setTransposeSteps(0);
+        setDetectedFormatLabel(pdfFormatLabels[sourceFormat] ?? `PDF (${sourceFormat})`);
+        setRenderError('');
+        setExportFeedback(null);
+        // Clear notation state
+        setLoadedXmlText('');
+        setIsMxl(false);
+        setRenderedPageCount(0);
+        setPdfBlobUrl(null);
+        setChordProText('');
+        setChordProWarnings([]);
+        setChordProDiagnostics(null);
+        if (containerRef.current) containerRef.current.innerHTML = '';
+        xmlLoadedRef.current = '';
+        setAppMode('chord-chart');
+
       } else {
         setRenderError(
-          'Unsupported file type. Upload .xml, .musicxml, .mxl (notation) ' +
-          'or .cho, .chopro, .crd, .pro, .txt (chord chart).'
+          'Unsupported file type. Upload .xml, .musicxml, .mxl (notation), ' +
+          '.cho, .chopro, .crd, .pro, .txt (chord chart), or .pdf (UG / chord-sheet PDF).'
         );
       }
     } catch (error) {
@@ -872,8 +911,16 @@ export default function App() {
             onDragLeave={() => setIsDragging(false)}
             onDrop={onDrop}
           >
-            {appMode === 'empty' && (
-              <p className="placeholder">Upload a MusicXML / MXL file or a ChordPro / text chord chart.</p>
+            {isDragging && (
+              <div className="drop-overlay" aria-hidden>
+                <span>Drop to load</span>
+              </div>
+            )}
+            {appMode === 'empty' && !isDragging && (
+              <p className="placeholder">
+                Drop a file here, or use the file picker below.<br />
+                Supports MusicXML / MXL, ChordPro / text chord charts, and PDF chord sheets.
+              </p>
             )}
             <div ref={containerRef} className="score-container" />
           </section>
@@ -904,6 +951,9 @@ export default function App() {
                 {chartDocument.artist && <li><strong>Artist:</strong> {chartDocument.artist}</li>}
                 {chartDocument.key && <li><strong>Key:</strong> {chartDocument.key}</li>}
                 {chartDocument.capo && <li><strong>Capo:</strong> {chartDocument.capo}</li>}
+                {chartDocument.tempo && <li><strong>Tempo:</strong> {chartDocument.tempo} BPM</li>}
+                {chartDocument.time && <li><strong>Time:</strong> {chartDocument.time}</li>}
+                {chartDocument.genre && <li><strong>Genre:</strong> {chartDocument.genre}</li>}
                 <li><strong>Sections:</strong> {chartDocument.sections.length}</li>
               </ul>
 
