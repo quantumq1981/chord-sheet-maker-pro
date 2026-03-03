@@ -1044,6 +1044,19 @@ export default function App() {
                 <p className="hint-text">
                   Resolved mode: <strong>{chordProDiagnostics.formatModeResolved}</strong> · Measures:{' '}
                   {chordProDiagnostics.measuresCount}
+                  {chordProDiagnostics.keyChanges > 0 && (
+                    <span className="diag-badge diag-badge--warn">
+                      {chordProDiagnostics.keyChanges} key change{chordProDiagnostics.keyChanges > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {chordProDiagnostics.timeChanges > 0 && (
+                    <span className="diag-badge diag-badge--warn">
+                      {chordProDiagnostics.timeChanges} time sig change{chordProDiagnostics.timeChanges > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {chordProDiagnostics.hasPickupBar && (
+                    <span className="diag-badge diag-badge--info">pickup bar</span>
+                  )}
                 </p>
               )}
 
