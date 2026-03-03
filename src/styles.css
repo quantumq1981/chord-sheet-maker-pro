@@ -348,6 +348,38 @@ select:disabled {
   background: #fff;
   border: 2px dashed #cbd5e1;
   border-radius: 0.75rem;
+  position: relative;
+}
+
+.chord-chart-viewport.dragging {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+/* ── Drop overlay ─────────────────────────────────────────────────────────── */
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(37, 99, 235, 0.06);
+  border-radius: 0.625rem;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.drop-overlay span {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #2563eb;
+  background: #fff;
+  padding: 0.5rem 1.75rem;
+  border-radius: 0.5rem;
+  border: 2px solid #93c5fd;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.15);
+  letter-spacing: 0.01em;
 }
 
 /* ── ChordChart component ─────────────────────────────────────────────────── */
