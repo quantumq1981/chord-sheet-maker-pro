@@ -34,9 +34,12 @@ import type {
 
 const CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 
-/** Normalise flat enharmonics to their sharp equivalents for lookup. */
+/** Normalise enharmonic equivalents to the nearest sharp for lookup. */
 const ENHARMONIC: Record<string, string> = {
-  Db: 'C#', Eb: 'D#', Fb: 'E', Gb: 'F#', Ab: 'G#', Bb: 'A#', Cb: 'B',
+  // Flats → sharps
+  Db: 'C#', Eb: 'D#', Fb: 'E',  Gb: 'F#', Ab: 'G#', Bb: 'A#', Cb: 'B',
+  // Double-sharps / theoretical sharps → naturals
+  'B#': 'C', 'E#': 'F',
 };
 
 function transposeRoot(root: string, steps: number): string {
@@ -165,7 +168,7 @@ function LineRow({ line, steps }: LineProps) {
 function SectionBlock({ section, steps }: { section: ChartSection; steps: number }) {
   const label = section.label ?? (section.type !== 'unknown' ? section.type : undefined);
   return (
-    <div className="cc-section">
+    <div className="cc-section" data-type={section.type}>
       {label && <div className="cc-section-label">{label}</div>}
       {section.lines.map((line, i) => (
         <LineRow key={i} line={line} steps={steps} />
@@ -193,12 +196,13 @@ export default function ChordChart({ document: doc, transposeSteps = 0 }: ChordC
           {doc.title && <h2 className="cc-title">{doc.title}</h2>}
           {doc.artist && <p className="cc-artist">{doc.artist}</p>}
           {doc.subtitle && <p className="cc-subtitle">{doc.subtitle}</p>}
-          {(displayKey || doc.capo || doc.tempo || doc.time) && (
+          {(displayKey || doc.capo || doc.tempo || doc.time || doc.genre) && (
             <div className="cc-meta">
               {displayKey && <span>Key: {displayKey}</span>}
               {doc.capo && <span>Capo: {doc.capo}</span>}
-              {doc.tempo && <span>Tempo: {doc.tempo}</span>}
+              {doc.tempo && <span>♩= {doc.tempo}</span>}
               {doc.time && <span>Time: {doc.time}</span>}
+              {doc.genre && <span>{doc.genre}</span>}
             </div>
           )}
         </div>

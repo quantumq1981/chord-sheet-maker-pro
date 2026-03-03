@@ -62,6 +62,7 @@ export function serializeChordProDocument(
   if (doc.capo)  lines.push(`{capo: ${doc.capo}}`);
   if (doc.tempo) lines.push(`{tempo: ${doc.tempo}}`);
   if (doc.time)  lines.push(`{time: ${doc.time}}`);
+  if (doc.genre) lines.push(`{genre: ${doc.genre}}`);
 
   // ── Sections ──
   for (const section of doc.sections) {

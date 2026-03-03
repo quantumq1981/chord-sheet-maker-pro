@@ -26,15 +26,23 @@ import type { SourceFormat } from '../ingest/sniffFormat';
 /** Maps lower-cased directive names to ChordChartDocument metadata keys. */
 const DIRECTIVE_META: Record<
   string,
-  keyof Pick<ChordChartDocument, 'title' | 'artist' | 'subtitle' | 'key' | 'capo' | 'tempo' | 'time'>
+  keyof Pick<ChordChartDocument, 'title' | 'artist' | 'subtitle' | 'key' | 'capo' | 'tempo' | 'time' | 'genre'>
 > = {
+  // Title
   title: 'title',  t: 'title',
+  // Artist / composer — MusicXML converters often emit {composer:} or {author:}
   artist: 'artist', a: 'artist',
+  composer: 'artist', author: 'artist',
+  // Other metadata
   subtitle: 'subtitle', st: 'subtitle',
   key: 'key',
   capo: 'capo',
-  tempo: 'tempo',
-  time: 'time',
+  // Tempo — accept both {tempo:} and {bpm:}
+  tempo: 'tempo', bpm: 'tempo',
+  // Time — accept both {time:} and {meter:}
+  time: 'time', meter: 'time',
+  // Genre / style
+  genre: 'genre', style: 'genre',
 };
 
 /** Maps lower-cased section-start directive names to SectionType. */
@@ -67,7 +75,11 @@ const SECTION_END = new Set([
 
 /** Recognizes UG-style section headers like [Verse 1] or [Chorus]. */
 const UG_SECTION_RE =
-  /^\[(Verse|Chorus|Bridge|Intro|Outro|Pre-?Chorus|Interlude|Hook|Solo|Instrumental|Refrain)[^\]]*\]$/i;
+  /^\[(Verse|Chorus|Bridge|Intro|Outro|Pre-?Chorus|Interlude|Hook|Solo|Instrumental|Refrain|Tab|Break|Fill|Riff|Coda|Tag|Vamp|Outro Solo|Guitar Solo|Piano Solo)[^\]]*\]$/i;
+
+/** UG metadata header line: "Key: G", "Artist: Beatles", "BPM: 120", etc. */
+const UG_META_LINE_RE =
+  /^(song|title|artist|author|composer|key|capo|bpm|tempo|tuning|genre|style|time|meter|time\s+signature|album)\s*[:\-]\s*(.+)$/i;
 
 /** Chord token pattern used by the chords-over-words heuristic. */
 const CHORD_TOKEN_RE =
@@ -224,12 +236,96 @@ export function parseChordPro(text: string): ChordChartDocument {
 // ─── 2. Ultimate Guitar parser ────────────────────────────────────────────────
 
 /**
- * Parse Ultimate Guitar–style text (section headers in [Brackets] + inline
- * bracket chords).  Reuses `parseChordPro` since UG files are handled there.
+ * Parse Ultimate Guitar–style text.
+ *
+ * UG files share ChordPro's inline-bracket-chord syntax but prefix most songs
+ * with a plain-text metadata header (before the first [Section] label) that
+ * looks like:
+ *
+ *   Artist: The Beatles
+ *   Song: Hey Jude
+ *   Key: F
+ *   Capo: 1
+ *   BPM: 75
+ *   Tuning: Standard E
+ *   Genre: Rock
+ *
+ * This header is NOT ChordPro-directive syntax, so `parseChordPro` silently
+ * ignores it.  This function pre-scans those lines before delegating to the
+ * shared ChordPro parser, then merges the extracted metadata in.
  */
 export function parseUltimateGuitar(text: string): ChordChartDocument {
-  const doc = parseChordPro(text);
+  const normalized = normalizeLineEndings(text);
+  const lines = normalized.split('\n');
+
+  // ── Pre-scan header metadata ──
+  // Scan all lines before the first UG section header for "Key: Value" pairs.
+  // We also scan a short window past section headers in case metadata appears
+  // after a blank intro section (some editors put it there).
+  const headerMeta: Partial<Pick<ChordChartDocument, 'title' | 'artist' | 'subtitle' | 'key' | 'capo' | 'tempo' | 'time' | 'genre'>> = {};
+  let foundFirstSection = false;
+  let linesScannedPastSection = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (UG_SECTION_RE.test(trimmed)) {
+      foundFirstSection = true;
+      continue;
+    }
+
+    // Only scan up to 8 lines past the first section for stray metadata
+    if (foundFirstSection) {
+      if (linesScannedPastSection++ >= 8) break;
+      // Stop scanning if we hit content that looks like chord/lyric lines
+      if (trimmed.includes('[') && !UG_META_LINE_RE.test(trimmed)) break;
+    }
+
+    const m = trimmed.match(UG_META_LINE_RE);
+    if (!m) continue;
+
+    const key = m[1].toLowerCase().replace(/\s+/g, '');
+    const value = m[2].trim();
+    if (!value) continue;
+
+    switch (key) {
+      case 'song':
+      case 'title':   headerMeta.title    = headerMeta.title    ?? value; break;
+      case 'artist':
+      case 'author':
+      case 'composer':headerMeta.artist   = headerMeta.artist   ?? value; break;
+      case 'key':     headerMeta.key      = headerMeta.key      ?? value; break;
+      case 'capo':    headerMeta.capo     = headerMeta.capo     ?? value; break;
+      case 'bpm':
+      case 'tempo':   headerMeta.tempo    = headerMeta.tempo    ?? value; break;
+      case 'time':
+      case 'meter':
+      case 'timesignature': headerMeta.time = headerMeta.time   ?? value; break;
+      case 'genre':
+      case 'style':   headerMeta.genre    = headerMeta.genre    ?? value; break;
+      case 'tuning':
+        // Preserve tuning as subtitle only if nothing else is there
+        headerMeta.subtitle = headerMeta.subtitle ?? `Tuning: ${value}`;
+        break;
+    }
+  }
+
+  // ── Parse chord content ──
+  const doc = parseChordPro(normalized);
   doc.sourceFormat = 'ultimateguitar';
+
+  // Merge: header metadata wins over anything the ChordPro parser found
+  // (UG files rarely have ChordPro-style directives, but handle the case)
+  if (headerMeta.title)    doc.title    = headerMeta.title;
+  if (headerMeta.artist)   doc.artist   = headerMeta.artist;
+  if (headerMeta.key)      doc.key      = headerMeta.key;
+  if (headerMeta.capo)     doc.capo     = headerMeta.capo;
+  if (headerMeta.tempo)    doc.tempo    = headerMeta.tempo;
+  if (headerMeta.time)     doc.time     = headerMeta.time;
+  if (headerMeta.genre)    doc.genre    = headerMeta.genre;
+  if (headerMeta.subtitle) doc.subtitle = headerMeta.subtitle;
+
   return doc;
 }
 
