@@ -18,7 +18,7 @@
  *   8.  Extension fallback            → chordpro | unknown
  */
 
-export type SourceFormat = 'chordpro' | 'ultimateguitar' | 'chords-over-words' | 'abc' | 'guitarpro';
+export type SourceFormat = 'chordpro' | 'ultimateguitar' | 'chords-over-words' | 'abc' | 'guitarpro' | 'fakebook';
 
 export type DetectedFormat =
   | { format: 'mxl' }
@@ -28,8 +28,8 @@ export type DetectedFormat =
   | { format: 'chords-over-words' }
   | { format: 'abc' }
   | { format: 'guitarpro' }
+  | { format: 'fakebook' }
   | { format: 'pdf' }
-  | { format: 'guitarpro' }
   | { format: 'unknown' };
 
 // ZIP local-file magic: PK\x03\x04
@@ -64,6 +64,9 @@ const BRACKET_CHORD_RE = /\[[A-G][#b]?[^\]\n]{0,10}\]/;
 
 // ABC notation: X: index field (always present and first) + typical header fields
 const ABC_HEADER_RE = /^X\s*:\s*\d/m;
+
+// Fake-book lead-sheet: repeat-bar barlines (|: or :|) or ·/· simile marker
+const FAKEBOOK_RE = /(?:^\s*\|:[ \t]|[ \t]:\|\s*$|\u00B7\/\u00B7)/m;
 
 function hasZipMagic(bytes: Uint8Array): boolean {
   return (
@@ -157,6 +160,11 @@ export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): Detected
     return { format: 'abc' };
   }
 
+  // 3b. Fake-book lead-sheet — |: repeat-bar barlines or ·/· simile marker
+  if (FAKEBOOK_RE.test(head)) {
+    return { format: 'fakebook' };
+  }
+
   // 4. ChordPro directives
   if (CHORDPRO_DIRECTIVE_RE.test(head)) {
     return { format: 'chordpro' };
@@ -217,6 +225,11 @@ export function sniffFormatFromText(text: string): DetectedFormat {
     return { format: 'abc' };
   }
 
+  // Fake-book lead-sheet — |: repeat-bar barlines or ·/· simile marker
+  if (FAKEBOOK_RE.test(head)) {
+    return { format: 'fakebook' };
+  }
+
   // ChordPro directives
   if (CHORDPRO_DIRECTIVE_RE.test(head)) {
     return { format: 'chordpro' };
@@ -268,7 +281,8 @@ export function isChordChartFormat(detected: DetectedFormat): boolean {
     detected.format === 'chordpro' ||
     detected.format === 'ultimateguitar' ||
     detected.format === 'chords-over-words' ||
-    detected.format === 'abc'
+    detected.format === 'abc' ||
+    detected.format === 'fakebook'
   );
   // Note: 'guitarpro' is handled separately via isGuitarProFormat — it has its
   // own async parse path rather than going through parseChordChart().
@@ -279,7 +293,8 @@ export function asSourceFormat(detected: DetectedFormat): SourceFormat | null {
     detected.format === 'chordpro' ||
     detected.format === 'ultimateguitar' ||
     detected.format === 'chords-over-words' ||
-    detected.format === 'abc'
+    detected.format === 'abc' ||
+    detected.format === 'fakebook'
   ) {
     return detected.format;
   }

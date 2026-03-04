@@ -27,7 +27,13 @@ export interface CommentToken {
   text: string;
 }
 
-export type ChartToken = ChordToken | LyricToken | CommentToken;
+export interface BarlineToken {
+  kind: 'barline';
+  /** '|' = single bar, '|:' = repeat start, ':|' = repeat end, '||' = double bar */
+  text: '|' | '|:' | ':|' | '||';
+}
+
+export type ChartToken = ChordToken | LyricToken | CommentToken | BarlineToken;
 
 // ─── Line ────────────────────────────────────────────────────────────────────
 

@@ -531,6 +531,7 @@ export default function App() {
           ultimateguitar: 'Ultimate Guitar',
           'chords-over-words': 'Chords over Words',
           abc: 'ABC Notation',
+          fakebook: 'Fake Book',
         };
 
         setLoadedFilename(file.name);

@@ -29,6 +29,7 @@ import type {
   ChartLine,
   ChartToken,
   TabColumn,
+  BarlineToken,
 } from '../models/ChordChartModel';
 
 // ─── Transpose helpers ────────────────────────────────────────────────────────
@@ -105,8 +106,91 @@ function tokensToPairs(tokens: ChartToken[]): Pair[] {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+/** The Unicode simile / repeat-last-bar symbol used in fake-book notation. */
+const SIMILE = '\u00B7/\u00B7';
+
 function ChordSpan({ text, steps }: { text: string; steps: number }) {
   return <span className="cc-chord">{transposeChord(text, steps)}</span>;
+}
+
+// ─── Fake-book grid rendering ─────────────────────────────────────────────────
+
+/**
+ * Render one bar row from fake-book notation.
+ *
+ * The token stream is structured as:
+ *   barline(|:)  chord …  barline(|)  chord …  barline(:|)
+ *
+ * We group chords between barlines into "bar cells" and render each cell as a
+ * bordered box.  |: and :| receive thicker purple borders (repeat signs).
+ * The ·/· simile marker gets a lighter italic style.
+ */
+function FakeBookRow({ tokens, steps }: { tokens: ChartToken[]; steps: number }) {
+  interface Bar {
+    chords: ChartToken[];
+    repeatStart: boolean;
+    repeatEnd: boolean;
+  }
+
+  const bars: Bar[] = [];
+  let chords: ChartToken[] = [];
+  let repeatStart = false;
+  let pendingRepeatEnd = false;
+
+  const flushBar = (repeatEnd = false) => {
+    if (chords.length > 0 || repeatStart || repeatEnd) {
+      bars.push({ chords, repeatStart, repeatEnd });
+      chords = [];
+      repeatStart = false;
+    }
+  };
+
+  for (const token of tokens) {
+    if (token.kind === 'barline') {
+      const bl = (token as BarlineToken).text;
+      if (bl === '|:') {
+        flushBar(pendingRepeatEnd);
+        pendingRepeatEnd = false;
+        repeatStart = true;
+      } else if (bl === ':|') {
+        flushBar(true);
+        pendingRepeatEnd = false;
+      } else if (bl === '||') {
+        flushBar(true);
+        repeatStart = true;
+      } else {
+        // single |
+        flushBar(pendingRepeatEnd);
+        pendingRepeatEnd = false;
+      }
+    } else {
+      chords.push(token);
+    }
+  }
+  flushBar(pendingRepeatEnd);
+
+  return (
+    <div className="cc-grid-row">
+      {bars.map((bar, i) => (
+        <div
+          key={i}
+          className={[
+            'cc-grid-bar',
+            bar.repeatStart ? 'cc-grid-bar--repeat-start' : '',
+            bar.repeatEnd   ? 'cc-grid-bar--repeat-end'   : '',
+          ].filter(Boolean).join(' ')}
+        >
+          {bar.chords.map((t, j) => {
+            if (t.kind !== 'chord') return null;
+            if (t.text === SIMILE) {
+              return <span key={j} className="cc-simile">{SIMILE}</span>;
+            }
+            return <ChordSpan key={j} text={t.text} steps={steps} />;
+          })}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 interface LineProps {
@@ -121,6 +205,11 @@ function LineRow({ line, steps }: LineProps) {
   // Single comment token
   if (tokens.length === 1 && tokens[0].kind === 'comment') {
     return <div className="cc-line cc-comment">{tokens[0].text}</div>;
+  }
+
+  // Fake-book grid line (contains barline tokens)
+  if (tokens.some((t) => t.kind === 'barline')) {
+    return <FakeBookRow tokens={tokens} steps={steps} />;
   }
 
   const hasChord = tokens.some((t) => t.kind === 'chord');
