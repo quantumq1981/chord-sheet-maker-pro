@@ -6,13 +6,16 @@
  * the most likely format.  No external dependencies.
  *
  * Detection order (first match wins):
- *   1. ZIP magic bytes → MXL (compressed MusicXML)
- *   2. XML prolog + score root element → MusicXML
- *   3. ChordPro metadata directives  → chordpro
- *   4. UG-style section headers       → ultimateguitar
- *   5. Inline bracket chords          → chordpro (bracket style)
- *   6. Chord-over-words heuristic     → chords-over-words
- *   7. File-extension fallback        → chordpro or unknown
+ *   1a. PDF magic / .pdf              → pdf
+ *   1b. GP extension or magic bytes   → guitarpro   (.gp .gp3 .gp4 .gp5 .gpx)
+ *   1c. ZIP magic (non-GP)            → mxl
+ *   2.  XML + score root element      → musicxml
+ *   3.  ABC X: header                 → abc
+ *   4.  ChordPro directives           → chordpro
+ *   5.  UG section headers            → ultimateguitar
+ *   6.  Inline bracket chords         → chordpro
+ *   7.  Chord-over-words heuristic    → chords-over-words
+ *   8.  Extension fallback            → chordpro | unknown
  */
 
 export type SourceFormat = 'chordpro' | 'ultimateguitar' | 'chords-over-words' | 'abc' | 'guitarpro';
@@ -24,6 +27,7 @@ export type DetectedFormat =
   | { format: 'ultimateguitar' }
   | { format: 'chords-over-words' }
   | { format: 'abc' }
+  | { format: 'guitarpro' }
   | { format: 'pdf' }
   | { format: 'guitarpro' }
   | { format: 'unknown' };
@@ -100,6 +104,7 @@ function fileExtension(filename: string): string {
   const dot = filename.lastIndexOf('.');
   return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : '';
 }
+
 
 /** Returns true if every non-empty whitespace-delimited token looks like a chord. */
 function isChordLine(line: string): boolean {
@@ -265,6 +270,8 @@ export function isChordChartFormat(detected: DetectedFormat): boolean {
     detected.format === 'chords-over-words' ||
     detected.format === 'abc'
   );
+  // Note: 'guitarpro' is handled separately via isGuitarProFormat — it has its
+  // own async parse path rather than going through parseChordChart().
 }
 
 export function asSourceFormat(detected: DetectedFormat): SourceFormat | null {

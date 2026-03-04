@@ -1,22 +1,52 @@
 /**
  * gpParser.ts
  *
- * Parse Guitar Pro (.gp, .gp3, .gp4, .gp5, .gpx) and PowerTab (.ptb) files
- * into a ChordChartDocument using the AlphaTab library as the binary decoder.
+ * Parses Guitar Pro files (.gp, .gp3, .gp4, .gp5, .gpx) into a normalized
+ * ChordChartDocument using AlphaTab as the binary decoder.
  *
- * AlphaTab is lazy-imported so the ~3 MB library stays out of the initial
- * bundle and is only loaded when the user opens a Guitar Pro file.
+ * AlphaTab (~3 MB) is lazy-loaded via dynamic import so it is only fetched
+ * when the user actually opens a Guitar Pro file.
  *
- * Document structure produced
- * ─────────────────────────────
- * For each named section in the score (from MasterBar.section markers):
- *   1. A chord/lyric ChartSection (type derived from the section label,
- *      lines = one ChartLine per bar with chord-change + lyric tokens).
- *   2. A 'tab' ChartSection (tabColumns = one TabColumn per beat) so the
- *      renderer can display ASCII tablature for that section.
+ * Conversion strategy
+ * ───────────────────
+ *  1. Load score via AlphaTab's ScoreLoader (synchronous binary parsing).
+ *  2. Extract document-level metadata: title, artist, tempo.
+ *  3. Identify the "lyric track": the track whose beats carry the most
+ *     beat.text syllables (typically the melody or vocal line).
+ *  4. Identify the "chord track": the first non-percussion track (usually the
+ *     lead guitar or piano).  If it coincides with the lyric track, one pass
+ *     yields both chords and lyrics.
+ *  5. Walk masterBars in order.  When a Section marker appears, close the
+ *     current ChartSection and start a new one (verse, chorus, etc.).
+ *  6. Within each measure:
+ *       • Chord source priority: beat.chord.name > fret-to-chord recognition
+ *         (fret-to-chord is only attempted when ≥ 3 non-muted notes are
+ *          sounding, to avoid false positives on melody runs).
+ *       • Lyric source: beat.text from the lyric track; falls back to
+ *         beat.text on the chord track when they are the same.
+ *       • Emit a chord token whenever the chord changes.
+ *       • Emit a lyric token for every non-empty beat.text.
+ *       • When a lyric is present, repeat the current chord (even if
+ *         unchanged) so each syllable gets an anchor in the rendered output.
+ *  7. After the main chord/lyric sections, append one 'tab' section per
+ *     non-percussion track containing all beats as TabColumn data.
+ *     The renderer groups them into rows and formats ASCII tablature.
  *
- * If the score has no section markers a single chord section + single tab
- * section cover the whole song.
+ * AlphaTab object model notes
+ * ───────────────────────────
+ * All AlphaTab types are accessed as `any` to avoid pulling in the large
+ * `@coderline/alphatab` type declarations at compile time (they are used only
+ * at run time via the dynamic import).  Key properties used:
+ *
+ *   score.title / .artist / .tempo / .masterBars[] / .tracks[]
+ *   track.name / .isPercussion / .staves[]
+ *   staff.bars[] / .tuning (number[], index 0 = highest string)
+ *   bar.voices[] / .masterBar
+ *   voice.beats[] / .isEmpty
+ *   beat.notes[] / .text / .chord / .isEmpty
+ *   beat.chord.name (string)
+ *   note.string (1-based, 1 = highest string) / .fret / .isMute / .isDead
+ *   masterBar.section?.text / .section?.marker
  */
 
 import type {
@@ -24,202 +54,369 @@ import type {
   ChartSection,
   ChartLine,
   ChartToken,
+  SectionType,
   TabColumn,
 } from '../models/ChordChartModel';
-import { fretsToChordName, STANDARD_6_STRING_TUNING, type FretNote } from '../utils/fretToChord';
-import { sectionTypeFromLabel } from '../utils/sectionUtils';
+import { fretsToChordName, STANDARD_6_STRING_TUNING } from '../utils/fretToChord';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Measures to pack into a single chord/lyric display line. */
+const MEASURES_PER_LINE = 4;
+
+/** Minimum simultaneous notes required to attempt fret-to-chord recognition. */
+const MIN_NOTES_FOR_CHORD = 3;
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-/** Count the total number of notes across all staves/bars/voices of a track. */
-function countNotes(track: { staves: { bars: { voices: { beats: { notes: unknown[] }[] }[] }[] }[] }): number {
-  let n = 0;
-  for (const staff of track.staves)
-    for (const bar of staff.bars)
-      for (const voice of bar.voices)
-        for (const beat of voice.beats)
-          n += beat.notes.length;
-  return n;
+/** Map a Guitar Pro section marker string to a SectionType. */
+function sectionTypeFromLabel(label: string): SectionType {
+  const l = label.toLowerCase();
+  if (l.includes('verse'))                               return 'verse';
+  if (l.includes('chorus') || l.includes('refrain'))    return 'chorus';
+  if (l.includes('bridge'))                             return 'bridge';
+  if (l.includes('intro'))                              return 'intro';
+  if (l.includes('outro') || l.includes('coda'))       return 'outro';
+  if (l.includes('solo'))                               return 'solo';
+  if (l.includes('interlude'))                          return 'interlude';
+  if (l.includes('pre') && l.includes('chorus'))        return 'pre-chorus';
+  return 'unknown';
 }
 
-/** Count beats that carry lyric or text annotations across all staves/bars/voices. */
-function countLyricBeats(
-  track: { staves: { bars: { voices: { beats: { lyrics: string[] | null; text: string | null }[] }[] }[] }[] },
-): number {
-  let n = 0;
-  for (const staff of track.staves)
-    for (const bar of staff.bars)
-      for (const voice of bar.voices)
-        for (const beat of voice.beats)
-          if (beat.lyrics?.length || beat.text) n++;
-  return n;
-}
-
-/** Flush a pair of (chord/lyric section, tab section) into the document. */
-function flushSectionPair(
-  doc: ChordChartDocument,
-  chordSec: ChartSection,
-  tabCols: TabColumn[],
-  tabLabel: string | undefined,
-): void {
-  if (chordSec.lines.length > 0) {
-    doc.sections.push(chordSec);
-  }
-  if (tabCols.length > 0) {
-    doc.sections.push({
-      type: 'tab',
-      label: tabLabel,
-      lines: [],
-      tabColumns: tabCols,
-    });
-  }
-}
-
-// ─── Public API ───────────────────────────────────────────────────────────────
-
-export async function parseGuitarPro(bytes: Uint8Array): Promise<ChordChartDocument> {
-  // Lazy-load AlphaTab so it doesn't inflate the initial bundle.
-  const at = await import('@coderline/alphatab');
-
-  let score: ReturnType<typeof at.importer.ScoreLoader.loadScoreFromBytes>;
-  try {
-    score = at.importer.ScoreLoader.loadScoreFromBytes(bytes);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // Provide a friendlier message for unsupported sub-formats (e.g. PowerTab)
-    if (msg.toLowerCase().includes('unsupported') || msg.toLowerCase().includes('format')) {
-      throw new Error(
-        `This file format is not supported by the Guitar Pro parser. ` +
-        `Accepted formats: GP3, GP4, GP5, GPX (GP6), GP7/GP8. ` +
-        `PowerTab (.ptb) is not yet supported. (${msg})`,
-      );
+/** Safely read beats from the first non-empty voice in a bar. */
+function beatsFromBar(bar: any): any[] {
+  if (!bar?.voices) return [];
+  for (const voice of bar.voices) {
+    if (!voice.isEmpty && voice.beats?.length) {
+      return Array.from(voice.beats);
     }
-    throw new Error(`Failed to parse Guitar Pro file: ${msg}`);
+  }
+  return [];
+}
+
+/** Safely read bars from the first staff of a track. */
+function barsFromTrack(track: any): any[] {
+  const staff = track?.staves?.[0];
+  return staff?.bars ? Array.from(staff.bars) : [];
+}
+
+/**
+ * Derive the open-string MIDI notes for a staff.
+ * AlphaTab exposes `staff.tuning` as an array where index 0 is the highest
+ * string.  Falls back to standard 6-string tuning if absent.
+ */
+function staffTuning(track: any): number[] {
+  const tuning = track?.staves?.[0]?.tuning;
+  if (Array.isArray(tuning) && tuning.length > 0) {
+    return tuning as number[];
+  }
+  return [...STANDARD_6_STRING_TUNING];
+}
+
+/**
+ * Extract a chord name from a single beat.
+ *
+ * Priority order:
+ *  1. Explicit chord annotation (beat.chord.name) — most reliable.
+ *  2. Fret-to-chord recognition — only when ≥ MIN_NOTES_FOR_CHORD non-muted,
+ *     non-dead notes are sounding (avoids tagging melody runs as chords).
+ */
+function chordNameFromBeat(beat: any, openMidiNotes: number[]): string | null {
+  // 1. Explicit annotation
+  const explicit: string | undefined = beat?.chord?.name;
+  if (explicit) return explicit.trim() || null;
+
+  // 2. Fret analysis
+  const notes: any[] = beat?.notes ? Array.from(beat.notes) : [];
+  const soundingNotes = notes.filter(
+    (n: any) => !n.isMute && !n.isDead && typeof n.fret === 'number',
+  );
+  if (soundingNotes.length < MIN_NOTES_FOR_CHORD) return null;
+
+  return fretsToChordName(
+    openMidiNotes,
+    soundingNotes.map((n: any) => ({
+      stringIndex: (n.string as number) - 1, // AlphaTab: 1-based → 0-based
+      fret: n.fret as number,
+    })),
+  );
+}
+
+/**
+ * Find the track whose beats carry the most lyric text.
+ * Falls back to the chord track if nothing has lyrics.
+ */
+function findLyricTrack(tracks: any[], chordTrack: any): any {
+  let bestTrack = chordTrack;
+  let bestCount = 0;
+
+  for (const track of tracks) {
+    let count = 0;
+    for (const bar of barsFromTrack(track)) {
+      for (const beat of beatsFromBar(bar)) {
+        if (beat?.text) count++;
+      }
+    }
+    if (count > bestCount) {
+      bestCount = count;
+      bestTrack = track;
+    }
   }
 
+  return bestTrack;
+}
+
+// ─── Section / line builders ──────────────────────────────────────────────────
+
+/** One measure's worth of processed events. */
+interface MeasureData {
+  measureIndex: number;
+  /** Ordered list of (chord?, lyric?) pairs for this measure. */
+  events: Array<{ chord: string | null; lyric: string | null }>;
+}
+
+/**
+ * Convert raw track bars into MeasureData, pairing the chord track
+ * (for harmony) with the lyric track (for syllables).
+ */
+function buildMeasureData(
+  chordBars:  any[],
+  lyricBars:  any[],
+  openMidi:   number[],
+): MeasureData[] {
+  const measures: MeasureData[] = [];
+  const count = chordBars.length;
+
+  for (let mi = 0; mi < count; mi++) {
+    const cBeats = beatsFromBar(chordBars[mi]);
+    const lBeats = beatsFromBar(lyricBars[mi] ?? null);
+    const events: Array<{ chord: string | null; lyric: string | null }> = [];
+
+    const beatCount = Math.max(cBeats.length, lBeats.length);
+    for (let bi = 0; bi < beatCount; bi++) {
+      const cBeat = cBeats[bi] ?? null;
+      const lBeat = lBeats[bi] ?? null;
+
+      const chord = cBeat ? chordNameFromBeat(cBeat, openMidi) : null;
+      // Prefer lyric from the dedicated lyric track; fall back to chord track
+      const lyricRaw: string = lBeat?.text || cBeat?.text || '';
+      const lyric = lyricRaw.trim() || null;
+
+      if (chord !== null || lyric !== null) {
+        events.push({ chord, lyric });
+      }
+    }
+
+    measures.push({ measureIndex: mi, events });
+  }
+
+  return measures;
+}
+
+/**
+ * Convert a slice of MeasureData into ChartLines.
+ *
+ * Rules:
+ *  • Group MEASURES_PER_LINE measures into one line.
+ *  • Within a line: emit a chord token when the chord changes; always emit
+ *    a chord token when there is a lyric (so syllables stay anchored).
+ *  • Consecutive identical chords with no lyric are de-duplicated.
+ */
+function measureSliceToLines(measures: MeasureData[]): ChartLine[] {
+  const lines: ChartLine[] = [];
+
+  for (let li = 0; li < measures.length; li += MEASURES_PER_LINE) {
+    const slice = measures.slice(li, li + MEASURES_PER_LINE);
+    const tokens: ChartToken[] = [];
+    let lastEmittedChord: string | null = null;
+
+    for (const measure of slice) {
+      for (const { chord, lyric } of measure.events) {
+        const effectiveChord: string | null = chord ?? lastEmittedChord;
+
+        if (lyric) {
+          // Always anchor a lyric to a chord (repeat even if unchanged)
+          if (effectiveChord) {
+            tokens.push({ kind: 'chord', text: effectiveChord });
+            lastEmittedChord = effectiveChord;
+          }
+          tokens.push({ kind: 'lyric', text: `${lyric} ` });
+        } else if (chord && chord !== lastEmittedChord) {
+          // Chord-only change: emit once
+          tokens.push({ kind: 'chord', text: chord });
+          lastEmittedChord = chord;
+        }
+
+        if (chord) lastEmittedChord = chord;
+      }
+    }
+
+    if (tokens.length > 0) lines.push({ tokens });
+  }
+
+  return lines;
+}
+
+// ─── Tab section builder ──────────────────────────────────────────────────────
+
+/**
+ * Build a 'tab' ChartSection for a single guitar track.
+ *
+ * Each beat becomes one TabColumn.  Muted notes are stored as -1,
+ * dead notes as -1, sounding notes as their fret number,
+ * absent strings as null.
+ */
+function buildTabSection(track: any, _masterBars: any[]): ChartSection | null {
+  const bars = barsFromTrack(track);
+  if (bars.length === 0) return null;
+
+  const tuning = staffTuning(track);
+  const stringCount = tuning.length;
+  const columns: TabColumn[] = [];
+
+  for (let mi = 0; mi < bars.length; mi++) {
+    for (const beat of beatsFromBar(bars[mi])) {
+      // Build one column per beat
+      const col: (number | null)[] = new Array(stringCount).fill(null);
+
+      const notes: any[] = beat?.notes ? Array.from(beat.notes) : [];
+      for (const note of notes) {
+        const strIdx = (note.string as number) - 1; // 1-based → 0-based
+        if (strIdx < 0 || strIdx >= stringCount) continue;
+
+        if (note.isMute || note.isDead) {
+          col[strIdx] = -1; // muted / dead
+        } else if (typeof note.fret === 'number') {
+          col[strIdx] = note.fret;
+        }
+      }
+
+      // Only add the column if at least one string has data
+      if (col.some((v) => v !== null)) {
+        columns.push({ strings: col });
+      }
+    }
+  }
+
+  if (columns.length === 0) return null;
+
+  const label = (track.name as string | undefined)?.trim() || 'Guitar Tab';
+
+  return {
+    type: 'tab',
+    label,
+    lines: [], // Content is in tabColumns; lines stays empty
+    tabColumns: columns,
+  };
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+
+/**
+ * Parse Guitar Pro bytes into a ChordChartDocument.
+ *
+ * @throws  If AlphaTab cannot be loaded or the file cannot be parsed.
+ */
+export async function parseGuitarPro(bytes: Uint8Array): Promise<ChordChartDocument> {
+  // ── 1. Load AlphaTab lazily ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let at: any;
+  try {
+    at = await import('@coderline/alphatab');
+  } catch {
+    throw new Error(
+      'Could not load the Guitar Pro parser library (@coderline/alphatab). ' +
+      'Check your network connection and try again.',
+    );
+  }
+
+  // ── 2. Decode the score ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let score: any;
+  try {
+    const settings = new at.Settings();
+    score = at.importer.ScoreLoader.loadScoreFromBytes(bytes, settings);
+  } catch (err) {
+    throw new Error(
+      `Guitar Pro file could not be read: ${(err as Error).message ?? String(err)}`,
+    );
+  }
+
+  // ── 3. Document metadata ──
   const doc: ChordChartDocument = {
-    sections: [],
+    title:        (score.title  as string | undefined)?.trim()  || undefined,
+    artist:       (score.artist as string | undefined)?.trim()  || undefined,
+    tempo:        typeof score.tempo === 'number' ? String(score.tempo) : undefined,
+    sections:     [],
     sourceFormat: 'guitarpro',
-    title: score.title || undefined,
-    artist: score.artist || undefined,
-    tempo: score.tempo > 0 ? String(score.tempo) : undefined,
-    subtitle: score.subTitle || undefined,
   };
 
-  // ── Pick tracks ────────────────────────────────────────────────────────────
+  const masterBars: any[] = score.masterBars ? Array.from(score.masterBars) : [];
+  const tracks: any[]     = score.tracks     ? Array.from(score.tracks)     : [];
 
-  const guitarTracks = score.tracks.filter((t) => !t.isPercussion);
-  if (guitarTracks.length === 0) return doc;
+  if (tracks.length === 0 || masterBars.length === 0) return doc;
 
-  // Chord track = non-percussion track with the most notes.
-  const chordTrack = guitarTracks.reduce(
-    (best, t) => (countNotes(t) > countNotes(best) ? t : best),
-    guitarTracks[0],
-  );
+  // ── 4. Track selection ──
+  const chordTrack = tracks.find((t: any) => !t.isPercussion) ?? tracks[0];
+  const lyricTrack = findLyricTrack(tracks, chordTrack);
 
-  // Lyric track = non-percussion track with the most lyric/text beats.
-  const lyricTrack = guitarTracks.reduce(
-    (best, t) => (countLyricBeats(t) > countLyricBeats(best) ? t : best),
-    guitarTracks[0],
-  );
+  const openMidi     = staffTuning(chordTrack);
+  const chordBars    = barsFromTrack(chordTrack);
+  const lyricBars    = barsFromTrack(lyricTrack);
+  const measureData  = buildMeasureData(chordBars, lyricBars, openMidi);
 
-  const staff = chordTrack.staves[0];
-  if (!staff) return doc;
-
-  // staff.tuning: index 0 = highest-pitch string (top line of tab)
-  const tuning: number[] = staff.tuning.length > 0
-    ? [...staff.tuning]
-    : [...STANDARD_6_STRING_TUNING];
-  const numStrings = tuning.length;
-
-  const lyricStaff = lyricTrack.staves[0];
-  const numBars = Math.min(staff.bars.length, score.masterBars.length);
-
-  // ── Process bars ───────────────────────────────────────────────────────────
-
-  let chordSection: ChartSection = { type: 'unknown', lines: [] };
-  let tabCols: TabColumn[] = [];
-  let tabLabel: string | undefined;
-
-  for (let barIdx = 0; barIdx < numBars; barIdx++) {
-    const masterBar = score.masterBars[barIdx];
-    const bar = staff.bars[barIdx];
-    const lyricBar = lyricStaff?.bars[barIdx];
-
-    // New section marker → flush the current pair and start fresh.
-    if (masterBar.section) {
-      flushSectionPair(doc, chordSection, tabCols, tabLabel);
-
-      const sLabel = (masterBar.section.text || masterBar.section.marker).trim();
-      const sType = sectionTypeFromLabel(sLabel);
-      chordSection = { type: sType, label: sLabel, lines: [] };
-      tabCols = [];
-      tabLabel = sLabel;
-    }
-
-    // Use voice 0 (primary melody voice).
-    const voice = bar.voices[0];
-    const lyricVoice = lyricBar?.voices[0];
-    if (!voice) continue;
-
-    const barTokens: ChartToken[] = [];
-    let lastChordInBar: string | null = null;
-
-    for (let beatIdx = 0; beatIdx < voice.beats.length; beatIdx++) {
-      const beat = voice.beats[beatIdx];
-      const lyricBeat = lyricVoice?.beats[beatIdx];
-
-      if (beat.isRest || beat.notes.length === 0) continue;
-
-      // ── Chord name ────────────────────────────────────────────────────────
-
-      let chordName: string | null = beat.chord?.name?.trim() || null;
-
-      if (!chordName && beat.notes.length >= 2) {
-        const fretNotes: FretNote[] = beat.notes
-          // AlphaTab string 1 = lowest string = highest stringIndex
-          .filter((n) => !n.isDead && n.fret !== undefined)
-          .map((n) => ({ stringIndex: numStrings - n.string, fret: n.fret }));
-        if (fretNotes.length >= 2) {
-          chordName = fretsToChordName(tuning, fretNotes);
-        }
-      }
-
-      // ── Lyric text ────────────────────────────────────────────────────────
-
-      const rawLyrics = lyricBeat?.lyrics ?? beat.lyrics;
-      const rawText = lyricBeat?.text ?? beat.text;
-      const lyricText = (rawLyrics?.[0] ?? rawText ?? '').trim() || null;
-
-      // Emit chord token only when the chord changes within the bar.
-      if (chordName && chordName !== lastChordInBar) {
-        barTokens.push({ kind: 'chord', text: chordName });
-        lastChordInBar = chordName;
-      }
-      if (lyricText) {
-        barTokens.push({ kind: 'lyric', text: lyricText });
-      }
-
-      // ── Tab column ────────────────────────────────────────────────────────
-
-      const col: TabColumn = { strings: tuning.map(() => null) };
-      for (const note of beat.notes) {
-        // AlphaTab note.string: 1 = lowest (bottom tab line) → stringIndex = numStrings - note.string
-        const si = numStrings - note.string;
-        if (si >= 0 && si < numStrings) {
-          col.strings[si] = note.isDead ? -1 : note.fret;
-        }
-      }
-      tabCols.push(col);
-    }
-
-    if (barTokens.length > 0) {
-      chordSection.lines.push({ tokens: barTokens } as ChartLine);
-    }
+  // ── 5. Section grouping ──
+  // Walk masterBars, watching for section markers to start new sections.
+  interface SectionAccum {
+    label:    string | undefined;
+    type:     SectionType;
+    measures: MeasureData[];
   }
 
-  // Flush the final pair.
-  flushSectionPair(doc, chordSection, tabCols, tabLabel);
+  const sectionAccums: SectionAccum[] = [];
+  let current: SectionAccum = { label: undefined, type: 'unknown', measures: [] };
+
+  for (let mi = 0; mi < masterBars.length; mi++) {
+    const masterBar = masterBars[mi];
+    const sectionMarker: string | undefined =
+      masterBar?.section?.text?.trim() || masterBar?.section?.marker?.trim() || undefined;
+
+    if (sectionMarker && current.measures.length > 0) {
+      sectionAccums.push(current);
+      current = {
+        label:    sectionMarker,
+        type:     sectionTypeFromLabel(sectionMarker),
+        measures: [],
+      };
+    } else if (sectionMarker && current.measures.length === 0) {
+      // Label the current (still-empty) section
+      current.label = sectionMarker;
+      current.type  = sectionTypeFromLabel(sectionMarker);
+    }
+
+    if (mi < measureData.length) {
+      current.measures.push(measureData[mi]);
+    }
+  }
+  if (current.measures.length > 0) sectionAccums.push(current);
+
+  // ── 6. Emit chord/lyric sections ──
+  for (const accum of sectionAccums) {
+    const lines = measureSliceToLines(accum.measures);
+    if (lines.length === 0) continue;
+    doc.sections.push({
+      type:  accum.type,
+      label: accum.label,
+      lines,
+    });
+  }
+
+  // ── 7. Append tab sections for each guitar track ──
+  for (const track of tracks) {
+    if (track.isPercussion) continue;
+    const tabSection = buildTabSection(track, masterBars);
+    if (tabSection) doc.sections.push(tabSection);
+  }
 
   return doc;
 }

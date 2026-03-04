@@ -65,7 +65,17 @@ export interface ChartSection {
   /** Human-readable label, e.g. "Verse 1", "Chorus". */
   label?: string;
   lines: ChartLine[];
-  /** Structured fret data for ASCII-tab sections (Guitar Pro). */
+  /**
+   * Structured tablature data — only present for sections whose type is 'tab'.
+   * Each element represents one beat position.  Stored in the model so that
+   * fret-number transposition can be applied without re-parsing ASCII text.
+   *
+   * `strings[i]`  — fret value for string i (0 = highest-pitched string,
+   *                 i.e. high-e for a 6-string guitar):
+   *   null  →  no note on this string (rendered as  -- )
+   *   -1    →  muted / dead note     (rendered as  x  )
+   *   0-24  →  fret number
+   */
   tabColumns?: TabColumn[];
 }
 

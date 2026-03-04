@@ -15,8 +15,8 @@ import {
   sniffFormatFromText,
   isMusicXmlFormat,
   isChordChartFormat,
-  isPdfFormat,
   isGuitarProFormat,
+  isPdfFormat,
   asSourceFormat,
 } from './ingest/sniffFormat';
 import { extractTextFromPdf } from './ingest/extractTextFromPdf';
@@ -70,6 +70,8 @@ const FILE_INPUT_ACCEPT = [
   '.xml', '.musicxml', '.mxl',
   'application/vnd.recordare.musicxml+xml',
   'application/xml', 'text/xml', 'application/zip',
+  // Guitar Pro (binary GP3-GP5 and ZIP-based GPX/GP7)
+  '.gp', '.gp3', '.gp4', '.gp5', '.gpx',
   // ChordPro dialects
   '.cho', '.chopro', '.chord', '.crd', '.pro',
   // Generic text (UG-style, chords-over-words)
@@ -549,6 +551,30 @@ export default function App() {
         xmlLoadedRef.current = '';
         setAppMode('chord-chart');
 
+      } else if (isGuitarProFormat(detected)) {
+        // ── Guitar Pro path (.gp / .gp3 / .gp4 / .gp5 / .gpx) ──
+        // AlphaTab is loaded lazily on first GP file open (~3 MB chunk).
+        const { parseGuitarPro } = await import('./parsers/gpParser');
+        const doc = await parseGuitarPro(bytes);
+
+        setLoadedFilename(file.name);
+        setChartDocument(doc);
+        setTransposeSteps(0);
+        setDetectedFormatLabel('Guitar Pro');
+        setRenderError('');
+        setExportFeedback(null);
+        // Clear notation state
+        setLoadedXmlText('');
+        setIsMxl(false);
+        setRenderedPageCount(0);
+        setPdfBlobUrl(null);
+        setChordProText('');
+        setChordProWarnings([]);
+        setChordProDiagnostics(null);
+        if (containerRef.current) containerRef.current.innerHTML = '';
+        xmlLoadedRef.current = '';
+        setAppMode('chord-chart');
+
       } else if (isPdfFormat(detected)) {
         // ── PDF path: extract text then re-sniff ──
         const pdfText = await extractTextFromPdf(arrayBuffer);
@@ -620,7 +646,8 @@ export default function App() {
       } else {
         setRenderError(
           'Unsupported file type. Upload .xml/.mxl (notation), ' +
-          '.cho/.pro/.abc/.txt (chord chart), .gp/.gpx/.gp5/.gp3 (Guitar Pro), or .pdf.'
+          '.gp/.gp5/.gpx (Guitar Pro), ' +
+          '.cho/.pro/.abc/.txt (chord chart), or .pdf.'
         );
       }
     } catch (error) {
@@ -951,7 +978,7 @@ export default function App() {
 
         {appMode === 'empty' && (
           <span className="hint">
-            Drag &amp; drop .xml / .mxl (notation) or .cho / .pro / .abc / .txt / .pdf (chord chart)
+            Drag &amp; drop .xml / .mxl (notation), .gp / .gp5 / .gpx (Guitar Pro), or .cho / .pro / .abc / .txt / .pdf (chord chart)
           </span>
         )}
 
