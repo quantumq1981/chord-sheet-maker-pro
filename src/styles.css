@@ -486,6 +486,51 @@ select:disabled {
   overflow-x: auto;
 }
 
+/* ─── Fake-book lead-sheet grid ─────────────────────────────────────────── */
+
+/* One bar row: a horizontal flex strip of bar cells. */
+.cc-grid-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* One bar cell inside the row. */
+.cc-grid-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem 0.55rem;
+  border-right: 1px solid #cbd5e1;
+  min-width: 2rem;
+}
+
+.cc-grid-bar:last-child {
+  border-right: none;
+}
+
+/* Repeat-start barline: thick left border in brand purple. */
+.cc-grid-bar--repeat-start {
+  border-left: 4px solid #7c3aed;
+}
+
+/* Repeat-end barline: thick right border in brand purple. */
+.cc-grid-bar--repeat-end {
+  border-right: 4px solid #7c3aed !important;
+}
+
+/* ·/· simile (repeat-last-bar) marker. */
+.cc-simile {
+  color: #94a3b8;
+  font-size: 0.88rem;
+  letter-spacing: -0.03em;
+  font-style: italic;
+}
+
 /* Guitar Pro tab section — pre-formatted ASCII tab rows produced by
    TabSectionBlock.  The horizontal scroll on mobile prevents layout breaks. */
 .cc-tab {

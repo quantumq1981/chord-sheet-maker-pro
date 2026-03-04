@@ -17,6 +17,7 @@ import type {
   ChartSection,
   ChartLine,
   ChartToken,
+  BarlineToken,
   SectionType,
 } from '../models/ChordChartModel';
 import type { SourceFormat } from '../ingest/sniffFormat';
@@ -369,6 +370,165 @@ export function parseChordsOverWords(text: string): ChordChartDocument {
   return doc;
 }
 
+// ─── 4. Fake-book parser ──────────────────────────────────────────────────────
+
+/**
+ * Metadata key names recognised in fake-book headers (case-insensitive).
+ * Mirrors the `UG_META_LINE_RE` keys but adapted for fake-book conventions.
+ */
+const FB_META_RE =
+  /^(title|style|tempo|time|key|artist|composer|subtitle|album|genre)\s*[:\-]\s*(.+)$/i;
+
+/** Fake-book section header: "- Intro", "= Bridge", "-- 1st Ending", etc. */
+const FB_SECTION_RE = /^[-=]+\s+(.+)$/;
+
+/**
+ * Convert a single bar-row string (the content between or including `|:` / `:|`)
+ * into a ChartLine whose tokens are barlines and chord tokens.
+ *
+ * Input:  "|: Bb7 Bb7_A7_D7 ·/· Eb6 :|"
+ * Output: [barline(|:), chord(Bb7), barline(|), chord(Bb7), chord(A7), chord(D7),
+ *          barline(|), chord(·/·), barline(|), chord(Eb6), barline(:|)]
+ */
+function parseBarRow(row: string): ChartLine {
+  const tokens: ChartToken[] = [];
+  let body = row.trim();
+
+  // Opening barline
+  let openBarline: BarlineToken['text'] | null = null;
+  if (body.startsWith('|:')) {
+    openBarline = '|:';
+    body = body.slice(2).trimStart();
+  } else if (body.startsWith('||')) {
+    openBarline = '||';
+    body = body.slice(2).trimStart();
+  } else if (body.startsWith('|')) {
+    openBarline = '|';
+    body = body.slice(1).trimStart();
+  }
+
+  // Closing barline
+  let closeBarline: BarlineToken['text'] | null = null;
+  if (body.endsWith(':|')) {
+    closeBarline = ':|';
+    body = body.slice(0, -2).trimEnd();
+  } else if (body.endsWith('||')) {
+    closeBarline = '||';
+    body = body.slice(0, -2).trimEnd();
+  } else if (body.endsWith('|')) {
+    closeBarline = '|';
+    body = body.slice(0, -1).trimEnd();
+  }
+
+  if (openBarline) tokens.push({ kind: 'barline', text: openBarline });
+
+  // Each space-separated item is one "bar"; within a bar `_` separates chords
+  const barEntries = body.split(/\s+/).filter(Boolean);
+  for (let bi = 0; bi < barEntries.length; bi++) {
+    if (bi > 0) tokens.push({ kind: 'barline', text: '|' });
+    const chords = barEntries[bi].split('_').filter(Boolean);
+    for (const chord of chords) {
+      tokens.push({ kind: 'chord', text: chord });
+    }
+  }
+
+  if (closeBarline) tokens.push({ kind: 'barline', text: closeBarline });
+
+  return { tokens };
+}
+
+/**
+ * Parse fake-book lead-sheet notation.
+ *
+ * Format overview
+ * ───────────────
+ *  Metadata header (any order, before the first section):
+ *    Title: Sin City Blues
+ *    Key: Bb  /  Tempo: 90  /  Time: 12/8  /  Style: Slow Blues Swing
+ *
+ *  Section headers — a line starting with one or more `-` or `=` characters:
+ *    - Intro        (= 'intro')
+ *    = Bridge       (= 'bridge')
+ *    - Pre-Chorus   (= 'pre-chorus')
+ *
+ *  Bar rows — lines containing |: / :| repeat markers or plain | barlines:
+ *    |: Bb7 Bb7_A7_D7 Eb6 Eo7_Go7 :|
+ *
+ *    • Space-separated items are individual bars.
+ *    • `_` separates multiple chords within one bar (beat changes).
+ *    • `·/·` is a simile marker: "repeat the previous bar".
+ *    • A row may span two physical lines when |: and :| are on separate lines.
+ */
+export function parseFakeBook(text: string): ChordChartDocument {
+  const doc: ChordChartDocument = { sections: [], sourceFormat: 'fakebook' };
+  let current = makeSection();
+
+  const lines = normalizeLineEndings(text).split('\n');
+  let i = 0;
+
+  while (i < lines.length) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+    i++;
+
+    if (!trimmed) continue;
+
+    // ── Metadata ──
+    const metaMatch = trimmed.match(FB_META_RE);
+    if (metaMatch && !trimmed.startsWith('|')) {
+      const key = metaMatch[1].toLowerCase();
+      const value = metaMatch[2].trim();
+      switch (key) {
+        case 'title':    doc.title    = doc.title    ?? value; break;
+        case 'artist':
+        case 'composer': doc.artist   = doc.artist   ?? value; break;
+        case 'subtitle': doc.subtitle = doc.subtitle ?? value; break;
+        case 'key':      doc.key      = doc.key      ?? value; break;
+        case 'tempo':    doc.tempo    = doc.tempo    ?? value; break;
+        case 'time':     doc.time     = doc.time     ?? value; break;
+        case 'style':
+        case 'genre':    doc.genre    = doc.genre    ?? value; break;
+      }
+      continue;
+    }
+
+    // ── Section header ──
+    const sectionMatch = trimmed.match(FB_SECTION_RE);
+    if (sectionMatch) {
+      flushSection(doc, current);
+      const label = sectionMatch[1].trim();
+      current = makeSection(sectionTypeFromLabel(label), label);
+      continue;
+    }
+
+    // ── Bar row ──
+    if (trimmed.startsWith('|') || trimmed.includes('\u00B7/\u00B7')) {
+      // Accumulate across physical lines: if the row starts with |: but hasn't
+      // closed with :| yet, append the next line(s) until :| is found.
+      let accumulated = trimmed;
+      if (accumulated.startsWith('|:') && !accumulated.includes(':|')) {
+        while (i < lines.length) {
+          const next = lines[i]?.trim() ?? '';
+          if (!next) break;
+          if (FB_SECTION_RE.test(next) || FB_META_RE.test(next)) break;
+          accumulated += ' ' + next;
+          i++;
+          if (accumulated.includes(':|')) break;
+        }
+      }
+
+      const line = parseBarRow(accumulated);
+      if (line.tokens.length > 0) current.lines.push(line);
+      continue;
+    }
+
+    // ── Anything else (comments, free text) — skip silently ──
+  }
+
+  flushSection(doc, current);
+  return doc;
+}
+
 // ─── Dispatch ────────────────────────────────────────────────────────────────
 
 /**
@@ -380,6 +540,7 @@ export function parseChordChart(text: string, sourceFormat: SourceFormat): Chord
     case 'ultimateguitar':    return parseUltimateGuitar(text);
     case 'chords-over-words': return parseChordsOverWords(text);
     case 'abc':               return parseAbcNotation(text);
+    case 'fakebook':          return parseFakeBook(text);
     default:                  return parseChordPro(text);
   }
 }
