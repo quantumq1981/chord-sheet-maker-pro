@@ -78,6 +78,8 @@ const FILE_INPUT_ACCEPT = [
   '.txt',
   // ABC notation (folk / traditional music)
   '.abc',
+  // Guitar Pro (GP3–GP5 binary, GP6 GPX, GP7/8 GP) and PowerTab
+  '.gp', '.gp3', '.gp4', '.gp5', '.gpx', '.ptb',
   // PDF (UG exports, chord sheets exported from notation apps, etc.)
   '.pdf', 'application/pdf',
 ].join(',');
@@ -593,6 +595,40 @@ export default function App() {
         setChartDocument(doc);
         setTransposeSteps(0);
         setDetectedFormatLabel(pdfFormatLabels[sourceFormat] ?? `PDF (${sourceFormat})`);
+        setRenderError('');
+        setExportFeedback(null);
+        // Clear notation state
+        setLoadedXmlText('');
+        setIsMxl(false);
+        setRenderedPageCount(0);
+        setPdfBlobUrl(null);
+        setChordProText('');
+        setChordProWarnings([]);
+        setChordProDiagnostics(null);
+        if (containerRef.current) containerRef.current.innerHTML = '';
+        xmlLoadedRef.current = '';
+        setAppMode('chord-chart');
+
+      } else if (isGuitarProFormat(detected)) {
+        // ── Guitar Pro / PowerTab path ──
+        const { parseGuitarPro } = await import('./parsers/gpParser');
+        const doc = await parseGuitarPro(bytes);
+
+        // Determine a human-readable label from the file extension.
+        const gpExt = file.name.split('.').pop()?.toLowerCase() ?? '';
+        const gpLabel: Record<string, string> = {
+          gp: 'Guitar Pro 7/8',
+          gpx: 'Guitar Pro 6',
+          gp5: 'Guitar Pro 5',
+          gp4: 'Guitar Pro 4',
+          gp3: 'Guitar Pro 3',
+          ptb: 'PowerTab',
+        };
+
+        setLoadedFilename(file.name);
+        setChartDocument(doc);
+        setTransposeSteps(0);
+        setDetectedFormatLabel(gpLabel[gpExt] ?? 'Guitar Pro');
         setRenderError('');
         setExportFeedback(null);
         // Clear notation state

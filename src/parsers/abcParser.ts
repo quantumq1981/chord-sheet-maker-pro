@@ -35,8 +35,8 @@ import type {
   ChartSection,
   ChartLine,
   ChartToken,
-  SectionType,
 } from '../models/ChordChartModel';
+import { sectionTypeFromLabel, normalizeLineEndings } from '../utils/sectionUtils';
 
 // ─── Key signature helpers ────────────────────────────────────────────────────
 
@@ -139,21 +139,6 @@ function parseLyricLine(line: string): string[] {
   return syllables;
 }
 
-// ─── Section label helpers ────────────────────────────────────────────────────
-
-function sectionTypeFromLabel(label: string): SectionType {
-  const l = label.toLowerCase();
-  if (l.includes('verse'))                              return 'verse';
-  if (l.includes('chorus') || l.includes('refrain'))   return 'chorus';
-  if (l.includes('bridge'))                            return 'bridge';
-  if (l.includes('intro'))                             return 'intro';
-  if (l.includes('outro') || l.includes('coda'))      return 'outro';
-  if (l.includes('solo'))                              return 'solo';
-  if (l.includes('interlude'))                         return 'interlude';
-  if (l.includes('pre-chorus') || l.includes('prechorus')) return 'pre-chorus';
-  return 'unknown';
-}
-
 // ─── Body parsing ─────────────────────────────────────────────────────────────
 
 /** ABC fingering / annotation prefixes that are NOT chord symbols. */
@@ -201,8 +186,9 @@ function extractBarChords(bodyText: string): string[][] {
     }
 
     if (ch === '%') {
-      // Comment to end of line — skip
+      // Comment to end of line — advance past it and the newline in one step
       while (i < bodyText.length && bodyText[i] !== '\n') i++;
+      if (i < bodyText.length) i++; // step past the '\n' itself
       continue;
     }
 
@@ -249,11 +235,10 @@ function buildLines(barChords: string[][], syllables: string[]): ChartLine[] {
     if (tokens.length > 0) lines.push({ tokens });
   }
 
-  // If there are leftover syllables (more lyrics than chord changes), append
-  // them as a plain lyric line so nothing is silently dropped.
-  const remaining = syllables.slice(syllableIdx);
-  if (remaining.length > 0) {
-    lines.push({ tokens: [{ kind: 'lyric', text: remaining.join(' ') }] });
+  // Append any leftover syllables (more lyrics than chord changes) as a
+  // lyric-only line so nothing is silently dropped.
+  if (syllableIdx < syllables.length) {
+    lines.push({ tokens: [{ kind: 'lyric', text: syllables.slice(syllableIdx).join(' ') }] });
   }
 
   return lines;
@@ -436,7 +421,7 @@ function assembleSections(
 export function parseAbcNotation(text: string): ChordChartDocument {
   const doc: ChordChartDocument = { sections: [], sourceFormat: 'abc' };
 
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const normalized = normalizeLineEndings(text);
 
   // ── Split into individual tunes on X: boundaries ──
   const allLines   = normalized.split('\n');
@@ -457,9 +442,13 @@ export function parseAbcNotation(text: string): ChordChartDocument {
   if (tuneBlocks.length === 0) tuneBlocks.push(allLines);
 
   let metadataApplied = false;
+  // Keep the last parsed body so the fallback below can reuse it without
+  // a second call to parseTuneLines(allLines).
+  let lastBody: TuneBody | null = null;
 
   for (const block of tuneBlocks) {
     const { meta, body } = parseTuneLines(block);
+    lastBody = body;
 
     // Apply document-level metadata from the first tune that has any
     if (!metadataApplied) {
@@ -477,29 +466,19 @@ export function parseAbcNotation(text: string): ChordChartDocument {
       barChords,
       body.allLyrics,
       body.partLabels,
-      meta.title,           // use tune title as section label in multi-tune files
+      meta.title,
     );
 
     doc.sections.push(...sections);
   }
 
-  // ── Fallback: if no chords but lyrics exist, emit lyrics-only lines ──
-  if (doc.sections.length === 0) {
-    const { meta, body } = parseTuneLines(allLines);
-    if (!metadataApplied) {
-      if (meta.title)    doc.title  = meta.title;
-      if (meta.composer) doc.artist = meta.composer;
-      if (meta.key)      doc.key    = meta.key;
-      if (meta.time)     doc.time   = meta.time;
-      if (meta.tempo)    doc.tempo  = meta.tempo;
-      if (meta.genre)    doc.genre  = meta.genre;
-    }
-    if (body.allLyrics.length > 0) {
-      doc.sections.push({
-        type:  'unknown',
-        lines: [{ tokens: [{ kind: 'lyric', text: body.allLyrics.join(' ') }] }],
-      });
-    }
+  // ── Fallback: if no chords but lyrics exist, emit a lyrics-only line ──
+  // Reuses the already-parsed body; no second parse needed.
+  if (doc.sections.length === 0 && lastBody && lastBody.allLyrics.length > 0) {
+    doc.sections.push({
+      type:  'unknown',
+      lines: [{ tokens: [{ kind: 'lyric', text: lastBody.allLyrics.join(' ') }] }],
+    });
   }
 
   return doc;

@@ -29,6 +29,7 @@ export type DetectedFormat =
   | { format: 'abc' }
   | { format: 'guitarpro' }
   | { format: 'pdf' }
+  | { format: 'guitarpro' }
   | { format: 'unknown' };
 
 // ZIP local-file magic: PK\x03\x04
@@ -37,11 +38,14 @@ const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04] as const;
 // PDF magic: %PDF
 const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46] as const;
 
-// Guitar Pro extensions (both binary GP3-GP5 and ZIP-based GPX/GP7)
-const GP_EXTENSIONS = new Set(['gp', 'gp3', 'gp4', 'gp5', 'gpx']);
+// Guitar Pro binary magic: "FICHIER " (GP3 / GP4 / GP5 header prefix)
+const GP_BINARY_MAGIC = [0x46, 0x49, 0x43, 0x48, 0x49, 0x45, 0x52, 0x20] as const;
 
-// GP3-GP5 binary header: "FICHIER GUITAR PRO v" (ASCII)
-const GP_MAGIC = [0x46, 0x49, 0x43, 0x48, 0x49, 0x45, 0x52, 0x20] as const; // "FICHIER "
+// PowerTab magic: "PTAB"
+const PTB_MAGIC = [0x50, 0x54, 0x41, 0x42] as const;
+
+// File extensions that are always Guitar Pro / PowerTab (even if ZIP-based like .gpx / .gp)
+const GP_EXTENSIONS = new Set(['gp', 'gp3', 'gp4', 'gp5', 'gpx', 'ptb']);
 
 // Canonical chord token pattern (root + optional quality + optional bass)
 const CHORD_TOKEN_RE =
@@ -81,21 +85,26 @@ function hasPdfMagic(bytes: Uint8Array): boolean {
   );
 }
 
+function hasGpBinaryMagic(bytes: Uint8Array): boolean {
+  if (bytes.length < GP_BINARY_MAGIC.length) return false;
+  return GP_BINARY_MAGIC.every((b, i) => bytes[i] === b);
+}
+
+function hasPtbMagic(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === PTB_MAGIC[0] &&
+    bytes[1] === PTB_MAGIC[1] &&
+    bytes[2] === PTB_MAGIC[2] &&
+    bytes[3] === PTB_MAGIC[3]
+  );
+}
+
 function fileExtension(filename: string): string {
   const dot = filename.lastIndexOf('.');
   return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : '';
 }
 
-/** True if the first 8 bytes spell "FICHIER " — the GP3-GP5 binary header. */
-function hasGpMagic(bytes: Uint8Array): boolean {
-  if (bytes.length < GP_MAGIC.length) return false;
-  return GP_MAGIC.every((b, i) => bytes[i] === b);
-}
-
-/** True if this format is a Guitar Pro binary or container. */
-export function isGuitarProFormat(detected: DetectedFormat): boolean {
-  return detected.format === 'guitarpro';
-}
 
 /** Returns true if every non-empty whitespace-delimited token looks like a chord. */
 function isChordLine(line: string): boolean {
@@ -121,13 +130,13 @@ export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): Detected
     return { format: 'pdf' };
   }
 
-  // 1b. Guitar Pro — checked BEFORE the generic ZIP branch because .gpx is
-  //     also a ZIP container and would otherwise be mis-classified as MXL.
-  if (GP_EXTENSIONS.has(ext) || hasGpMagic(bytes)) {
+  // 1b. Guitar Pro / PowerTab — checked BEFORE the generic ZIP branch so that
+  //     ZIP-based formats (.gpx, .gp) are not mis-classified as MXL.
+  if (GP_EXTENSIONS.has(ext) || hasGpBinaryMagic(bytes) || hasPtbMagic(bytes)) {
     return { format: 'guitarpro' };
   }
 
-  // 1c. ZIP magic (not a GP file) → MXL (compressed MusicXML)
+  // 1c. ZIP magic → MXL
   if (hasZipMagic(bytes)) {
     return { format: 'mxl' };
   }
@@ -248,6 +257,10 @@ export function isMusicXmlFormat(detected: DetectedFormat): boolean {
 
 export function isPdfFormat(detected: DetectedFormat): boolean {
   return detected.format === 'pdf';
+}
+
+export function isGuitarProFormat(detected: DetectedFormat): boolean {
+  return detected.format === 'guitarpro';
 }
 
 export function isChordChartFormat(detected: DetectedFormat): boolean {

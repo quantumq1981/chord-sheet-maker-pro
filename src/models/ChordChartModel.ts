@@ -50,6 +50,16 @@ export type SectionType =
   | 'tab'
   | 'unknown';
 
+/**
+ * One beat-column in an ASCII tablature section.
+ * `strings[i]` is the fret for string index i (0 = highest-pitch string).
+ * `null` means the string is not played in this beat.
+ * `-1` means the string is muted / dead.
+ */
+export interface TabColumn {
+  strings: (number | null)[];
+}
+
 export interface ChartSection {
   type: SectionType;
   /** Human-readable label, e.g. "Verse 1", "Chorus". */
@@ -67,11 +77,6 @@ export interface ChartSection {
    *   0-24  →  fret number
    */
   tabColumns?: TabColumn[];
-}
-
-/** One beat-column of Guitar-Pro tab data. */
-export interface TabColumn {
-  strings: (number | null)[];
 }
 
 // ─── Document ────────────────────────────────────────────────────────────────
