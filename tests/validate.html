@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<!--
+  validate.html  —  UG Pro PDF Importer v1.2 Test Runner
+
+  Usage:
+    1. Open this file in a browser.
+    2. For each fixture slot, click "Browse" and select the matching PDF from tests/fixtures/pdf/.
+    3. Click "Run All" (or individual "Run" buttons).
+    4. Review the metrics table and pass/fail results.
+
+  Required fixtures (place in tests/fixtures/pdf/):
+    • Robben Ford - Revelation - Pro.pdf
+    • Alannah Myles - Black Velvet - Pro.pdf
+    • Larry Carlton - Room 335 - Pro.pdf
+    • Robben Ford - Aint Got Nothin But The Blues - Pro.pdf
+    • Charlie Parker - Confirmation - Pro.pdf
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>UG Pro Importer v1.2 – Validation</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --c-bg: #111; --c-surface: #1a1a2e; --c-panel: #16213e; --c-border: #334;
+    --c-text: #ddd; --c-muted: #888; --c-pass: #4f4; --c-fail: #f44; --c-warn: #fa0;
+    --c-accent: #4ecca3;
+  }
+  body { background: var(--c-bg); color: var(--c-text); font-family: system-ui, sans-serif; font-size: 13px; }
+  h1 { font-size: 18px; padding: 16px 20px 8px; border-bottom: 1px solid var(--c-border); }
+  h1 span { font-size: 11px; font-weight: normal; color: var(--c-muted); margin-left: 8px; }
+  .toolbar { padding: 10px 20px; display: flex; gap: 8px; align-items: center;
+    border-bottom: 1px solid var(--c-border); background: var(--c-surface); }
+  button { background: var(--c-panel); color: var(--c-text); border: 1px solid var(--c-border);
+    border-radius: 4px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #e94560; border-color: #e94560; }
+  button.primary { background: #e94560; font-weight: 600; }
+  button.small { padding: 3px 8px; font-size: 11px; }
+  select { background: var(--c-panel); color: var(--c-text); border: 1px solid var(--c-border);
+    border-radius: 4px; padding: 4px 6px; font-size: 12px; }
+  .fixtures { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; max-width: 900px; }
+  .fixture-card {
+    background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 6px;
+    padding: 12px 16px;
+  }
+  .fixture-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .fixture-name { font-weight: 600; font-size: 13px; flex: 1; }
+  .fixture-desc { font-size: 11px; color: var(--c-muted); margin-bottom: 8px; }
+  .file-pick { display: flex; gap: 6px; align-items: center; }
+  .file-pick input[type=file] { display: none; }
+  .file-label { font-size: 11px; color: var(--c-accent); min-width: 200px; cursor: pointer; }
+  .file-label:hover { text-decoration: underline; }
+  .status-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 3px; white-space: nowrap; }
+  .status-pending  { background: #334; color: #888; }
+  .status-running  { background: #333080; color: #aaf; }
+  .status-pass     { background: #143614; color: var(--c-pass); }
+  .status-fail     { background: #3a1414; color: var(--c-fail); }
+  .status-error    { background: #3a1a00; color: var(--c-warn); }
+
+  .metrics-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px;
+    margin: 8px 0;
+  }
+  .metric { background: var(--c-panel); border-radius: 4px; padding: 5px 8px; }
+  .metric .label { font-size: 10px; color: var(--c-muted); }
+  .metric .val { font-size: 13px; font-weight: 700; font-family: monospace; color: var(--c-accent); }
+
+  .checks { margin-top: 8px; }
+  .check-row { display: flex; gap: 6px; font-size: 11px; padding: 2px 0;
+    border-bottom: 1px dotted var(--c-border); }
+  .check-icon-pass { color: var(--c-pass); }
+  .check-icon-fail { color: var(--c-fail); }
+  .check-detail { color: var(--c-muted); margin-left: auto; }
+
+  .warnings { margin-top: 6px; }
+  .warn-pill { background: rgba(255,160,0,0.15); border: 1px solid var(--c-warn); color: var(--c-warn);
+    border-radius: 3px; padding: 2px 6px; font-size: 10px; margin: 2px 0; display: block; }
+
+  #summary {
+    margin: 0 20px 20px; padding: 16px; background: var(--c-surface);
+    border: 1px solid var(--c-border); border-radius: 6px; max-width: 900px;
+  }
+  #summary h2 { font-size: 14px; margin-bottom: 10px; color: var(--c-accent); }
+  #summary pre { font-size: 11px; white-space: pre-wrap; color: var(--c-text); line-height: 1.6; }
+
+  .log-toggle { font-size: 11px; color: var(--c-muted); cursor: pointer; margin-top: 6px;
+    text-decoration: underline; }
+  .log-box { display: none; background: #000; border-radius: 4px; padding: 6px;
+    font-family: monospace; font-size: 10px; max-height: 100px; overflow-y: auto;
+    color: #0f0; white-space: pre-wrap; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>UG Pro PDF Importer v1.2 <span>Validation / Acceptance Test Runner</span></h1>
+
+<div class="toolbar">
+  <button class="primary" onclick="runAll()">▶ Run All</button>
+  <button onclick="clearAll()">Clear</button>
+  <label style="font-size:12px;color:var(--c-muted)">Preset:
+    <select id="preset-override">
+      <option value="auto" selected>Auto-detect</option>
+      <option value="sparse">Sparse/Jazz</option>
+      <option value="tab-heavy">Tab-heavy</option>
+    </select>
+  </label>
+  <label style="font-size:12px;color:var(--c-muted)">Scale:
+    <select id="scale-override">
+      <option value="1.6">1.6×</option>
+      <option value="1.8" selected>1.8×</option>
+      <option value="2.2">2.2×</option>
+    </select>
+  </label>
+  <span id="run-summary" style="font-size:12px;color:var(--c-muted);margin-left:8px"></span>
+</div>
+
+<div class="fixtures" id="fixture-list">
+  <!-- Rendered by JS -->
+</div>
+
+<div id="summary" style="display:none">
+  <h2>Full Report</h2>
+  <pre id="summary-pre"></pre>
+</div>
+
+<script type="module">
+import * as pdfjsLib from 'https://unpkg.com/pdfjs-dist@5.5.207/build/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://unpkg.com/pdfjs-dist@5.5.207/build/pdf.worker.min.mjs';
+
+// ──────────────────────────────────────────────────────────────────────────
+// Inline core from ug-pro-importer (kept in sync; shared logic)
+// ──────────────────────────────────────────────────────────────────────────
+
+const PRESETS = {
+  'sparse':    { stemRunRatio: 0.65, minSpacingPx: 18, minHeightRatio: 0.55 },
+  'tab-heavy': { stemRunRatio: 0.80, minSpacingPx: 28, minHeightRatio: 0.65 },
+};
+const STEM_DENSITY_THRESHOLD = 0.08;
+const DIRECTION_SET = new Set([
+  'N.C.','NC','Fine','Coda','D.S.','DS','D.C.','DC','D.S.al','D.C.al',
+  'Tacet','Simile','Vamp','Rit.','Freely','Intro','Verse','Chorus','Bridge','Solo','Outro',
+]);
+const DIRECTION_PAT = /^(N\.C\.|Fine|Coda|D\.S|D\.C|To\s|Double|Half|Freely|Tacet|Simile|Vamp|Rit|Rail|Accel)/i;
+const HEADER_KW_PAT = /\b(Tuning|Capo|Transcribed|Difficulty|Author|Arranger|Engraved|www\.|©|Copyright)\b/i;
+const CHORD_RE = /^[A-G][b#]?(?:maj7|maj|m7b5|m7|m6|m9|m11|m13|mM7|m|dim7|dim|aug7|aug|sus4|sus2|sus|add9|add11|add13|add|7M|[Øø]7?|°7?|Δ7?|M7?|\d+(?:[b#]\d+)*)?(?:\/[A-G][b#]?)?$/;
+
+function normalizeChordSymbol(raw) {
+  let s = raw.trim();
+  s = s.replace(/♭/g, 'b').replace(/♯/g, '#');
+  if (!s) return s;
+  s = s[0].toUpperCase() + s.slice(1);
+  s = s.replace(/([A-G][b#]?)([Øø])7?/g, '$1m7b5');
+  s = s.replace(/([A-G][b#]?)(o7|°7)/g, '$1dim7');
+  s = s.replace(/([A-G][b#]?)(°|o(?!7|[a-z]))/g, '$1dim');
+  s = s.replace(/Δ7?/g, 'maj7');
+  s = s.replace(/7M\b/g, 'maj7');
+  s = s.replace(/[Mm][Aa][Jj]7/g, 'maj7');
+  s = s.replace(/[Mm][Aa][Jj]\b/g, 'maj7');
+  s = s.replace(/min(?!or)/g, 'm');
+  return s;
+}
+
+function isInHeaderBand(span, pageH, ratio) { return span.y > pageH * (1 - ratio); }
+function isHeaderKeyword(text) { return HEADER_KW_PAT.test(text); }
+
+function classifyPageSpans(spans, pageW, pageH, headerRatio) {
+  let headerFilteredCount = 0;
+  const eligible = spans.filter(s => {
+    if (isInHeaderBand(s, pageH, headerRatio) || isHeaderKeyword(s.text)) {
+      headerFilteredCount++; return false;
+    }
+    return true;
+  });
+  const multiCharFS = eligible
+    .filter(s => s.text.trim().length > 1 && /^[A-G]/.test(s.text.trim()))
+    .map(s => s.fontSize).sort((a,b)=>a-b);
+  const medianFS = multiCharFS.length > 0 ? multiCharFS[Math.floor(multiCharFS.length/2)] : 12;
+  const chordSpans = [], rehearsalSpans = [], directionMarkers = [];
+  for (const span of eligible) {
+    const t = span.text.trim();
+    if (!t || t.length > 20 || /^\d+$/.test(t)) continue;
+    if (!/^[A-G]/.test(t)) {
+      const m = classifyDir(span); if (m) directionMarkers.push(m); continue;
+    }
+    if (DIRECTION_SET.has(t) || DIRECTION_PAT.test(t)) {
+      const m = classifyDir(span); if (m) directionMarkers.push(m); continue;
+    }
+    if (/^[A-G]$/.test(t)) {
+      if (span.x < 0.12 * pageW && span.fontSize > medianFS * 1.35) rehearsalSpans.push(span);
+      else chordSpans.push(span);
+      continue;
+    }
+    const n = normalizeChordSymbol(t);
+    if (CHORD_RE.test(n) || CHORD_RE.test(t)) chordSpans.push(span);
+  }
+  return { chordSpans, rehearsalSpans, directionMarkers, headerFilteredCount, medianFontSize: medianFS };
+}
+
+function classifyDir(span) {
+  const t = span.text.trim(), u = t.toUpperCase();
+  if (u === 'N.C.' || u === 'NC') return { type:'nc', value:'N.C.', x:span.x, y:span.y };
+  if (/^(D\.S\.|DS)/i.test(t))    return { type:'ds', value:t, x:span.x, y:span.y };
+  if (/^(D\.C\.|DC)/i.test(t))    return { type:'dc', value:t, x:span.x, y:span.y };
+  if (/^fine$/i.test(t))          return { type:'fine', value:'Fine', x:span.x, y:span.y };
+  return null;
+}
+
+function clusterIntoSystems(spans, threshold) {
+  const sorted = [...spans].sort((a,b)=>b.y-a.y);
+  const groups = [];
+  for (const span of sorted) {
+    let best = null, bestD = Infinity;
+    for (const g of groups) { const d=Math.abs(span.y-g.yCenter); if(d<threshold&&d<bestD){bestD=d;best=g;} }
+    if (best) { best.spans.push(span); best.yCenter=best.spans.reduce((s,sp)=>s+sp.y,0)/best.spans.length; }
+    else groups.push({ yCenter:span.y, spans:[span] });
+  }
+  groups.sort((a,b)=>b.yCenter-a.yCenter);
+  return groups;
+}
+function filterDensestSystems(groups) {
+  if (groups.length <= 8) return groups;
+  const max = Math.max(...groups.map(g=>g.spans.length));
+  return groups.filter(g=>g.spans.length >= Math.max(2, Math.round(max*0.5)));
+}
+
+async function renderPageToCanvas(page, scale) {
+  const vp = page.getViewport({ scale });
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+  await page.render({ canvasContext:c.getContext('2d'), viewport:vp }).promise;
+  return c;
+}
+
+function longestDarkRun(data, col, bW, bH) {
+  let max=0,cur=0;
+  for(let r=0;r<bH;r++){const i=(r*bW+col)*4;const g=0.299*data[i]+0.587*data[i+1]+0.114*data[i+2];if(g<128){cur++;if(cur>max)max=cur;}else cur=0;}
+  return max;
+}
+function computeStemDensity(data, total) {
+  let dark=0;
+  for(let i=0;i<total*4;i+=4){const g=0.299*data[i]+0.587*data[i+1]+0.114*data[i+2];if(g<128)dark++;}
+  return dark/total;
+}
+function detectBarlinesInBand(canvas, bY0,bY1,bX0,bX1,forcePreset) {
+  const bH=Math.max(1,bY1-bY0),bW=Math.max(1,bX1-bX0);
+  if(bW<=0||bH<=0) return [];
+  const imgD = canvas.getContext('2d').getImageData(bX0,bY0,bW,bH);
+  const data = imgD.data;
+  const density = computeStemDensity(data, bW*bH);
+  const p = forcePreset || (density > STEM_DENSITY_THRESHOLD ? PRESETS['tab-heavy'] : PRESETS['sparse']);
+  const profile = new Float32Array(bW);
+  for(let col=0;col<bW;col++){let dark=0;for(let r=0;r<bH;r++){const i=(r*bW+col)*4;const g=0.299*data[i]+0.587*data[i+1]+0.114*data[i+2];if(g<128)dark++;}profile[col]=dark/bH;}
+  const peaks=[];
+  for(let col=1;col<bW-1;col++){
+    if(profile[col]<p.minHeightRatio||profile[col]<profile[col-1]||profile[col]<profile[col+1]) continue;
+    if(longestDarkRun(data,col,bW,bH)<p.stemRunRatio*bH) continue;
+    if(peaks.length>0&&col-peaks[peaks.length-1]<p.minSpacingPx){if(profile[col]>profile[peaks[peaks.length-1]])peaks[peaks.length-1]=col;}
+    else peaks.push(col);
+  }
+  return peaks;
+}
+
+function mapChordsToMeasures(spans, barlinesX) {
+  const nM = Math.max(1, barlinesX.length-1);
+  const mE = Array.from({length:nM},()=>[]);
+  for(const span of spans){
+    const cx=span.x+(span.width||span.fontSize)/2;
+    let slot=nM-1;
+    for(let m=0;m<barlinesX.length-1;m++){if(cx>=barlinesX[m]&&cx<barlinesX[m+1]){slot=m;break;}}
+    const raw=span.text.trim(), norm=normalizeChordSymbol(raw);
+    const conf=CHORD_RE.test(norm)?1.0:CHORD_RE.test(raw)?0.85:/^[A-G]$/.test(raw)?0.80:0.60;
+    mE[slot].push({x:span.x,y:span.y,raw,norm,confidence:conf});
+  }
+  for(const e of mE) e.sort((a,b)=>a.x-b.x);
+  return mE;
+}
+
+function emitFakebook(meta, sections, measures, config) {
+  const out=[];
+  out.push(`Title: ${meta.title||''}`);
+  out.push(`Style: ${meta.style||''}`);
+  out.push(`Tempo: ${meta.tempo||''}`);
+  out.push(`Time: ${meta.time||''}`);
+  out.push(`Key: ${meta.key||''}`);
+  out.push('');
+  const mpl=config.measuresPerLine||4;
+  const total=measures.length;
+  let lastChord='';
+  for(let si=0;si<sections.length;si++){
+    const sec=sections[si];
+    const nextStart=si+1<sections.length?sections[si+1].startMeasure:total;
+    const secM=measures.slice(sec.startMeasure,nextStart);
+    if(secM.length===0) continue;
+    const l=sec.label.toLowerCase();
+    const prefix=l.includes('chorus')||l.includes('refrain')?':':l.includes('bridge')?'=':'-';
+    out.push(`${prefix} ${sec.label}`);
+    const tokens=[];
+    for(const m of secM){
+      if(m.chords.length===0){tokens.push(lastChord?'%':'N.C.');continue;}
+      const tok=m.chords.join('_');tokens.push(tok);lastChord=m.chords[m.chords.length-1];
+    }
+    for(let i=0;i<tokens.length;i+=mpl) out.push(tokens.slice(i,i+mpl).join(' '));
+    out.push('');
+  }
+  return out.join('\n');
+}
+
+async function extractPageSpans(page) {
+  const vp = page.getViewport({scale:1});
+  const content = await page.getTextContent();
+  const spans = [];
+  for(const item of content.items){
+    if(!('str' in item)||!item.str.trim()) continue;
+    const fS=Math.abs(item.transform[3]);
+    spans.push({text:item.str,x:item.transform[4],y:item.transform[5],width:item.width??fS,height:item.height??fS,fontSize:fS});
+  }
+  return { spans, pageW:vp.width, pageH:vp.height };
+}
+
+function extractMeta(spans, pageH) {
+  const meta={title:'',composer:'',style:'',tempo:'',key:'',time:''};
+  const top=[...spans].filter(s=>s.y>pageH*0.75).sort((a,b)=>b.fontSize-a.fontSize);
+  if(top[0]) meta.title=top[0].text.trim();
+  if(top[1]) meta.composer=top[1].text.trim();
+  for(const s of spans){
+    const t=s.text.trim();
+    if(!meta.tempo){const m=t.match(/[♩=]\s*=?\s*(\d{2,3})/);if(m){meta.tempo=m[1];continue;}const m2=t.match(/^=\s*(\d{2,3})$/);if(m2){meta.tempo=m2[1];continue;}}
+    if(!meta.key){const k=t.match(/[Kk]ey\s*(?:of\s*)?([A-G][b#]?\s*(?:major|minor|maj|min)?)/);if(k){meta.key=k[1].trim();continue;}}
+    if(!meta.time){const tm=t.match(/^(\d+\/\d+)$/);if(tm){meta.time=tm[1];continue;}}
+  }
+  return meta;
+}
+
+async function importUGProPdf(file, config, onProgress) {
+  const log = m => onProgress && onProgress(m);
+  const MIN_CHORDS = 6;
+  const ab = await file.arrayBuffer();
+  log('Loading PDF…');
+  const pdf = await pdfjsLib.getDocument({data:ab}).promise;
+  log(`Loaded: ${pdf.numPages} page(s)`);
+  const songIR = { meta:{}, pages:[], systems:[], measures:[], events:[], warnings:[], _sections:null };
+  let gMIdx=0;
+  const pageRenders=[];
+  let fpSpans=null, fpH=0;
+  const fp = config.preset !== 'auto' ? PRESETS[config.preset] : null;
+
+  for(let pNum=1;pNum<=pdf.numPages;pNum++){
+    log(`Page ${pNum}: extracting…`);
+    const page=await pdf.getPage(pNum);
+    const {spans,pageW,pageH}=await extractPageSpans(page);
+    if(pNum===1){fpSpans=spans;fpH=pageH;}
+    const {chordSpans,rehearsalSpans,directionMarkers,headerFilteredCount}=
+      classifyPageSpans(spans,pageW,pageH,config.headerExclusionRatio||0.13);
+    songIR.pages.push({pageIndex:pNum-1,chordSpansFound:chordSpans.length,headerFilteredSpans:headerFilteredCount});
+    if(chordSpans.length < MIN_CHORDS){
+      const w=`Page ${pNum}: only ${chordSpans.length} chord span(s) found. OCR fallback required (v2).`;
+      songIR.warnings.push(w); log('[WARN] '+w);
+    }
+    log(`Page ${pNum}: rendering…`);
+    const canvas=await renderPageToCanvas(page,config.renderScale||1.8);
+    const scale=config.renderScale||1.8;
+    let sysGroups=clusterIntoSystems(chordSpans,config.yClusterThreshold||45);
+    sysGroups=filterDensestSystems(sysGroups);
+    const pageSystems=[];
+    for(let si=0;si<sysGroups.length;si++){
+      const grp=sysGroups[si];
+      if(!grp.spans.length) continue;
+      const xs=grp.spans.flatMap(s=>[s.x,s.x+(s.width||s.fontSize)]);
+      const ys=grp.spans.map(s=>s.y);
+      const bx0=Math.min(...xs)-10,bx1=Math.max(...xs)+10;
+      const by0=Math.min(...ys)-15,by1=Math.max(...ys)+20;
+      const cX0=Math.max(0,Math.round(bx0*scale));
+      const cX1=Math.min(canvas.width,Math.round(bx1*scale));
+      const cY0=Math.max(0,Math.round((pageH-by1)*scale)-Math.round(20*scale));
+      const cY1=Math.min(canvas.height,Math.round((pageH-by0)*scale)+Math.round(40*scale));
+      const peaks=detectBarlinesInBand(canvas,cY0,cY1,cX0,cX1,fp);
+      const detX=peaks.map(col=>(cX0+col)/scale);
+      const barlinesX=[...new Set([bx0+5,...detX,bx1-5].map(x=>Math.round(x*10)/10))].sort((a,b)=>a-b);
+      const mE=mapChordsToMeasures(grp.spans,barlinesX);
+      const sysMarkers=[];
+      for(const r of rehearsalSpans){if(r.y>=by0&&r.y<=by1) sysMarkers.push({type:'rehearsal',value:r.text.trim(),x:r.x,y:r.y});}
+      for(const d of directionMarkers){if(d.y>=by0&&d.y<=by1) sysMarkers.push(d);}
+      const sysMeasures=mE.map((events,li)=>({localIndex:li,globalIndex:gMIdx+li,xRange:[barlinesX[li]??bx0,barlinesX[li+1]??bx1],events,directives:[]}));
+      for(const m of sysMeasures){
+        const chords=m.events.length===0?[]:(config.multiChord==='first'?[m.events[0].norm]:m.events.map(e=>e.norm));
+        songIR.measures.push({n:m.globalIndex,chords,directives:[]});
+        for(const ev of m.events) songIR.events.push({measureIndex:m.globalIndex,...ev});
+      }
+      gMIdx+=mE.length;
+      const bW=Math.max(1,cX1-cX0),bH=Math.max(1,cY1-cY0);
+      const imgD=canvas.getContext('2d').getImageData(cX0,cY0,bW,bH);
+      const density=computeStemDensity(imgD.data,bW*bH);
+      const usedP=fp?config.preset:(density>STEM_DENSITY_THRESHOLD?'tab-heavy':'sparse');
+      const sysObj={systemIndex:si,pageIndex:pNum-1,bbox:[bx0,by0,bx1,by1],barlinesX,measures:sysMeasures,markers:sysMarkers,preset:usedP,stemDensity:density};
+      pageSystems.push(sysObj); songIR.systems.push(sysObj);
+      log(`  Sys ${si}: ${barlinesX.length-1} measure(s), preset=${usedP}`);
+    }
+    pageRenders.push({pageIndex:pNum-1,canvas,scale,pageW,pageH,systems:pageSystems});
+  }
+  songIR.meta=extractMeta(fpSpans||[],fpH);
+  const sections=[];
+  let mOff=0;
+  for(const sys of songIR.systems){
+    for(const r of sys.markers.filter(m=>m.type==='rehearsal')) sections.push({label:r.value,startMeasure:mOff});
+    mOff+=sys.measures.length;
+  }
+  if(sections.length===0) sections.push({label:'Chords',startMeasure:0});
+  songIR._sections=sections;
+  const csmpnText=emitFakebook(songIR.meta,sections,songIR.measures,{measuresPerLine:config.measuresPerLine||4});
+  const debugJson={meta:songIR.meta,warnings:songIR.warnings,pages:songIR.pages,systems:songIR.systems.map(s=>({...s,stemDensity:+s.stemDensity.toFixed(4)})),linearMeasures:songIR.measures,sections};
+  log(`Done. ${songIR.measures.length} measure(s).`);
+  return { csmpnText, debugJson, songIR, pageRenders };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Load validate.js (validation logic)
+// ──────────────────────────────────────────────────────────────────────────
+
+const FIXTURE_NAMES = [
+  'Robben Ford - Revelation - Pro.pdf',
+  'Alannah Myles - Black Velvet - Pro.pdf',
+  'Larry Carlton - Room 335 - Pro.pdf',
+  'Robben Ford - Aint Got Nothin But The Blues - Pro.pdf',
+  'Charlie Parker - Confirmation - Pro.pdf',
+];
+
+const FIXTURE_DESCS = {
+  'Robben Ford - Revelation - Pro.pdf': 'Standard notation — stable measure stream, no header pollution',
+  'Alannah Myles - Black Velvet - Pro.pdf': 'Tab-heavy — single-letter chords (A/D/G…), Tuning header excluded',
+  'Larry Carlton - Room 335 - Pro.pdf': 'Multi-system — must not time out (<20s)',
+  'Robben Ford - Aint Got Nothin But The Blues - Pro.pdf': 'Multi-system — must not merge wrong systems',
+  'Charlie Parker - Confirmation - Pro.pdf': 'Jazz standard — first/last measure not dropped',
+};
+
+const EXPECTATIONS = {
+  'Robben Ford - Revelation - Pro.pdf': { minMeasures:20, maxEmptyPct:40, minChordSpans:20 },
+  'Alannah Myles - Black Velvet - Pro.pdf': { minMeasures:16, maxEmptyPct:40, minChordSpans:10, singleLetterChordsExpected:true, noTuningSpansInOutput:true },
+  'Larry Carlton - Room 335 - Pro.pdf': { minMeasures:20, maxEmptyPct:40, minChordSpans:15, maxRuntimeMs:20000 },
+  'Robben Ford - Aint Got Nothin But The Blues - Pro.pdf': { minMeasures:12, maxEmptyPct:50, minChordSpans:10 },
+  'Charlie Parker - Confirmation - Pro.pdf': { minMeasures:24, maxEmptyPct:30, minChordSpans:30 },
+};
+
+// ─── State ─────────────────────────────────────────────────────────────────
+const fixtureFiles = {};    // name → File
+const fixtureResults = {};  // name → ValidationResult
+
+// ─── Build UI ──────────────────────────────────────────────────────────────
+function buildFixtureUI() {
+  const list = document.getElementById('fixture-list');
+  list.innerHTML = '';
+  for (const name of FIXTURE_NAMES) {
+    const card = document.createElement('div');
+    card.className = 'fixture-card';
+    card.id = 'card-' + safeid(name);
+    card.innerHTML = `
+      <div class="fixture-header">
+        <span class="fixture-name">${name}</span>
+        <span class="status-badge status-pending" id="badge-${safeid(name)}">PENDING</span>
+        <button class="small" onclick="runOne('${name}')">Run</button>
+      </div>
+      <div class="fixture-desc">${FIXTURE_DESCS[name] || ''}</div>
+      <div class="file-pick">
+        <input type="file" accept=".pdf" id="file-${safeid(name)}"
+          onchange="fileSelected('${name}', this)"/>
+        <button class="small" onclick="document.getElementById('file-${safeid(name)}').click()">Browse PDF</button>
+        <span class="file-label" id="flabel-${safeid(name)}">No file selected</span>
+      </div>
+      <div id="metrics-${safeid(name)}"></div>
+    `;
+    list.appendChild(card);
+  }
+}
+buildFixtureUI();
+
+function safeid(name) { return name.replace(/[^a-zA-Z0-9]/g, '_'); }
+
+function fileSelected(name, input) {
+  const f = input.files[0];
+  if (!f) return;
+  fixtureFiles[name] = f;
+  document.getElementById('flabel-' + safeid(name)).textContent = f.name;
+  setBadge(name, 'pending');
+}
+window.fileSelected = fileSelected;
+
+function setBadge(name, status, text) {
+  const badge = document.getElementById('badge-' + safeid(name));
+  badge.className = 'status-badge status-' + status;
+  badge.textContent = (text || status).toUpperCase();
+}
+
+async function runOne(name) {
+  const file = fixtureFiles[name];
+  if (!file) { alert('Please select a PDF for: ' + name); return; }
+  setBadge(name, 'running', 'Running…');
+  document.getElementById('metrics-' + safeid(name)).innerHTML = '<em style="color:#888;font-size:11px">Processing…</em>';
+
+  const config = {
+    measuresPerLine: 4,
+    headerExclusionRatio: 0.13,
+    renderScale: parseFloat(document.getElementById('scale-override').value),
+    yClusterThreshold: 45,
+    multiChord: 'join',
+    fillEmpty: 'percent',
+    preset: document.getElementById('preset-override').value,
+    outputMode: 'csmpn-fakebook',
+  };
+
+  const t0 = performance.now();
+  let result = null, error = null, logs = [];
+  try {
+    result = await importUGProPdf(file, config, m => logs.push(m));
+  } catch(e) { error = e; }
+  const runtimeMs = Math.round(performance.now() - t0);
+
+  const vResult = buildValidationResult(name, file, result, error, runtimeMs, logs);
+  fixtureResults[name] = vResult;
+
+  renderFixtureResult(name, vResult);
+  updateRunSummary();
+}
+window.runOne = runOne;
+
+async function runAll() {
+  for (const name of FIXTURE_NAMES) {
+    if (fixtureFiles[name]) await runOne(name);
+  }
+  renderFullReport();
+}
+window.runAll = runAll;
+
+function clearAll() {
+  for (const name of FIXTURE_NAMES) {
+    setBadge(name, 'pending');
+    document.getElementById('metrics-' + safeid(name)).innerHTML = '';
+    delete fixtureResults[name];
+  }
+  document.getElementById('summary').style.display = 'none';
+  document.getElementById('run-summary').textContent = '';
+}
+window.clearAll = clearAll;
+
+function buildValidationResult(name, file, result, error, runtimeMs, logs) {
+  const expect = EXPECTATIONS[name] || {};
+  const metrics = computeMetrics(result, runtimeMs);
+  const checks = runChecks(metrics, expect, result, name);
+  const passed = !error && checks.filter(c => c.status === 'FAIL').length === 0;
+  return { filename: name, passed, error: error?.message, runtimeMs, metrics, checks, logs,
+    csmpnText: result?.csmpnText || '' };
+}
+
+function computeMetrics(result, runtimeMs) {
+  if (!result) return { runtimeMs };
+  const { songIR, debugJson } = result;
+  const totalSystems = songIR.systems.length;
+  const totalMeasures = songIR.measures.length;
+  const emptyMeasures = songIR.measures.filter(m => m.chords.length === 0).length;
+  const emptyPct = totalMeasures > 0 ? Math.round(emptyMeasures / totalMeasures * 100) : 0;
+  const totalChordSpans = debugJson.pages.reduce((s,p) => s + p.chordSpansFound, 0);
+  const headerFiltered = debugJson.pages.reduce((s,p) => s + p.headerFilteredSpans, 0);
+  const avgBarlines = totalSystems > 0
+    ? +(songIR.systems.reduce((s,sys) => s + sys.barlinesX.length - 1, 0) / totalSystems).toFixed(1) : 0;
+  return { runtimeMs, chordSpansFound: totalChordSpans, systemsDetected: totalSystems,
+    barlinesPerSystemAvg: avgBarlines, measuresTotal: totalMeasures, emptyMeasures,
+    percentEmptyMeasures: emptyPct, headerFilteredSpans: headerFiltered,
+    warnings: songIR.warnings || [], hasVectorWarn: (songIR.warnings||[]).some(w=>/extractable|OCR/i.test(w)) };
+}
+
+function runChecks(metrics, expect, result, name) {
+  const checks = [];
+  function check(n, cond, detail='') { checks.push({ name:n, status:cond?'PASS':'FAIL', detail }); }
+  if (!result) { check('Import succeeded', false, 'threw exception'); return checks; }
+  check('Import succeeded', true);
+  check('Has measures', metrics.measuresTotal > 0, `${metrics.measuresTotal}`);
+  check('Min measures', metrics.measuresTotal >= (expect.minMeasures||1), `${metrics.measuresTotal} >= ${expect.minMeasures||1}`);
+  check('Chord spans found', metrics.chordSpansFound >= (expect.minChordSpans||1), `${metrics.chordSpansFound} >= ${expect.minChordSpans||1}`);
+  check('Empty measure %', metrics.percentEmptyMeasures <= (expect.maxEmptyPct||60), `${metrics.percentEmptyMeasures}% <= ${expect.maxEmptyPct||60}%`);
+  check('Has systems', metrics.systemsDetected > 0, `${metrics.systemsDetected}`);
+  if (expect.maxRuntimeMs) check('Runtime limit', metrics.runtimeMs <= expect.maxRuntimeMs, `${metrics.runtimeMs}ms <= ${expect.maxRuntimeMs}ms`);
+  if (expect.noTuningSpansInOutput) { const has=/\bTuning\b|\bE A D G B E\b/i.test(result.csmpnText); check('No tuning in output', !has, has?'"Tuning" leaked into output':''); }
+  if (expect.singleLetterChordsExpected) { const has=/\b[A-G]\b/.test(result.csmpnText); check('Single-letter chords present', has, has?'':'No single-letter chords found'); }
+  if (name.includes('Confirmation') && result.songIR.measures.length > 0) {
+    const ms = result.songIR.measures;
+    check('First measure has chord', ms[0].chords.length > 0, ms[0].chords.length===0?'First measure empty':'');
+    check('Last measure has chord', ms[ms.length-1].chords.length > 0, ms[ms.length-1].chords.length===0?'Last measure empty':'');
+  }
+  return checks;
+}
+
+function renderFixtureResult(name, vr) {
+  const sid = safeid(name);
+  const status = vr.error ? 'error' : vr.passed ? 'pass' : 'fail';
+  setBadge(name, status, status === 'pass' ? '✅ PASS' : status === 'error' ? '💥 ERROR' : '❌ FAIL');
+
+  const m = vr.metrics;
+  let html = '';
+  if (m.measuresTotal !== undefined) {
+    html += '<div class="metrics-grid">';
+    const met = (label, val) => `<div class="metric"><div class="label">${label}</div><div class="val">${val}</div></div>`;
+    html += met('Chord spans', m.chordSpansFound);
+    html += met('Hdr filtered', m.headerFilteredSpans);
+    html += met('Systems', m.systemsDetected);
+    html += met('Barlines/sys', m.barlinesPerSystemAvg);
+    html += met('Measures', m.measuresTotal);
+    html += met('Empty %', m.percentEmptyMeasures + '%');
+    html += met('Runtime', m.runtimeMs + 'ms');
+    html += '</div>';
+  }
+  if (vr.error) html += `<div style="color:#f44;font-size:12px;margin-top:4px">Error: ${vr.error}</div>`;
+  if (m.warnings && m.warnings.length > 0) {
+    html += '<div class="warnings">' + m.warnings.map(w=>`<span class="warn-pill">⚠ ${w}</span>`).join('') + '</div>';
+  }
+
+  html += '<div class="checks">';
+  for (const c of vr.checks) {
+    const icon = c.status === 'PASS' ? '✓' : '✗';
+    const cls = c.status === 'PASS' ? 'check-icon-pass' : 'check-icon-fail';
+    html += `<div class="check-row"><span class="${cls}">${icon}</span><span>${c.name}</span>`;
+    if (c.detail) html += `<span class="check-detail">${c.detail}</span>`;
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Collapsible log
+  if (vr.logs.length > 0) {
+    html += `<div class="log-toggle" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">Show log (${vr.logs.length} lines)</div>`;
+    html += `<div class="log-box">${vr.logs.map(l=>escHtml(l)).join('\n')}</div>`;
+  }
+
+  document.getElementById('metrics-' + sid).innerHTML = html;
+}
+
+function updateRunSummary() {
+  const done = Object.values(fixtureResults);
+  const pass = done.filter(r => r.passed).length;
+  const fail = done.length - pass;
+  document.getElementById('run-summary').textContent =
+    done.length ? `${pass}/${done.length} passed${fail ? ', ' + fail + ' failed' : ''}` : '';
+}
+
+function renderFullReport() {
+  const results = FIXTURE_NAMES.map(n => fixtureResults[n]).filter(Boolean);
+  if (results.length === 0) return;
+  const lines = ['UG Pro PDF Importer v1.2  –  Validation Report', '─'.repeat(70)];
+  let tp=0, tf=0;
+  for (const r of results) {
+    const icon = r.passed ? '✅' : r.error ? '💥' : '❌';
+    lines.push(`\n${icon} ${r.filename}`);
+    lines.push(`   Runtime: ${r.runtimeMs}ms`);
+    if (r.error) { lines.push(`   Error: ${r.error}`); tf++; continue; }
+    const m = r.metrics;
+    lines.push(`   chords=${m.chordSpansFound} systems=${m.systemsDetected} measures=${m.measuresTotal} empty=${m.percentEmptyMeasures}% hdrFiltered=${m.headerFilteredSpans}`);
+    for (const c of r.checks) lines.push(`   ${c.status==='PASS'?'✓':'✗'} ${c.name}${c.detail?' — '+c.detail:''}`);
+    if (r.passed) tp++; else tf++;
+  }
+  lines.push('\n' + '─'.repeat(70));
+  lines.push(`Result: ${tp}/${results.length} passed`);
+  lines.push(tp >= Math.ceil(results.length * 0.8) ? '✅ Definition of Done: MET' : '❌ Definition of Done: NOT MET');
+  document.getElementById('summary-pre').textContent = lines.join('\n');
+  document.getElementById('summary').style.display = '';
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
