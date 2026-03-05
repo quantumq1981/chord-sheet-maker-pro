@@ -256,6 +256,38 @@ import * as pdfjsLib from 'https://unpkg.com/pdfjs-dist@5.5.207/build/pdf.min.mj
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://unpkg.com/pdfjs-dist@5.5.207/build/pdf.worker.min.mjs';
 
+// -----------------------------------------------------------------------------
+// Polyfill missing Map/WeakMap methods used by pdf.js in newer versions.
+//
+// Starting around PDF.js v5.5, the library relies on TC39 proposal methods
+// such as `getOrInsertComputed` on Map and WeakMap. These methods are not
+// available in current Chromium (v130) or Safari builds, which results in
+// "this.getOrInsertComputed is not a function" errors when loading certain
+// PDFs. To avoid these runtime errors we define simple polyfills that
+// implement the minimal behavior required by pdf.js: compute the value if
+// missing, insert it, and return it.
+if (!Map.prototype.getOrInsertComputed) {
+  Map.prototype.getOrInsertComputed = function (key, computeFn) {
+    if (this.has(key)) {
+      return this.get(key);
+    }
+    const value = computeFn();
+    this.set(key, value);
+    return value;
+  };
+}
+if (!WeakMap.prototype.getOrInsertComputed) {
+  WeakMap.prototype.getOrInsertComputed = function (key, computeFn) {
+    if (this.has(key)) {
+      return this.get(key);
+    }
+    const value = computeFn();
+    this.set(key, value);
+    return value;
+  };
+}
+
+
 const PRESETS = {
   'sparse':    { stemRunRatio: 0.65, minSpacingPx: 18, minHeightRatio: 0.55 },
   'tab-heavy': { stemRunRatio: 0.80, minSpacingPx: 28, minHeightRatio: 0.65 },
