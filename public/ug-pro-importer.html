@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  UG Pro PDF → CSMPN Fake Book Importer  v1.2
+================================================================================
+
+SUPPORTED LAYOUT FAMILIES:
+  • Standard notation  (chord symbols above single staff)
+  • Tab-only charts    (chord symbols above TAB staff)
+  • Stacked std+TAB    (chord symbols above top staff only)
+  • Tab-heavy rock     (dense stem fields; auto tab-heavy preset)
+  • Multi-track/score  (auto-selects densest chord-span system band)
+
+KNOWN LIMITATIONS (v2 items):
+  • No full OMR / melody extraction
+  • No DS/DC/Coda jump resolution
+  • No 1st/2nd ending graph logic
+  • OCR fallback for vector-only PDFs not implemented
+  • Repeat expansion not implemented (markers stored in debugJson only)
+
+THRESHOLD TUNING:
+  headerExclusionRatio  (default 0.13) – top fraction of page excluded from chord scan
+  yClusterThreshold     (default 45)   – PDF-unit gap between chord rows → new system
+  renderScale           (default 1.8)  – higher = more accurate, slower
+  stemRunRatio          tab-heavy=0.80, sparse=0.65 (auto-selected from pixel density)
+  barlineMinSpacing     tab-heavy=28px, sparse=18px (canvas pixels at renderScale)
+  minHeightRatio        tab-heavy=0.65, sparse=0.55
+
+================================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>UG Pro PDF Importer v1.2</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --c-bg: #1a1a2e; --c-surface: #16213e; --c-panel: #0f3460;
+    --c-accent: #e94560; --c-accent2: #4ecca3; --c-text: #eee;
+    --c-muted: #888; --c-border: #334;
+    --radius: 6px; --gap: 12px;
+  }
+  body { background: var(--c-bg); color: var(--c-text); font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+  h1 { font-size: 18px; font-weight: 700; }
+  h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--c-accent2); }
+  a { color: var(--c-accent2); }
+  button {
+    background: var(--c-panel); color: var(--c-text); border: 1px solid var(--c-border);
+    border-radius: var(--radius); padding: 5px 12px; cursor: pointer; font-size: 13px;
+    transition: background .15s;
+  }
+  button:hover { background: var(--c-accent); border-color: var(--c-accent); }
+  button.primary { background: var(--c-accent); border-color: var(--c-accent); font-weight: 600; }
+  button.secondary { background: var(--c-accent2); color: #000; border-color: var(--c-accent2); }
+
+  #app { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+
+  header {
+    background: var(--c-surface); border-bottom: 1px solid var(--c-border);
+    padding: 10px 20px; display: flex; align-items: center; gap: 16px;
+  }
+  .badge { background: var(--c-accent); color: #fff; font-size: 10px; font-weight: 700;
+    padding: 2px 6px; border-radius: 3px; letter-spacing: .05em; }
+
+  main { display: flex; gap: 0; overflow: hidden; height: calc(100vh - 45px); }
+
+  /* Left sidebar: upload + settings */
+  #sidebar {
+    width: 300px; flex-shrink: 0; background: var(--c-surface);
+    border-right: 1px solid var(--c-border); overflow-y: auto; padding: var(--gap);
+    display: flex; flex-direction: column; gap: var(--gap);
+  }
+  #drop-zone {
+    border: 2px dashed var(--c-border); border-radius: var(--radius);
+    padding: 24px 12px; text-align: center; cursor: pointer; transition: border-color .2s;
+  }
+  #drop-zone.drag-over { border-color: var(--c-accent2); }
+  #drop-zone .icon { font-size: 32px; margin-bottom: 8px; }
+  #drop-zone p { color: var(--c-muted); font-size: 12px; }
+  #file-input { display: none; }
+  #file-name { font-size: 12px; color: var(--c-accent2); min-height: 18px; }
+
+  .section { background: var(--c-panel); border-radius: var(--radius); padding: var(--gap); }
+  .section-header { display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; user-select: none; }
+  .section-body { margin-top: 10px; }
+  .collapsed .section-body { display: none; }
+
+  label { display: block; margin-bottom: 6px; font-size: 12px; color: var(--c-muted); }
+  label span { display: flex; justify-content: space-between; }
+  input[type=range] { width: 100%; }
+  input[type=number], select {
+    background: var(--c-bg); color: var(--c-text); border: 1px solid var(--c-border);
+    border-radius: 4px; padding: 3px 6px; width: 100%; font-size: 13px;
+  }
+  select option { background: var(--c-bg); }
+
+  #log {
+    background: #000; border-radius: var(--radius); padding: 8px; font-family: monospace;
+    font-size: 11px; max-height: 140px; overflow-y: auto; white-space: pre-wrap; color: #0f0;
+  }
+  .log-warn { color: #fa0; }
+  .log-err  { color: #f44; }
+
+  /* Center: canvas overlay */
+  #canvas-area {
+    flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--c-bg);
+  }
+  #canvas-toolbar {
+    background: var(--c-surface); border-bottom: 1px solid var(--c-border);
+    padding: 6px var(--gap); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .page-info { font-size: 12px; color: var(--c-muted); }
+  #canvas-wrap {
+    flex: 1 1 auto; overflow: auto; position: relative;
+    display: flex; align-items: flex-start; justify-content: flex-start;
+  }
+  #canvas-container { position: relative; display: inline-block; }
+  #page-canvas { display: block; }
+  #overlay-canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+
+  /* Right: output */
+  #output-area {
+    width: 340px; flex-shrink: 0; background: var(--c-surface);
+    border-left: 1px solid var(--c-border); display: flex; flex-direction: column; overflow: hidden;
+  }
+  #output-toolbar {
+    background: var(--c-panel); border-bottom: 1px solid var(--c-border);
+    padding: 6px var(--gap); display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  }
+  #csmpn-output {
+    flex: 1 1 auto; width: 100%; padding: var(--gap); background: #0a0a0a;
+    color: #e8e8e8; border: none; outline: none; resize: none; font-family: 'Courier New', monospace;
+    font-size: 12px; line-height: 1.6;
+  }
+  #debug-panel {
+    max-height: 180px; overflow-y: auto; padding: 6px var(--gap);
+    background: var(--c-bg); border-top: 1px solid var(--c-border);
+  }
+  .metric-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0;
+    border-bottom: 1px solid var(--c-border); }
+  .metric-label { color: var(--c-muted); }
+  .metric-val { color: var(--c-accent2); font-weight: 600; font-family: monospace; }
+  .warning-pill {
+    background: #fa04; border: 1px solid #fa0; color: #fa0;
+    border-radius: 3px; padding: 2px 6px; font-size: 11px; margin: 2px 0; display: block;
+  }
+  .empty { color: var(--c-muted); font-size: 12px; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>UG Pro PDF Importer</h1>
+    <span class="badge">v1.2</span>
+    <span style="color:var(--c-muted);font-size:12px">Ultimate Guitar Pro PDF → CSMPN Fake Book</span>
+  </header>
+  <main>
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div id="drop-zone" title="Click or drop PDF here">
+        <div class="icon">📄</div>
+        <strong>Drop UG Pro PDF here</strong>
+        <p>or click to browse</p>
+        <p id="file-name"></p>
+        <input type="file" id="file-input" accept=".pdf"/>
+      </div>
+
+      <div class="section" id="settings-section">
+        <div class="section-header" onclick="toggleSection('settings-section')">
+          <h2>Settings</h2><span id="settings-arrow">▼</span>
+        </div>
+        <div class="section-body">
+          <label><span><span>Output mode</span></span>
+            <select id="cfg-outputMode">
+              <option value="csmpn-fakebook" selected>Fake-book (- : = prefixes)</option>
+              <option value="csmpn-barlines">Barline style (‖ | notation)</option>
+            </select>
+          </label>
+          <label><span><span>Measures per row</span><span id="val-mpl">4</span></span>
+            <input type="range" id="cfg-measuresPerLine" min="2" max="8" value="4"
+              oninput="document.getElementById('val-mpl').textContent=this.value"/>
+          </label>
+          <label><span><span>Header exclusion (top %)</span><span id="val-her">13</span></span>
+            <input type="range" id="cfg-headerExclusionPct" min="5" max="30" value="13"
+              oninput="document.getElementById('val-her').textContent=this.value"/>
+          </label>
+          <label><span><span>Render scale</span><span id="val-rs">1.8</span></span>
+            <input type="range" id="cfg-renderScale" min="1.0" max="3.0" step="0.1" value="1.8"
+              oninput="document.getElementById('val-rs').textContent=(+this.value).toFixed(1)"/>
+          </label>
+          <label><span><span>Y cluster threshold (pt)</span><span id="val-yct">45</span></span>
+            <input type="range" id="cfg-yClusterThreshold" min="20" max="100" value="45"
+              oninput="document.getElementById('val-yct').textContent=this.value"/>
+          </label>
+          <label><span><span>Multi-chord bars</span></span>
+            <select id="cfg-multiChord">
+              <option value="join" selected>Join with _ (all hits)</option>
+              <option value="first">First hit only</option>
+            </select>
+          </label>
+          <label><span><span>Fill empty bars</span></span>
+            <select id="cfg-fillEmpty">
+              <option value="percent" selected>% (repeat)</option>
+              <option value="nc">N.C.</option>
+            </select>
+          </label>
+          <label style="margin-top:8px"><span><span>Barline preset</span></span>
+            <select id="cfg-preset">
+              <option value="auto" selected>Auto-detect</option>
+              <option value="sparse">Sparse/Jazz</option>
+              <option value="tab-heavy">Tab-heavy</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="section" id="log-section">
+        <div class="section-header" onclick="toggleSection('log-section')">
+          <h2>Processing Log</h2><span id="log-arrow">▼</span>
+        </div>
+        <div class="section-body">
+          <div id="log"><span class="log-warn">Ready. Drop a UG Pro PDF to begin.</span></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Canvas area -->
+    <section id="canvas-area">
+      <div id="canvas-toolbar">
+        <button onclick="changePage(-1)" id="btn-prev">◀ Prev</button>
+        <button onclick="changePage(1)" id="btn-next">Next ▶</button>
+        <span class="page-info" id="page-info">No file loaded</span>
+        <button onclick="toggleOverlay()" id="btn-overlay">Hide Overlay</button>
+        <button onclick="downloadDebugJson()" id="btn-debug-json" style="display:none">⬇ debugJson</button>
+      </div>
+      <div id="canvas-wrap">
+        <div id="canvas-container">
+          <canvas id="page-canvas"></canvas>
+          <canvas id="overlay-canvas"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Output area -->
+    <section id="output-area">
+      <div id="output-toolbar">
+        <h2 style="flex:1">CSMPN Output</h2>
+        <button onclick="copyOutput()">Copy</button>
+        <button class="secondary" onclick="useChart()" id="btn-use" style="display:none">Use Chart ▶</button>
+      </div>
+      <textarea id="csmpn-output" placeholder="Import a UG Pro PDF to see output…" readonly></textarea>
+      <div id="debug-panel"><p class="empty">Metrics will appear after processing</p></div>
+    </section>
+  </main>
+</div>
+
+<script type="module">
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: PDF.js bootstrap
+// ─────────────────────────────────────────────────────────────────────────────
+import * as pdfjsLib from 'https://unpkg.com/pdfjs-dist@5.5.207/build/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://unpkg.com/pdfjs-dist@5.5.207/build/pdf.worker.min.mjs';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: Constants & Default Config
+// ─────────────────────────────────────────────────────────────────────────────
+const PDFJS_VERSION = '5.5.207';
+
+const PRESETS = {
+  'sparse':    { stemRunRatio: 0.65, minSpacingPx: 18, minHeightRatio: 0.55 },
+  'tab-heavy': { stemRunRatio: 0.80, minSpacingPx: 28, minHeightRatio: 0.65 },
+};
+const STEM_DENSITY_THRESHOLD = 0.08; // auto preset selection cutoff
+
+const DIRECTION_SET = new Set([
+  'N.C.','NC','Fine','Coda','D.S.','DS','D.C.','DC','D.S.al','D.C.al',
+  'To','Tacet','Simile','Vamp','Rit.','Rit','Rail.','Accel.',
+  'Intro','Verse','Chorus','Bridge','Solo','Outro','Interlude','Pre','Post',
+  'Double-time','Half-time','Freely',
+]);
+const DIRECTION_PAT = /^(N\.C\.|Fine|Coda|D\.S|D\.C|To\s|Double|Half|Freely|Tacet|Simile|Vamp|Rit|Rail|Accel)/i;
+const HEADER_KW_PAT = /\b(Tuning|Capo|Transcribed|Transcription|Difficulty|Author|Arranger|Engraved|Engraver|www\.|http|©|Copyright|Produced)\b/i;
+
+// Chord regex: quality suffix is OPTIONAL so bare roots (A B C D E F G) are accepted
+const CHORD_RE = /^[A-G][b#]?(?:maj7|maj|m7b5|m7|m6|m9|m11|m13|mM7|m|dim7|dim|aug7|aug|sus4|sus2|sus|add9|add11|add13|add|7M|[Øø]7?|°7?|Δ7?|M7?|\d+(?:[b#]\d+)*)?(?:\/[A-G][b#]?)?$/;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: normalizeChordSymbol
+// ─────────────────────────────────────────────────────────────────────────────
+function normalizeChordSymbol(raw) {
+  let s = raw.trim();
+  s = s.replace(/♭/g, 'b').replace(/♯/g, '#');
+  if (!s) return s;
+  s = s[0].toUpperCase() + s.slice(1);
+  s = s.replace(/([A-G][b#]?)([Øø])7?/g, '$1m7b5');
+  s = s.replace(/([A-G][b#]?)(o7|°7)/g, '$1dim7');
+  s = s.replace(/([A-G][b#]?)(°|o(?!7|[a-z]))/g, '$1dim');
+  s = s.replace(/Δ7?/g, 'maj7');
+  s = s.replace(/7M\b/g, 'maj7');
+  s = s.replace(/[Mm][Aa][Jj]7/g, 'maj7');
+  s = s.replace(/[Mm][Aa][Jj]\b/g, 'maj7');
+  s = s.replace(/min(?!or)/g, 'm');
+  return s;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: headerFilters
+// ─────────────────────────────────────────────────────────────────────────────
+function isInHeaderBand(span, pageHeight, ratio) {
+  // PDF y=0 is bottom; header band = y > pageHeight*(1-ratio)
+  return span.y > pageHeight * (1 - ratio);
+}
+
+function isHeaderKeyword(text) {
+  return HEADER_KW_PAT.test(text);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: chordClassifier + markerClassifier
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Classify spans for one page.
+ * Returns { chordSpans, rehearsalSpans, directionMarkers, headerFilteredCount, medianFontSize }
+ */
+function classifyPageSpans(pageSpans, pageWidth, pageHeight, headerRatio) {
+  let headerFilteredCount = 0;
+
+  // Step 1: filter header band + header keywords
+  const eligible = pageSpans.filter(s => {
+    if (isInHeaderBand(s, pageHeight, headerRatio) || isHeaderKeyword(s.text)) {
+      headerFilteredCount++;
+      return false;
+    }
+    return true;
+  });
+
+  // Step 2: compute median font size from multi-char letter-starting spans
+  const multiCharFontSizes = eligible
+    .filter(s => s.text.trim().length > 1 && /^[A-G]/.test(s.text.trim()))
+    .map(s => s.fontSize)
+    .sort((a, b) => a - b);
+  const medianFontSize = multiCharFontSizes.length > 0
+    ? multiCharFontSizes[Math.floor(multiCharFontSizes.length / 2)]
+    : 12;
+
+  const chordSpans = [];
+  const rehearsalSpans = [];
+  const directionMarkers = [];
+
+  for (const span of eligible) {
+    const t = span.text.trim();
+    if (!t || t.length > 20) continue;
+
+    // Skip pure numbers (bar numbers, fingerings)
+    if (/^\d+$/.test(t)) continue;
+
+    // Must start with a note name
+    if (!/^[A-G]/.test(t)) {
+      // Check for direction markers that don't start with A-G
+      const m = classifyDirectionSpan(span);
+      if (m) directionMarkers.push(m);
+      continue;
+    }
+
+    // Direction text?
+    if (DIRECTION_SET.has(t) || DIRECTION_PAT.test(t)) {
+      const m = classifyDirectionSpan(span);
+      if (m) directionMarkers.push(m);
+      continue;
+    }
+
+    // Single-letter span: A B C D E F G
+    if (/^[A-G]$/.test(t)) {
+      const isRehearsalByPos  = span.x < 0.12 * pageWidth;
+      const isRehearsalBySize = span.fontSize > medianFontSize * 1.35;
+      if (isRehearsalByPos && isRehearsalBySize) {
+        rehearsalSpans.push(span);
+      } else {
+        // Treat as chord (bare root, e.g. "A" = A major)
+        chordSpans.push(span);
+      }
+      continue;
+    }
+
+    // Multi-char: check chord regex after normalization
+    const normed = normalizeChordSymbol(t);
+    if (CHORD_RE.test(normed) || CHORD_RE.test(t)) {
+      chordSpans.push(span);
+    }
+  }
+
+  return { chordSpans, rehearsalSpans, directionMarkers, headerFilteredCount, medianFontSize };
+}
+
+function classifyDirectionSpan(span) {
+  const t = span.text.trim();
+  const u = t.toUpperCase();
+  if (u === 'N.C.' || u === 'NC') return { type:'nc',   value:'N.C.', x:span.x, y:span.y };
+  if (/^(D\.S\.|DS)/i.test(t))    return { type:'ds',   value:t,      x:span.x, y:span.y };
+  if (/^(D\.C\.|DC)/i.test(t))    return { type:'dc',   value:t,      x:span.x, y:span.y };
+  if (/^fine$/i.test(t))          return { type:'fine', value:'Fine', x:span.x, y:span.y };
+  if (/^coda$/i.test(t))          return { type:'coda', value:'Coda', x:span.x, y:span.y };
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: clusterSystems
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Cluster chord spans into horizontal staff bands by Y proximity.
+ * Returns groups sorted top-to-bottom (descending PDF y).
+ */
+function clusterIntoSystems(spans, thresholdPt) {
+  const sorted = [...spans].sort((a, b) => b.y - a.y); // top first (high y)
+  const groups = [];
+
+  for (const span of sorted) {
+    let best = null, bestDist = Infinity;
+    for (const g of groups) {
+      const dist = Math.abs(span.y - g.yCenter);
+      if (dist < thresholdPt && dist < bestDist) { bestDist = dist; best = g; }
+    }
+    if (best) {
+      best.spans.push(span);
+      best.yCenter = best.spans.reduce((s, sp) => s + sp.y, 0) / best.spans.length;
+    } else {
+      groups.push({ yCenter: span.y, spans: [span] });
+    }
+  }
+  groups.sort((a, b) => b.yCenter - a.yCenter);
+  return groups;
+}
+
+/**
+ * For multi-track PDFs: if the number of system groups is suspiciously high
+ * (>8 per page), keep only the densest groups (by chord count).
+ * Simple heuristic: take groups whose span count >= 50% of max-group span count.
+ */
+function filterDensestSystems(groups) {
+  if (groups.length <= 8) return groups;
+  const maxCount = Math.max(...groups.map(g => g.spans.length));
+  const threshold = Math.max(2, Math.round(maxCount * 0.5));
+  return groups.filter(g => g.spans.length >= threshold);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: renderPageCache
+// ─────────────────────────────────────────────────────────────────────────────
+const pageCanvasCache = new Map(); // pageIndex → canvas
+
+async function renderPageToCanvas(page, scale) {
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width  = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: stemRejector + detectBarlines
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Longest continuous run of dark pixels in a column */
+function longestDarkRun(data, col, bandW, bandH, threshold = 128) {
+  let maxRun = 0, cur = 0;
+  for (let row = 0; row < bandH; row++) {
+    const i = (row * bandW + col) * 4;
+    const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+    if (gray < threshold) { cur++; if (cur > maxRun) maxRun = cur; }
+    else { cur = 0; }
+  }
+  return maxRun;
+}
+
+/** Overall dark pixel fraction in imageData */
+function computeStemDensity(data, total) {
+  let dark = 0;
+  for (let i = 0; i < total * 4; i += 4) {
+    const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+    if (gray < 128) dark++;
+  }
+  return dark / total;
+}
+
+/**
+ * Detect barline x-positions within a rendered system band.
+ *
+ * Algorithm:
+ *  1. Grayscale + vertical projection (dark pixel count per column)
+ *  2. Peak detection above minHeightRatio * bandH
+ *  3. Stem rejection: accept only if longest continuous dark run >= stemRunRatio * bandH
+ *  4. Minimum spacing enforcement
+ *
+ * Returns x positions in CANVAS pixels (relative to bandX0).
+ */
+function detectBarlinesInBand(canvas, bandY0, bandY1, bandX0, bandX1, preset) {
+  const ctx = canvas.getContext('2d');
+  const bandH = Math.max(1, bandY1 - bandY0);
+  const bandW = Math.max(1, bandX1 - bandX0);
+  if (bandW <= 0 || bandH <= 0) return [];
+
+  const imageData = ctx.getImageData(bandX0, bandY0, bandW, bandH);
+  const data = imageData.data;
+
+  // Auto-select preset if not forced
+  const density = computeStemDensity(data, bandW * bandH);
+  const p = preset || (density > STEM_DENSITY_THRESHOLD ? PRESETS['tab-heavy'] : PRESETS['sparse']);
+
+  // Vertical projection
+  const profile = new Float32Array(bandW);
+  for (let col = 0; col < bandW; col++) {
+    let dark = 0;
+    for (let row = 0; row < bandH; row++) {
+      const i = (row * bandW + col) * 4;
+      const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+      if (gray < 128) dark++;
+    }
+    profile[col] = dark / bandH;
+  }
+
+  // Peak detection + stem rejection
+  const peaks = [];
+  for (let col = 1; col < bandW - 1; col++) {
+    if (profile[col] < p.minHeightRatio) continue;
+    if (profile[col] < profile[col-1] || profile[col] < profile[col+1]) continue;
+
+    // Stem rejection: check longest continuous run
+    const run = longestDarkRun(data, col, bandW, bandH);
+    if (run < p.stemRunRatio * bandH) continue;
+
+    // Minimum spacing
+    if (peaks.length > 0 && col - peaks[peaks.length-1] < p.minSpacingPx) {
+      if (profile[col] > profile[peaks[peaks.length-1]]) peaks[peaks.length-1] = col;
+    } else {
+      peaks.push(col);
+    }
+  }
+
+  return peaks; // canvas-relative column indices
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: mapChordsToMeasures + confidenceScore
+// ─────────────────────────────────────────────────────────────────────────────
+
+function computeChordConfidence(rawText, normedText) {
+  if (CHORD_RE.test(normedText)) return 1.0;
+  if (CHORD_RE.test(rawText)) return 0.85;
+  if (/^[A-G]$/.test(rawText)) return 0.80;
+  return 0.60;
+}
+
+/**
+ * Assign each chord span to a measure slot determined by barlines.
+ * barlinesX: sorted array of x positions in PDF units (includes boundary entries).
+ * Returns array of arrays: measureEvents[measureIdx] = [events...]
+ */
+function mapChordsToMeasures(spans, barlinesX) {
+  const nMeasures = Math.max(1, barlinesX.length - 1);
+  const measureEvents = Array.from({ length: nMeasures }, () => []);
+
+  for (const span of spans) {
+    const cx = span.x + (span.width || span.fontSize) / 2;
+    let slot = nMeasures - 1; // default: last measure
+    for (let m = 0; m < barlinesX.length - 1; m++) {
+      if (cx >= barlinesX[m] && cx < barlinesX[m+1]) { slot = m; break; }
+    }
+    const raw = span.text.trim();
+    const norm = normalizeChordSymbol(raw);
+    measureEvents[slot].push({ x: span.x, y: span.y, raw, norm,
+      confidence: computeChordConfidence(raw, norm) });
+  }
+
+  // Sort within each measure by x (left-to-right)
+  for (const events of measureEvents) events.sort((a, b) => a.x - b.x);
+  return measureEvents;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: emitCSMPN (both modes)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function fakebookSectionPrefix(label) {
+  const l = label.toLowerCase();
+  if (l.includes('chorus') || l.includes('refrain')) return ':';
+  if (l.includes('bridge')) return '=';
+  return '-';
+}
+
+function buildBarToken(measure, lastChord, fillEmpty, multiChordMode) {
+  const chords = measure.chords;
+  if (chords.length === 0) {
+    if (!lastChord) return ['N.C.', '']; // first measure, no previous
+    if (fillEmpty === 'percent') return ['%', lastChord];
+    return ['N.C.', lastChord];
+  }
+  let token;
+  if (multiChordMode === 'first') {
+    token = chords[0];
+  } else {
+    token = chords.join('_');
+  }
+  return [token, chords[chords.length - 1]];
+}
+
+function emitFakebook(songIR, config) {
+  const { meta, sections, measures } = songIR;
+  const out = [];
+
+  // Header — always all fields
+  out.push(`Title: ${meta.title || ''}`);
+  out.push(`Style: ${meta.style || ''}`);
+  out.push(`Tempo: ${meta.tempo || ''}`);
+  out.push(`Time: ${meta.time || ''}`);
+  out.push(`Key: ${meta.key || ''}`);
+  out.push('');
+
+  const mpl = config.measuresPerLine;
+  const total = measures.length;
+  let lastChord = '';
+
+  for (let si = 0; si < sections.length; si++) {
+    const sec = sections[si];
+    const nextStart = si + 1 < sections.length ? sections[si+1].startMeasure : total;
+    const secMeasures = measures.slice(sec.startMeasure, nextStart);
+    if (secMeasures.length === 0) continue;
+
+    const prefix = fakebookSectionPrefix(sec.label);
+    out.push(`${prefix} ${sec.label}`);
+
+    const tokens = [];
+    for (const m of secMeasures) {
+      const [tok, next] = buildBarToken(m, lastChord, config.fillEmpty, config.multiChord);
+      tokens.push(tok);
+      if (next) lastChord = next;
+    }
+
+    for (let i = 0; i < tokens.length; i += mpl) {
+      out.push(tokens.slice(i, i + mpl).join(' '));
+    }
+    out.push('');
+  }
+  return out.join('\n');
+}
+
+function emitBarlinesStyle(songIR, config) {
+  const { meta, sections, measures } = songIR;
+  const out = [];
+
+  out.push(`Title: ${meta.title || ''}`);
+  if (meta.composer) out.push(`Composer: ${meta.composer}`);
+  out.push(`Style: ${meta.style || ''}`);
+  out.push(`Tempo: ${meta.tempo ? '♩=' + meta.tempo : ''}`);
+  out.push(`Key: ${meta.key || ''}`);
+  out.push(`Time: ${meta.time || ''}`);
+  out.push('');
+
+  const mpl = config.measuresPerLine;
+  const total = measures.length;
+  let lastChord = '';
+
+  for (let si = 0; si < sections.length; si++) {
+    const sec = sections[si];
+    const nextStart = si + 1 < sections.length ? sections[si+1].startMeasure : total;
+    const secMeasures = measures.slice(sec.startMeasure, nextStart);
+    if (secMeasures.length === 0) continue;
+
+    out.push(`[${sec.label}]`);
+    const tokens = secMeasures.map(m => {
+      if (m.chords.length === 0) {
+        if (!lastChord) return 'N.C.';
+        const tok = config.fillEmpty === 'percent' ? '%' : 'N.C.';
+        return tok;
+      }
+      const tok = config.multiChord === 'first' ? m.chords[0] : m.chords.join(' ');
+      lastChord = m.chords[m.chords.length - 1];
+      return tok;
+    });
+
+    for (let i = 0; i < tokens.length; i += mpl) {
+      const line = tokens.slice(i, i + mpl);
+      const isFirst = i === 0, isLast = i + mpl >= tokens.length;
+      if (isFirst && isLast) out.push('‖ ' + line.join(' | ') + ' ‖');
+      else if (isFirst)      out.push('‖ ' + line.join(' | ') + ' |');
+      else if (isLast)       out.push('| ' + line.join(' | ') + ' ‖');
+      else                   out.push('| ' + line.join(' | ') + ' |');
+    }
+    out.push('');
+  }
+  return out.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: overlayRenderer
+// ─────────────────────────────────────────────────────────────────────────────
+
+function drawDebugOverlay(overlayCanvas, pageRender, pageH, scale) {
+  const ctx = overlayCanvas.getContext('2d');
+  ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+  // PDF y→canvas y: canvasY = (pageH - pdfY) * scale
+  const py = y => (pageH - y) * scale;
+  const px = x => x * scale;
+
+  for (const sys of pageRender.systems) {
+    const [bx0, by0, bx1, by1] = sys.bbox;
+    const cx0 = px(bx0), cy0 = py(by1), cx1 = px(bx1), cy1 = py(by0);
+    const ch = cy1 - cy0, cw = cx1 - cx0;
+
+    // System bbox: blue dashed
+    ctx.strokeStyle = '#4af';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 3]);
+    ctx.strokeRect(cx0, cy0, cw, ch);
+    ctx.setLineDash([]);
+
+    // System label
+    ctx.fillStyle = '#4af';
+    ctx.font = '11px monospace';
+    ctx.fillText(`sys ${sys.systemIndex} [${sys.preset || 'auto'}]`, cx0 + 2, cy0 - 2);
+
+    // Barlines: red vertical lines
+    for (const bx of sys.barlinesX) {
+      const bCanvasX = px(bx);
+      ctx.strokeStyle = 'rgba(255,80,80,0.85)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(bCanvasX, cy0);
+      ctx.lineTo(bCanvasX, cy1);
+      ctx.stroke();
+    }
+
+    // Measure indices: purple text above barline midpoints
+    for (let mi = 0; mi < sys.measures.length; mi++) {
+      const m = sys.measures[mi];
+      const [mx0, mx1] = m.xRange;
+      const midX = px((mx0 + mx1) / 2);
+      ctx.fillStyle = 'rgba(180,100,255,0.9)';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`m${m.globalIndex}`, midX, cy0 + 12);
+
+      // Confidence dots on each event
+      for (const ev of m.events) {
+        const evX = px(ev.x);
+        const evY = py(ev.y);
+        const conf = ev.confidence;
+        const dotColor = conf >= 0.9 ? '#4f4' : conf >= 0.7 ? '#ff4' : '#f44';
+        ctx.fillStyle = dotColor;
+        ctx.beginPath();
+        ctx.arc(evX, evY - 6, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Chord label: yellow pill
+        ctx.fillStyle = 'rgba(255,220,0,0.9)';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'left';
+        const label = ev.norm || ev.raw;
+        const tw = ctx.measureText(label).width;
+        ctx.fillRect(evX, evY - 22, tw + 6, 14);
+        ctx.fillStyle = '#000';
+        ctx.fillText(label, evX + 3, evY - 11);
+      }
+    }
+    ctx.textAlign = 'left';
+
+    // Rehearsal markers: green
+    for (const mk of sys.markers) {
+      if (mk.type === 'rehearsal') {
+        ctx.fillStyle = '#4f8';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillText(mk.value, px(mk.x), py(mk.y));
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: extractTextSpans (PDF.js text extraction)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function extractPageSpans(page) {
+  const viewport = page.getViewport({ scale: 1 });
+  const pageH = viewport.height;
+  const pageW = viewport.width;
+  const content = await page.getTextContent();
+  const spans = [];
+
+  for (const item of content.items) {
+    if (!('str' in item) || !item.str.trim()) continue;
+    const tx = item.transform[4];
+    const ty = item.transform[5];
+    const fontSize = Math.abs(item.transform[3]);
+    spans.push({
+      text: item.str,
+      x: tx, y: ty,
+      width: item.width != null ? item.width : fontSize,
+      height: item.height != null ? item.height : fontSize,
+      fontSize,
+    });
+  }
+  return { spans, pageW, pageH };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: metadata extraction
+// ─────────────────────────────────────────────────────────────────────────────
+
+function extractMetadata(allFirstPageSpans, pageH) {
+  const meta = { title:'', composer:'', style:'', tempo:'', key:'', time:'' };
+
+  const topSpans = [...allFirstPageSpans]
+    .filter(s => s.y > pageH * 0.75)
+    .sort((a, b) => b.fontSize - a.fontSize);
+
+  if (topSpans[0]) meta.title = topSpans[0].text.trim();
+  if (topSpans[1]) meta.composer = topSpans[1].text.trim();
+
+  for (const s of allFirstPageSpans) {
+    const t = s.text.trim();
+    if (!meta.tempo) {
+      const m = t.match(/[♩=]\s*=?\s*(\d{2,3})/);
+      if (m) { meta.tempo = m[1]; continue; }
+      const m2 = t.match(/^=\s*(\d{2,3})$/);
+      if (m2) { meta.tempo = m2[1]; continue; }
+      const m3 = t.match(/^(\d{2,3})\s*bpm$/i);
+      if (m3) { meta.tempo = m3[1]; continue; }
+    }
+    if (!meta.key) {
+      const km = t.match(/[Kk]ey\s*(?:of\s*)?([A-G][b#]?\s*(?:major|minor|maj|min|m)?)/);
+      if (km) { meta.key = km[1].trim(); continue; }
+      const sm = t.match(/^([A-G][b#]?)\s+(Major|Minor|major|minor)$/);
+      if (sm) { meta.key = sm[1] + ' ' + sm[2]; continue; }
+    }
+    if (!meta.time) {
+      const tm = t.match(/^(\d+\/\d+)$/);
+      if (tm) { meta.time = tm[1]; continue; }
+    }
+  }
+  return meta;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN ORCHESTRATOR: importUGProPdf
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function importUGProPdf(file, config, onProgress) {
+  const log = msg => { onProgress && onProgress(msg); };
+
+  const MIN_CHORD_COUNT = 6; // fail-safe threshold
+  const arrayBuffer = await file.arrayBuffer();
+  log('Loading PDF…');
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const numPages = pdf.numPages;
+  log(`Loaded: ${numPages} page(s)`);
+
+  // SongIR accumulation
+  const songIR = {
+    meta: {},
+    pages: [],
+    systems: [],
+    measures: [],     // linear: { n, chords, directives }
+    events: [],       // linear: all events
+    warnings: [],
+    _sections: null,  // filled at end
+  };
+
+  let globalMeasureIdx = 0;
+  const pageRenders = [];
+  let firstPageSpans = null, firstPageH = 0;
+  const forcedPreset = config.preset !== 'auto' ? PRESETS[config.preset] : null;
+
+  for (let pNum = 1; pNum <= numPages; pNum++) {
+    log(`Page ${pNum}/${numPages}: extracting text…`);
+    const page = await pdf.getPage(pNum);
+    const { spans, pageW, pageH } = await extractPageSpans(page);
+
+    if (pNum === 1) { firstPageSpans = spans; firstPageH = pageH; }
+
+    // Classify spans for this page
+    const { chordSpans, rehearsalSpans, directionMarkers, headerFilteredCount, medianFontSize } =
+      classifyPageSpans(spans, pageW, pageH, config.headerExclusionRatio);
+
+    songIR.pages.push({ pageIndex: pNum-1, chordSpansFound: chordSpans.length, headerFilteredSpans: headerFilteredCount });
+
+    // Fail-safe: not enough chord spans
+    if (chordSpans.length < MIN_CHORD_COUNT) {
+      const warnMsg = `Page ${pNum}: only ${chordSpans.length} chord span(s) found (need ≥${MIN_CHORD_COUNT}). Chord text may not be extractable; OCR fallback required (v2).`;
+      songIR.warnings.push(warnMsg);
+      log('[WARN] ' + warnMsg);
+    }
+
+    // Render page to canvas (for barline detection + overlay)
+    log(`Page ${pNum}: rendering canvas at ×${config.renderScale}…`);
+    const canvas = await renderPageToCanvas(page, config.renderScale);
+    const scale = config.renderScale;
+
+    // Cluster chord spans into systems
+    let systemGroups = clusterIntoSystems(chordSpans, config.yClusterThreshold);
+    systemGroups = filterDensestSystems(systemGroups);
+    log(`Page ${pNum}: ${systemGroups.length} system(s) detected`);
+
+    const pageSystems = [];
+
+    for (let sysIdx = 0; sysIdx < systemGroups.length; sysIdx++) {
+      const group = systemGroups[sysIdx];
+      if (group.spans.length === 0) continue;
+
+      // System bounding box in PDF units
+      const xs = group.spans.flatMap(s => [s.x, s.x + (s.width || s.fontSize)]);
+      const ys = group.spans.map(s => s.y);
+      const bx0 = Math.min(...xs) - 10;
+      const bx1 = Math.max(...xs) + 10;
+      const by0 = Math.min(...ys) - 15;
+      const by1 = Math.max(...ys) + 20;
+
+      // Convert PDF bbox → canvas pixels
+      const canvasX0 = Math.max(0, Math.round(bx0 * scale));
+      const canvasX1 = Math.min(canvas.width,  Math.round(bx1 * scale));
+      // Canvas y is flipped: top of page = canvas y=0
+      const canvasY0 = Math.max(0, Math.round((pageH - by1) * scale) - Math.round(20 * scale));
+      const canvasY1 = Math.min(canvas.height, Math.round((pageH - by0) * scale) + Math.round(40 * scale));
+
+      // Detect barlines in band
+      const peakCols = detectBarlinesInBand(canvas, canvasY0, canvasY1, canvasX0, canvasX1, forcedPreset);
+
+      // Determine actual preset used (for overlay label)
+      const bandCtx = canvas.getContext('2d');
+      const bw = Math.max(1, canvasX1 - canvasX0), bh = Math.max(1, canvasY1 - canvasY0);
+      const imgData = bandCtx.getImageData(canvasX0, canvasY0, bw, bh);
+      const density = computeStemDensity(imgData.data, bw * bh);
+      const usedPreset = forcedPreset ? config.preset : (density > STEM_DENSITY_THRESHOLD ? 'tab-heavy' : 'sparse');
+
+      // Convert peak columns (canvas-relative) → PDF x units
+      const detectedX = peakCols.map(col => (canvasX0 + col) / scale);
+
+      // Inject synthetic left + right boundaries
+      const allBarlinesX = [bx0 + 5, ...detectedX, bx1 - 5];
+      // Deduplicate + sort
+      const barlinesX = [...new Set(allBarlinesX.map(x => Math.round(x * 10) / 10))].sort((a,b) => a-b);
+
+      // Map chord spans to measures
+      const measureEvents = mapChordsToMeasures(group.spans, barlinesX);
+      const nMeasures = measureEvents.length;
+
+      // Collect markers for this system
+      const sysMarkers = [];
+      for (const rSpan of rehearsalSpans) {
+        if (rSpan.y >= by0 && rSpan.y <= by1) {
+          sysMarkers.push({ type:'rehearsal', value:rSpan.text.trim(), x:rSpan.x, y:rSpan.y });
+        }
+      }
+      for (const dm of directionMarkers) {
+        if (dm.y >= by0 && dm.y <= by1) sysMarkers.push(dm);
+      }
+
+      // Build system measures
+      const sysMeasures = measureEvents.map((events, localIdx) => ({
+        localIndex: localIdx,
+        globalIndex: globalMeasureIdx + localIdx,
+        xRange: [barlinesX[localIdx] ?? bx0, barlinesX[localIdx+1] ?? bx1],
+        events,
+        directives: [],
+      }));
+
+      // Append to linear measures
+      for (const m of sysMeasures) {
+        let chords;
+        if (m.events.length === 0) {
+          chords = [];
+        } else if (config.multiChord === 'first') {
+          chords = [m.events[0].norm];
+        } else {
+          chords = m.events.map(e => e.norm);
+        }
+        songIR.measures.push({ n: m.globalIndex, chords, directives: m.directives });
+        for (const ev of m.events) songIR.events.push({ measureIndex: m.globalIndex, ...ev });
+      }
+
+      globalMeasureIdx += nMeasures;
+
+      const sysObj = {
+        systemIndex: sysIdx, pageIndex: pNum-1,
+        bbox: [bx0, by0, bx1, by1],
+        barlinesX, measures: sysMeasures, markers: sysMarkers,
+        preset: usedPreset, stemDensity: density,
+      };
+      pageSystems.push(sysObj);
+      songIR.systems.push(sysObj);
+      log(`  Sys ${sysIdx}: ${barlinesX.length-1} measure(s), preset=${usedPreset}, chords=${group.spans.length}`);
+    }
+
+    pageRenders.push({ pageIndex: pNum-1, canvas, scale, pageW, pageH, systems: pageSystems });
+  }
+
+  // Metadata from first page
+  songIR.meta = extractMetadata(firstPageSpans || [], firstPageH);
+
+  // Section detection from rehearsal markers
+  const sections = [];
+  let mOff = 0;
+  for (const sys of songIR.systems) {
+    const rehearsals = sys.markers.filter(m => m.type === 'rehearsal');
+    if (rehearsals.length > 0) {
+      for (const r of rehearsals) sections.push({ label: r.value, startMeasure: mOff });
+    }
+    mOff += sys.measures.length;
+  }
+  if (sections.length === 0) {
+    sections.push({ label: 'Chords', startMeasure: 0 });
+  }
+  songIR._sections = sections;
+
+  // Prepare sections for emitter
+  const emitSections = sections.map(s => ({ label: s.label, startMeasure: s.startMeasure }));
+
+  const emitInput = { meta: songIR.meta, sections: emitSections, measures: songIR.measures };
+  const csmpnText = config.outputMode === 'csmpn-fakebook'
+    ? emitFakebook(emitInput, config)
+    : emitBarlinesStyle(emitInput, config);
+
+  const debugJson = buildDebugJson(songIR);
+
+  log(`Done. ${songIR.measures.length} measure(s) total.`);
+  return { csmpnText, debugJson, songIR, pageRenders };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE: exportDebugJson
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildDebugJson(songIR) {
+  return {
+    meta: songIR.meta,
+    warnings: songIR.warnings,
+    pages: songIR.pages,
+    systems: songIR.systems.map(s => ({
+      systemIndex: s.systemIndex,
+      pageIndex: s.pageIndex,
+      bbox: s.bbox,
+      barlinesX: s.barlinesX,
+      preset: s.preset,
+      stemDensity: +s.stemDensity.toFixed(4),
+      measures: s.measures.map(m => ({
+        localIndex: m.localIndex,
+        globalIndex: m.globalIndex,
+        xRange: m.xRange,
+        events: m.events,
+        directives: m.directives,
+      })),
+      markers: s.markers,
+    })),
+    linearMeasures: songIR.measures,
+    sections: songIR._sections,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI State
+// ─────────────────────────────────────────────────────────────────────────────
+let currentResult = null;
+let currentPageIdx = 0;
+let overlayVisible = true;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function toggleSection(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('collapsed');
+  const arrow = el.querySelector('[id$="-arrow"]');
+  if (arrow) arrow.textContent = el.classList.contains('collapsed') ? '▶' : '▼';
+}
+window.toggleSection = toggleSection;
+
+function appendLog(msg, cls) {
+  const logEl = document.getElementById('log');
+  const span = document.createElement('span');
+  span.className = cls || '';
+  span.textContent = '\n' + msg;
+  logEl.appendChild(span);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function getConfig() {
+  return {
+    outputMode: document.getElementById('cfg-outputMode').value,
+    measuresPerLine: parseInt(document.getElementById('cfg-measuresPerLine').value),
+    headerExclusionRatio: parseInt(document.getElementById('cfg-headerExclusionPct').value) / 100,
+    renderScale: parseFloat(document.getElementById('cfg-renderScale').value),
+    yClusterThreshold: parseInt(document.getElementById('cfg-yClusterThreshold').value),
+    multiChord: document.getElementById('cfg-multiChord').value,
+    fillEmpty: document.getElementById('cfg-fillEmpty').value,
+    preset: document.getElementById('cfg-preset').value,
+  };
+}
+
+function showPage(idx) {
+  if (!currentResult) return;
+  const renders = currentResult.pageRenders;
+  if (idx < 0 || idx >= renders.length) return;
+  currentPageIdx = idx;
+
+  const pr = renders[idx];
+  const pageCanvas  = document.getElementById('page-canvas');
+  const overlayCanvas = document.getElementById('overlay-canvas');
+
+  pageCanvas.width  = pr.canvas.width;
+  pageCanvas.height = pr.canvas.height;
+  overlayCanvas.width  = pr.canvas.width;
+  overlayCanvas.height = pr.canvas.height;
+
+  pageCanvas.getContext('2d').drawImage(pr.canvas, 0, 0);
+
+  if (overlayVisible) {
+    drawDebugOverlay(overlayCanvas, pr, pr.pageH, pr.scale);
+  } else {
+    overlayCanvas.getContext('2d').clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  }
+
+  document.getElementById('page-info').textContent =
+    `Page ${idx + 1} / ${renders.length}  ·  ${pr.systems.length} system(s)`;
+}
+
+function changePage(delta) {
+  if (!currentResult) return;
+  const newIdx = currentPageIdx + delta;
+  if (newIdx >= 0 && newIdx < currentResult.pageRenders.length) showPage(newIdx);
+}
+window.changePage = changePage;
+
+function toggleOverlay() {
+  overlayVisible = !overlayVisible;
+  document.getElementById('btn-overlay').textContent = overlayVisible ? 'Hide Overlay' : 'Show Overlay';
+  showPage(currentPageIdx);
+}
+window.toggleOverlay = toggleOverlay;
+
+function copyOutput() {
+  const ta = document.getElementById('csmpn-output');
+  navigator.clipboard.writeText(ta.value).catch(() => {
+    ta.select(); document.execCommand('copy');
+  });
+}
+window.copyOutput = copyOutput;
+
+function useChart() {
+  // If integrated with parent app: post message or navigate
+  const csmpn = document.getElementById('csmpn-output').value;
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: 'ug-pro-import', csmpnText: csmpn }, '*');
+  } else {
+    alert('Copy the CSMPN text and paste it into the Chord Sheet Maker Pro editor.');
+  }
+}
+window.useChart = useChart;
+
+function downloadDebugJson() {
+  if (!currentResult) return;
+  const json = JSON.stringify(currentResult.debugJson, null, 2);
+  const blob = new Blob([json], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'ugpro-debug.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+window.downloadDebugJson = downloadDebugJson;
+
+function renderMetrics(result) {
+  const panel = document.getElementById('debug-panel');
+  const { songIR, debugJson } = result;
+  const totalSystems = songIR.systems.length;
+  const totalMeasures = songIR.measures.length;
+  const emptyMeasures = songIR.measures.filter(m => m.chords.length === 0).length;
+  const totalChords = songIR.events.length;
+  const avgBarlinesPerSys = totalSystems > 0
+    ? (songIR.systems.reduce((s, sys) => s + sys.barlinesX.length - 1, 0) / totalSystems).toFixed(1)
+    : 0;
+  const totalHeaderFiltered = debugJson.pages.reduce((s, p) => s + p.headerFilteredSpans, 0);
+  const totalChordSpans = debugJson.pages.reduce((s, p) => s + p.chordSpansFound, 0);
+
+  let html = '<div>';
+  const metric = (label, val) =>
+    `<div class="metric-row"><span class="metric-label">${label}</span><span class="metric-val">${val}</span></div>`;
+
+  html += metric('Chord spans found', totalChordSpans);
+  html += metric('Header filtered spans', totalHeaderFiltered);
+  html += metric('Systems detected', totalSystems);
+  html += metric('Avg barlines/system', avgBarlinesPerSys);
+  html += metric('Measures total', totalMeasures);
+  html += metric('Empty measures', `${emptyMeasures} (${totalMeasures ? Math.round(emptyMeasures/totalMeasures*100) : 0}%)`);
+  html += metric('Total chord events', totalChords);
+
+  if (songIR.warnings.length > 0) {
+    html += '<div style="margin-top:6px">';
+    for (const w of songIR.warnings) {
+      html += `<span class="warning-pill">⚠ ${w}</span>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  panel.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI: File processing
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function processFile(file) {
+  if (!file || file.type !== 'application/pdf') {
+    appendLog('Please provide a valid PDF file.', 'log-err');
+    return;
+  }
+
+  // Reset log
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('csmpn-output').value = '';
+  document.getElementById('debug-panel').innerHTML = '<p class="empty">Processing…</p>';
+  document.getElementById('btn-debug-json').style.display = 'none';
+  document.getElementById('btn-use').style.display = 'none';
+  document.getElementById('file-name').textContent = file.name;
+
+  const config = getConfig();
+  const t0 = Date.now();
+
+  try {
+    const result = await importUGProPdf(file, config, msg => {
+      appendLog(msg, msg.startsWith('[WARN') ? 'log-warn' : msg.startsWith('[ERR') ? 'log-err' : '');
+    });
+
+    currentResult = result;
+    currentPageIdx = 0;
+
+    document.getElementById('csmpn-output').value = result.csmpnText;
+    document.getElementById('btn-debug-json').style.display = '';
+    document.getElementById('btn-use').style.display = '';
+
+    showPage(0);
+    renderMetrics(result);
+
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    appendLog(`Completed in ${elapsed}s`);
+
+  } catch (err) {
+    appendLog(`Error: ${err.message}`, 'log-err');
+    console.error(err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI: Event wiring
+// ─────────────────────────────────────────────────────────────────────────────
+
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) processFile(e.target.files[0]);
+});
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault(); dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) processFile(f);
+});
+
+// Allow iframe postMessage for initial file
+window.addEventListener('message', e => {
+  if (e.data && e.data.type === 'load-file' && e.data.file instanceof File) {
+    processFile(e.data.file);
+  }
+});
+
+// Export processFile and key functions for validate.html
+window.UGProImporter = { importUGProPdf, normalizeChordSymbol, buildDebugJson };
+</script>
+</body>
+</html>
