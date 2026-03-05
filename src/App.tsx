@@ -21,13 +21,15 @@ import {
 } from './ingest/sniffFormat';
 import { extractTextFromPdf } from './ingest/extractTextFromPdf';
 import { parseChordChart } from './parsers/chordProParser';
+import { parseCsmpn } from './parsers/csmpnParser';
 import { serializeChordProDocument } from './parsers/serializeChordPro';
 import type { ChordChartDocument } from './models/ChordChartModel';
 import ChordChart from './renderers/ChordChart';
+import UGProImporterPanel from './components/UGProImporterPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AppMode = 'empty' | 'notation' | 'chord-chart';
+type AppMode = 'empty' | 'notation' | 'chord-chart' | 'ug-pro-importer';
 
 type Diagnostics = {
   isValidXml: boolean;
@@ -401,6 +403,9 @@ export default function App() {
   const [transposeSteps, setTransposeSteps] = useState(0);
   const [detectedFormatLabel, setDetectedFormatLabel] = useState('');
 
+  // ── UG Pro importer mode state ──
+  const [ugProFile, setUgProFile] = useState<File | null>(null);
+
   // ── Derived: XML diagnostics ──
   const parsedXml = useMemo(() => {
     if (!loadedXmlText) return null;
@@ -492,6 +497,24 @@ export default function App() {
     setChartDocument(null);
     setTransposeSteps(0);
     setDetectedFormatLabel('');
+    // UG Pro importer
+    setUgProFile(null);
+  }, []);
+
+  // ── UG Pro importer: CSMPN import callback ──
+  const onImportCsmpn = useCallback((csmpnText: string) => {
+    try {
+      const doc = parseCsmpn(csmpnText);
+      setChartDocument(doc);
+      setTransposeSteps(0);
+      setDetectedFormatLabel('UG Pro PDF (CSMPN)');
+      setRenderError('');
+      setExportFeedback(null);
+      setUgProFile(null);
+      setAppMode('chord-chart');
+    } catch (err) {
+      setRenderError(`CSMPN parse error: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }, []);
 
   // ── File loading ──
@@ -577,28 +600,13 @@ export default function App() {
         setAppMode('chord-chart');
 
       } else if (isPdfFormat(detected)) {
-        // ── PDF path: extract text then re-sniff ──
-        const pdfText = await extractTextFromPdf(arrayBuffer);
-        const reDetected = sniffFormatFromText(pdfText);
-        const sourceFormat = isChordChartFormat(reDetected)
-          ? (asSourceFormat(reDetected) ?? 'ultimateguitar')
-          : 'ultimateguitar'; // default: assume UG when we can't tell
-
-        const doc = parseChordChart(pdfText, sourceFormat);
-
-        const pdfFormatLabels: Record<string, string> = {
-          chordpro: 'ChordPro (PDF)',
-          ultimateguitar: 'Ultimate Guitar (PDF)',
-          'chords-over-words': 'Chords over Words (PDF)',
-        };
-
+        // ── PDF path: route to UG Pro PDF importer ──
         setLoadedFilename(file.name);
-        setChartDocument(doc);
-        setTransposeSteps(0);
-        setDetectedFormatLabel(pdfFormatLabels[sourceFormat] ?? `PDF (${sourceFormat})`);
+        setUgProFile(file);
         setRenderError('');
         setExportFeedback(null);
-        // Clear notation state
+        // Clear other mode state
+        setChartDocument(null);
         setLoadedXmlText('');
         setIsMxl(false);
         setRenderedPageCount(0);
@@ -608,7 +616,7 @@ export default function App() {
         setChordProDiagnostics(null);
         if (containerRef.current) containerRef.current.innerHTML = '';
         xmlLoadedRef.current = '';
-        setAppMode('chord-chart');
+        setAppMode('ug-pro-importer');
 
       } else if (isGuitarProFormat(detected)) {
         // ── Guitar Pro / PowerTab path ──
@@ -996,6 +1004,10 @@ export default function App() {
           <span className="mode-badge mode-badge--chart">Chord Chart · {detectedFormatLabel}</span>
         )}
 
+        {appMode === 'ug-pro-importer' && (
+          <span className="mode-badge mode-badge--chart">UG Pro PDF Importer</span>
+        )}
+
         {appMode !== 'empty' && (
           <button type="button" onClick={clearAll}>Clear</button>
         )}
@@ -1010,8 +1022,27 @@ export default function App() {
       {/* ── Content area ── */}
       <main className="content-grid">
 
-        {/* ── Left: score viewport OR chord chart ── */}
-        {appMode !== 'chord-chart' ? (
+        {/* ── Left: score viewport OR chord chart OR UG Pro importer ── */}
+        {appMode === 'ug-pro-importer' ? (
+          <section
+            className={`chord-chart-viewport ug-pro-importer-viewport ${isDragging ? 'dragging' : ''}`}
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            style={{ gridColumn: '1 / -1' }}
+          >
+            {isDragging && (
+              <div className="drop-overlay" aria-hidden>
+                <span>Drop PDF to load</span>
+              </div>
+            )}
+            <UGProImporterPanel
+              initialFile={ugProFile}
+              onImportCsmpn={onImportCsmpn}
+            />
+          </section>
+        ) : appMode !== 'chord-chart' ? (
           <section
             className={`score-viewport ${isDragging ? 'dragging' : ''}`}
             onDragEnter={onDragEnter}
