@@ -513,7 +513,8 @@
   }
 
   .chord-root{
-    font-weight:800;
+    font-weight:700;
+    font-style:normal;
     font-size:calc(24px * var(--fb-font-scale));
   }
 
@@ -536,11 +537,12 @@
 
   .musicSymbol{
     font-size:calc(22px * var(--fb-font-scale));
-    font-family: var(--fb-body-font);
+    font-family: var(--fb-body-font), "FreeSerif", "Segoe UI Symbol", "Apple Symbols", "Noto Music", serif;
   }
 
   .repeatSymbol{
     font-size:calc(26px * var(--fb-font-scale));
+    font-family: var(--fb-body-font), "FreeSerif", "Segoe UI Symbol", "Apple Symbols", "Noto Music", serif;
   }
 
   .restSymbol{
@@ -3285,9 +3287,9 @@ function renderBeatContent(rawBeat){
   } else if (normalizedBeat.toLowerCase() === 'fine'){
     chordHtml = `<span class="musicSymbol"><em>Fine</em></span>`;
   // --- D.C. and D.S. variants ---
-  } else if (/^d\.?c\.?/i.test(normalizedBeat) || /^dacapo/i.test(normalizedBeat)){
+  } else if (/^d\.?c\.?(?=\.|al\b|\s|$)/i.test(normalizedBeat) || /^dacapo/i.test(normalizedBeat)){
     chordHtml = `<span class="musicSymbol"><em>${escapeHtml(normalizedBeat)}</em></span>`;
-  } else if (/^d\.?s\.?/i.test(normalizedBeat) || /^dalsegno/i.test(normalizedBeat)){
+  } else if (/^d\.?s\.?(?=\.|al\b|\s|$)/i.test(normalizedBeat) || /^dalsegno/i.test(normalizedBeat)){
     chordHtml = `<span class="musicSymbol"><em>${escapeHtml(normalizedBeat)}</em></span>`;
   } else {
     chordHtml = renderChordToken(normalizedBeat);
