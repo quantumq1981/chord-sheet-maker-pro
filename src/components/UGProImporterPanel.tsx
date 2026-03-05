@@ -332,6 +332,19 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
             {' '}Allow multi-chord bars
           </label>
           <div />
+
+          <label style={styles.configLabel}>Output format</label>
+          <select
+            value={config.outputMode}
+            onChange={(e) => handleConfigChange(
+              'outputMode',
+              e.target.value as UGProImporterConfig['outputMode'],
+            )}
+            style={styles.configInput}
+          >
+            <option value="csmpn-fakebook">Fake-book (- : = prefixes, _ splits)</option>
+            <option value="csmpn-barlines">Barline style (‖ | notation)</option>
+          </select>
         </div>
       </details>
 

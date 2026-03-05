@@ -51,6 +51,13 @@ export interface UGProImporterConfig {
   barlinePeakMinSpacingPx: number;
   /** Scale factor for rendering PDF pages to canvas for barline detection. */
   renderScale: number;
+  /**
+   * Output format for the emitted text.
+   *   'csmpn-barlines' – classic CSMPN with ‖ / | barlines and [Section] headers (default).
+   *   'csmpn-fakebook' – native fake-book style: - / : / = section prefixes,
+   *                      no | separators, multi-chord bars joined with _.
+   */
+  outputMode: 'csmpn-barlines' | 'csmpn-fakebook';
 }
 
 export const DEFAULT_CONFIG: UGProImporterConfig = {
@@ -63,6 +70,7 @@ export const DEFAULT_CONFIG: UGProImporterConfig = {
   barlinePeakMinHeightRatio: 0.55,
   barlinePeakMinSpacingPx: 18,
   renderScale: 1.8,
+  outputMode: 'csmpn-fakebook',
 };
 
 // ─── Intermediate types ───────────────────────────────────────────────────────
@@ -458,6 +466,166 @@ function extractMetadata(spans: TextSpan[], pageHeight: number): SongMetadata {
  * @param cfg   Optional configuration overrides.
  * @returns     { csmpnText, debugJson, pageRenders }
  */
+
+// ─── Emitter helpers ─────────────────────────────────────────────────────────
+
+type LinearMeasure = DebugJson['linear']['measures'][number];
+
+interface SectionDef {
+  label: string;
+  startMeasure: number;
+}
+
+/**
+ * Map a section label to its fake-book prefix character.
+ *   -  →  Intro / Verse / Tag / Interlude / Outro / Turnaround / generic
+ *   :  →  Chorus / Refrain
+ *   =  →  Bridge
+ */
+function fakebookSectionPrefix(label: string): string {
+  const l = label.toLowerCase();
+  if (l.includes('chorus') || l.includes('refrain')) return ':';
+  if (l.includes('bridge')) return '=';
+  return '-';
+}
+
+/**
+ * Build a bar token for one measure.
+ *   - Multi-chord bars → joined with _  (e.g. Bb7_A7_D7)
+ *   - Empty bar → %
+ */
+function barToken(
+  m: LinearMeasure,
+  lastChord: string,
+  fillPercent: boolean,
+): [token: string, newLastChord: string] {
+  if (m.chords.length === 0) {
+    return [fillPercent && lastChord ? '%' : (lastChord || '%'), lastChord];
+  }
+  const token = m.chords.join('_');
+  return [token, m.chords[m.chords.length - 1]];
+}
+
+/**
+ * Emit fake-book style CSMPN:
+ *   - / : / =  section prefix
+ *   bars joined by spaces (no | separators)
+ *   multi-chord bars with _
+ *   |: :| only if repeat detected (v1: never emitted, always expanded)
+ */
+function emitFakebook(
+  metadata: SongMetadata,
+  sections: SectionDef[],
+  linearMeasures: LinearMeasure[],
+  config: UGProImporterConfig,
+): string {
+  const out: string[] = [];
+
+  // Header — same fields, no ♩ glyph in Tempo line for cleaner copy-paste
+  if (metadata.title)    out.push(`Title: ${metadata.title}`);
+  if (metadata.composer) out.push(`Composer: ${metadata.composer}`);
+  if (metadata.style)    out.push(`Style: ${metadata.style}`);
+  if (metadata.tempo)    out.push(`Tempo: ${metadata.tempo}`);
+  if (metadata.time)     out.push(`Time: ${metadata.time}`);
+  if (metadata.key)      out.push(`Key: ${metadata.key}`);
+  out.push('');
+
+  const mpl = config.measuresPerLine;
+  const total = linearMeasures.length;
+  let lastChord = '';
+
+  for (let secIdx = 0; secIdx < sections.length; secIdx++) {
+    const sec = sections[secIdx];
+    const nextStart = secIdx + 1 < sections.length ? sections[secIdx + 1].startMeasure : total;
+    const secMeasures = linearMeasures.slice(sec.startMeasure, nextStart);
+    if (secMeasures.length === 0) continue;
+
+    const prefix = fakebookSectionPrefix(sec.label);
+    out.push(`${prefix} ${sec.label}`);
+
+    // Build bar tokens
+    const tokens: string[] = [];
+    for (const m of secMeasures) {
+      const [tok, next] = barToken(m, lastChord, config.fillEmptyMeasuresWithPercent);
+      tokens.push(tok);
+      lastChord = next;
+    }
+
+    // Emit rows of mpl bars each
+    for (let i = 0; i < tokens.length; i += mpl) {
+      out.push(tokens.slice(i, i + mpl).join(' '));
+    }
+
+    out.push('');
+  }
+
+  return out.join('\n');
+}
+
+/**
+ * Emit classic CSMPN with ‖ / | barlines and [Section] headers.
+ */
+function emitBarlinesStyle(
+  metadata: SongMetadata,
+  sections: SectionDef[],
+  linearMeasures: LinearMeasure[],
+  config: UGProImporterConfig,
+): string {
+  const out: string[] = [];
+
+  if (metadata.title)    out.push(`Title: ${metadata.title}`);
+  if (metadata.composer) out.push(`Composer: ${metadata.composer}`);
+  if (metadata.style)    out.push(`Style: ${metadata.style}`);
+  if (metadata.tempo)    out.push(`Tempo: ♩=${metadata.tempo}`);
+  if (metadata.key)      out.push(`Key: ${metadata.key}`);
+  if (metadata.time)     out.push(`Time: ${metadata.time}`);
+  out.push('');
+
+  const mpl = config.measuresPerLine;
+  const total = linearMeasures.length;
+  let lastChord = '';
+
+  for (let secIdx = 0; secIdx < sections.length; secIdx++) {
+    const sec = sections[secIdx];
+    const nextStart = secIdx + 1 < sections.length ? sections[secIdx + 1].startMeasure : total;
+    const secMeasures = linearMeasures.slice(sec.startMeasure, nextStart);
+    if (secMeasures.length === 0) continue;
+
+    out.push(`[${sec.label}]`);
+
+    // Build bar tokens (spaces for multi-chord bars in barline mode)
+    const tokens: string[] = secMeasures.map((m) => {
+      if (m.chords.length === 0) {
+        const tok = config.fillEmptyMeasuresWithPercent && lastChord ? '%' : (lastChord || '%');
+        return tok;
+      }
+      const tok = m.chords.join(' ');
+      lastChord = m.chords[m.chords.length - 1];
+      return tok;
+    });
+
+    // Format into lines of mpl measures with ‖ / | barlines
+    for (let i = 0; i < tokens.length; i += mpl) {
+      const lineTokens = tokens.slice(i, i + mpl);
+      const isFirst = i === 0;
+      const isLast = i + mpl >= tokens.length;
+      let line: string;
+      if (isFirst) {
+        line = '‖ ' + lineTokens.join(' | ') + (isLast ? ' ‖' : ' |');
+      } else if (isLast) {
+        line = '| ' + lineTokens.join(' | ') + ' ‖';
+      } else {
+        line = '| ' + lineTokens.join(' | ') + ' |';
+      }
+      out.push(line);
+    }
+
+    out.push('');
+  }
+
+  return out.join('\n');
+}
+
 export async function importUGProPdf(
   file: File,
   cfg: Partial<UGProImporterConfig> = {},
@@ -727,63 +895,10 @@ export async function importUGProPdf(
     sections.push({ label: 'Chorus 1', startMeasure: 0 });
   }
 
-  // ── Emit CSMPN ───────────────────────────────────────────────────────────
-  const csmpnLines: string[] = [];
-
-  // Header
-  if (metadata.title) csmpnLines.push(`Title: ${metadata.title}`);
-  if (metadata.composer) csmpnLines.push(`Composer: ${metadata.composer}`);
-  if (metadata.style) csmpnLines.push(`Style: ${metadata.style}`);
-  if (metadata.tempo) csmpnLines.push(`Tempo: ♩=${metadata.tempo}`);
-  if (metadata.key) csmpnLines.push(`Key: ${metadata.key}`);
-  if (metadata.time) csmpnLines.push(`Time: ${metadata.time}`);
-  csmpnLines.push('');
-
-  const mpl = config.measuresPerLine;
-  const total = linearMeasures.length;
-  let lastChord = '';
-
-  for (let secIdx = 0; secIdx < sections.length; secIdx++) {
-    const sec = sections[secIdx];
-    const nextStart = secIdx + 1 < sections.length ? sections[secIdx + 1].startMeasure : total;
-    const secMeasures = linearMeasures.slice(sec.startMeasure, nextStart);
-
-    if (secMeasures.length === 0) continue;
-
-    csmpnLines.push(`[${sec.label}]`);
-
-    // Build measure tokens
-    const tokens: string[] = secMeasures.map((m) => {
-      if (m.chords.length === 0) {
-        if (config.fillEmptyMeasuresWithPercent && lastChord) return '%';
-        return lastChord || '%';
-      }
-      const token = m.chords.join(' ');
-      lastChord = m.chords[m.chords.length - 1];
-      return token;
-    });
-
-    // Format into lines of mpl measures
-    for (let i = 0; i < tokens.length; i += mpl) {
-      const lineTokens = tokens.slice(i, i + mpl);
-      const isFirstLine = i === 0;
-      const isLastLine = i + mpl >= tokens.length;
-
-      let line = '';
-      if (isFirstLine) {
-        line = '‖ ' + lineTokens.join(' | ') + (isLastLine ? ' ‖' : ' |');
-      } else if (isLastLine) {
-        line = '| ' + lineTokens.join(' | ') + ' ‖';
-      } else {
-        line = '| ' + lineTokens.join(' | ') + ' |';
-      }
-      csmpnLines.push(line);
-    }
-
-    csmpnLines.push('');
-  }
-
-  const csmpnText = csmpnLines.join('\n');
+  // ── Emit ─────────────────────────────────────────────────────────────────
+  const csmpnText = config.outputMode === 'csmpn-fakebook'
+    ? emitFakebook(metadata, sections, linearMeasures, config)
+    : emitBarlinesStyle(metadata, sections, linearMeasures, config);
 
   // ── Build debugJson ──────────────────────────────────────────────────────
   const debugJson: DebugJson = {
