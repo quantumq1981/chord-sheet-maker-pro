@@ -94,17 +94,24 @@ export function parseCsmpn(text: string): ChordChartDocument {
       continue;
     }
 
+    const fakebookSectionMatch = line.match(/^[-:=]\s+(.+)$/);
+    if (fakebookSectionMatch) {
+      openSection(fakebookSectionMatch[1].trim());
+      continue;
+    }
+
     // ── Blank line ──────────────────────────────────────────────────────────
     if (!line) continue;
 
     // ── Bar line ────────────────────────────────────────────────────────────
     // Lines that start with ‖ or | contain measure/bar content.
-    if (/^[‖|]/.test(line)) {
+    if (/^[‖|]/.test(line) || line.includes('|')) {
       if (!currentSection) {
         // Bare bar content outside a section — auto-create a section
         openSection('Chart');
       }
-      const chartLine = parseBarLine(line);
+      const normalizedLine = /^[‖|]/.test(line) ? line : `| ${line}`;
+      const chartLine = parseBarLine(normalizedLine);
       if (chartLine.tokens.length > 0) {
         currentSection!.lines.push(chartLine);
       }

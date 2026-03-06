@@ -26,10 +26,11 @@ import { serializeChordProDocument } from './parsers/serializeChordPro';
 import type { ChordChartDocument } from './models/ChordChartModel';
 import ChordChart from './renderers/ChordChart';
 import UGProImporterPanel from './components/UGProImporterPanel';
+import OemerImageImporterPanel from './components/OemerImageImporterPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AppMode = 'empty' | 'notation' | 'chord-chart' | 'ug-pro-importer';
+type AppMode = 'empty' | 'notation' | 'chord-chart' | 'ug-pro-importer' | 'oemer-image-importer';
 
 type Diagnostics = {
   isValidXml: boolean;
@@ -517,6 +518,22 @@ export default function App() {
     }
   }, []);
 
+  const onImportOemerCsmpn = useCallback((csmpnText: string) => {
+    try {
+      const doc = parseCsmpn(csmpnText);
+      doc.sourceFormat = 'oemer-image';
+      setChartDocument(doc);
+      setTransposeSteps(0);
+      setDetectedFormatLabel('oemer-image');
+      setRenderError('');
+      setExportFeedback(null);
+      setUgProFile(null);
+      setAppMode('chord-chart');
+    } catch (err) {
+      setRenderError(`CSMPN parse error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, []);
+
   // ── File loading ──
   const loadFile = useCallback(async (file: File) => {
     try {
@@ -656,7 +673,7 @@ export default function App() {
         setRenderError(
           'Unsupported file type. Upload .xml/.mxl (notation), ' +
           '.gp/.gp5/.gpx (Guitar Pro), ' +
-          '.cho/.pro/.abc/.txt (chord chart), or .pdf.'
+          '.cho/.pro/.abc/.txt (chord chart), or .pdf. For OEMER, use "OEMER Image OMR".'
         );
       }
     } catch (error) {
@@ -984,6 +1001,7 @@ export default function App() {
           Upload
           <input type="file" accept={FILE_INPUT_ACCEPT} onChange={onFileInput} />
         </label>
+        <button type="button" onClick={() => setAppMode('oemer-image-importer')}>OEMER Image OMR</button>
 
         {appMode === 'empty' && (
           <span className="hint">
@@ -1006,6 +1024,10 @@ export default function App() {
 
         {appMode === 'ug-pro-importer' && (
           <span className="mode-badge mode-badge--chart">UG Pro PDF Importer</span>
+        )}
+
+        {appMode === 'oemer-image-importer' && (
+          <span className="mode-badge mode-badge--chart">OEMER Image OMR</span>
         )}
 
         {appMode !== 'empty' && (
@@ -1041,6 +1063,10 @@ export default function App() {
               initialFile={ugProFile}
               onImportCsmpn={onImportCsmpn}
             />
+          </section>
+        ) : appMode === 'oemer-image-importer' ? (
+          <section className="chord-chart-viewport" style={{ gridColumn: '1 / -1' }}>
+            <OemerImageImporterPanel onImportCsmpn={onImportOemerCsmpn} />
           </section>
         ) : appMode !== 'chord-chart' ? (
           <section
