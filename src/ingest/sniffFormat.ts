@@ -18,7 +18,7 @@
  *   8.  Extension fallback            → chordpro | unknown
  */
 
-export type SourceFormat = 'chordpro' | 'ultimateguitar' | 'chords-over-words' | 'abc' | 'guitarpro' | 'fakebook';
+export type SourceFormat = 'chordpro' | 'ultimateguitar' | 'chords-over-words' | 'abc' | 'guitarpro' | 'fakebook' | 'oemer-image';
 
 export type DetectedFormat =
   | { format: 'mxl' }
