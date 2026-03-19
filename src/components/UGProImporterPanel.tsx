@@ -22,7 +22,6 @@ import {
 import {
   importUGProPdf,
   DEFAULT_CONFIG,
-  normalizeChordSymbol,
   type ImportResult,
   type PageRenderData,
   type UGProImporterConfig,

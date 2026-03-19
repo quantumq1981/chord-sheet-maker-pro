@@ -1197,7 +1197,7 @@ body.exporting .sectionBlock{
         <li>Section markers: <code>- Verse</code>, <code>: Chorus</code>, <code>= Bridge</code> with optional rehearsal letters.</li>
         <li>Repeats: <code>|:</code> and <code>:|</code>, or <code>(A B C D)x2</code>. Endings: <code>1. C D 2. E F</code>.</li>
         <li><code>%</code> = repeat bar. Use Settings to adjust font size, bars/row, line spacing, and chord styles.</li>
-        <li><strong>Notation blocks:</strong> <code>{vt C4/q, D4/q, E4/q, F4/q}</code> — embeds a treble-clef staff via VexFlow. Prefix with <code>[3/4]</code> for time sig or <code>bass:</code> for bass clef.</li>
+        <li><strong>Notation blocks:</strong> <code>{vt C4/q, D4/q, E4/q, F4/q}</code> — embeds a VexFlow staff. New syntax supports multi-bar phrases, rests (<code>qr</code>), chords (<code>&lt;C4 E4 G4&gt;/q</code>), ties (<code>C4/q^ C4/q</code>), and note modifiers like <code>[staccato, lyric="Hi"]</code>.</li>
         <li><strong>Shortcuts:</strong> Ctrl+S Save, Ctrl+P Print, Ctrl+↑/↓ Transpose.</li>
       </ul>
     </div>
@@ -1410,6 +1410,7 @@ body.exporting .sectionBlock{
   </div>
 </div>
 
+<script type="module" src="/src/utils/vexflowNotation.js"></script>
 <script>
 /* =========================================================
    Core constants / helpers
@@ -1519,7 +1520,7 @@ const featureInfo = {
   },
   notation: {
     title: "VexFlow Notation Blocks",
-    body: "Add {vt <notes>} anywhere in your CSMPN source to embed a treble-clef staff rendered by VexFlow. Use EasyScore syntax: C4/q (C quarter), D4/h (D half), E4/w (E whole). Prefix with [3/4] to set time signature, or 'bass:' to use bass clef. Example: {vt [3/4] G4/q, A4/q, B4/q}"
+    body: "Add {vt <notes>} anywhere in your CSMPN source to embed a VexFlow staff. Legacy note syntax still works, and the enhanced parser now supports multi-bar snippets, rests (qr), chords (<C4 E4 G4>/q), ties (C4/q^ C4/q), tempo/text directives, and modifiers like [staccato, lyric=\"Hello\", chord=\"Cmaj7\"]. Example: {vt [4/4] tempo=\"Allegro\" C4/q[lyric=\"Hel\"] D4/q[lyric=\"lo\"] | <E4 G4 C5>/h[chord=\"C\"] qr}"
   },
   diagnostics: {
     title: "Import Details",
@@ -3547,73 +3548,260 @@ function updatePreview(){
 
 /* =========================================================
    VexFlow Notation Block Renderer
-   Renders {vt <EasyScore notes>} blocks into SVG staves.
-   VexFlow 3.x EasyScore syntax examples:
-     C4/q, D4/q, E4/q, F4/q        — quarter notes
-     [3/4] C4/q, D4/q, E4/q        — 3/4 time
-     bass: F2/h, G2/h               — bass clef
-     C4/q, D4/q | E4/q, F4/q       — | treated as continuation
-   Full EasyScore reference: https://github.com/0xfe/vexflow
+   Enhanced phase-1 parser / renderer for {vt ...} blocks.
+
+   Supported syntax (backward-compatible with the older EasyScore-style input):
+     {vt C4/q, D4/q, E4/q, F4/q}
+     {vt [3/4] bass: C3/h, qr}
+     {vt [4/4] <C4 E4 G4>/q <D4 F4 A4>/q qr C5/q}
+     {vt C4/q^ C4/q | D4/8[staccato,lyric="Hi"] E4/8[text="rit."]}
+     {vt tempo="Allegro" C4/q[chord="Cmaj7", dyn="mf"]}
 ========================================================= */
+function getVtUtils(){
+  return window.VTNotationUtils || null;
+}
+
+function getMeasureCapacityFromTimeSig(timeSig){
+  const m = String(timeSig || '4/4').match(/^(\d+)\/(\d+)$/);
+  if (!m) return 4;
+  return Number(m[1]) * (4 / Number(m[2]));
+}
+
+function makeStaveNoteFromEvent(VF, clef, event){
+  const isRest = event.type === 'rest';
+  const keys = isRest
+    ? ['b/4']
+    : event.pitches.map((pitch) => pitch.vexKey);
+
+  const note = new VF.StaveNote({
+    clef,
+    keys,
+    duration: `${event.duration}${isRest ? 'r' : ''}`,
+    auto_stem: true,
+  });
+
+  if (!isRest){
+    event.pitches.forEach((pitch, index) => {
+      if (pitch.accidental) note.addModifier(new VF.Accidental(pitch.accidental), index);
+    });
+  }
+
+  for (let i = 0; i < (event.dots || 0); i += 1) {
+    if (typeof note.addDotToAll === 'function') note.addDotToAll();
+    else if (typeof VF.Dot?.buildAndAttach === 'function') VF.Dot.buildAndAttach([note], { all: true });
+  }
+
+  const modifierPosition = VF.Modifier?.Position || { ABOVE: 3, BELOW: 4 };
+  const addAnnotation = (text, vertical) => {
+    if (!text) return;
+    note.addModifier(
+      new VF.Annotation(String(text))
+        .setVerticalJustification(vertical)
+        .setFont('Arial', 11, ''),
+      0,
+    );
+  };
+
+  const chordText = event.modifiers?.chord;
+  const dynText = event.modifiers?.dyn;
+  const freeText = event.modifiers?.text;
+  const lyricText = event.modifiers?.lyric;
+  addAnnotation(chordText, modifierPosition.ABOVE);
+  addAnnotation(dynText, modifierPosition.ABOVE);
+  addAnnotation(freeText, modifierPosition.ABOVE);
+  addAnnotation(lyricText, modifierPosition.BELOW);
+
+  for (const articulation of event.modifiers?.articulations || []) {
+    const code = articulation && ({ staccato: 'a.', accent: 'a>', tenuto: 'a-', marcato: 'a^', fermata: 'a@a' }[articulation]);
+    if (!code) continue;
+    note.addModifier(new VF.Articulation(code).setPosition(modifierPosition.ABOVE), 0);
+  }
+
+  if (event.modifiers?.grace?.length) {
+    const graceNotes = event.modifiers.grace.map((graceEvent) => new VF.GraceNote({
+      keys: graceEvent.pitches.map((pitch) => pitch.vexKey),
+      duration: graceEvent.duration,
+      slash: false,
+    }));
+    note.addModifier(new VF.GraceNoteGroup(graceNotes, false), 0);
+  }
+
+  return note;
+}
+
+function canTieEvents(firstEvent, secondEvent){
+  if (!firstEvent || !secondEvent) return false;
+  if (firstEvent.type === 'rest' || secondEvent.type === 'rest') return false;
+  if ((firstEvent.pitches?.length || 0) !== (secondEvent.pitches?.length || 0)) return false;
+  return firstEvent.pitches.every((pitch, index) => {
+    const next = secondEvent.pitches[index];
+    return next && pitch.vexKey === next.vexKey;
+  });
+}
+
+function makeTieSpec(VF, firstNote, secondNote, firstEvent, secondEvent){
+  const count = Math.max(firstEvent.pitches?.length || 1, secondEvent.pitches?.length || 1);
+  return new VF.StaveTie({
+    first_note: firstNote,
+    last_note: secondNote,
+    first_indices: Array.from({ length: count }, (_, i) => i),
+    last_indices: Array.from({ length: count }, (_, i) => i),
+  });
+}
+
+function drawEnhancedVexFlowBlock(el, parsed){
+  const VF = Vex.Flow;
+  const containerWidth = Math.min(el.offsetWidth || 600, 960);
+  const barsPerRow = Math.max(1, Math.min(4, parsed.measures.length || 1));
+  const rowCount = Math.max(1, Math.ceil((parsed.measures.length || 1) / barsPerRow));
+  const rowHeight = 160;
+  const height = 40 + rowCount * rowHeight;
+  const factory = new VF.Factory({
+    renderer: { elementId: el.id, type: 'svg', width: containerWidth, height }
+  });
+  const context = factory.getContext();
+  const leftPad = 12;
+  const topPad = 18;
+  const staffWidth = Math.max(120, Math.floor((containerWidth - leftPad * 2) / barsPerRow) - 8);
+  const [numBeats, beatValue] = String(parsed.timeSig || '4/4').split('/').map(Number);
+  const allNotes = [];
+  const ties = [];
+
+  if (parsed.text) {
+    context.save();
+    context.setFont('Arial', 12, 'italic');
+    context.fillText(parsed.text, leftPad, 14);
+    context.restore();
+  }
+
+  parsed.measures.forEach((measure, measureIndex) => {
+    const rowIndex = Math.floor(measureIndex / barsPerRow);
+    const colIndex = measureIndex % barsPerRow;
+    const x = leftPad + colIndex * staffWidth;
+    const y = topPad + rowIndex * rowHeight;
+    const stave = new VF.Stave(x, y, staffWidth);
+    if (measureIndex === 0) {
+      stave.addClef(parsed.clef || 'treble');
+      stave.addTimeSignature(parsed.timeSig || '4/4');
+      if (parsed.tempo) stave.setText(parsed.tempo, VF.Modifier.Position.ABOVE, { shift_y: -10 });
+    }
+    if (measureIndex === parsed.measures.length - 1) stave.setEndBarType(VF.Barline.type.END);
+    stave.setContext(context).draw();
+
+    const notes = measure.events.map((event) => makeStaveNoteFromEvent(VF, parsed.clef, event));
+    const voice = new VF.Voice({ num_beats: numBeats || 4, beat_value: beatValue || 4 }).setStrict(false);
+    voice.addTickables(notes);
+    new VF.Formatter().joinVoices([voice]).format([voice], staffWidth - 30);
+    voice.draw(context, stave);
+
+    const beams = VF.Beam.generateBeams(notes, { groups: [new VF.Fraction(numBeats || 4, beatValue || 4)] });
+    beams.forEach((beam) => beam.setContext(context).draw());
+
+    allNotes.push({ notes, events: measure.events });
+  });
+
+  allNotes.forEach((measure, measureIndex) => {
+    measure.events.forEach((event, eventIndex) => {
+      if (!event.tie && !event.tieFromPrevious) return;
+      const firstIndex = event.tieFromPrevious ? eventIndex - 1 : eventIndex;
+      const secondIndex = event.tieFromPrevious ? eventIndex : eventIndex + 1;
+      let fromMeasureIndex = measureIndex;
+      let toMeasureIndex = measureIndex;
+      let firstEvent = measure.events[firstIndex];
+      let secondEvent = measure.events[secondIndex];
+      let firstNote = measure.notes[firstIndex];
+      let secondNote = measure.notes[secondIndex];
+
+      if (!secondEvent && !event.tieFromPrevious) {
+        const nextMeasure = allNotes[measureIndex + 1];
+        if (!nextMeasure) return;
+        secondEvent = nextMeasure.events[0];
+        secondNote = nextMeasure.notes[0];
+        toMeasureIndex = measureIndex + 1;
+      }
+      if (!firstEvent && event.tieFromPrevious) {
+        const prevMeasure = allNotes[measureIndex - 1];
+        if (!prevMeasure) return;
+        firstEvent = prevMeasure.events[prevMeasure.events.length - 1];
+        firstNote = prevMeasure.notes[prevMeasure.notes.length - 1];
+        fromMeasureIndex = measureIndex - 1;
+      }
+      if (!firstEvent || !secondEvent || !firstNote || !secondNote) return;
+      if (!canTieEvents(firstEvent, secondEvent)) return;
+      const key = `${fromMeasureIndex}:${measure.events.indexOf(firstEvent)}>${toMeasureIndex}:${(allNotes[toMeasureIndex]?.events || []).indexOf(secondEvent)}`;
+      if (ties.includes(key)) return;
+      ties.push(key);
+      makeTieSpec(VF, firstNote, secondNote, firstEvent, secondEvent).setContext(context).draw();
+    });
+  });
+
+  if (parsed.warnings?.length) {
+    const warn = document.createElement('div');
+    warn.className = 'notation-error';
+    warn.style.marginTop = '6px';
+    warn.textContent = parsed.warnings.join(' ');
+    el.appendChild(warn);
+  }
+}
+
+function renderLegacyVexFlowBlock(el, content){
+  const VF = Vex.Flow;
+  let noteStr = (content || '').trim();
+  let timeSig = '4/4';
+  const timeSigMatch = noteStr.match(/^\[(\d+\/\d+)\]\s*/);
+  if (timeSigMatch){
+    timeSig = timeSigMatch[1];
+    noteStr = noteStr.slice(timeSigMatch[0].length).trim();
+  }
+
+  let clef = 'treble';
+  const clefMatch = noteStr.match(/^(treble|bass|alto|tenor)\s*:\s*/i);
+  if (clefMatch){
+    clef = clefMatch[1].toLowerCase();
+    noteStr = noteStr.slice(clefMatch[0].length).trim();
+  }
+
+  noteStr = noteStr.replace(/\s*\|\s*/g, ', ').trim();
+  if (!noteStr) throw new Error('No notes in notation block.');
+
+  const containerWidth = Math.min(el.offsetWidth || 600, 900);
+  const staveWidth = containerWidth - 40;
+  const height = 160;
+  const factory = new VF.Factory({
+    renderer: { elementId: el.id, type: 'svg', width: containerWidth, height }
+  });
+  const score = factory.EasyScore();
+  const system = factory.System({ x: 10, y: 10, width: staveWidth });
+  system.addStave({ voices: [score.voice(score.notes(noteStr))] }).addClef(clef).addTimeSignature(timeSig);
+  factory.draw();
+}
+
 function renderVexFlowBlock(el){
   const content = el.dataset.vt || '';
   if (!content){
     el.innerHTML = '<div class="notation-error">Empty notation block.</div>';
     return;
   }
-
   if (typeof Vex === 'undefined' || !Vex.Flow){
     el.innerHTML = '<div class="notation-error">VexFlow not loaded — check CDN connection.</div>';
     return;
   }
 
   try {
-    const VF = Vex.Flow;
-    let noteStr = content.trim();
-
-    // Parse optional time signature prefix: [4/4], [3/4], [6/8], etc.
-    let timeSig = '4/4';
-    const timeSigMatch = noteStr.match(/^\[(\d+\/\d+)\]\s*/);
-    if (timeSigMatch){
-      timeSig = timeSigMatch[1];
-      noteStr = noteStr.slice(timeSigMatch[0].length).trim();
+    const utils = getVtUtils();
+    if (!utils?.parseVexFlowBlock) throw new Error('Enhanced notation parser not loaded.');
+    const parsed = utils.parseVexFlowBlock(content);
+    el.innerHTML = '';
+    drawEnhancedVexFlowBlock(el, parsed);
+  } catch (enhancedError) {
+    console.warn('Enhanced VexFlow render error, falling back to legacy renderer:', enhancedError);
+    try {
+      el.innerHTML = '';
+      renderLegacyVexFlowBlock(el, content);
+    } catch(e){
+      el.innerHTML = `<div class="notation-error">Notation error: ${escapeHtml(String(enhancedError.message || enhancedError))}</div>`;
+      console.warn('VexFlow render error:', e);
     }
-
-    // Parse optional clef prefix: treble: bass: alto: tenor:
-    let clef = 'treble';
-    const clefMatch = noteStr.match(/^(treble|bass|alto|tenor)\s*:\s*/i);
-    if (clefMatch){
-      clef = clefMatch[1].toLowerCase();
-      noteStr = noteStr.slice(clefMatch[0].length).trim();
-    }
-
-    // Normalize | separators to commas (treat as beat continuation)
-    noteStr = noteStr.replace(/\s*\|\s*/g, ', ').trim();
-
-    if (!noteStr){
-      el.innerHTML = '<div class="notation-error">No notes in notation block.</div>';
-      return;
-    }
-
-    const containerWidth = Math.min(el.offsetWidth || 600, 900);
-    const staveWidth = containerWidth - 40;
-    const height = 160;
-
-    const factory = new VF.Factory({
-      renderer: { elementId: el.id, type: 'svg', width: containerWidth, height }
-    });
-
-    const score = factory.EasyScore();
-    const system = factory.System({ x: 10, y: 10, width: staveWidth });
-
-    system.addStave({
-      voices: [score.voice(score.notes(noteStr))]
-    }).addClef(clef).addTimeSignature(timeSig);
-
-    factory.draw();
-  } catch(e){
-    el.innerHTML = `<div class="notation-error">Notation error: ${escapeHtml(String(e.message || e))}</div>`;
-    console.warn('VexFlow render error:', e);
   }
 }
 
@@ -6404,6 +6592,21 @@ window.runCSMPNSelfTests = function(){
     const vtDocEmpty = parseCSMPN("{vt }");
     assert("parseCSMPN empty {vt} is notation block with empty content",
       vtDocEmpty.blocks.some(b => b.type === 'notation'));
+
+    const vtUtils = window.VTNotationUtils;
+    const vtEnhanced = vtUtils.parseVexFlowBlock('[4/4] bass: tempo="Allegro" C3/q[chord="Cm7",dyn="mf"] qr | <C3 E3 G3>/h^ <C3 E3 G3>/h');
+    assert("vt parser reads clef", vtEnhanced.clef === 'bass');
+    assert("vt parser reads tempo", vtEnhanced.tempo === 'Allegro');
+    assert("vt parser multi-bar count", vtEnhanced.measures.length === 2);
+    assert("vt parser rest token", vtEnhanced.measures[0]?.events[1]?.type === 'rest');
+    assert("vt parser chord token", vtEnhanced.measures[1]?.events[0]?.type === 'chord');
+    assert("vt parser tie suffix", vtEnhanced.measures[1]?.events[0]?.tie === true);
+
+    const vtModifiers = vtUtils.parseVexFlowBlock('C4/8[staccato,lyric="Hel",grace="D4/16 E4/16"] D4/8[text="rit."]');
+    assert("vt parser articulation modifier", vtModifiers.measures[0]?.events[0]?.modifiers?.articulations?.includes('staccato'));
+    assert("vt parser lyric modifier", vtModifiers.measures[0]?.events[0]?.modifiers?.lyric === 'Hel');
+    assert("vt parser grace modifier", vtModifiers.measures[0]?.events[0]?.modifiers?.grace?.length === 2);
+    assert("vt parser text modifier", vtModifiers.measures[0]?.events[1]?.modifiers?.text === 'rit.');
 
     // ---- OnSong import ----
     const onSongSimple = "Amazing Grace\nJohn Newton\nKey: G\nBPM: 80\n\n[Verse]\n[G]Amazing grace, how [D]sweet the sound\n[Em]That saved a [C]wretch like me";

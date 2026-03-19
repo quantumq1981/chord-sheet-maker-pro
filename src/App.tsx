@@ -12,14 +12,12 @@ import {
 } from './converters/musicXMLtochordpro';
 import {
   sniffFormatFromBytes,
-  sniffFormatFromText,
   isMusicXmlFormat,
   isChordChartFormat,
   isGuitarProFormat,
   isPdfFormat,
   asSourceFormat,
 } from './ingest/sniffFormat';
-import { extractTextFromPdf } from './ingest/extractTextFromPdf';
 import { parseChordChart } from './parsers/chordProParser';
 import { parseCsmpn } from './parsers/csmpnParser';
 import { serializeChordProDocument } from './parsers/serializeChordPro';
