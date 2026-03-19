@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/vexflowNotation.test.mjs"
   },
   "dependencies": {
     "@coderline/alphatab": "^1.8.1",

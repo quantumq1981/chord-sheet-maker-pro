@@ -316,7 +316,7 @@ async function renderPageToCanvas(
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   const ctx = canvas.getContext('2d')!;
-  await page.render({ canvasContext: ctx, viewport }).promise;
+  await page.render({ canvas, canvasContext: ctx, viewport }).promise;
   return canvas;
 }
 
@@ -641,8 +641,6 @@ export async function importUGProPdf(
 
   for (let pNum = 1; pNum <= numPages; pNum++) {
     const page = await pdf.getPage(pNum);
-    const viewport = page.getViewport({ scale: 1 });
-    const pageH = viewport.height;
     const content = await page.getTextContent();
 
     for (const item of content.items) {
