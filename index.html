@@ -1733,6 +1733,7 @@ fileInputUG.addEventListener('change', async () => {
     const pipeline = runSharedTextImportPipeline(text);
     importDiagnostics.sourceFlavor = pipeline.flavor;
     let csmpn = '';
+    let usedFallback = false;
     if (pipeline.flavor === 'ug-pro-text') {
       importDiagnostics.miner = 'UG Pro Text';
       try {
@@ -1745,11 +1746,13 @@ fileInputUG.addEventListener('change', async () => {
         } else {
           importDiagnostics.warnings.push(`UG miner produced only ${totalBars} bars, fell back to legacy importer`);
           csmpn = importUGText(text);
+          usedFallback = true;
         }
       } catch (ugErr) {
         importDiagnostics.warnings.push('UG miner error: ' + (ugErr?.message || ugErr));
         console.warn(ugErr);
         csmpn = importUGText(text);
+        usedFallback = true;
       }
     } else {
       importDiagnostics.miner = 'UG Text';
@@ -1766,6 +1769,7 @@ fileInputUG.addEventListener('change', async () => {
     }
     // Estimate ignored lines
     importDiagnostics.ignoredLines = pipeline.ignoredLines;
+    addImportConfidenceWarnings(pipeline, { fallbackUsed: usedFallback, context: 'UG import' });
     importDiagnostics.durationMs = Math.round(performance.now() - importStart);
     const finalCsmpn = filterLyricsLines(csmpn);
     sourceEl.value = finalCsmpn;
@@ -4013,6 +4017,7 @@ fileInput.addEventListener('change', async () => {
     // txt
     let csmpn = '';
     let usedMiner = 'Text';
+    let usedFallback = false;
     const textPipeline = runSharedTextImportPipeline(text);
     importDiagnostics.sourceFlavor = textPipeline.flavor;
     if (detectChordMark(text)){
@@ -4037,11 +4042,13 @@ fileInput.addEventListener('change', async () => {
           importDiagnostics.warnings.push(`UG miner produced only ${totalBars} bars, fell back to legacy importer`);
           console.warn(`UG miner produced only ${totalBars} bars, falling back to legacy importer.`);
           csmpn = importUGText(text);
+          usedFallback = true;
         }
       } catch (ugErr) {
         importDiagnostics.warnings.push('UG miner error: ' + (ugErr?.message || ugErr));
         console.warn(ugErr);
         csmpn = importUGText(text);
+        usedFallback = true;
       }
     } else {
       importDiagnostics.miner = 'Plain Text';
@@ -4050,6 +4057,7 @@ fileInput.addEventListener('change', async () => {
 
     // Count ignored lines for text imports
     importDiagnostics.ignoredLines = textPipeline.ignoredLines;
+    addImportConfidenceWarnings(textPipeline, { fallbackUsed: usedFallback, context: usedMiner });
 
     // If sections/bars not yet counted (legacy path), count from CSMPN
     if (!importDiagnostics.sections || !importDiagnostics.bars){
@@ -4261,9 +4269,9 @@ function classifyTextLines(lines){
       continue;
     }
     const genericBracketSection = line.match(/^\[(.+?)\]$/);
-    if (genericBracketSection){
+    if (genericBracketSection && isLikelyStructuralBracketLabel(genericBracketSection[1])){
       entry.type = 'section-generic';
-      entry.sectionName = genericBracketSection[1].trim();
+      entry.sectionName = normalizeUGSectionLabel(genericBracketSection[1]);
       out.push(entry);
       continue;
     }
@@ -4335,7 +4343,10 @@ function buildSongModelFromClassifiedText(classified){
     if (entry.type === 'inline-bracket'){
       if (entry.chords.length){
         currentSection.bars.push(...entry.chords);
-        if (entry.lyricsText) currentSection.lyrics.push(entry.lyricsText);
+        if (entry.lyricsText){
+          const prevLyric = currentSection.lyrics[currentSection.lyrics.length - 1] || '';
+          if (prevLyric !== entry.lyricsText) currentSection.lyrics.push(entry.lyricsText);
+        }
       }
       continue;
     }
@@ -4344,7 +4355,8 @@ function buildSongModelFromClassifiedText(classified){
 
     const nextEntry = (i + 1 < classified.length) ? classified[i + 1] : null;
     if (nextEntry && nextEntry.type === 'lyrics-line'){
-      currentSection.lyrics.push(nextEntry.line);
+      const prevLyric = currentSection.lyrics[currentSection.lyrics.length - 1] || '';
+      if (prevLyric !== nextEntry.line) currentSection.lyrics.push(nextEntry.line);
       i++;
     }
 
@@ -4452,7 +4464,10 @@ function emitCSMPNFromStructuredText(classified){
       const normalized = entry.chords.map((c) => normalizeChordToken(c)).filter(Boolean);
       if (normalized.length){
         out.push(toCSMPNBars(normalized).trim());
-        if (entry.lyricsText) out.push(`; ${entry.lyricsText}`);
+        if (entry.lyricsText){
+          const prev = (out[out.length - 1] || '').trim();
+          if (prev !== `; ${entry.lyricsText}`) out.push(`; ${entry.lyricsText}`);
+        }
       }
       continue;
     }
@@ -4481,17 +4496,46 @@ function emitCSMPNFromStructuredText(classified){
       else if (parseTimesPhrase(toks.slice(-2))) toks = toks.slice(0, -2);
     }
 
+    const nextEntry = (i + 1 < classified.length) ? classified[i + 1] : null;
+    const hasNextLyric = !!(nextEntry && nextEntry.type === 'lyrics-line');
+
     const chordLike = toks.reduce((acc, t) => acc + (isChordLikeToken(t) ? 1 : 0), 0);
     if (!toks.length || (chordLike / toks.length) < 0.6) continue;
-    const chords = toks.map((t) => normalizeChordToken(t)).filter(Boolean);
-    if (!chords.length) continue;
 
-    let block = toCSMPNBars(chords).trim();
+    const hasBarlines = toks.some((t) => isBarlineToken(t));
+    const bars = [];
+    if (hasBarlines){
+      let seg = [];
+      const flushSeg = () => {
+        if (!seg.length) return;
+        const segChords = seg.map((t) => normalizeChordToken(t)).filter(Boolean);
+        if (segChords.length){
+          bars.push(segChords.length > 1 ? segChords.join('_') : segChords[0]);
+        }
+        seg = [];
+      };
+      for (const tok of toks){
+        if (isBarlineToken(tok)) { flushSeg(); continue; }
+        seg.push(tok);
+      }
+      flushSeg();
+    } else {
+      bars.push(...toks.map((t) => normalizeChordToken(t)).filter(Boolean));
+    }
+    if (!bars.length) continue;
+
+    let block = toCSMPNBars(bars).trim();
     if (repeatN && repeatN > 1){
       block = block.replace(/\n+/g, " ").trim();
       out.push(`(${block})x${repeatN}`);
     } else {
       out.push(block);
+    }
+    if (hasNextLyric){
+      const lyricLine = `; ${nextEntry.line}`;
+      const prev = (out[out.length - 1] || '').trim();
+      if (prev !== lyricLine) out.push(lyricLine);
+      i++;
     }
   }
 
@@ -4515,6 +4559,29 @@ function runSharedTextImportPipeline(text){
     ignoredLines,
     csmpnLegacy
   };
+}
+
+function addImportConfidenceWarnings(pipeline, opts = {}){
+  if (!pipeline || !importDiagnostics) return;
+  const ignored = Number(importDiagnostics.ignoredLines || 0);
+  const total = Array.isArray(pipeline?.preprocessed?.lines) ? pipeline.preprocessed.lines.length : 0;
+  const bars = Number(importDiagnostics.bars || pipeline.minedBars || 0);
+  const sections = Number(importDiagnostics.sections || 0);
+  const fallbackUsed = !!opts.fallbackUsed;
+  const context = opts.context ? ` (${opts.context})` : '';
+
+  if (fallbackUsed){
+    importDiagnostics.warnings.push(`Fallback parser path used${context}.`);
+  }
+  if (total >= 8 && ignored >= Math.ceil(total * 0.45)){
+    importDiagnostics.warnings.push(`Low-confidence import${context}: ignored ${ignored}/${total} non-empty lines.`);
+  }
+  if (bars > 0 && sections > 0 && bars / Math.max(1, sections) <= 1){
+    importDiagnostics.warnings.push(`Low-confidence structure${context}: very sparse section-to-bar ratio.`);
+  }
+  if (bars <= 2 && total >= 6){
+    importDiagnostics.warnings.push(`Low-confidence import${context}: extracted only ${bars} bars from ${total} lines.`);
+  }
 }
 
 function isLikelyUGProText(text){
@@ -4546,16 +4613,41 @@ function parseUGMetaLine(song, line){
 }
 
 function parseUGSectionHeader(line){
-  const sectionWords = 'verse|chorus|bridge|intro|interlude|solo|outro|pre-?chorus|refrain|hook|coda|breakdown|instrumental|tag|ending|vamp';
+  const sectionWords = '(verse|chorus|bridge|intro|interlude|solo|outro|pre-?chorus|refrain|hook|coda|breakdown|instrumental|tag|ending|vamp)';
   // [Verse 1], [Chorus], [Bridge 2], etc.
-  const bracketRe = new RegExp('^\\s*\\[(' + sectionWords + ')(?:\\s*[^\\]]*)?\\]\\s*$', 'i');
-  let m = line.match(bracketRe);
-  if (m) return m[1].replace(/\s+/g, ' ').trim();
-  // "Verse:", "Chorus 2:", "Pre-Chorus:", bare section labels
-  const bareRe = new RegExp('^\\s*(' + sectionWords + ')(?:\\s+\\d+)?\\s*:?\\s*$', 'i');
-  m = line.match(bareRe);
-  if (m) return m[0].replace(/:?\s*$/, '').trim();
+  let m = line.match(new RegExp('^\\s*\\[' + sectionWords + '(?:\\s*[0-9a-zA-Z\\-]*)?\\]\\s*$', 'i'));
+  if (m) return normalizeUGSectionLabel(line.replace(/^\s*\[|\]\s*$/g, ''));
+  // "Verse:", "Chorus 2:", "Bridge", with optional leading punctuation
+  m = line.match(new RegExp('^\\s*[-=:>#]*\\s*' + sectionWords + '(?:\\s+\\d+)?\\s*:?\\s*$', 'i'));
+  if (m) return normalizeUGSectionLabel(line.replace(/^[-=:>#\s]+/, '').replace(/:?\s*$/, ''));
   return '';
+}
+
+function normalizeUGSectionLabel(label){
+  const s = String(label || '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  const lower = s.toLowerCase();
+  if (/^pre[-\s]?chorus\b/.test(lower)) return s.replace(/^pre[-\s]?chorus/i, 'Pre-Chorus');
+  if (/^verse\b/.test(lower)) return s.replace(/^verse/i, 'Verse');
+  if (/^chorus\b|^refrain\b|^hook\b/.test(lower)) return s.replace(/^(chorus|refrain|hook)/i, 'Chorus');
+  if (/^bridge\b/.test(lower)) return s.replace(/^bridge/i, 'Bridge');
+  if (/^intro\b/.test(lower)) return s.replace(/^intro/i, 'Intro');
+  if (/^outro\b|^ending\b|^tag\b|^coda\b/.test(lower)) return s.replace(/^(outro|ending|tag|coda)/i, 'Outro');
+  if (/^solo\b/.test(lower)) return s.replace(/^solo/i, 'Solo');
+  if (/^interlude\b/.test(lower)) return s.replace(/^interlude/i, 'Interlude');
+  return s;
+}
+
+function isLikelyStructuralBracketLabel(innerLabel){
+  const s = String(innerLabel || '').trim();
+  if (!s) return false;
+  if (s.length > 32) return false;
+  if (isChordLikeToken(s)) return false;
+  if (/[?!]/.test(s)) return false;
+  if (/[\.,].+\s/.test(s)) return false;
+  if (/^(verse|chorus|bridge|intro|outro|tag|solo|interlude|pre-?chorus|ending|refrain|hook|coda)(\s+\d+)?$/i.test(s)) return true;
+  if (/^(section|part)\s+[a-z0-9]+$/i.test(s)) return true;
+  return /^[A-Z][A-Za-z0-9\s\-]{1,24}$/.test(s) && s.split(/\s+/).length <= 3;
 }
 
 const RE_UG_STRUCTURAL_TOKEN = /^([\|\/\\\[\]\(\)\{\}\.,:;%\-]+|x\d+|\(x\d+\)|n\.c\.?|stop|break)$/i;
@@ -4616,6 +4708,7 @@ function isLikelyUGChordLine(line){
 
   const tokens = tokenizeBars(text).filter(Boolean);
   if (!tokens.length) return false;
+  if (tokens.length > 18 && /[a-z]{4,}/i.test(text)) return false;
 
   let validCount = 0;
   let chordCount = 0;
@@ -4636,6 +4729,7 @@ function isLikelyUGChordLine(line){
   }
 
   if (!chordCount) return false;
+  if (text.length > 28 && chordCount <= 2 && /[a-z]{4,}/i.test(text)) return false;
 
   const validityRatio = validCount / tokens.length;
   if (validityRatio >= 0.9) return true;
@@ -6000,6 +6094,7 @@ async function importUGProPDF(file){
   const bodyLines = [];
   const extractedTextLines = [];
   let pendingBars = [];
+  let usedSharedTextFallback = false;
 
   const flushBars = () => {
     while (pendingBars.length){
@@ -6169,13 +6264,26 @@ async function importUGProPDF(file){
 
   let chordBars = bodyLines.join(" ").split(/\s+/).filter(t => isChordToken(t) || t.includes("_") || t === "%");
   if (!chordBars.length && extractedTextLines.length){
-    const sharedText = extractedTextLines.join('\n');
+    const filteredFallbackLines = extractedTextLines.filter((line) => {
+      const s = (line || '').trim();
+      if (!s) return false;
+      if (/^(page\s+\d+|\d+\s*\/\s*\d+)$/i.test(s)) return false;
+      if (/^(copyright|all rights reserved|ultimate-guitar\.com)/i.test(s)) return false;
+      if (s.length > 140) return false;
+      if (/[a-z]{8,}\s+[a-z]{8,}\s+[a-z]{8,}/i.test(s) && !hasInlineBracketChords(s) && !isLikelyUGChordLine(s)) return false;
+      return true;
+    });
+    const sharedText = filteredFallbackLines.join('\n');
     const pipeline = runSharedTextImportPipeline(sharedText);
     const fallbackCsmpn = pipeline.csmpnLegacy || '';
     if (fallbackCsmpn){
+      usedSharedTextFallback = true;
       out = [hdrLines.join('\n'), fallbackCsmpn].filter(Boolean).join('\n\n').trim();
       chordBars = fallbackCsmpn.split(/\s+/).filter((t) => isChordToken(t) || t.includes('_') || t === '%');
     }
+  }
+  if (usedSharedTextFallback){
+    importDiagnostics.warnings.push('PDF spatial extraction weak; used shared-text fallback recovery.');
   }
   statusEl.textContent = `PDF import: ${chordBars.length} bar(s) extracted from ${pdf.numPages} page(s).`;
 
