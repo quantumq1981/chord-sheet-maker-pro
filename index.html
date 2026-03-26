@@ -1448,6 +1448,7 @@ let validationWarnings = [];
 ========================================================= */
 let importDiagnostics = {
   miner: null,
+  sourceFlavor: '',
   sections: 0,
   bars: 0,
   ignoredLines: 0,
@@ -1458,6 +1459,7 @@ let importDiagnostics = {
 function resetDiagnostics(){
   importDiagnostics = {
     miner: null,
+    sourceFlavor: '',
     sections: 0,
     bars: 0,
     ignoredLines: 0,
@@ -1477,6 +1479,9 @@ function updateDiagnosticsPanel(){
   toggle.style.display = '';
   let html = '<div class="diag-grid">';
   html += `<span class="diag-label">Import Source:</span><span class="diag-value">${escapeHtml(importDiagnostics.miner)}</span>`;
+  if (importDiagnostics.sourceFlavor){
+    html += `<span class="diag-label">Detected Flavor:</span><span class="diag-value">${escapeHtml(importDiagnostics.sourceFlavor)}</span>`;
+  }
   html += `<span class="diag-label">Sections Detected:</span><span class="diag-value">${importDiagnostics.sections}</span>`;
   html += `<span class="diag-label">Total Bars:</span><span class="diag-value">${importDiagnostics.bars}</span>`;
   if (importDiagnostics.ignoredLines > 0){
@@ -1725,12 +1730,14 @@ fileInputUG.addEventListener('change', async () => {
     const importStart = performance.now();
     setStatus(`Importing ${file.name}...`);
     const text = await readImportedTextFile(file);
+    const pipeline = runSharedTextImportPipeline(text);
+    importDiagnostics.sourceFlavor = pipeline.flavor;
     let csmpn = '';
-    if (isLikelyUGProText(text)) {
+    if (pipeline.flavor === 'ug-pro-text') {
       importDiagnostics.miner = 'UG Pro Text';
       try {
-        const ugSong = mineUGProTextToSongModel(text);
-        const totalBars = countSongModelBars(ugSong);
+        const ugSong = pipeline.minedSong;
+        const totalBars = pipeline.minedBars;
         if (totalBars >= 4) {
           importDiagnostics.sections = ugSong.sections.length;
           importDiagnostics.bars = totalBars;
@@ -1746,7 +1753,7 @@ fileInputUG.addEventListener('change', async () => {
       }
     } else {
       importDiagnostics.miner = 'UG Text';
-      csmpn = importUGText(text);
+      csmpn = pipeline.csmpnLegacy || importUGText(text);
     }
     // If sections/bars not yet counted (legacy path), count from CSMPN
     if (!importDiagnostics.sections || !importDiagnostics.bars) {
@@ -1758,9 +1765,7 @@ fileInputUG.addEventListener('change', async () => {
         .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
     }
     // Estimate ignored lines
-    const textLines = text.split(/\r?\n/).filter(l => l.trim());
-    const csmpnLines = csmpn.split(/\r?\n/).filter(l => l.trim());
-    importDiagnostics.ignoredLines = Math.max(0, textLines.length - csmpnLines.length);
+    importDiagnostics.ignoredLines = pipeline.ignoredLines;
     importDiagnostics.durationMs = Math.round(performance.now() - importStart);
     const finalCsmpn = filterLyricsLines(csmpn);
     sourceEl.value = finalCsmpn;
@@ -3833,6 +3838,7 @@ fileInput.addEventListener('change', async () => {
 
     if (name.endsWith('.pdf')){
       importDiagnostics.miner = 'PDF';
+      importDiagnostics.sourceFlavor = 'pdf-extracted-text';
       const csmpn = await importUGProPDF(file);
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
       // Count sections/bars from generated CSMPN
@@ -4007,6 +4013,8 @@ fileInput.addEventListener('change', async () => {
     // txt
     let csmpn = '';
     let usedMiner = 'Text';
+    const textPipeline = runSharedTextImportPipeline(text);
+    importDiagnostics.sourceFlavor = textPipeline.flavor;
     if (detectChordMark(text)){
       usedMiner = 'ChordMark';
       importDiagnostics.miner = 'ChordMark';
@@ -4015,12 +4023,12 @@ fileInput.addEventListener('change', async () => {
       usedMiner = 'ChordPro';
       importDiagnostics.miner = 'ChordPro';
       csmpn = importChordPro(text);
-    } else if (isLikelyUGProText(text)){
+    } else if (textPipeline.flavor === 'ug-pro-text'){
       usedMiner = 'UG Pro Text';
       importDiagnostics.miner = 'UG Pro Text';
       try {
-        const ugSong = mineUGProTextToSongModel(text);
-        const totalBars = countSongModelBars(ugSong);
+        const ugSong = textPipeline.minedSong;
+        const totalBars = textPipeline.minedBars;
         if (totalBars >= 4){
           importDiagnostics.sections = ugSong.sections.length;
           importDiagnostics.bars = totalBars;
@@ -4037,14 +4045,11 @@ fileInput.addEventListener('change', async () => {
       }
     } else {
       importDiagnostics.miner = 'Plain Text';
-      csmpn = importUGText(text);
+      csmpn = textPipeline.csmpnLegacy || importUGText(text);
     }
 
     // Count ignored lines for text imports
-    const textLines = text.split(/\r?\n/).filter(l => l.trim());
-    const csmpnLines = csmpn.split(/\r?\n/).filter(l => l.trim());
-    const chordLineCount = csmpnLines.filter(l => !/^(Title|Composer|Artist|Style|Tempo|Time|Key)\s*:/i.test(l.trim()) && !/^[=\-:#;]/.test(l.trim())).length;
-    importDiagnostics.ignoredLines = Math.max(0, textLines.length - csmpnLines.length);
+    importDiagnostics.ignoredLines = textPipeline.ignoredLines;
 
     // If sections/bars not yet counted (legacy path), count from CSMPN
     if (!importDiagnostics.sections || !importDiagnostics.bars){
@@ -4190,6 +4195,328 @@ function countSongModelBars(song){
   }, 0);
 }
 
+function preprocessImportedSongText(text){
+  const normalizedText = normalizeUGProText(text || '');
+  const lines = normalizedText
+    .split('\n')
+    .map((line) => (line || '').trim())
+    .filter((line) => line.length > 0);
+  return { text: normalizedText, lines };
+}
+
+function detectTextSourceFlavor(text){
+  const prep = preprocessImportedSongText(text);
+  const lines = prep.lines;
+  if (!lines.length) return 'unknown-text';
+  if (detectChordPro(prep.text)) return 'chordpro';
+
+  let bracketInlineLines = 0;
+  let chordLines = 0;
+  let lyricsLines = 0;
+  let chordDumpishLines = 0;
+
+  for (const line of lines){
+    if (hasInlineBracketChords(line)) bracketInlineLines++;
+    if (isLikelyUGChordLine(line)) chordLines++;
+    if (isLikelyLyricsLine(line)) lyricsLines++;
+    const toks = tokenizeBars(line).filter((tok) => !isBarlineToken(tok));
+    if (toks.length >= 4){
+      const chordLike = toks.reduce((n, tok) => n + (normalizeChordToken(tok) ? 1 : 0), 0);
+      if (chordLike / toks.length >= 0.85) chordDumpishLines++;
+    }
+  }
+
+  if (isLikelyUGProText(prep.text)) return 'ug-pro-text';
+  if (bracketInlineLines >= 1) return 'inline-bracket-chords';
+  if (chordLines >= 1 && lyricsLines >= 1) return 'chord-over-lyrics';
+  if (chordDumpishLines >= 1 && chordLines >= Math.max(1, Math.floor(lines.length * 0.4))) return 'chord-dump';
+  return 'unknown-text';
+}
+
+function classifyTextLines(lines){
+  const out = [];
+  const safeLines = Array.isArray(lines) ? lines : [];
+  for (let i = 0; i < safeLines.length; i++){
+    const raw = safeLines[i] || '';
+    const line = raw.trim();
+    if (!line) continue;
+    const entry = {
+      index: i,
+      raw,
+      line,
+      type: 'unknown',
+      sectionName: '',
+      metaMatched: false,
+      chords: [],
+      lyricsText: '',
+      repeatCount: 1,
+      tokens: []
+    };
+
+    const sectionName = parseUGSectionHeader(line);
+    if (sectionName){
+      entry.type = 'section';
+      entry.sectionName = sectionName;
+      out.push(entry);
+      continue;
+    }
+    const genericBracketSection = line.match(/^\[(.+?)\]$/);
+    if (genericBracketSection){
+      entry.type = 'section-generic';
+      entry.sectionName = genericBracketSection[1].trim();
+      out.push(entry);
+      continue;
+    }
+
+    if (/^\s*(title|song|artist|composer|key|tempo|bpm|time|time\s*signature)\s*:/i.test(line)){
+      entry.type = 'meta';
+      entry.metaMatched = true;
+      out.push(entry);
+      continue;
+    }
+
+    if (hasInlineBracketChords(line)){
+      const chords = extractBracketChords(line).map((c) => normalizeChordToken(c)).filter(Boolean);
+      entry.type = 'inline-bracket';
+      entry.chords = chords;
+      entry.lyricsText = extractBracketLyrics(line);
+      out.push(entry);
+      continue;
+    }
+
+    const tokens = tokenizeBars(line).filter(Boolean);
+    entry.tokens = tokens;
+    if (isLikelyUGChordLine(line)){
+      entry.type = 'chord-line';
+      const repeatMatch = line.match(/\bx\s*(\d+)\s*$/i);
+      entry.repeatCount = repeatMatch ? parseInt(repeatMatch[1], 10) : 1;
+      out.push(entry);
+      continue;
+    }
+
+    if (isLikelyLyricsLine(line)){
+      entry.type = 'lyrics-line';
+      out.push(entry);
+      continue;
+    }
+
+    out.push(entry);
+  }
+  return out;
+}
+
+function buildSongModelFromClassifiedText(classified){
+  const song = new SongModel();
+  let currentSection = { label: '- Main', bars: [], lyrics: [] };
+  song.sections.push(currentSection);
+
+  const ensureSection = (name) => {
+    const clean = (name || '').trim();
+    if (!clean) return;
+    currentSection = { label: `- ${clean}`, bars: [], lyrics: [] };
+    song.sections.push(currentSection);
+  };
+
+  for (let i = 0; i < classified.length; i++){
+    const entry = classified[i];
+    const line = entry.line;
+    if (!line) continue;
+
+    if (entry.type === 'meta'){
+      parseUGMetaLine(song, line);
+      continue;
+    }
+
+    if (entry.type === 'section'){
+      ensureSection(entry.sectionName);
+      continue;
+    }
+
+    if (entry.type === 'inline-bracket'){
+      if (entry.chords.length){
+        currentSection.bars.push(...entry.chords);
+        if (entry.lyricsText) currentSection.lyrics.push(entry.lyricsText);
+      }
+      continue;
+    }
+
+    if (entry.type !== 'chord-line') continue;
+
+    const nextEntry = (i + 1 < classified.length) ? classified[i + 1] : null;
+    if (nextEntry && nextEntry.type === 'lyrics-line'){
+      currentSection.lyrics.push(nextEntry.line);
+      i++;
+    }
+
+    const tokens = (entry.tokens && entry.tokens.length) ? entry.tokens : tokenizeBars(line).filter(Boolean);
+    if (!tokens.length) continue;
+    const nonBarTokens = tokens.filter((tok) => !isBarlineToken(tok));
+    if (!nonBarTokens.length) continue;
+
+    const repeatCount = entry.repeatCount || 1;
+    const contentTokens = repeatCount > 1
+      ? tokens.filter((tok) => !/^x\d+$/i.test(tok) && !/^\(x\d+\)$/i.test(tok))
+      : tokens;
+    const hasBarlines = contentTokens.some((tok) => isBarlineToken(tok));
+    const minedBars = [];
+
+    if (hasBarlines){
+      let segment = [];
+      const flushSegment = () => {
+        if (!segment.length) return;
+        const segmentChords = segment.map((tok) => normalizeChordToken(tok)).filter(Boolean);
+        if (!segmentChords.length){
+          segment = [];
+          return;
+        }
+        minedBars.push(segmentChords.length >= 2 ? segmentChords.join('_') : segmentChords[0]);
+        segment = [];
+      };
+      for (const tok of contentTokens){
+        if (isBarlineToken(tok)){
+          flushSegment();
+          continue;
+        }
+        segment.push(tok);
+      }
+      flushSegment();
+    } else {
+      minedBars.push(...contentTokens.map((tok) => normalizeChordToken(tok)).filter(Boolean));
+    }
+
+    if (!minedBars.length) continue;
+    if (Number.isFinite(repeatCount) && repeatCount > 1){
+      for (let r = 0; r < repeatCount; r++) currentSection.bars.push(...minedBars);
+    } else {
+      currentSection.bars.push(...minedBars);
+    }
+  }
+
+  song.sections = song.sections.filter((section, idx) => section.bars.length || idx === 0 || section.label);
+  if (song.sections.length > 1 && !song.sections[0].bars.length && song.sections[0].label === '- Main'){
+    song.sections.shift();
+  }
+  return song;
+}
+
+function emitCSMPNFromStructuredText(classified){
+  const repeatTokenToN = (t) => {
+    if (!t) return null;
+    const s = String(t).trim();
+    let m = s.match(/^\(\s*x\s*(\d+)\s*\)$/i);
+    if (m) return parseInt(m[1], 10);
+    m = s.match(/^x\s*(\d+)$/i);
+    if (m) return parseInt(m[1], 10);
+    m = s.match(/^(\d+)\s*x$/i);
+    if (m) return parseInt(m[1], 10);
+    return null;
+  };
+
+  const parseTimesPhrase = (tokens) => {
+    if (!tokens || tokens.length < 2) return null;
+    if (String(tokens[0]).toLowerCase() !== "times") return null;
+    const v = String(tokens[1]).toLowerCase();
+    const map = {one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+    if (v in map) return map[v];
+    if (/^\d+$/.test(v)) return parseInt(v, 10);
+    return null;
+  };
+
+  const out = [];
+  for (let i = 0; i < classified.length; i++){
+    const entry = classified[i];
+    const raw = entry.line;
+    if (!raw) continue;
+
+    if (entry.type === 'section'){
+      out.push(`= ${entry.sectionName}`);
+      continue;
+    }
+    if (entry.type === 'section-generic'){
+      out.push(`= ${entry.sectionName}`);
+      continue;
+    }
+
+    if (/^([-=])\s*(.+)$/.test(raw)){
+      const m = raw.match(/^([-=])\s*(.+)$/);
+      out.push(`${m[1]} ${m[2].trim()}`);
+      continue;
+    }
+    if (/^(#{1,6})\s*(.+)$/.test(raw)){
+      const m = raw.match(/^(#{1,6})\s*(.+)$/);
+      out.push(`= ${m[2].trim()}`);
+      continue;
+    }
+
+    if (entry.type === 'inline-bracket'){
+      const normalized = entry.chords.map((c) => normalizeChordToken(c)).filter(Boolean);
+      if (normalized.length){
+        out.push(toCSMPNBars(normalized).trim());
+        if (entry.lyricsText) out.push(`; ${entry.lyricsText}`);
+      }
+      continue;
+    }
+
+    const standaloneN = repeatTokenToN(raw) || parseTimesPhrase(raw.split(/\s+/));
+    if (standaloneN && out.length){
+      const prev = (out[out.length - 1] || '').trim();
+      if (prev && !/^[=:#;]/.test(prev) && !/^\(.*\)x\d+$/i.test(prev)){
+        out[out.length - 1] = `(${prev})x${standaloneN}`;
+      }
+      continue;
+    }
+
+    if (entry.type === 'lyrics-line' && out.length){
+      const prev = (out[out.length - 1] || '').trim();
+      if (prev && !/^[=\-:#;+]/.test(prev)) out.push(`; ${raw}`);
+      continue;
+    }
+
+    if (entry.type !== 'chord-line') continue;
+    let toks = (entry.tokens && entry.tokens.length) ? [...entry.tokens] : raw.split(/\s+/).filter(Boolean);
+    let repeatN = repeatTokenToN(toks[toks.length-1]);
+    if (!repeatN && toks.length >= 2) repeatN = parseTimesPhrase(toks.slice(-2));
+    if (repeatN){
+      if (repeatTokenToN(toks[toks.length-1])) toks = toks.slice(0, -1);
+      else if (parseTimesPhrase(toks.slice(-2))) toks = toks.slice(0, -2);
+    }
+
+    const chordLike = toks.reduce((acc, t) => acc + (isChordLikeToken(t) ? 1 : 0), 0);
+    if (!toks.length || (chordLike / toks.length) < 0.6) continue;
+    const chords = toks.map((t) => normalizeChordToken(t)).filter(Boolean);
+    if (!chords.length) continue;
+
+    let block = toCSMPNBars(chords).trim();
+    if (repeatN && repeatN > 1){
+      block = block.replace(/\n+/g, " ").trim();
+      out.push(`(${block})x${repeatN}`);
+    } else {
+      out.push(block);
+    }
+  }
+
+  return out.join('\n').trim();
+}
+
+function runSharedTextImportPipeline(text){
+  const prep = preprocessImportedSongText(text);
+  const flavor = detectTextSourceFlavor(prep.text);
+  const classified = classifyTextLines(prep.lines);
+  const minedSong = buildSongModelFromClassifiedText(classified);
+  const minedBars = countSongModelBars(minedSong);
+  const csmpnLegacy = emitCSMPNFromStructuredText(classified);
+  const ignoredLines = classified.filter((entry) => entry.type === 'unknown').length;
+  return {
+    preprocessed: prep,
+    flavor,
+    classified,
+    minedSong,
+    minedBars,
+    ignoredLines,
+    csmpnLegacy
+  };
+}
+
 function isLikelyUGProText(text){
   const lines = (text || '').replace(/\r/g, '').split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return false;
@@ -4319,228 +4646,13 @@ function isLikelyUGChordLine(line){
 }
 
 function mineUGProTextToSongModel(text){
-  const song = new SongModel();
-  const lines = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-
-  let currentSection = { label: '- Main', bars: [], lyrics: [] };
-  song.sections.push(currentSection);
-
-  const ensureSection = (name) => {
-    const clean = (name || '').trim();
-    if (!clean) return;
-    currentSection = { label: `- ${clean}`, bars: [], lyrics: [] };
-    song.sections.push(currentSection);
-  };
-
-  for (let li = 0; li < lines.length; li++){
-    const line = (lines[li] || '').trim();
-    if (!line) continue;
-
-    if (parseUGMetaLine(song, line)) continue;
-
-    const sectionName = parseUGSectionHeader(line);
-    if (sectionName){
-      ensureSection(sectionName);
-      continue;
-    }
-
-    // --- Handle inline bracket chords: "[Am]I'm walking [G]home" ---
-    if (hasInlineBracketChords(line)){
-      const chords = extractBracketChords(line);
-      const lyricsText = extractBracketLyrics(line);
-      if (chords.length){
-        const normalized = chords.map(c => normalizeChordToken(c)).filter(Boolean);
-        currentSection.bars.push(...normalized);
-        if (lyricsText){
-          currentSection.lyrics.push(lyricsText);
-        }
-      }
-      continue;
-    }
-
-    // --- Handle chord-over-lyrics pair: chord line followed by lyrics line ---
-    const isChordLine = isLikelyUGChordLine(line);
-    if (isChordLine){
-      // Peek at next line — is it lyrics?
-      const nextLine = (li + 1 < lines.length) ? (lines[li+1] || '').trim() : '';
-      if (nextLine && isLikelyLyricsLine(nextLine)){
-        // Pair them: consume the lyrics line
-        currentSection.lyrics.push(nextLine);
-        li++; // skip the lyrics line
-      }
-    }
-
-    if (!isChordLine) continue;
-
-    const tokens = tokenizeBars(line).filter(Boolean);
-    if (!tokens.length) continue;
-    const nonBarTokens = tokens.filter((tok) => !isBarlineToken(tok));
-    if (!nonBarTokens.length) continue;
-
-    const repeatMatch = line.match(/\bx\s*(\d+)\s*$/i);
-    const repeatCount = repeatMatch ? parseInt(repeatMatch[1], 10) : 1;
-    const contentTokens = repeatMatch
-      ? tokens.filter((tok) => !/^x\d+$/i.test(tok) && !/^\(x\d+\)$/i.test(tok))
-      : tokens;
-
-    const hasBarlines = contentTokens.some((tok) => isBarlineToken(tok));
-    const minedBars = [];
-
-    if (hasBarlines){
-      let segment = [];
-      const flushSegment = () => {
-        if (!segment.length) return;
-        const segmentChords = segment.map((tok) => normalizeChordToken(tok)).filter(Boolean);
-        if (!segmentChords.length){
-          segment = [];
-          return;
-        }
-        minedBars.push(segmentChords.length >= 2 ? segmentChords.join('_') : segmentChords[0]);
-        segment = [];
-      };
-      for (const tok of contentTokens){
-        if (isBarlineToken(tok)){
-          flushSegment();
-          continue;
-        }
-        segment.push(tok);
-      }
-      flushSegment();
-    } else {
-      minedBars.push(...contentTokens.map((tok) => normalizeChordToken(tok)).filter(Boolean));
-    }
-
-    if (!minedBars.length) continue;
-    if (Number.isFinite(repeatCount) && repeatCount > 1){
-      for (let i = 0; i < repeatCount; i++){
-        currentSection.bars.push(...minedBars);
-      }
-      continue;
-    }
-
-    currentSection.bars.push(...minedBars);
-  }
-
-  song.sections = song.sections.filter((section, idx) => section.bars.length || idx === 0 || section.label);
-  if (song.sections.length > 1 && !song.sections[0].bars.length && song.sections[0].label === '- Main'){
-    song.sections.shift();
-  }
-
-  return song;
+  const pipeline = runSharedTextImportPipeline(text);
+  return pipeline.minedSong;
 }
 
 function importUGText(text){
-  // UG Pro TXT exports can be noisy: headers, blank lines, "times two", duplicate repeats, etc.
-  // Goal: produce chord-only CSMPN with 4 bars per line, preserving repeat intent when explicit.
-  text = (text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-  const repeatTokenToN = (t) => {
-    if (!t) return null;
-    const s = String(t).trim();
-    let m = s.match(/^\(\s*x\s*(\d+)\s*\)$/i); // (x2)
-    if (m) return parseInt(m[1], 10);
-    m = s.match(/^x\s*(\d+)$/i); // x2
-    if (m) return parseInt(m[1], 10);
-    m = s.match(/^(\d+)\s*x$/i); // 2x
-    if (m) return parseInt(m[1], 10);
-    return null;
-  };
-
-  const parseTimesPhrase = (tokens) => {
-    if (!tokens || tokens.length < 2) return null;
-    if (String(tokens[0]).toLowerCase() !== "times") return null;
-    const v = String(tokens[1]).toLowerCase();
-    const map = {one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
-    if (v in map) return map[v];
-    if (/^\d+$/.test(v)) return parseInt(v, 10);
-    return null;
-  };
-
-  const rawLines = text.split("\n");
-  const lines = rawLines.map(l => l.trim()).filter(Boolean);
-
-  const out = [];
-  for (let li = 0; li < lines.length; li++){
-    const raw = lines[li].trim();
-    if (!raw) continue;
-
-    // Section headings: common UG / chord dump patterns
-    let m = raw.match(/^\[(.+?)\]$/); // [Chorus]
-    if (m){ out.push(`= ${m[1].trim()}`); continue; }
-    m = raw.match(/^([-=])\s*(.+)$/); // - Intro / = Verse (preserve marker type)
-    if (m){ out.push(`${m[1]} ${m[2].trim()}`); continue; }
-    m = raw.match(/^(#{1,6})\s*(.+)$/); // Markdown
-    if (m){ out.push(`= ${m[2].trim()}`); continue; }
-
-    // --- Inline bracket chords: [Am]lyrics [G]text ---
-    if (hasInlineBracketChords(raw)){
-      const bracketChords = extractBracketChords(raw);
-      const lyricsText = extractBracketLyrics(raw);
-      if (bracketChords.length){
-        const normalized = bracketChords.map(c => normalizeChordToken(c)).filter(Boolean);
-        if (normalized.length){
-          out.push(toCSMPNBars(normalized).trim());
-          if (lyricsText) out.push(`; ${lyricsText}`);
-        }
-      }
-      continue;
-    }
-
-    // Standalone repeat marker line applies to previous chord line
-    const standaloneN = repeatTokenToN(raw) || parseTimesPhrase(raw.split(/\s+/));
-    if (standaloneN && out.length){
-      const prev = (out[out.length-1] || "").trim();
-      if (prev && !/^[=:#;]/.test(prev) && !/^\(.*\)x\d+$/i.test(prev)){
-        out[out.length-1] = `(${prev})x${standaloneN}`;
-      }
-      continue;
-    }
-
-    // Tokenize
-    let toks = raw.split(/\s+/).filter(Boolean);
-
-    // Strip common UG "times N" that can appear after a chord line
-    let repeatN = repeatTokenToN(toks[toks.length-1]);
-    if (!repeatN && toks.length >= 2){
-      repeatN = parseTimesPhrase(toks.slice(-2));
-    }
-
-    // Remove trailing repeat tokens from chord candidates
-    if (repeatN){
-      if (repeatTokenToN(toks[toks.length-1])) toks = toks.slice(0, -1);
-      else if (parseTimesPhrase(toks.slice(-2))) toks = toks.slice(0, -2);
-    }
-
-    // Determine if this is chord-dominant
-    const chordLike = toks.reduce((acc,t)=>acc + (isChordLikeToken(t) ? 1 : 0), 0);
-    if (!toks.length || (chordLike / toks.length) < 0.6){
-      // Check if this is a lyrics line following a chord line — store as annotation
-      if (isLikelyLyricsLine(raw) && out.length){
-        const prev = (out[out.length-1] || '').trim();
-        // Only attach to chord lines (not section markers)
-        if (prev && !/^[=\-:#;+]/.test(prev)){
-          out.push(`; ${raw}`);
-        }
-      }
-      continue;
-    }
-
-    // Normalize chords
-    const chords = toks.map(t => normalizeChordToken(t)).filter(Boolean);
-    if (!chords.length) continue;
-
-    // Convert to 4-bars-per-line CSMPN; if repeatN is present, wrap as a single repeat block
-    let block = toCSMPNBars(chords).trim();
-    if (repeatN && repeatN > 1){
-      // Collapse newlines inside the repeat block for safer syntax: (A B C D)x2
-      block = block.replace(/\n+/g, " ").trim();
-      out.push(`(${block})x${repeatN}`);
-    } else {
-      out.push(block);
-    }
-  }
-
-  return out.join("\n").trim();
+  const pipeline = runSharedTextImportPipeline(text);
+  return pipeline.csmpnLegacy;
 }
 
 function importChordPro(text){
@@ -5886,6 +5998,7 @@ async function importUGProPDF(file){
 
   const meta = { title:"", composer:"", style:"", tempo:"", time:"", key:"" };
   const bodyLines = [];
+  const extractedTextLines = [];
   let pendingBars = [];
 
   const flushBars = () => {
@@ -5969,6 +6082,7 @@ async function importUGProPDF(file){
       const rawLine = lineItems.map(it => it.str).join(" ");
       const line = normLine(rawLine);
       if (!line) continue;
+      extractedTextLines.push(line);
 
       // header lines
       if (parseHeaderFromLine(line)) continue;
@@ -6053,7 +6167,16 @@ async function importUGProPDF(file){
   if (out) out += "\n\n";
   out += bodyLines.join("\n");
 
-  const chordBars = bodyLines.join(" ").split(/\s+/).filter(t => isChordToken(t) || t.includes("_") || t === "%");
+  let chordBars = bodyLines.join(" ").split(/\s+/).filter(t => isChordToken(t) || t.includes("_") || t === "%");
+  if (!chordBars.length && extractedTextLines.length){
+    const sharedText = extractedTextLines.join('\n');
+    const pipeline = runSharedTextImportPipeline(sharedText);
+    const fallbackCsmpn = pipeline.csmpnLegacy || '';
+    if (fallbackCsmpn){
+      out = [hdrLines.join('\n'), fallbackCsmpn].filter(Boolean).join('\n\n').trim();
+      chordBars = fallbackCsmpn.split(/\s+/).filter((t) => isChordToken(t) || t.includes('_') || t === '%');
+    }
+  }
   statusEl.textContent = `PDF import: ${chordBars.length} bar(s) extracted from ${pdf.numPages} page(s).`;
 
   return out.trim();
