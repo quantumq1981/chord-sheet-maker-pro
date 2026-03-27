@@ -1141,7 +1141,7 @@ body.exporting .sectionBlock{
 <div id="abc-hidden" style="display:none"></div>
 <div class="app">
   <div class="topbar">
-    <div class="title">ChordSheet CSMPN Builder v1.8.0 — Fake Book Edition</div>
+    <div class="title">ChordSheet CSMPN Builder v1.10.0 — Fake Book Edition</div>
 
     <!-- User / Power Mode Toggle -->
     <div class="mode-toggle-wrap">
@@ -1202,7 +1202,7 @@ body.exporting .sectionBlock{
       </ul>
     </div>
 
-    <div id="status" class="status">Ready. v1.8 — Fake Book formatting.</div>
+    <div id="status" class="status">Ready. v1.10.0 — Fake Book formatting.</div>
 
     <!-- Import Diagnostics Panel (collapsible, power-mode only) -->
     <div id="diagnosticsPanel" class="diagnosticsPanel power-only">
@@ -1449,9 +1449,14 @@ let validationWarnings = [];
 let importDiagnostics = {
   miner: null,
   sourceFlavor: '',
+  confidence: 'high',
+  fallbackUsed: false,
   sections: 0,
   bars: 0,
   ignoredLines: 0,
+  pagesProcessed: 0,
+  groupingInferred: false,
+  omrRequired: false,
   warnings: [],
   durationMs: 0
 };
@@ -1460,9 +1465,14 @@ function resetDiagnostics(){
   importDiagnostics = {
     miner: null,
     sourceFlavor: '',
+    confidence: 'high',
+    fallbackUsed: false,
     sections: 0,
     bars: 0,
     ignoredLines: 0,
+    pagesProcessed: 0,
+    groupingInferred: false,
+    omrRequired: false,
     warnings: [],
     durationMs: 0
   };
@@ -1482,11 +1492,18 @@ function updateDiagnosticsPanel(){
   if (importDiagnostics.sourceFlavor){
     html += `<span class="diag-label">Detected Flavor:</span><span class="diag-value">${escapeHtml(importDiagnostics.sourceFlavor)}</span>`;
   }
+  html += `<span class="diag-label">Confidence:</span><span class="diag-value">${escapeHtml(importDiagnostics.confidence || 'high')}</span>`;
+  html += `<span class="diag-label">Fallback Used:</span><span class="diag-value">${importDiagnostics.fallbackUsed ? 'Yes' : 'No'}</span>`;
   html += `<span class="diag-label">Sections Detected:</span><span class="diag-value">${importDiagnostics.sections}</span>`;
   html += `<span class="diag-label">Total Bars:</span><span class="diag-value">${importDiagnostics.bars}</span>`;
   if (importDiagnostics.ignoredLines > 0){
     html += `<span class="diag-label">Ignored Lines:</span><span class="diag-value">${importDiagnostics.ignoredLines}</span>`;
   }
+  if (importDiagnostics.pagesProcessed > 0){
+    html += `<span class="diag-label">PDF Pages:</span><span class="diag-value">${importDiagnostics.pagesProcessed}</span>`;
+  }
+  html += `<span class="diag-label">Grouping Inferred:</span><span class="diag-value">${importDiagnostics.groupingInferred ? 'Yes' : 'No'}</span>`;
+  html += `<span class="diag-label">OMR Required:</span><span class="diag-value">${importDiagnostics.omrRequired ? 'Yes' : 'No'}</span>`;
   html += `<span class="diag-label">Import Time:</span><span class="diag-value">${importDiagnostics.durationMs} ms</span>`;
   html += '</div>';
   if (importDiagnostics.warnings.length){
@@ -1590,6 +1607,10 @@ fileInputMusicXML.addEventListener('change', async () => {
     if (song instanceof SongModel) {
       importDiagnostics.sections = song.sections.length;
       importDiagnostics.bars = countSongModelBars(song);
+      const ncBars = song.sections.reduce((n, sec) => n + (sec.bars || []).filter((b) => b === 'N.C.').length, 0);
+      if (ncBars > 0){
+        importDiagnostics.warnings.push(`MusicXML had ${ncBars} empty harmony measure(s); emitted N.C. instead of inferred repeats.`);
+      }
       importDiagnostics.ignoredLines = 0;
       const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
@@ -1734,7 +1755,7 @@ fileInputUG.addEventListener('change', async () => {
     importDiagnostics.sourceFlavor = pipeline.flavor;
     let csmpn = '';
     let usedFallback = false;
-    if (pipeline.flavor === 'ug-pro-text') {
+    if (['ug-text','chord-over-lyrics','barline-grid','chord-dump'].includes(pipeline.flavor)) {
       importDiagnostics.miner = 'UG Pro Text';
       try {
         const ugSong = pipeline.minedSong;
@@ -3863,6 +3884,8 @@ fileInput.addEventListener('change', async () => {
     // MXL: compressed MusicXML (ZIP container) — detect by extension or PK magic bytes
     if (name.endsWith('.mxl')){
       importDiagnostics.miner = 'MXL (Compressed MusicXML)';
+      importDiagnostics.sourceFlavor = 'musicxml';
+      importDiagnostics.confidence = 'high';
       const buf = await file.arrayBuffer();
       const song = await importMXL(buf);
       if (song instanceof SongModel){
@@ -3887,6 +3910,8 @@ fileInput.addEventListener('change', async () => {
     // iReal Pro: .irealb extension or text starting with irealb://
     if (name.endsWith('.irealb') || isIRealProURL(text)){
       importDiagnostics.miner = 'iReal Pro';
+      importDiagnostics.sourceFlavor = 'ireal-pro';
+      importDiagnostics.confidence = 'high';
       try {
         const song = importIRealPro(text.trim());
         if (song instanceof SongModel){
@@ -3911,6 +3936,8 @@ fileInput.addEventListener('change', async () => {
 
     if (name.endsWith('.onsong')){
       importDiagnostics.miner = 'OnSong';
+      importDiagnostics.sourceFlavor = 'onsong';
+      importDiagnostics.confidence = 'high';
       const csmpn = importOnSong(text);
       if (csmpn){
         const diagDoc = parseCSMPN(csmpn);
@@ -3932,6 +3959,8 @@ fileInput.addEventListener('change', async () => {
 
     if (name.endsWith('.abc') || (type.includes('text/plain') && /(^|\n)\s*K\s*:/i.test(text))){
       importDiagnostics.miner = 'ABC Notation';
+      importDiagnostics.sourceFlavor = 'unknown-text';
+      importDiagnostics.confidence = 'medium';
       try {
         const song = mineABCToSongModel(text);
         importDiagnostics.sections = song.sections.length;
@@ -3960,6 +3989,8 @@ fileInput.addEventListener('change', async () => {
       // Detect specific XML sub-formats before falling through to MusicXML
       if (isOpenLyricsXML(text)){
         importDiagnostics.miner = 'OpenLyrics XML';
+        importDiagnostics.sourceFlavor = 'openlyrics-xml';
+        importDiagnostics.confidence = 'high';
         const song = importOpenLyrics(text);
         if (song instanceof SongModel){
           importDiagnostics.sections = song.sections.length;
@@ -3979,6 +4010,8 @@ fileInput.addEventListener('change', async () => {
       }
       if (isOpenSongXML(text)){
         importDiagnostics.miner = 'OpenSong XML';
+        importDiagnostics.sourceFlavor = 'opensong-xml';
+        importDiagnostics.confidence = 'high';
         const song = importOpenSong(text);
         if (song instanceof SongModel){
           importDiagnostics.sections = song.sections.length;
@@ -3997,10 +4030,16 @@ fileInput.addEventListener('change', async () => {
         return;
       }
       importDiagnostics.miner = 'MusicXML';
+      importDiagnostics.sourceFlavor = 'musicxml';
+      importDiagnostics.confidence = 'high';
       const song = importMusicXML(text);
       if (song instanceof SongModel){
         importDiagnostics.sections = song.sections.length;
         importDiagnostics.bars = countSongModelBars(song);
+        const ncBars = song.sections.reduce((n, sec) => n + (sec.bars || []).filter((b) => b === 'N.C.').length, 0);
+        if (ncBars > 0){
+          importDiagnostics.warnings.push(`MusicXML had ${ncBars} empty harmony measure(s); emitted N.C. instead of inferred repeats.`);
+        }
         importDiagnostics.ignoredLines = 0;
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);
         const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
@@ -4019,7 +4058,12 @@ fileInput.addEventListener('change', async () => {
     let usedMiner = 'Text';
     let usedFallback = false;
     const textPipeline = runSharedTextImportPipeline(text);
-    importDiagnostics.sourceFlavor = textPipeline.flavor;
+    attachImportDiagnostics({
+      sourceFlavor: textPipeline.flavor,
+      confidence: textPipeline.confidence,
+      groupingInferred: textPipeline.groupingInferred,
+      warnings: textPipeline.warnings
+    });
     if (detectChordMark(text)){
       usedMiner = 'ChordMark';
       importDiagnostics.miner = 'ChordMark';
@@ -4028,7 +4072,7 @@ fileInput.addEventListener('change', async () => {
       usedMiner = 'ChordPro';
       importDiagnostics.miner = 'ChordPro';
       csmpn = importChordPro(text);
-    } else if (textPipeline.flavor === 'ug-pro-text'){
+    } else if (['ug-text','chord-over-lyrics','barline-grid','chord-dump','chordpro-dirty'].includes(textPipeline.flavor)){
       usedMiner = 'UG Pro Text';
       importDiagnostics.miner = 'UG Pro Text';
       try {
@@ -4057,6 +4101,7 @@ fileInput.addEventListener('change', async () => {
 
     // Count ignored lines for text imports
     importDiagnostics.ignoredLines = textPipeline.ignoredLines;
+    attachImportDiagnostics({ fallbackUsed: usedFallback });
     addImportConfidenceWarnings(textPipeline, { fallbackUsed: usedFallback, context: usedMiner });
 
     // If sections/bars not yet counted (legacy path), count from CSMPN
@@ -4203,47 +4248,74 @@ function countSongModelBars(song){
   }, 0);
 }
 
+function preprocessImportedInput(raw, sourceInfo = {}){
+  const normalizedText = normalizeUGProText(raw || '');
+  const allLines = normalizedText.split('\n').map((line) => (line || '').trim());
+  const lines = allLines.filter((line) => line.length > 0);
+  const pageChunks = Array.isArray(sourceInfo.pageChunks) ? sourceInfo.pageChunks : [];
+  return {
+    raw: raw || '',
+    text: normalizedText,
+    lines,
+    allLines,
+    sourceInfo,
+    pageChunks
+  };
+}
+
 function preprocessImportedSongText(text){
-  const normalizedText = normalizeUGProText(text || '');
-  const lines = normalizedText
-    .split('\n')
-    .map((line) => (line || '').trim())
-    .filter((line) => line.length > 0);
-  return { text: normalizedText, lines };
+  return preprocessImportedInput(text, {});
+}
+
+function detectSourceFlavor(preprocessed){
+  const prep = preprocessed || {};
+  const text = prep.text || '';
+  const lines = Array.isArray(prep.lines) ? prep.lines : [];
+  const sourceInfo = prep.sourceInfo || {};
+  if (!lines.length) return { flavor: 'unknown-text', confidence: 'low' };
+  const ext = String(sourceInfo.ext || '').toLowerCase();
+  const mime = String(sourceInfo.mime || '').toLowerCase();
+
+  if (ext === '.musicxml' || ext === '.mxl' || /musicxml/.test(mime)) return { flavor: 'musicxml', confidence: 'high' };
+  if (isOpenSongXML(text)) return { flavor: 'opensong-xml', confidence: 'high' };
+  if (isOpenLyricsXML(text)) return { flavor: 'openlyrics-xml', confidence: 'high' };
+  if (ext === '.onsong') return { flavor: 'onsong', confidence: 'high' };
+  if (ext === '.irealb' || isIRealProURL(text)) return { flavor: 'ireal-pro', confidence: 'high' };
+  if (detectChordMark(text)) return { flavor: 'chordmark', confidence: 'high' };
+
+  const hasChordProDirectives = detectChordPro(text);
+  const directiveLines = lines.filter((line) => /\{\s*[^}]+\s*\}/.test(line)).length;
+  const brokenDirectiveLines = lines.filter((line) => /\{[^}]*$/.test(line) || /^[^{}]*\}/.test(line)).length;
+  const bracketInlineLines = lines.filter((line) => hasInlineBracketChords(line)).length;
+  const chordLines = lines.filter((line) => isLikelyUGChordLine(line)).length;
+  const lyricLines = lines.filter((line) => isLikelyLyricsLine(line)).length;
+  const barlineLines = lines.filter((line) => /\|/.test(line) || /:\|/.test(line) || /\|:/.test(line) || /\b%%?\b/.test(line)).length;
+  const chordDumpishLines = lines.filter((line) => {
+    const toks = tokenizeBars(line).filter((tok) => !isBarlineToken(tok));
+    if (toks.length < 4) return false;
+    const chordLike = toks.reduce((n, tok) => n + (normalizeChordToken(tok) ? 1 : 0), 0);
+    return chordLike / Math.max(1, toks.length) >= 0.85;
+  }).length;
+
+  if (hasChordProDirectives && brokenDirectiveLines === 0) return { flavor: 'chordpro-clean', confidence: 'high' };
+  if (hasChordProDirectives || (directiveLines >= 1 && (brokenDirectiveLines >= 1 || bracketInlineLines >= 1))) return { flavor: 'chordpro-dirty', confidence: 'medium' };
+  if (barlineLines >= Math.max(2, Math.floor(lines.length * 0.3))) return { flavor: 'barline-grid', confidence: 'high' };
+  if (isLikelyUGProText(text) && chordLines >= 2 && lyricLines >= 1) return { flavor: 'ug-text', confidence: 'high' };
+  if (chordLines >= 1 && lyricLines >= 1) return { flavor: 'chord-over-lyrics', confidence: 'medium' };
+  if (chordDumpishLines >= Math.max(1, Math.floor(lines.length * 0.4))) return { flavor: 'chord-dump', confidence: 'medium' };
+  if (bracketInlineLines >= 1) return { flavor: 'chordpro-dirty', confidence: 'medium' };
+  return { flavor: 'unknown-text', confidence: 'low' };
 }
 
 function detectTextSourceFlavor(text){
-  const prep = preprocessImportedSongText(text);
-  const lines = prep.lines;
-  if (!lines.length) return 'unknown-text';
-  if (detectChordPro(prep.text)) return 'chordpro';
-
-  let bracketInlineLines = 0;
-  let chordLines = 0;
-  let lyricsLines = 0;
-  let chordDumpishLines = 0;
-
-  for (const line of lines){
-    if (hasInlineBracketChords(line)) bracketInlineLines++;
-    if (isLikelyUGChordLine(line)) chordLines++;
-    if (isLikelyLyricsLine(line)) lyricsLines++;
-    const toks = tokenizeBars(line).filter((tok) => !isBarlineToken(tok));
-    if (toks.length >= 4){
-      const chordLike = toks.reduce((n, tok) => n + (normalizeChordToken(tok) ? 1 : 0), 0);
-      if (chordLike / toks.length >= 0.85) chordDumpishLines++;
-    }
-  }
-
-  if (isLikelyUGProText(prep.text)) return 'ug-pro-text';
-  if (bracketInlineLines >= 1) return 'inline-bracket-chords';
-  if (chordLines >= 1 && lyricsLines >= 1) return 'chord-over-lyrics';
-  if (chordDumpishLines >= 1 && chordLines >= Math.max(1, Math.floor(lines.length * 0.4))) return 'chord-dump';
-  return 'unknown-text';
+  return detectSourceFlavor(preprocessImportedInput(text, {})).flavor;
 }
 
-function classifyTextLines(lines){
+function classifyLinesOrEvents(preprocessed, detectedFlavor){
+  const lines = Array.isArray(preprocessed?.lines) ? preprocessed.lines : [];
   const out = [];
   const safeLines = Array.isArray(lines) ? lines : [];
+  const flavor = detectedFlavor || 'unknown-text';
   for (let i = 0; i < safeLines.length; i++){
     const raw = safeLines[i] || '';
     const line = raw.trim();
@@ -4294,7 +4366,7 @@ function classifyTextLines(lines){
 
     const tokens = tokenizeBars(line).filter(Boolean);
     entry.tokens = tokens;
-    if (isLikelyUGChordLine(line)){
+    if (isLikelyUGChordLine(line) || (flavor === 'chord-dump' && tokens.length >= 2)){
       entry.type = 'chord-line';
       const repeatMatch = line.match(/\bx\s*(\d+)\s*$/i);
       entry.repeatCount = repeatMatch ? parseInt(repeatMatch[1], 10) : 1;
@@ -4313,8 +4385,13 @@ function classifyTextLines(lines){
   return out;
 }
 
-function buildSongModelFromClassifiedText(classified){
+function classifyTextLines(lines){
+  return classifyLinesOrEvents({ lines: Array.isArray(lines) ? lines : [] }, 'unknown-text');
+}
+
+function buildCanonicalSongModel(classified, detectedFlavor){
   const song = new SongModel();
+  song.meta.importFlavor = detectedFlavor || 'unknown-text';
   let currentSection = { label: '- Main', bars: [], lyrics: [] };
   song.sections.push(currentSection);
 
@@ -4393,7 +4470,15 @@ function buildSongModelFromClassifiedText(classified){
       }
       flushSegment();
     } else {
-      minedBars.push(...contentTokens.map((tok) => normalizeChordToken(tok)).filter(Boolean));
+      const normalizedTokens = contentTokens.map((tok) => normalizeChordToken(tok)).filter(Boolean);
+      if ((detectedFlavor === 'chord-dump' || detectedFlavor === 'ug-text') && normalizedTokens.length >= 4){
+        for (let t = 0; t < normalizedTokens.length; t += 2){
+          const pair = normalizedTokens.slice(t, t + 2);
+          minedBars.push(pair.length === 2 ? pair.join('_') : pair[0]);
+        }
+      } else {
+        minedBars.push(...normalizedTokens);
+      }
     }
 
     if (!minedBars.length) continue;
@@ -4409,6 +4494,28 @@ function buildSongModelFromClassifiedText(classified){
     song.sections.shift();
   }
   return song;
+}
+
+function buildSongModelFromClassifiedText(classified){
+  return buildCanonicalSongModel(classified, 'unknown-text');
+}
+
+function normalizeCanonicalSongModel(song, context = {}){
+  const out = song instanceof SongModel ? song : new SongModel();
+  const flavor = context.flavor || out.meta.importFlavor || 'unknown-text';
+  out.sections = (out.sections || []).map((section) => {
+    const bars = Array.isArray(section.bars) ? section.bars.filter(Boolean) : [];
+    const normalizedBars = bars.map((bar) => {
+      if (!bar) return '';
+      if (/%{2,}/.test(bar)) return '%';
+      return String(bar).replace(/\s+/g, '').replace(/__+/g, '_');
+    }).filter(Boolean);
+    return { ...section, bars: normalizedBars };
+  }).filter((section, idx) => section.bars.length || idx === 0);
+  if (flavor === 'chord-dump' && out.sections[0] && out.sections[0].bars.length >= 8){
+    out.meta.groupingInferred = true;
+  }
+  return out;
 }
 
 function emitCSMPNFromStructuredText(classified){
@@ -4542,22 +4649,65 @@ function emitCSMPNFromStructuredText(classified){
   return out.join('\n').trim();
 }
 
+function emitCSMPN(songModel, context = {}){
+  if (!(songModel instanceof SongModel)) return '';
+  return songModel.toCSMPN({ barsPerRow: context.barsPerRow || fbSettings.barsPerRow });
+}
+
+function attachImportDiagnostics(diagPatch = {}){
+  if (!importDiagnostics) return;
+  importDiagnostics.miner = diagPatch.miner || importDiagnostics.miner;
+  importDiagnostics.sourceFlavor = diagPatch.sourceFlavor || importDiagnostics.sourceFlavor;
+  importDiagnostics.confidence = diagPatch.confidence || importDiagnostics.confidence || 'high';
+  importDiagnostics.fallbackUsed = !!(diagPatch.fallbackUsed || importDiagnostics.fallbackUsed);
+  importDiagnostics.groupingInferred = !!(diagPatch.groupingInferred || importDiagnostics.groupingInferred);
+  importDiagnostics.omrRequired = !!(diagPatch.omrRequired || importDiagnostics.omrRequired);
+  if (Number.isFinite(diagPatch.pagesProcessed)) importDiagnostics.pagesProcessed = diagPatch.pagesProcessed;
+  if (Number.isFinite(diagPatch.ignoredLines)) importDiagnostics.ignoredLines = diagPatch.ignoredLines;
+  if (Array.isArray(diagPatch.warnings) && diagPatch.warnings.length){
+    importDiagnostics.warnings.push(...diagPatch.warnings);
+  }
+}
+
 function runSharedTextImportPipeline(text){
-  const prep = preprocessImportedSongText(text);
-  const flavor = detectTextSourceFlavor(prep.text);
-  const classified = classifyTextLines(prep.lines);
-  const minedSong = buildSongModelFromClassifiedText(classified);
+  const prep = preprocessImportedInput(text, { kind: 'text' });
+  const detected = detectSourceFlavor(prep);
+  const flavor = detected.flavor;
+  const classified = classifyLinesOrEvents(prep, flavor);
+  const canonicalSong = buildCanonicalSongModel(classified, flavor);
+  const minedSong = normalizeCanonicalSongModel(canonicalSong, { flavor });
   const minedBars = countSongModelBars(minedSong);
-  const csmpnLegacy = emitCSMPNFromStructuredText(classified);
+  const csmpnFromSong = emitCSMPN(minedSong, { barsPerRow: fbSettings.barsPerRow });
+  const csmpnLegacy = csmpnFromSong || emitCSMPNFromStructuredText(classified);
   const ignoredLines = classified.filter((entry) => entry.type === 'unknown').length;
+  const groupingInferred = !!(minedSong?.meta?.groupingInferred) || flavor === 'chord-dump';
+  const warnings = [];
+  if (groupingInferred){
+    warnings.push('Bar grouping inferred from dense chord text.');
+  }
+  if (/\|\:|\:\|/.test(prep.text) && !/\b(repeat|x\d+)\b/i.test(prep.text)){
+    warnings.push('Repeat barlines detected; advanced repeat endings may need manual verification.');
+  }
+  if (/\b%%?\b/.test(prep.text)){
+    warnings.push('Percent-repeat tokens detected; verify intended repeated harmony.');
+  }
+  if (/\b(1st|2nd|ending)\b/i.test(prep.text)){
+    warnings.push('Alternate ending markers detected; unsupported endings kept as text context only.');
+  }
+  if (flavor === 'unknown-text'){
+    warnings.push('Unknown text flavor; best-effort parser path used.');
+  }
   return {
     preprocessed: prep,
     flavor,
+    confidence: detected.confidence,
     classified,
     minedSong,
     minedBars,
     ignoredLines,
-    csmpnLegacy
+    csmpnLegacy,
+    groupingInferred,
+    warnings
   };
 }
 
@@ -5827,7 +5977,7 @@ function importMusicXMLRegex(xmlText){
       const norm = normalizeChordToken(chord);
       if (norm) chords.push(norm);
     }
-    if (!chords.length) bars.push('%');
+    if (!chords.length) bars.push('N.C.');
     else if (chords.length === 1) bars.push(chords[0]);
     else bars.push(chords.join('_'));
   }
@@ -5885,7 +6035,7 @@ function importMusicXML(xmlText){
       const harmonies = [...meas.querySelectorAll('harmony')];
       const chords = harmonies.map((h) => normalizeChordToken(harmonyToChord(h))).filter(Boolean);
       if (!chords.length){
-        bars.push('%');
+        bars.push('N.C.');
       } else if (chords.length === 1){
         bars.push(chords[0]);
       } else {
@@ -6093,8 +6243,11 @@ async function importUGProPDF(file){
   const meta = { title:"", composer:"", style:"", tempo:"", time:"", key:"" };
   const bodyLines = [];
   const extractedTextLines = [];
+  const pageBoundaries = [];
   let pendingBars = [];
   let usedSharedTextFallback = false;
+  let inferredGrouping = false;
+  let totalTextItems = 0;
 
   const flushBars = () => {
     while (pendingBars.length){
@@ -6161,6 +6314,8 @@ async function importUGProPDF(file){
         y: it.transform[5] ?? 0
       }))
       .filter(it => it.str && it.str.trim());
+    totalTextItems += items.length;
+    pageBoundaries.push({ page: p, startLine: extractedTextLines.length });
 
     // Cluster by y into "visual lines"
     const buckets = new Map();
@@ -6225,6 +6380,7 @@ async function importUGProPDF(file){
       } else {
         // No explicit bars: assume each chord is a bar
         bars = chordTokens.slice();
+        if (bars.length >= 3) inferredGrouping = true;
       }
 
       // Append bars
@@ -6236,6 +6392,17 @@ async function importUGProPDF(file){
   }
 
   flushBars();
+  attachImportDiagnostics({ pagesProcessed: pdf.numPages });
+
+  if (!totalTextItems || !extractedTextLines.length){
+    attachImportDiagnostics({
+      sourceFlavor: 'pdf-omr-needed',
+      confidence: 'high',
+      omrRequired: true,
+      warnings: ['Image-only / OMR-required PDF. Text-layer chord extraction unavailable.']
+    });
+    throw new Error('Image-only / OMR-required PDF. Text-layer chord extraction unavailable.');
+  }
 
   // Apply normalization / validation to meta and sync UI
   const hdrText = [
@@ -6273,17 +6440,47 @@ async function importUGProPDF(file){
       if (/[a-z]{8,}\s+[a-z]{8,}\s+[a-z]{8,}/i.test(s) && !hasInlineBracketChords(s) && !isLikelyUGChordLine(s)) return false;
       return true;
     });
-    const sharedText = filteredFallbackLines.join('\n');
+    const pageAwareLines = [];
+    for (let bi = 0; bi < pageBoundaries.length; bi++){
+      const boundary = pageBoundaries[bi];
+      const nextBoundary = pageBoundaries[bi + 1];
+      const start = boundary.startLine;
+      const end = nextBoundary ? nextBoundary.startLine : extractedTextLines.length;
+      const perPageLines = extractedTextLines.slice(start, end).filter((line) => filteredFallbackLines.includes(line));
+      if (!perPageLines.length) continue;
+      pageAwareLines.push(`[Page ${boundary.page}]`);
+      pageAwareLines.push(...perPageLines.slice(0, 250));
+    }
+    const sharedText = pageAwareLines.join('\n');
     const pipeline = runSharedTextImportPipeline(sharedText);
     const fallbackCsmpn = pipeline.csmpnLegacy || '';
     if (fallbackCsmpn){
       usedSharedTextFallback = true;
       out = [hdrLines.join('\n'), fallbackCsmpn].filter(Boolean).join('\n\n').trim();
       chordBars = fallbackCsmpn.split(/\s+/).filter((t) => isChordToken(t) || t.includes('_') || t === '%');
+      inferredGrouping = inferredGrouping || !!pipeline.groupingInferred;
+      attachImportDiagnostics({
+        sourceFlavor: 'pdf-extracted-text-noisy',
+        confidence: 'medium',
+        groupingInferred: inferredGrouping,
+        fallbackUsed: true,
+        warnings: pipeline.warnings
+      });
     }
   }
   if (usedSharedTextFallback){
     importDiagnostics.warnings.push('PDF spatial extraction weak; used shared-text fallback recovery.');
+  }
+  if (!usedSharedTextFallback){
+    const noisy = extractedTextLines.length > 180 || (chordBars.length / Math.max(1, extractedTextLines.length)) < 0.35;
+    attachImportDiagnostics({
+      sourceFlavor: noisy ? 'pdf-extracted-text-noisy' : 'pdf-extracted-text-clean',
+      confidence: noisy ? 'medium' : 'high',
+      groupingInferred: inferredGrouping
+    });
+    if (noisy){
+      importDiagnostics.warnings.push('Noisy PDF text layer detected; some lines were ignored during chord mining.');
+    }
   }
   statusEl.textContent = `PDF import: ${chordBars.length} bar(s) extracted from ${pdf.numPages} page(s).`;
 
@@ -6676,14 +6873,43 @@ applyAppMode(loadAppMode());
 updatePinStatusLabel();
 extractHeaderFromText(sourceEl.value);
 updatePreview();
-setStatus('Ready. v1.10 — iReal Pro (irealb://), MXL, OnSong, OpenSong, OpenLyrics, VexFlow.');
+setStatus('Ready. v1.10.0 — iReal Pro (irealb://), MXL, OnSong, OpenSong, OpenLyrics, VexFlow.');
 
 // --- Optional self-tests (run manually in console): window.runCSMPNSelfTests() ---
 // v1.10.0: iReal Pro (irealb://), MXL, OnSong, OpenSong XML, OpenLyrics XML, VexFlow notation blocks
+const IMPORT_REGRESSION_FIXTURES = {
+  chordproClean: `{title: Fixture Clean}\n{key: C}\n{start_of_verse}\n[C]Hello [G]world\n{end_of_verse}`,
+  chordproDirty: `{title Fixture Dirty\n{start_of_bridge}\n[C]Loose [G]brace\n{end_of_bridge`,
+  inlineBracketChords: `[Verse]\n[Am]Walking [G]home [F]now [C]baby`,
+  ugText: `[Verse]\nAm   G   F   C\nWalking in the rain tonight`,
+  chordOverLyrics: `Verse 1\nDm7   G7   Cmaj7\nWhen the city lights are low`,
+  barlineFakebook: `| C | Dm G7 | C/E F |\n||: C7 | C7 | F7 | C7 :||\n| % | %% |`,
+  chordDump: `Bmaj7 D7 | Gmaj7 Bb7\nEbmaj7 F#7 Bmaj7`,
+  pdfExtractedTextClean: `Title: PDF Clean\n[Page 1]\n| C | Am | F | G |\n[Page 2]\n| C | F | G | C |`,
+  pdfExtractedTextNoisy: `PAGE 1\nUltimate-Guitar.com\n[Page 1]\nC   G   Am   F\n123/456\nrandom footer`,
+  denseJazzGiantStepsish: `Bmaj7 D7 | Gmaj7 Bb7 | Ebmaj7 F#7 |\nBmaj7 D7 | Gmaj7 Bb7 | Ebmaj7 F#7 |`,
+  simplePopRock: `Title: Pop Fixture\n[Chorus]\nG D Em C\nWe are singing all night`
+};
+
+window.importRegressionFixtures = IMPORT_REGRESSION_FIXTURES;
+
 window.runCSMPNSelfTests = function(){
   const results = [];
   const assert = (name, cond) => results.push({ name, pass: !!cond });
   try{
+    // Fixture-pack routing checks (universal intake)
+    const fx1 = runSharedTextImportPipeline(IMPORT_REGRESSION_FIXTURES.chordproClean);
+    assert("fixture chordpro-clean flavor", fx1.flavor === 'chordpro-clean');
+    const fx2 = runSharedTextImportPipeline(IMPORT_REGRESSION_FIXTURES.chordproDirty);
+    assert("fixture chordpro-dirty flavor", fx2.flavor === 'chordpro-dirty');
+    const fx3 = runSharedTextImportPipeline(IMPORT_REGRESSION_FIXTURES.barlineFakebook);
+    assert("fixture barline-grid flavor", fx3.flavor === 'barline-grid');
+    const fx4 = runSharedTextImportPipeline(IMPORT_REGRESSION_FIXTURES.chordDump);
+    assert("fixture chord-dump flavor", fx4.flavor === 'chord-dump');
+    assert("fixture chord-dump inferred grouping", fx4.groupingInferred === true);
+    const fx5 = runSharedTextImportPipeline(IMPORT_REGRESSION_FIXTURES.denseJazzGiantStepsish);
+    assert("fixture dense jazz keeps split bars", (fx5.csmpnLegacy || '').includes("_"));
+
     // Header extraction sanity
     const h = extractHeaderFromText("Title: Sin City Blues\nComposer: Czemba\nStyle: Swing\nTempo: 81\nTime: 4/4\nKey: Bb", false);
     assert("header.title", h.title === "Sin City Blues");
