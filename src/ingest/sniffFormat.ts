@@ -23,6 +23,7 @@ export type SourceFormat = 'chordpro' | 'ultimateguitar' | 'chords-over-words' |
 export type DetectedFormat =
   | { format: 'mxl' }
   | { format: 'musicxml' }
+  | { format: 'svg' }
   | { format: 'chordpro' }
   | { format: 'ultimateguitar' }
   | { format: 'chords-over-words' }
@@ -147,7 +148,28 @@ export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): Detected
   // Decode up to 2 KB for text-based heuristics
   const head = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 2048));
 
-  // 2. MusicXML detection
+  // 2a. SVG detection — must precede MusicXML check because SVG is also XML.
+  //     Match on .svg extension OR the presence of an <svg element combined
+  //     with the W3C SVG namespace (single- or double-quoted), or a bare
+  //     <svg> opening tag when the extension is already .svg.
+  if (ext === 'svg') {
+    return { format: 'svg' };
+  }
+  if (
+    head.includes('<svg') &&
+    (
+      head.includes('xmlns="http://www.w3.org/2000/svg"') ||
+      head.includes("xmlns='http://www.w3.org/2000/svg'") ||
+      // Namespace may appear on a child element — bare <svg is sufficient when
+      // combined with an SVG-characteristic attribute
+      head.includes('viewBox=') ||
+      head.includes('xmlns:svg=')
+    )
+  ) {
+    return { format: 'svg' };
+  }
+
+  // 2b. MusicXML detection
   if (head.includes('<score-partwise') || head.includes('<score-timewise')) {
     return { format: 'musicxml' };
   }
@@ -215,6 +237,19 @@ export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): Detected
 export function sniffFormatFromText(text: string): DetectedFormat {
   const head = text.slice(0, 2048);
 
+  // SVG — check before MusicXML for the same reason as in sniffFormatFromBytes
+  if (
+    head.includes('<svg') &&
+    (
+      head.includes('xmlns="http://www.w3.org/2000/svg"') ||
+      head.includes("xmlns='http://www.w3.org/2000/svg'") ||
+      head.includes('viewBox=') ||
+      head.includes('xmlns:svg=')
+    )
+  ) {
+    return { format: 'svg' };
+  }
+
   // MusicXML embedded in text
   if (head.includes('<score-partwise') || head.includes('<score-timewise')) {
     return { format: 'musicxml' };
@@ -266,6 +301,10 @@ export function sniffFormatFromText(text: string): DetectedFormat {
 
 export function isMusicXmlFormat(detected: DetectedFormat): boolean {
   return detected.format === 'musicxml' || detected.format === 'mxl';
+}
+
+export function isSvgFormat(detected: DetectedFormat): boolean {
+  return detected.format === 'svg';
 }
 
 export function isPdfFormat(detected: DetectedFormat): boolean {

@@ -16,6 +16,7 @@ import {
   isChordChartFormat,
   isGuitarProFormat,
   isPdfFormat,
+  isSvgFormat,
   asSourceFormat,
 } from './ingest/sniffFormat';
 import { parseChordChart } from './parsers/chordProParser';
@@ -25,10 +26,11 @@ import type { ChordChartDocument } from './models/ChordChartModel';
 import ChordChart from './renderers/ChordChart';
 import UGProImporterPanel from './components/UGProImporterPanel';
 import OemerImageImporterPanel from './components/OemerImageImporterPanel';
+import SvgImporterPanel from './components/SvgImporterPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AppMode = 'empty' | 'notation' | 'chord-chart' | 'ug-pro-importer' | 'oemer-image-importer';
+type AppMode = 'empty' | 'notation' | 'chord-chart' | 'ug-pro-importer' | 'oemer-image-importer' | 'svg-importer';
 
 type Diagnostics = {
   isValidXml: boolean;
@@ -67,6 +69,8 @@ type ChordProUiState = {
 // ─── File-accept string ───────────────────────────────────────────────────────
 
 const FILE_INPUT_ACCEPT = [
+  // SVG vector graphics
+  '.svg', 'image/svg+xml',
   // MusicXML / MXL
   '.xml', '.musicxml', '.mxl',
   'application/vnd.recordare.musicxml+xml',
@@ -405,6 +409,9 @@ export default function App() {
   // ── UG Pro importer mode state ──
   const [ugProFile, setUgProFile] = useState<File | null>(null);
 
+  // ── SVG importer mode state ──
+  const [svgFile, setSvgFile] = useState<File | null>(null);
+
   // ── Derived: XML diagnostics ──
   const parsedXml = useMemo(() => {
     if (!loadedXmlText) return null;
@@ -498,6 +505,8 @@ export default function App() {
     setDetectedFormatLabel('');
     // UG Pro importer
     setUgProFile(null);
+    // SVG importer
+    setSvgFile(null);
   }, []);
 
   // ── UG Pro importer: CSMPN import callback ──
@@ -614,6 +623,26 @@ export default function App() {
         xmlLoadedRef.current = '';
         setAppMode('chord-chart');
 
+      } else if (isSvgFormat(detected)) {
+        // ── SVG path: route to SVG importer panel ──
+        setLoadedFilename(file.name);
+        setSvgFile(file);
+        setRenderError('');
+        setExportFeedback(null);
+        // Clear all other mode state
+        setChartDocument(null);
+        setLoadedXmlText('');
+        setIsMxl(false);
+        setRenderedPageCount(0);
+        setPdfBlobUrl(null);
+        setChordProText('');
+        setChordProWarnings([]);
+        setChordProDiagnostics(null);
+        setUgProFile(null);
+        if (containerRef.current) containerRef.current.innerHTML = '';
+        xmlLoadedRef.current = '';
+        setAppMode('svg-importer');
+
       } else if (isPdfFormat(detected)) {
         // ── PDF path: route to UG Pro PDF importer ──
         setLoadedFilename(file.name);
@@ -669,7 +698,7 @@ export default function App() {
 
       } else {
         setRenderError(
-          'Unsupported file type. Upload .xml/.mxl (notation), ' +
+          'Unsupported file type. Upload .svg (SVG graphic), .xml/.mxl (notation), ' +
           '.gp/.gp5/.gpx (Guitar Pro), ' +
           '.cho/.pro/.abc/.txt (chord chart), or .pdf. For OEMER, use "OEMER Image OMR".'
         );
@@ -1003,7 +1032,7 @@ export default function App() {
 
         {appMode === 'empty' && (
           <span className="hint">
-            Drag &amp; drop .xml / .mxl (notation), .gp / .gp5 / .gpx (Guitar Pro), or .cho / .pro / .abc / .txt / .pdf (chord chart)
+            Drag &amp; drop .svg (graphic), .xml / .mxl (notation), .gp / .gp5 / .gpx (Guitar Pro), or .cho / .pro / .abc / .txt / .pdf (chord chart)
           </span>
         )}
 
@@ -1028,6 +1057,10 @@ export default function App() {
           <span className="mode-badge mode-badge--chart">OEMER Image OMR</span>
         )}
 
+        {appMode === 'svg-importer' && (
+          <span className="mode-badge mode-badge--chart">SVG Importer</span>
+        )}
+
         {appMode !== 'empty' && (
           <button type="button" onClick={clearAll}>Clear</button>
         )}
@@ -1042,8 +1075,24 @@ export default function App() {
       {/* ── Content area ── */}
       <main className="content-grid">
 
-        {/* ── Left: score viewport OR chord chart OR UG Pro importer ── */}
-        {appMode === 'ug-pro-importer' ? (
+        {/* ── Left: score viewport OR chord chart OR importer panels ── */}
+        {appMode === 'svg-importer' ? (
+          <section
+            className={`chord-chart-viewport svg-importer-viewport ${isDragging ? 'dragging' : ''}`}
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            style={{ gridColumn: '1 / -1' }}
+          >
+            {isDragging && (
+              <div className="drop-overlay" aria-hidden>
+                <span>Drop SVG to load</span>
+              </div>
+            )}
+            <SvgImporterPanel initialFile={svgFile} />
+          </section>
+        ) : appMode === 'ug-pro-importer' ? (
           <section
             className={`chord-chart-viewport ug-pro-importer-viewport ${isDragging ? 'dragging' : ''}`}
             onDragEnter={onDragEnter}
