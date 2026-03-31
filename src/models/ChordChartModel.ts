@@ -99,4 +99,12 @@ export interface ChordChartDocument {
   sections: ChartSection[];
   /** Which parser produced this document. */
   sourceFormat: SourceFormat;
+  /** Import confidence and warnings from preflight/heuristics. */
+  importQuality?: {
+    score: number;
+    warnings: string[];
+    strategy?: 'direct' | 'abc-via-musicxml-fallback';
+  };
+  /** Optional import diagnostics for side-panel transparency/debugging. */
+  importDiagnostics?: string[];
 }

@@ -2,6 +2,18 @@
 
 Date: 2026-03-31
 
+## Implementation status in this repo (2026-03-31)
+
+The roadmap items below are now integrated in a **non-invasive optimization path**:
+
+- ABC normalization pre-pass is wired into the text import pipeline before ABC parsing.
+- Import quality/confidence scoring (0–100) is attached to normalized documents and shown in UI.
+- ABC→MusicXML fallback is supported as an optional bridge (used only when confidence is low and bridge exists).
+- Canonical schema normalization is applied before chart export/serialization paths.
+- Batch ingest + diagnostics + CSV output utility is available for workflow automation, but setlist-specific UX is intentionally not emphasized in this app.
+
+These additions are meant to optimize existing importers and routing, not replace them.
+
 ## Why NotaGen is relevant
 
 NotaGen is primarily an **ABC-centric symbolic music generation stack** that also provides tooling around **ABC ⇄ MusicXML conversion** and demo workflows that can output rendered assets such as score previews/audio in companion integrations.
