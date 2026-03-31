@@ -195,7 +195,9 @@ export function normalizeChordSymbol(raw: string): string {
   s = s.replace(/Δ7?/g, 'maj7');
   s = s.replace(/7M\b/g, 'maj7');
   s = s.replace(/[Mm][Aa][Jj]7/g, 'maj7');
-  s = s.replace(/[Mm][Aa][Jj]\b/g, 'maj7');
+  // Bare "maj" is optional and should not imply maj7.
+  // Example: Cmaj → C
+  s = s.replace(/([A-G][b#]?)maj\b/g, '$1');
 
   // 6. Minor: "min" → "m" (but not "diminished")
   s = s.replace(/min(?!or)/g, 'm');
