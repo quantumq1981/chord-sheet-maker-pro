@@ -24,6 +24,9 @@ import { parseCsmpn } from './parsers/csmpnParser';
 import { serializeChordProDocument } from './parsers/serializeChordPro';
 import type { ChordChartDocument } from './models/ChordChartModel';
 import ChordChart from './renderers/ChordChart';
+import { canonicalizeChordChartDocument } from './ingest/canonicalChart';
+import { importWithNotaGenPipeline } from './ingest/notagenImportPipeline';
+import type { ImportQualityResult } from './ingest/importQuality';
 import UGProImporterPanel from './components/UGProImporterPanel';
 import OemerImageImporterPanel from './components/OemerImageImporterPanel';
 import SvgImporterPanel from './components/SvgImporterPanel';
@@ -405,6 +408,8 @@ export default function App() {
   const [chartDocument, setChartDocument] = useState<ChordChartDocument | null>(null);
   const [transposeSteps, setTransposeSteps] = useState(0);
   const [detectedFormatLabel, setDetectedFormatLabel] = useState('');
+  const [importQuality, setImportQuality] = useState<ImportQualityResult | null>(null);
+  const [importDiagnostics, setImportDiagnostics] = useState<string[]>([]);
 
   // ── UG Pro importer mode state ──
   const [ugProFile, setUgProFile] = useState<File | null>(null);
@@ -503,6 +508,8 @@ export default function App() {
     setChartDocument(null);
     setTransposeSteps(0);
     setDetectedFormatLabel('');
+    setImportQuality(null);
+    setImportDiagnostics([]);
     // UG Pro importer
     setUgProFile(null);
     // SVG importer
@@ -513,9 +520,11 @@ export default function App() {
   const onImportCsmpn = useCallback((csmpnText: string) => {
     try {
       const doc = parseCsmpn(csmpnText);
-      setChartDocument(doc);
+      setChartDocument(canonicalizeChordChartDocument(doc));
       setTransposeSteps(0);
       setDetectedFormatLabel('UG Pro PDF (CSMPN)');
+      setImportQuality(null);
+      setImportDiagnostics([]);
       setRenderError('');
       setExportFeedback(null);
       setUgProFile(null);
@@ -529,9 +538,11 @@ export default function App() {
     try {
       const doc = parseCsmpn(csmpnText);
       doc.sourceFormat = 'oemer-image';
-      setChartDocument(doc);
+      setChartDocument(canonicalizeChordChartDocument(doc));
       setTransposeSteps(0);
       setDetectedFormatLabel('oemer-image');
+      setImportQuality(null);
+      setImportDiagnostics([]);
       setRenderError('');
       setExportFeedback(null);
       setUgProFile(null);
@@ -565,13 +576,16 @@ export default function App() {
         setChartDocument(null);
         setTransposeSteps(0);
         setDetectedFormatLabel(detected.format === 'mxl' ? 'MXL' : 'MusicXML');
+        setImportQuality(null);
+        setImportDiagnostics([]);
         setAppMode('notation');
 
       } else if (isChordChartFormat(detected)) {
         // ── Chord-chart path ──
         const text = new TextDecoder('utf-8').decode(bytes);
         const sourceFormat = asSourceFormat(detected)!;
-        const doc = parseChordChart(text, sourceFormat);
+        const imported = await importWithNotaGenPipeline(text, sourceFormat, file.name);
+        const doc = imported.document;
 
         const formatLabels: Record<string, string> = {
           chordpro: 'ChordPro',
@@ -583,6 +597,12 @@ export default function App() {
 
         setLoadedFilename(file.name);
         setChartDocument(doc);
+        setImportQuality(doc.importQuality ? {
+          score: doc.importQuality.score,
+          warnings: doc.importQuality.warnings,
+          diagnostics: doc.importDiagnostics ?? [],
+        } : null);
+        setImportDiagnostics(doc.importDiagnostics ?? []);
         setTransposeSteps(0);
         setDetectedFormatLabel(formatLabels[sourceFormat] ?? sourceFormat);
         setRenderError('');
@@ -595,6 +615,8 @@ export default function App() {
         setChordProText('');
         setChordProWarnings([]);
         setChordProDiagnostics(null);
+        setImportQuality(null);
+        setImportDiagnostics([]);
         if (containerRef.current) containerRef.current.innerHTML = '';
         xmlLoadedRef.current = '';
         setAppMode('chord-chart');
@@ -607,6 +629,12 @@ export default function App() {
 
         setLoadedFilename(file.name);
         setChartDocument(doc);
+        setImportQuality(doc.importQuality ? {
+          score: doc.importQuality.score,
+          warnings: doc.importQuality.warnings,
+          diagnostics: doc.importDiagnostics ?? [],
+        } : null);
+        setImportDiagnostics(doc.importDiagnostics ?? []);
         setTransposeSteps(0);
         setDetectedFormatLabel('Guitar Pro');
         setRenderError('');
@@ -638,6 +666,8 @@ export default function App() {
         setChordProText('');
         setChordProWarnings([]);
         setChordProDiagnostics(null);
+        setImportQuality(null);
+        setImportDiagnostics([]);
         setUgProFile(null);
         if (containerRef.current) containerRef.current.innerHTML = '';
         xmlLoadedRef.current = '';
@@ -927,8 +957,10 @@ export default function App() {
       pro = await generateChordPro() ?? '';
       if (!pro) return;
     }
-    const doc = parseChordChart(pro, 'chordpro');
+    const doc = canonicalizeChordChartDocument(parseChordChart(pro, 'chordpro'));
     setChartDocument(doc);
+    setImportQuality(null);
+    setImportDiagnostics([]);
     setTransposeSteps(0);
     setDetectedFormatLabel('MusicXML (Fakebook)');
     setRenderError('');
@@ -1175,6 +1207,12 @@ export default function App() {
               <ul>
                 <li><strong>File:</strong> {loadedFilename}</li>
                 <li><strong>Format:</strong> {detectedFormatLabel}</li>
+                {importQuality && (
+                  <li>
+                    <strong>Import confidence:</strong> {importQuality.score}/100
+                    {chartDocument.importQuality?.strategy === 'abc-via-musicxml-fallback' && ' (ABC→MusicXML fallback)'}
+                  </li>
+                )}
                 {chartDocument.title && <li><strong>Title:</strong> {chartDocument.title}</li>}
                 {chartDocument.artist && <li><strong>Artist:</strong> {chartDocument.artist}</li>}
                 {chartDocument.key && <li><strong>Key:</strong> {chartDocument.key}</li>}
@@ -1184,6 +1222,17 @@ export default function App() {
                 {chartDocument.genre && <li><strong>Genre:</strong> {chartDocument.genre}</li>}
                 <li><strong>Sections:</strong> {chartDocument.sections.length}</li>
               </ul>
+              {importQuality && importQuality.warnings.length > 0 && (
+                <div className="warning-block">
+                  <strong>Import warnings</strong>
+                  <ul>{importQuality.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+                </div>
+              )}
+              {importDiagnostics.length > 0 && (
+                <p className="hint-text" title={importDiagnostics.join('\n')}>
+                  Diagnostics: {importDiagnostics.slice(0, 2).join(' · ')}
+                </p>
+              )}
 
               <h2>Transpose</h2>
               <div className="transpose-row">
