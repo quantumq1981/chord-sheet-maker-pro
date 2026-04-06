@@ -24,6 +24,7 @@ import { parseCsmpn } from './parsers/csmpnParser';
 import { serializeChordProDocument } from './parsers/serializeChordPro';
 import type { ChordChartDocument } from './models/ChordChartModel';
 import ChordChart from './renderers/ChordChart';
+import SlashNotationView from './renderers/SlashNotationView';
 import { canonicalizeChordChartDocument } from './ingest/canonicalChart';
 import { importWithNotaGenPipeline } from './ingest/notagenImportPipeline';
 import type { ImportQualityResult } from './ingest/importQuality';
@@ -418,6 +419,10 @@ export default function App() {
   const [importQuality, setImportQuality] = useState<ImportQualityResult | null>(null);
   const [importDiagnostics, setImportDiagnostics] = useState<string[]>([]);
 
+  // ── Slash notation overlay (within chord-chart mode) ──
+  const [showSlashNotation, setShowSlashNotation] = useState(false);
+  const [slashMeasuresPerRow, setSlashMeasuresPerRow] = useState(4);
+
   // ── UG Pro importer mode state ──
   const [ugProFile, setUgProFile] = useState<File | null>(null);
 
@@ -517,6 +522,7 @@ export default function App() {
     setDetectedFormatLabel('');
     setImportQuality(null);
     setImportDiagnostics([]);
+    setShowSlashNotation(false);
     // UG Pro importer
     setUgProFile(null);
     // SVG importer
@@ -1207,7 +1213,15 @@ export default function App() {
               </div>
             )}
             {chartDocument && (
-              <ChordChart document={chartDocument} transposeSteps={transposeSteps} />
+              showSlashNotation ? (
+                <SlashNotationView
+                  document={chartDocument}
+                  transposeSteps={transposeSteps}
+                  measuresPerRow={slashMeasuresPerRow}
+                />
+              ) : (
+                <ChordChart document={chartDocument} transposeSteps={transposeSteps} />
+              )
             )}
           </section>
         )}
@@ -1257,6 +1271,30 @@ export default function App() {
                 <p className="hint-text" title={importDiagnostics.join('\n')}>
                   Diagnostics: {importDiagnostics.slice(0, 2).join(' · ')}
                 </p>
+              )}
+
+              <h2>Slash Notation</h2>
+              <button
+                type="button"
+                className={`btn-slash-notation${showSlashNotation ? ' active' : ''}`}
+                onClick={() => setShowSlashNotation((v) => !v)}
+              >
+                {showSlashNotation ? '← Back to Chord Chart' : '𝄞 Convert to Slash Notation'}
+              </button>
+              {showSlashNotation && (
+                <div className="sn-mpr-row">
+                  <label htmlFor="sn-mpr">Measures per row:</label>
+                  <input
+                    id="sn-mpr"
+                    type="number"
+                    min={1} max={8}
+                    value={slashMeasuresPerRow}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (Number.isFinite(v)) setSlashMeasuresPerRow(Math.max(1, Math.min(8, v)));
+                    }}
+                  />
+                </div>
               )}
 
               <h2>Transpose</h2>
