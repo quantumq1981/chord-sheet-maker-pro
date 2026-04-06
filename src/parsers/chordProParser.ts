@@ -146,6 +146,7 @@ function parseBracketLine(line: string): ChartLine {
 export function parseChordPro(text: string): ChordChartDocument {
   const doc: ChordChartDocument = { sections: [], sourceFormat: 'chordpro' };
   let current = makeSection();
+  const unknownDirectives: string[] = [];
 
   for (const rawLine of normalizeLineEndings(text).split('\n')) {
     const trimmed = rawLine.trim();
@@ -190,7 +191,8 @@ export function parseChordPro(text: string): ChordChartDocument {
         continue;
       }
 
-      // All other directives are silently ignored
+      // Unknown directive — record it so callers can surface a warning
+      unknownDirectives.push(`{${directiveMatch[1].trim()}}`);
       continue;
     }
 
@@ -214,6 +216,14 @@ export function parseChordPro(text: string): ChordChartDocument {
   }
 
   flushSection(doc, current);
+
+  if (unknownDirectives.length > 0) {
+    doc.importDiagnostics = [
+      ...(doc.importDiagnostics ?? []),
+      `Ignored ${unknownDirectives.length} unrecognised directive(s): ${[...new Set(unknownDirectives)].join(', ')}`,
+    ];
+  }
+
   return doc;
 }
 

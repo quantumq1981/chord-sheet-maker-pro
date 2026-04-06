@@ -52,12 +52,20 @@ function transposeRoot(root: string, steps: number): string {
   return CHROMATIC[((idx + steps) % 12 + 12) % 12];
 }
 
+/** Returns true when `chord` looks like a valid chord symbol we can transpose. */
+function isTransposableChord(chord: string): boolean {
+  // Must start with a note letter; allow common suffixes and slash-bass notation.
+  return /^[A-G][b#]?[a-zA-Z0-9#b/°øΔ]*$/.test(chord);
+}
+
 /**
  * Transpose a chord name by `steps` semitones.
  * Handles slash chords (Am/G) by transposing both root and bass separately.
+ * Returns the original string unchanged for non-chord tokens (e.g. "N.C.", "?").
  */
 export function transposeChord(chord: string, steps: number): string {
   if (steps === 0) return chord;
+  if (!isTransposableChord(chord)) return chord;
 
   // Split on the last "/" that looks like a bass note separator
   const slashIdx = chord.lastIndexOf('/');
