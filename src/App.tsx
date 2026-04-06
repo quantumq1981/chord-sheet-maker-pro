@@ -1109,7 +1109,36 @@ export default function App() {
         )}
 
         {appMode === 'chord-chart' && (
-          <span className="mode-badge mode-badge--chart">Chord Chart · {detectedFormatLabel}</span>
+          <>
+            <span className="mode-badge mode-badge--chart">Chord Chart · {detectedFormatLabel}</span>
+            {chartDocument && (
+              <div className="top-slash-controls">
+                <button
+                  type="button"
+                  className={`btn-slash-notation btn-slash-notation--top${showSlashNotation ? ' active' : ''}`}
+                  onClick={() => setShowSlashNotation((v) => !v)}
+                >
+                  {showSlashNotation ? 'Back to Chord Chart' : 'Slash Notation'}
+                </button>
+                {showSlashNotation && (
+                  <label className="top-slash-mpr" htmlFor="sn-mpr-top">
+                    Measures/row
+                    <input
+                      id="sn-mpr-top"
+                      type="number"
+                      min={1}
+                      max={8}
+                      value={slashMeasuresPerRow}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (Number.isFinite(v)) setSlashMeasuresPerRow(Math.max(1, Math.min(8, v)));
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {appMode === 'ug-pro-importer' && (

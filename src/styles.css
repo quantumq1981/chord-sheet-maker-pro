@@ -738,6 +738,35 @@ select:disabled {
   color: #fff;
 }
 
+.top-slash-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.btn-slash-notation--top {
+  width: auto;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.top-slash-mpr {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: #334155;
+}
+
+.top-slash-mpr input[type='number'] {
+  width: 52px;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.35rem;
+  font-size: 0.78rem;
+}
+
 /* Measures-per-row control */
 .sn-mpr-row {
   display: flex;
