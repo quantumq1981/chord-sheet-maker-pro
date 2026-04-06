@@ -670,3 +670,87 @@ select:disabled {
   color: #084298;
   border: 1px solid #9ec5fe;
 }
+
+/* ─── Slash Notation View ──────────────────────────────────────────────────── */
+
+.sn-view {
+  width: 100%;
+  padding: 1rem 0.5rem;
+  background: #fff;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.sn-header {
+  text-align: center;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 0.5rem;
+}
+
+.sn-title {
+  margin: 0 0 0.1rem;
+  font-size: 1.4rem;
+  font-weight: bold;
+  letter-spacing: 0.02em;
+}
+
+.sn-artist {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  color: #444;
+  font-style: italic;
+}
+
+.sn-meta {
+  display: flex;
+  justify-content: center;
+  gap: 1.25rem;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.sn-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* Slash notation toggle button — sits inside the chord-chart side panel */
+.btn-slash-notation {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1.5px solid #7c3aed;
+  border-radius: 0.4rem;
+  background: #f5f3ff;
+  color: #5b21b6;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-slash-notation:hover {
+  background: #7c3aed;
+  color: #fff;
+}
+.btn-slash-notation.active {
+  background: #7c3aed;
+  color: #fff;
+}
+
+/* Measures-per-row control */
+.sn-mpr-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  color: #374151;
+}
+.sn-mpr-row input[type='number'] {
+  width: 48px;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.3rem;
+  font-size: 0.82rem;
+}
