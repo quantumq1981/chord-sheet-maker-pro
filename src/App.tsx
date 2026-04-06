@@ -213,8 +213,13 @@ function triggerBlobDownload(blob: Blob, filename: string, iOSFallbackToTab = fa
   const url = URL.createObjectURL(blob);
   if (iOSFallbackToTab && isIOSBrowser()) {
     const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!opened) throw new Error('Popup blocked. Please allow popups and try export again.');
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    if (!opened) {
+      URL.revokeObjectURL(url);
+      throw new Error('Popup blocked. Please allow popups and try export again.');
+    }
+    // iOS needs the URL to stay alive while the user interacts with the new tab;
+    // 10 s is sufficient for the browser to start loading the blob.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
     return;
   }
 
@@ -225,7 +230,9 @@ function triggerBlobDownload(blob: Blob, filename: string, iOSFallbackToTab = fa
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 15_000);
+  // Revoke after a short tick — the browser queues the download synchronously
+  // so the URL is no longer needed once the click event has been processed.
+  setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
 function serializeSvg(svg: SVGSVGElement): string {
@@ -553,7 +560,16 @@ export default function App() {
   }, []);
 
   // ── File loading ──
+  const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+
   const loadFile = useCallback(async (file: File) => {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setRenderError(
+        `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). ` +
+        `Maximum supported size is ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB.`
+      );
+      return;
+    }
     try {
       const arrayBuffer = await file.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
@@ -735,7 +751,16 @@ export default function App() {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setRenderError(`Failed to read file: ${message}`);
+      // Surface actionable context where possible.
+      if (message.toLowerCase().includes('out of memory') || message.toLowerCase().includes('quota')) {
+        setRenderError('Not enough memory to open this file. Try a smaller file or close other browser tabs.');
+      } else if (message.toLowerCase().includes('not allowed') || message.toLowerCase().includes('permission')) {
+        setRenderError('Permission denied reading the file. Try saving it locally and re-uploading.');
+      } else if (message.toLowerCase().includes('network') || message.toLowerCase().includes('fetch')) {
+        setRenderError('Network error while loading the file. Check your connection and try again.');
+      } else {
+        setRenderError(`Could not open file: ${message}. Verify the file is not corrupted and matches a supported format.`);
+      }
     }
   }, []);
 
