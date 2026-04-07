@@ -1190,6 +1190,43 @@ body.exporting .sectionBlock{
     cursor:pointer;
   }
   #btnSnClose:hover{ background:#f0f0f0; }
+  .sn-export-btns{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .sn-export-btns button{
+    font-size:12px;
+    padding:5px 10px;
+    border-radius:6px;
+    border:1px solid var(--border);
+    background:var(--card);
+    color:var(--ink);
+    cursor:pointer;
+    font-weight:600;
+  }
+  .sn-export-btns button:hover{ background:#e8f0fe; border-color:#4a7ef5; color:#1a4ed8; }
+  .sn-overrides-row{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .sn-overrides-row label{
+    font-size:12px;
+    color:var(--muted);
+    font-weight:700;
+    white-space:nowrap;
+  }
+  #snSectionOverrides{
+    font-size:12px;
+    padding:4px 8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    width:200px;
+    background:var(--bg);
+    color:var(--ink);
+  }
   #slashNotationOutput{
     overflow-x:auto;
     border-top:1px solid var(--border);
@@ -1314,7 +1351,16 @@ body.exporting .sectionBlock{
               <option value="8">8</option>
             </select>
           </label>
-          <button id="btnSnClose">&#x2715; Close</button>
+          <div class="sn-overrides-row">
+            <label for="snSectionOverrides">Section overrides:</label>
+            <input type="text" id="snSectionOverrides" placeholder="e.g. Intro:5, Chorus:2" title="Override measures/row per section. Format: SectionName:N (comma separated)">
+          </div>
+          <div class="sn-export-btns">
+            <button id="btnSnSvg" title="Download as SVG file">&#x2193; SVG</button>
+            <button id="btnSnPng" title="Download as PNG image">&#x2193; PNG</button>
+            <button id="btnSnPrint" title="Print or save as PDF">&#x2399; Print</button>
+          </div>
+          <button id="btnSnClose" title="Close slash notation panel">&#x2715;</button>
         </div>
       </div>
       <div id="slashNotationOutput">
@@ -7304,9 +7350,9 @@ window.runCSMPNSelfTests = function(){
 (function(){
 
   // ── Layout constants ──────────────────────────────────────
-  const STAFF_LINES = 5;
-  const LINE_GAP    = 8;
-  const STAFF_H     = (STAFF_LINES - 1) * LINE_GAP; // 32 px
+  const STAFF_LINES    = 5;
+  const LINE_GAP       = 8;
+  const STAFF_H        = (STAFF_LINES - 1) * LINE_GAP; // 32 px
   const CHORD_AREA_H   = 30;
   const SYSTEM_PAD_BOT = 30;
   const SYSTEM_ROW_H   = CHORD_AREA_H + STAFF_H + SYSTEM_PAD_BOT; // 92 px
@@ -7344,7 +7390,6 @@ window.runCSMPNSelfTests = function(){
   }
 
   function barlineSvg(x, y, h, type){
-    // type: 'single' | 'double' | 'final' | 'repeat-start' | 'repeat-end'
     const lg = LINE_GAP;
     if (type === 'repeat-start'){
       return `<g>
@@ -7374,45 +7419,61 @@ window.runCSMPNSelfTests = function(){
         <line x1="${x+2}" y1="${y}" x2="${x+2}" y2="${y+h}" stroke="#222" stroke-width="1"/>
       </g>`;
     }
-    // single
     return svgLine(x, y, x, y + h, '#333', 1);
   }
 
   // ── Data helpers ──────────────────────────────────────────
 
-  function beatsFromTimeSig(time){
+  /**
+   * FIX #1 — Compound meter support.
+   * Real Book slash notation shows one slash per beat group:
+   *   6/8  → 2 slashes (compound duple)
+   *   9/8  → 3 slashes (compound triple)
+   *   12/8 → 4 slashes (compound quadruple)
+   * Simple meters use the numerator directly (4/4 → 4, 3/4 → 3, etc.)
+   */
+  function visualBeats(time){
     if (!time) return 4;
-    const m = (time || '').match(/^(\d+)\s*\/\s*\d+$/);
-    return m ? Math.max(1, parseInt(m[1], 10)) : 4;
+    const m = (time || '').match(/^(\d+)\s*\/\s*(\d+)$/);
+    if (!m) return 4;
+    const num = parseInt(m[1], 10);
+    const den = parseInt(m[2], 10);
+    if (den === 8 && num >= 6 && num % 3 === 0) return num / 3;
+    return Math.max(1, num);
   }
 
   /**
-   * Build sections [{label, bars}] from a parsed CSMPN doc.
-   * Each bar = { token, leftBar, rightBar } from parseBarStructures().
+   * FIX #2 — No double-transpose.
+   * doTranspose() already mutates sourceEl.value, so the source text is
+   * already transposed when we read it. We just split by underscore and
+   * return chord names verbatim.
    */
+  function chordsFromToken(token){
+    const raw = (token || '').trim();
+    if (!raw) return [];
+    if (raw === '%' || raw === '%%' || /^%\d+$/.test(raw)) return null; // repeat
+    const up = raw.toUpperCase();
+    if (up === 'N.C.' || up === 'NC') return ['N.C.'];
+    return raw.split('_').map(s => s.trim()).filter(Boolean);
+  }
+
+  /** Build sections [{label, bars}] from a parsed CSMPN doc. */
   function buildSnSections(doc){
     const sections = [];
     let label = null;
     let bars  = [];
 
     const flush = () => {
-      if (bars.length > 0){
-        sections.push({ label, bars });
-        bars  = [];
-        label = null;
-      }
+      if (bars.length > 0){ sections.push({ label, bars }); bars = []; label = null; }
     };
 
     for (const block of doc.blocks){
       if (block.type === 'marker'){
         if (block.marker === '-' || block.marker === ':' || block.marker === '='){
-          flush();
-          label = block.text || null;
+          flush(); label = block.text || null;
         }
-        // Skip annotation/comment markers (';', '#')
       } else if (block.type === 'bars'){
-        const parsed = parseBarStructures(block.tokens);
-        bars.push(...parsed);
+        bars.push(...parseBarStructures(block.tokens));
       }
     }
     flush();
@@ -7420,97 +7481,89 @@ window.runCSMPNSelfTests = function(){
   }
 
   /**
-   * Extract chord name(s) from a bar token, applying current transpose.
-   * Returns an array of chord strings (split bars produce 2 entries),
-   * or null if it is a pure repeat token (%).
+   * FIX #2 (per-section) — Parse "SectionName:N" overrides.
+   * Returns a map of lower-cased label → measuresPerRow.
    */
-  function chordsFromToken(token, transpose, notePref){
-    const raw = (token || '').trim();
-    if (!raw) return [];
-    // Repeat tokens — caller supplies previous chords
-    if (raw === '%' || raw === '%%' || /^%\d+$/.test(raw)) return null;
-    // No-chord
-    const up = raw.toUpperCase();
-    if (up === 'N.C.' || up === 'NC') return ['N.C.'];
-    // Apply transpose then split by underscore (split bars)
-    const transposed = transposeChordToken(raw, transpose, notePref);
-    return transposed.split('_').map(s => s.trim()).filter(Boolean);
+  function parseSectionOverrides(str){
+    const map = {};
+    if (!str) return map;
+    for (const pair of str.split(/[,;]+/)){
+      const m = pair.trim().match(/^(.+?)\s*:\s*(\d+)$/);
+      if (m){
+        map[m[1].trim().toLowerCase()] = Math.max(1, Math.min(16, parseInt(m[2], 10)));
+      }
+    }
+    return map;
+  }
+
+  function mprForSection(label, overrides, defaultMpr){
+    if (!label || !Object.keys(overrides).length) return defaultMpr;
+    const key = label.toLowerCase();
+    if (overrides[key] !== undefined) return overrides[key];
+    for (const [k, v] of Object.entries(overrides)){
+      if (key.includes(k) || k.includes(key)) return v;
+    }
+    return defaultMpr;
   }
 
   // ── Row renderer ──────────────────────────────────────────
 
   function renderRow(measures, sectionLabel, systemY, measureWidth, bpm, showClef, timeSig){
-    const staffX = MARGIN_H + CLEF_W;
+    const staffX  = MARGIN_H + CLEF_W;
     const hasLabel = !!sectionLabel;
-    const staffY   = systemY + (hasLabel ? SECTION_LABEL_H : 0) + CHORD_AREA_H;
-    const totalW   = measureWidth * measures.length;
+    const staffY  = systemY + (hasLabel ? SECTION_LABEL_H : 0) + CHORD_AREA_H;
+    const totalW  = measureWidth * measures.length;
 
     const beatX = (mX, beat) => {
-      const pad = 10;
-      const avail = measureWidth - 2 * pad;
+      const pad = 10, avail = measureWidth - 2 * pad;
       return mX + pad + (beat / bpm) * avail + avail / bpm / 2;
     };
     const midY = staffY + 2 * LINE_GAP;
 
     let svg = '<g>';
 
-    // Section label
     if (sectionLabel){
-      const safe = escapeHtml(sectionLabel);
-      svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="#3a3a3a" font-family="Georgia,'Times New Roman',serif">${safe}</text>`;
+      svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="#3a3a3a" font-family="Georgia,'Times New Roman',serif">${escapeHtml(sectionLabel)}</text>`;
     }
 
-    // Treble clef glyph (U+1D11E)
     if (showClef){
       svg += `<text x="${MARGIN_H}" y="${staffY + STAFF_H * 0.82}" font-size="42" fill="#2a2a2a" font-family="'Noto Serif',Georgia,serif" letter-spacing="-1">&#x1D11E;</text>`;
     }
 
-    // Time signature
     if (showClef && timeSig){
       const parts = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/);
       if (parts){
         svg += `<g font-family="Georgia,serif" font-weight="bold" fill="#2a2a2a" font-size="13">`;
-        svg += `<text x="${MARGIN_H + 34}" y="${staffY + 12}">${escapeHtml(parts[1])}</text>`;
-        svg += `<text x="${MARGIN_H + 34}" y="${staffY + 26}">${escapeHtml(parts[2])}</text>`;
+        svg += `<text x="${MARGIN_H+34}" y="${staffY+12}">${escapeHtml(parts[1])}</text>`;
+        svg += `<text x="${MARGIN_H+34}" y="${staffY+26}">${escapeHtml(parts[2])}</text>`;
         svg += `</g>`;
       }
     }
 
-    // Staff lines
     svg += staffLines(staffX, staffY, totalW);
-
-    // Opening system barline
     svg += svgLine(staffX, staffY, staffX, staffY + STAFF_H, '#2a2a2a', 1.5);
 
-    // Measures
     for (let mi = 0; mi < measures.length; mi++){
-      const m   = measures[mi];
-      const mX  = staffX + mi * measureWidth;
-      const rX  = mX + measureWidth;
+      const m  = measures[mi];
+      const mX = staffX + mi * measureWidth;
+      const rX = mX + measureWidth;
 
-      // Repeat-start left barline decoration
-      if (m.leftBar === 'repeat-start'){
-        svg += barlineSvg(mX, staffY, STAFF_H, 'repeat-start');
-      }
+      if (m.leftBar === 'repeat-start') svg += barlineSvg(mX, staffY, STAFF_H, 'repeat-start');
 
-      // Beat slash noteheads
+      // One slash notehead per visual beat
       for (let beat = 0; beat < bpm; beat++){
         svg += slashHead(beatX(mX, beat), midY);
       }
 
-      // Chord symbols above staff
       const chords = m.chords || [];
       for (let ci = 0; ci < chords.length; ci++){
-        const chordBeat = Math.floor(ci * bpm / chords.length);
-        const cx = beatX(mX, chordBeat);
-        svg += `<text x="${cx}" y="${staffY - 8}" font-size="11.5" font-family="Georgia,'Times New Roman',serif" font-weight="bold" fill="#0a0a0a" text-anchor="middle">${escapeHtml(chords[ci])}</text>`;
+        const cx = beatX(mX, Math.floor(ci * bpm / chords.length));
+        svg += `<text x="${cx}" y="${staffY-8}" font-size="11.5" font-family="Georgia,'Times New Roman',serif" font-weight="bold" fill="#0a0a0a" text-anchor="middle">${escapeHtml(chords[ci])}</text>`;
       }
 
-      // Right barline
       const rt = m.rightBar === 'repeat-end' ? 'repeat-end'
                : m.rightBar === 'final'      ? 'final'
-               : m.rightBar === 'double'     ? 'double'
-               : 'single';
+               : m.rightBar === 'double'     ? 'double' : 'single';
       svg += barlineSvg(rX, staffY, STAFF_H, rt);
     }
 
@@ -7520,8 +7573,9 @@ window.runCSMPNSelfTests = function(){
 
   // ── Main render function ──────────────────────────────────
 
-  function renderSlashNotationHtml(measuresPerRow){
-    measuresPerRow = Math.max(1, Math.min(8, parseInt(measuresPerRow, 10) || 4));
+  function renderSlashNotationHtml(defaultMpr, overrideStr){
+    defaultMpr = Math.max(1, Math.min(16, parseInt(defaultMpr, 10) || 4));
+    const overrides = parseSectionOverrides(overrideStr);
 
     const original = sourceEl.value || '';
     const text = (fbSettings.includeLyrics === false) ? filterLyricsLines(original) : original;
@@ -7531,105 +7585,152 @@ window.runCSMPNSelfTests = function(){
       return '<p style="color:#888;text-align:center;padding:20px 0">Import or paste a chord chart to render slash notation.</p>';
     }
 
-    const bpm    = beatsFromTimeSig(doc.time);
+    // FIX #1: use visual beats (handles 12/8, 6/8, 9/8 compound meters)
+    const bpm    = visualBeats(doc.time);
     const timeSig = doc.time || `${bpm}/4`;
-    const trans  = currentTranspose || 0;
-    const pref   = notationPreference || 'sharp';
 
     const sections = buildSnSections(doc);
     if (!sections.length){
       return '<p style="color:#888;text-align:center;padding:20px 0">No chord data found in this chart.</p>';
     }
 
-    // Resolve % repeat bars
+    // FIX #2: source is already transposed — just read chords verbatim
     let lastChords = [];
     const processedSections = sections.map(sec => {
       const measures = sec.bars.map(bar => {
-        let chords = chordsFromToken(bar.token, trans, pref);
-        if (chords === null){
-          chords = lastChords.slice(); // repeat bar
-        } else if (chords.length > 0){
-          lastChords = chords;
-        }
-        return {
-          chords,
-          leftBar:  bar.leftBar  || 'single',
-          rightBar: bar.rightBar || 'single',
-        };
+        let chords = chordsFromToken(bar.token);
+        if (chords === null){ chords = lastChords.slice(); }
+        else if (chords.length > 0){ lastChords = chords; }
+        return { chords, leftBar: bar.leftBar || 'single', rightBar: bar.rightBar || 'single' };
       });
       return { label: sec.label, measures };
     });
 
-    // Split into system rows
+    // FIX #3: per-section measures-per-row
     const rows = [];
     for (const sec of processedSections){
-      for (let i = 0; i < sec.measures.length; i += measuresPerRow){
+      const mpr = mprForSection(sec.label, overrides, defaultMpr);
+      for (let i = 0; i < sec.measures.length; i += mpr){
         rows.push({
-          measures:     sec.measures.slice(i, i + measuresPerRow),
+          measures:     sec.measures.slice(i, i + mpr),
+          measureWidth: USABLE_W / mpr,
           sectionLabel: i === 0 ? sec.label : undefined,
         });
       }
     }
 
-    if (!rows.length){
-      return '<p style="color:#888;text-align:center;padding:20px 0">No measures to display.</p>';
-    }
+    if (!rows.length) return '<p style="color:#888;text-align:center;padding:20px 0">No measures to display.</p>';
 
-    // Compute SVG height
     let svgH = 16;
-    for (const row of rows){
-      svgH += (row.sectionLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
-    }
+    for (const row of rows) svgH += (row.sectionLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
     svgH += 16;
 
-    const measureW = USABLE_W / measuresPerRow;
-
-    // Render rows
     let svgContent = '';
     let curY = 16;
     for (let ri = 0; ri < rows.length; ri++){
       const row      = rows[ri];
       const showClef = (ri === 0) || !!row.sectionLabel;
-      svgContent += renderRow(
-        row.measures, row.sectionLabel, curY,
-        measureW, bpm, showClef, timeSig
-      );
+      svgContent += renderRow(row.measures, row.sectionLabel, curY, row.measureWidth, bpm, showClef, timeSig);
       curY += (row.sectionLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
     }
 
-    // Song header block
+    // Song header — key is already correct (transposed in source text)
     let headerHtml = '';
     if (doc.title || doc.composer){
-      const keyDisp = doc.key ? transposeChordSimple(doc.key, trans, pref) : '';
       const meta = [];
-      if (keyDisp) meta.push(`Key: ${escapeHtml(keyDisp)}`);
+      if (doc.key)   meta.push(`Key: ${escapeHtml(doc.key)}`);
       if (doc.tempo) meta.push(`&#x2669;= ${escapeHtml(doc.tempo)}`);
-      headerHtml = `<div class="sn-header-block">`;
+      headerHtml  = `<div class="sn-header-block">`;
       if (doc.title)    headerHtml += `<div class="sn-song-title">${escapeHtml(doc.title)}</div>`;
       if (doc.composer) headerHtml += `<div class="sn-song-artist">${escapeHtml(doc.composer)}</div>`;
       if (meta.length)  headerHtml += `<div class="sn-song-meta">${meta.join(' &nbsp;·&nbsp; ')}</div>`;
       headerHtml += `</div>`;
     }
 
-    const svgEl = `<svg width="100%" viewBox="0 0 ${PAGE_W} ${svgH}" style="max-width:${PAGE_W}px;display:block;height:auto;overflow:visible;" aria-label="Slash rhythm notation">${svgContent}</svg>`;
+    const svgMarkup = `<svg id="snSvgOutput" width="100%" viewBox="0 0 ${PAGE_W} ${svgH}" style="max-width:${PAGE_W}px;display:block;height:auto;overflow:visible;" aria-label="Slash rhythm notation">${svgContent}</svg>`;
 
-    return headerHtml + svgEl;
+    return headerHtml + svgMarkup;
+  }
+
+  // ── FIX #4 — Export helpers ───────────────────────────────
+
+  function getSvgEl(){ return output.querySelector('#snSvgOutput'); }
+  function getSongTitle(){ return (output.querySelector('.sn-song-title') || {}).textContent || 'slash-notation'; }
+
+  function downloadSvg(){
+    const svg = getSvgEl();
+    if (!svg){ alert('Render slash notation first.'); return; }
+    const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: safeFilename(getSongTitle()) + '-slash.svg' });
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadPng(){
+    const svg = getSvgEl();
+    if (!svg){ alert('Render slash notation first.'); return; }
+    const vb = (svg.getAttribute('viewBox') || '0 0 760 400').split(' ').map(Number);
+    const vbW = vb[2] || 760, vbH = vb[3] || 400;
+    const scale = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width  = vbW * scale;
+    canvas.height = vbH * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, vbW, vbH);
+    const blob  = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml;charset=utf-8' });
+    const url   = URL.createObjectURL(blob);
+    const img   = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      const a = Object.assign(document.createElement('a'), { href: canvas.toDataURL('image/png'), download: safeFilename(getSongTitle()) + '-slash.png' });
+      a.click();
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); alert('PNG export failed. Try SVG instead.'); };
+    img.src = url;
+  }
+
+  function printSlashNotation(){
+    const svg = getSvgEl();
+    if (!svg){ alert('Render slash notation first.'); return; }
+    const headerEl  = output.querySelector('.sn-header-block');
+    const headerHtml = headerEl ? headerEl.outerHTML : '';
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win){ alert('Pop-up blocked. Please allow pop-ups to print.'); return; }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Slash Notation</title>
+<style>
+body{margin:1cm;font-family:Georgia,serif;background:#fff;}
+.sn-header-block{text-align:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #ccc;}
+.sn-song-title{font-size:1.4rem;font-weight:bold;letter-spacing:0.02em;}
+.sn-song-artist{font-size:0.9rem;color:#555;font-style:italic;}
+.sn-song-meta{font-size:0.78rem;color:#666;margin-top:2px;}
+svg{max-width:100%;height:auto;display:block;overflow:visible;}
+@media print{@page{margin:0.5in;} body{margin:0;}}
+</style></head><body>
+${headerHtml}${svg.outerHTML}
+<script>window.onload=function(){window.print();window.close();};<\/script>
+</body></html>`);
+    win.document.close();
   }
 
   // ── Panel wiring ──────────────────────────────────────────
 
-  const panel    = document.getElementById('slashNotationPanel');
-  const output   = document.getElementById('slashNotationOutput');
-  const mprSel   = document.getElementById('snMeasuresPerRow');
-  const btnOpen  = document.getElementById('btnSlashNotation');
-  const btnClose = document.getElementById('btnSnClose');
+  const panel        = document.getElementById('slashNotationPanel');
+  const output       = document.getElementById('slashNotationOutput');
+  const mprSel       = document.getElementById('snMeasuresPerRow');
+  const overridesEl  = document.getElementById('snSectionOverrides');
+  const btnOpen      = document.getElementById('btnSlashNotation');
+  const btnClose     = document.getElementById('btnSnClose');
 
   function refreshSlashNotation(){
     if (!panel.classList.contains('open')) return;
-    output.innerHTML = renderSlashNotationHtml(mprSel.value);
+    output.innerHTML = renderSlashNotationHtml(mprSel.value, overridesEl.value);
   }
 
-  // Expose for updatePreview hook
   window.updateSlashNotationIfOpen = refreshSlashNotation;
 
   btnOpen.addEventListener('click', () => {
@@ -7640,13 +7741,16 @@ window.runCSMPNSelfTests = function(){
     }
   });
 
-  btnClose.addEventListener('click', () => {
-    panel.classList.remove('open');
-  });
+  btnClose.addEventListener('click', () => panel.classList.remove('open'));
 
-  mprSel.addEventListener('change', () => {
-    if (panel.classList.contains('open')) refreshSlashNotation();
-  });
+  mprSel.addEventListener('change', () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+
+  const _debouncedOverrides = debounce(() => { if (panel.classList.contains('open')) refreshSlashNotation(); }, 400);
+  overridesEl.addEventListener('input', _debouncedOverrides);
+
+  document.getElementById('btnSnSvg').addEventListener('click',   downloadSvg);
+  document.getElementById('btnSnPng').addEventListener('click',   downloadPng);
+  document.getElementById('btnSnPrint').addEventListener('click', printSlashNotation);
 
 })();
 
