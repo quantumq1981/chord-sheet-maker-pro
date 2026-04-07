@@ -1227,6 +1227,21 @@ body.exporting .sectionBlock{
     background:var(--bg);
     color:var(--ink);
   }
+  .sn-stems-label{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    font-size:12px;
+    color:var(--muted);
+    font-weight:700;
+    white-space:nowrap;
+  }
+  .sn-stems-label input[type=checkbox]{
+    margin:0;
+    width:14px;
+    height:14px;
+    cursor:pointer;
+  }
   #slashNotationOutput{
     overflow-x:auto;
     border-top:1px solid var(--border);
@@ -1355,6 +1370,16 @@ body.exporting .sectionBlock{
             <label for="snSectionOverrides">Section overrides:</label>
             <input type="text" id="snSectionOverrides" placeholder="e.g. Intro:5, Chorus:2" title="Override measures/row per section. Format: SectionName:N (comma separated)">
           </div>
+          <label title="Show strum direction arrows below each beat">Strum
+            <select id="snStrumArrows">
+              <option value="none">None</option>
+              <option value="alt">↓↑ Alternating</option>
+              <option value="down">↓↓ All down</option>
+            </select>
+          </label>
+          <label class="sn-stems-label" title="Add rhythmic stems to slash noteheads">
+            <input type="checkbox" id="snStems"> Stems
+          </label>
           <div class="sn-export-btns">
             <button id="btnSnSvg" title="Download as SVG file">&#x2193; SVG</button>
             <button id="btnSnPng" title="Download as PNG image">&#x2193; PNG</button>
@@ -7350,22 +7375,44 @@ window.runCSMPNSelfTests = function(){
 (function(){
 
   // ── Layout constants ──────────────────────────────────────
-  const STAFF_LINES    = 5;
-  const LINE_GAP       = 8;
-  const STAFF_H        = (STAFF_LINES - 1) * LINE_GAP; // 32 px
-  const CHORD_AREA_H   = 30;
-  const SYSTEM_PAD_BOT = 30;
-  const SYSTEM_ROW_H   = CHORD_AREA_H + STAFF_H + SYSTEM_PAD_BOT; // 92 px
+  const STAFF_LINES     = 5;
+  const LINE_GAP        = 8;
+  const STAFF_H         = (STAFF_LINES - 1) * LINE_GAP; // 32 px
+  const CHORD_AREA_H    = 30;
+  const SYSTEM_PAD_BOT  = 30;
+  const SYSTEM_ROW_H    = CHORD_AREA_H + STAFF_H + SYSTEM_PAD_BOT; // 92 px
   const SECTION_LABEL_H = 20;
-  const PAGE_W    = 760;
-  const MARGIN_H  = 36;
-  const CLEF_W    = 46;
-  const USABLE_W  = PAGE_W - MARGIN_H * 2 - CLEF_W; // 642 px
+  const PAGE_W   = 760;
+  const MARGIN_H = 36;
+  const CLEF_W   = 46;
+  const USABLE_W = PAGE_W - MARGIN_H * 2 - CLEF_W; // 642 px
+
+  // ── Render config snapshot (populated by getSnRenderSettings) ────────
+  let _snCfg = {
+    bgColor: '#ffffff', fgColor: '#111111', chordColor: '#0044cc',
+    chordFontSize: 11.5, chordAnchor: 'middle',
+    showBarlines: true, strumMode: 'none', showStems: false,
+  };
+
+  function getSnRenderSettings(){
+    const fs = (typeof fbSettings !== 'undefined') ? fbSettings : {};
+    const scale = { M: 1, S: 0.85, XS: 0.72 }[fs.fontSize] || 1;
+    _snCfg = {
+      bgColor:       fs.bgColor    || '#ffffff',
+      fgColor:       fs.fgColor    || '#111111',
+      chordColor:    fs.chordColor || '#0044cc',
+      chordFontSize: Math.round(11.5 * scale * 10) / 10,
+      chordAnchor:   (fs.chordAlign === 'center') ? 'middle' : 'start',
+      showBarlines:  (fs.barLines !== 'hidden'),
+      strumMode:     snStrumEl ? snStrumEl.value : 'none',
+      showStems:     snStemsEl ? snStemsEl.checked : false,
+    };
+  }
 
   // ── SVG primitives ────────────────────────────────────────
 
   function svgLine(x1, y1, x2, y2, stroke, sw){
-    stroke = stroke || '#4a4a4a';
+    stroke = stroke || _snCfg.fgColor;
     sw     = sw     || 0.75;
     return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${sw}"/>`;
   }
@@ -7373,7 +7420,7 @@ window.runCSMPNSelfTests = function(){
   function staffLines(x, y, w){
     let s = '';
     for (let i = 0; i < STAFF_LINES; i++){
-      s += svgLine(x, y + i * LINE_GAP, x + w, y + i * LINE_GAP);
+      s += svgLine(x, y + i * LINE_GAP, x + w, y + i * LINE_GAP, _snCfg.fgColor, 0.75);
     }
     return s;
   }
@@ -7386,52 +7433,62 @@ window.runCSMPNSelfTests = function(){
       `${cx + w - lean},${cy + h}`,
       `${cx - w - lean},${cy + h}`,
     ].join(' ');
-    return `<polygon points="${pts}" fill="#1a1a1a"/>`;
+    return `<polygon points="${pts}" fill="${_snCfg.fgColor}"/>`;
+  }
+
+  // Rhythmic stem: vertical line above slash head (quarter-note look)
+  function stemSvg(cx, cy){
+    const x = cx + 4.5;
+    return `<line x1="${x}" y1="${cy - 6}" x2="${x}" y2="${cy - 22}" stroke="${_snCfg.fgColor}" stroke-width="1.3"/>`;
+  }
+
+  // Strum direction arrow below staff
+  function strumArrow(cx, y, beat){
+    const ch = _snCfg.strumMode === 'alt'
+      ? (beat % 2 === 0 ? '↓' : '↑')
+      : '↓'; // 'down' mode
+    return `<text x="${cx}" y="${y}" font-size="9" fill="${_snCfg.fgColor}" text-anchor="middle" font-family="sans-serif">${ch}</text>`;
   }
 
   function barlineSvg(x, y, h, type){
+    const fg = _snCfg.fgColor;
     const lg = LINE_GAP;
     if (type === 'repeat-start'){
       return `<g>
-        <line x1="${x}" y1="${y}" x2="${x}" y2="${y+h}" stroke="#222" stroke-width="3.5"/>
-        <line x1="${x+5}" y1="${y}" x2="${x+5}" y2="${y+h}" stroke="#222" stroke-width="1"/>
-        <circle cx="${x+10}" cy="${y+lg*1.5}" r="2.8" fill="#222"/>
-        <circle cx="${x+10}" cy="${y+lg*2.5}" r="2.8" fill="#222"/>
+        <line x1="${x}" y1="${y}" x2="${x}" y2="${y+h}" stroke="${fg}" stroke-width="3.5"/>
+        <line x1="${x+5}" y1="${y}" x2="${x+5}" y2="${y+h}" stroke="${fg}" stroke-width="1"/>
+        <circle cx="${x+10}" cy="${y+lg*1.5}" r="2.8" fill="${fg}"/>
+        <circle cx="${x+10}" cy="${y+lg*2.5}" r="2.8" fill="${fg}"/>
       </g>`;
     }
     if (type === 'repeat-end'){
       return `<g>
-        <circle cx="${x-10}" cy="${y+lg*1.5}" r="2.8" fill="#222"/>
-        <circle cx="${x-10}" cy="${y+lg*2.5}" r="2.8" fill="#222"/>
-        <line x1="${x-5}" y1="${y}" x2="${x-5}" y2="${y+h}" stroke="#222" stroke-width="1"/>
-        <line x1="${x}" y1="${y}" x2="${x}" y2="${y+h}" stroke="#222" stroke-width="3.5"/>
+        <circle cx="${x-10}" cy="${y+lg*1.5}" r="2.8" fill="${fg}"/>
+        <circle cx="${x-10}" cy="${y+lg*2.5}" r="2.8" fill="${fg}"/>
+        <line x1="${x-5}" y1="${y}" x2="${x-5}" y2="${y+h}" stroke="${fg}" stroke-width="1"/>
+        <line x1="${x}" y1="${y}" x2="${x}" y2="${y+h}" stroke="${fg}" stroke-width="3.5"/>
       </g>`;
     }
     if (type === 'final'){
       return `<g>
-        <line x1="${x-3}" y1="${y}" x2="${x-3}" y2="${y+h}" stroke="#222" stroke-width="1"/>
-        <line x1="${x+1}" y1="${y}" x2="${x+1}" y2="${y+h}" stroke="#222" stroke-width="3"/>
+        <line x1="${x-3}" y1="${y}" x2="${x-3}" y2="${y+h}" stroke="${fg}" stroke-width="1"/>
+        <line x1="${x+1}" y1="${y}" x2="${x+1}" y2="${y+h}" stroke="${fg}" stroke-width="3"/>
       </g>`;
     }
     if (type === 'double'){
       return `<g>
-        <line x1="${x-2}" y1="${y}" x2="${x-2}" y2="${y+h}" stroke="#222" stroke-width="1"/>
-        <line x1="${x+2}" y1="${y}" x2="${x+2}" y2="${y+h}" stroke="#222" stroke-width="1"/>
+        <line x1="${x-2}" y1="${y}" x2="${x-2}" y2="${y+h}" stroke="${fg}" stroke-width="1"/>
+        <line x1="${x+2}" y1="${y}" x2="${x+2}" y2="${y+h}" stroke="${fg}" stroke-width="1"/>
       </g>`;
     }
-    return svgLine(x, y, x, y + h, '#333', 1);
+    // Regular single barline — respect showBarlines setting
+    if (!_snCfg.showBarlines) return '';
+    return svgLine(x, y, x, y + h, fg, 1);
   }
 
   // ── Data helpers ──────────────────────────────────────────
 
-  /**
-   * FIX #1 — Compound meter support.
-   * Real Book slash notation shows one slash per beat group:
-   *   6/8  → 2 slashes (compound duple)
-   *   9/8  → 3 slashes (compound triple)
-   *   12/8 → 4 slashes (compound quadruple)
-   * Simple meters use the numerator directly (4/4 → 4, 3/4 → 3, etc.)
-   */
+  // Compound meter: Real Book convention (12/8→4, 9/8→3, 6/8→2 slashes)
   function visualBeats(time){
     if (!time) return 4;
     const m = (time || '').match(/^(\d+)\s*\/\s*(\d+)$/);
@@ -7442,19 +7499,22 @@ window.runCSMPNSelfTests = function(){
     return Math.max(1, num);
   }
 
-  /**
-   * FIX #2 — No double-transpose.
-   * doTranspose() already mutates sourceEl.value, so the source text is
-   * already transposed when we read it. We just split by underscore and
-   * return chord names verbatim.
-   */
+  // No double-transpose: source text is already transposed.
+  // Uses parseChordToken() so maj7/min/dim/halfDim styles apply.
   function chordsFromToken(token){
     const raw = (token || '').trim();
     if (!raw) return [];
     if (raw === '%' || raw === '%%' || /^%\d+$/.test(raw)) return null; // repeat
     const up = raw.toUpperCase();
     if (up === 'N.C.' || up === 'NC') return ['N.C.'];
-    return raw.split('_').map(s => s.trim()).filter(Boolean);
+    return raw.split('_').map(s => {
+      const t = s.trim();
+      if (!t) return null;
+      const parsed = (typeof parseChordToken === 'function') ? parseChordToken(t) : null;
+      if (!parsed) return t;
+      const bass = parsed.bass ? `/${parsed.bass}` : '';
+      return parsed.root + parsed.quality + bass;
+    }).filter(Boolean);
   }
 
   /** Build sections [{label, bars}] from a parsed CSMPN doc. */
@@ -7480,10 +7540,7 @@ window.runCSMPNSelfTests = function(){
     return sections.filter(s => s.bars.length > 0);
   }
 
-  /**
-   * FIX #2 (per-section) — Parse "SectionName:N" overrides.
-   * Returns a map of lower-cased label → measuresPerRow.
-   */
+  // Parse "SectionName:N" overrides → map of lower-cased label → mpr
   function parseSectionOverrides(str){
     const map = {};
     if (!str) return map;
@@ -7509,10 +7566,11 @@ window.runCSMPNSelfTests = function(){
   // ── Row renderer ──────────────────────────────────────────
 
   function renderRow(measures, sectionLabel, systemY, measureWidth, bpm, showClef, timeSig){
-    const staffX  = MARGIN_H + CLEF_W;
+    const staffX   = MARGIN_H + CLEF_W;
     const hasLabel = !!sectionLabel;
-    const staffY  = systemY + (hasLabel ? SECTION_LABEL_H : 0) + CHORD_AREA_H;
-    const totalW  = measureWidth * measures.length;
+    const staffY   = systemY + (hasLabel ? SECTION_LABEL_H : 0) + CHORD_AREA_H;
+    const totalW   = measureWidth * measures.length;
+    const arrowY   = staffY + STAFF_H + 12; // strum arrows sit below the staff
 
     const beatX = (mX, beat) => {
       const pad = 10, avail = measureWidth - 2 * pad;
@@ -7523,17 +7581,17 @@ window.runCSMPNSelfTests = function(){
     let svg = '<g>';
 
     if (sectionLabel){
-      svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="#3a3a3a" font-family="Georgia,'Times New Roman',serif">${escapeHtml(sectionLabel)}</text>`;
+      svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="${_snCfg.fgColor}" font-family="Georgia,'Times New Roman',serif">${escapeHtml(sectionLabel)}</text>`;
     }
 
     if (showClef){
-      svg += `<text x="${MARGIN_H}" y="${staffY + STAFF_H * 0.82}" font-size="42" fill="#2a2a2a" font-family="'Noto Serif',Georgia,serif" letter-spacing="-1">&#x1D11E;</text>`;
+      svg += `<text x="${MARGIN_H}" y="${staffY + STAFF_H * 0.82}" font-size="42" fill="${_snCfg.fgColor}" font-family="'Noto Serif',Georgia,serif" letter-spacing="-1">&#x1D11E;</text>`;
     }
 
     if (showClef && timeSig){
       const parts = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/);
       if (parts){
-        svg += `<g font-family="Georgia,serif" font-weight="bold" fill="#2a2a2a" font-size="13">`;
+        svg += `<g font-family="Georgia,serif" font-weight="bold" fill="${_snCfg.fgColor}" font-size="13">`;
         svg += `<text x="${MARGIN_H+34}" y="${staffY+12}">${escapeHtml(parts[1])}</text>`;
         svg += `<text x="${MARGIN_H+34}" y="${staffY+26}">${escapeHtml(parts[2])}</text>`;
         svg += `</g>`;
@@ -7541,7 +7599,7 @@ window.runCSMPNSelfTests = function(){
     }
 
     svg += staffLines(staffX, staffY, totalW);
-    svg += svgLine(staffX, staffY, staffX, staffY + STAFF_H, '#2a2a2a', 1.5);
+    svg += svgLine(staffX, staffY, staffX, staffY + STAFF_H, _snCfg.fgColor, 1.5);
 
     for (let mi = 0; mi < measures.length; mi++){
       const m  = measures[mi];
@@ -7550,15 +7608,19 @@ window.runCSMPNSelfTests = function(){
 
       if (m.leftBar === 'repeat-start') svg += barlineSvg(mX, staffY, STAFF_H, 'repeat-start');
 
-      // One slash notehead per visual beat
+      // Slash noteheads — one per visual beat
       for (let beat = 0; beat < bpm; beat++){
-        svg += slashHead(beatX(mX, beat), midY);
+        const bx = beatX(mX, beat);
+        svg += slashHead(bx, midY);
+        if (_snCfg.showStems)              svg += stemSvg(bx, midY);
+        if (_snCfg.strumMode !== 'none')   svg += strumArrow(bx, arrowY, beat);
       }
 
+      // Chord symbols above staff
       const chords = m.chords || [];
       for (let ci = 0; ci < chords.length; ci++){
         const cx = beatX(mX, Math.floor(ci * bpm / chords.length));
-        svg += `<text x="${cx}" y="${staffY-8}" font-size="11.5" font-family="Georgia,'Times New Roman',serif" font-weight="bold" fill="#0a0a0a" text-anchor="middle">${escapeHtml(chords[ci])}</text>`;
+        svg += `<text x="${cx}" y="${staffY-8}" font-size="${_snCfg.chordFontSize}" font-family="Georgia,'Times New Roman',serif" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}">${escapeHtml(chords[ci])}</text>`;
       }
 
       const rt = m.rightBar === 'repeat-end' ? 'repeat-end'
@@ -7577,6 +7639,9 @@ window.runCSMPNSelfTests = function(){
     defaultMpr = Math.max(1, Math.min(16, parseInt(defaultMpr, 10) || 4));
     const overrides = parseSectionOverrides(overrideStr);
 
+    // Snapshot current fbSettings + UI control state for this render pass
+    getSnRenderSettings();
+
     const original = sourceEl.value || '';
     const text = (fbSettings.includeLyrics === false) ? filterLyricsLines(original) : original;
     const doc  = parseCSMPN(text);
@@ -7585,8 +7650,8 @@ window.runCSMPNSelfTests = function(){
       return '<p style="color:#888;text-align:center;padding:20px 0">Import or paste a chord chart to render slash notation.</p>';
     }
 
-    // FIX #1: use visual beats (handles 12/8, 6/8, 9/8 compound meters)
-    const bpm    = visualBeats(doc.time);
+    // Compound meter support (12/8 → 4 slashes, 6/8 → 2, 9/8 → 3)
+    const bpm     = visualBeats(doc.time);
     const timeSig = doc.time || `${bpm}/4`;
 
     const sections = buildSnSections(doc);
@@ -7594,7 +7659,7 @@ window.runCSMPNSelfTests = function(){
       return '<p style="color:#888;text-align:center;padding:20px 0">No chord data found in this chart.</p>';
     }
 
-    // FIX #2: source is already transposed — just read chords verbatim
+    // Source is already transposed — read chords with style formatting applied
     let lastChords = [];
     const processedSections = sections.map(sec => {
       const measures = sec.bars.map(bar => {
@@ -7606,7 +7671,7 @@ window.runCSMPNSelfTests = function(){
       return { label: sec.label, measures };
     });
 
-    // FIX #3: per-section measures-per-row
+    // Per-section measures-per-row
     const rows = [];
     for (const sec of processedSections){
       const mpr = mprForSection(sec.label, overrides, defaultMpr);
@@ -7625,7 +7690,8 @@ window.runCSMPNSelfTests = function(){
     for (const row of rows) svgH += (row.sectionLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
     svgH += 16;
 
-    let svgContent = '';
+    // Background rect fills the SVG with bgColor, then render each row
+    let svgContent = `<rect x="0" y="0" width="${PAGE_W}" height="${svgH}" fill="${_snCfg.bgColor}"/>`;
     let curY = 16;
     for (let ri = 0; ri < rows.length; ri++){
       const row      = rows[ri];
@@ -7652,7 +7718,7 @@ window.runCSMPNSelfTests = function(){
     return headerHtml + svgMarkup;
   }
 
-  // ── FIX #4 — Export helpers ───────────────────────────────
+  // ── Export helpers ────────────────────────────────────────
 
   function getSvgEl(){ return output.querySelector('#snSvgOutput'); }
   function getSongTitle(){ return (output.querySelector('.sn-song-title') || {}).textContent || 'slash-notation'; }
@@ -7678,7 +7744,7 @@ window.runCSMPNSelfTests = function(){
     canvas.height = vbH * scale;
     const ctx = canvas.getContext('2d');
     ctx.scale(scale, scale);
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = _snCfg.bgColor || '#ffffff';
     ctx.fillRect(0, 0, vbW, vbH);
     const blob  = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml;charset=utf-8' });
     const url   = URL.createObjectURL(blob);
@@ -7696,14 +7762,14 @@ window.runCSMPNSelfTests = function(){
   function printSlashNotation(){
     const svg = getSvgEl();
     if (!svg){ alert('Render slash notation first.'); return; }
-    const headerEl  = output.querySelector('.sn-header-block');
+    const headerEl   = output.querySelector('.sn-header-block');
     const headerHtml = headerEl ? headerEl.outerHTML : '';
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win){ alert('Pop-up blocked. Please allow pop-ups to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>Slash Notation</title>
 <style>
-body{margin:1cm;font-family:Georgia,serif;background:#fff;}
+body{margin:1cm;font-family:Georgia,serif;background:${_snCfg.bgColor || '#fff'};}
 .sn-header-block{text-align:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #ccc;}
 .sn-song-title{font-size:1.4rem;font-weight:bold;letter-spacing:0.02em;}
 .sn-song-artist{font-size:0.9rem;color:#555;font-style:italic;}
@@ -7719,12 +7785,14 @@ ${headerHtml}${svg.outerHTML}
 
   // ── Panel wiring ──────────────────────────────────────────
 
-  const panel        = document.getElementById('slashNotationPanel');
-  const output       = document.getElementById('slashNotationOutput');
-  const mprSel       = document.getElementById('snMeasuresPerRow');
-  const overridesEl  = document.getElementById('snSectionOverrides');
-  const btnOpen      = document.getElementById('btnSlashNotation');
-  const btnClose     = document.getElementById('btnSnClose');
+  const panel       = document.getElementById('slashNotationPanel');
+  const output      = document.getElementById('slashNotationOutput');
+  const mprSel      = document.getElementById('snMeasuresPerRow');
+  const overridesEl = document.getElementById('snSectionOverrides');
+  const btnOpen     = document.getElementById('btnSlashNotation');
+  const btnClose    = document.getElementById('btnSnClose');
+  const snStrumEl   = document.getElementById('snStrumArrows');
+  const snStemsEl   = document.getElementById('snStems');
 
   function refreshSlashNotation(){
     if (!panel.classList.contains('open')) return;
@@ -7747,6 +7815,9 @@ ${headerHtml}${svg.outerHTML}
 
   const _debouncedOverrides = debounce(() => { if (panel.classList.contains('open')) refreshSlashNotation(); }, 400);
   overridesEl.addEventListener('input', _debouncedOverrides);
+
+  if (snStrumEl) snStrumEl.addEventListener('change', () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+  if (snStemsEl) snStemsEl.addEventListener('change', () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
 
   document.getElementById('btnSnSvg').addEventListener('click',   downloadSvg);
   document.getElementById('btnSnPng').addEventListener('click',   downloadPng);
