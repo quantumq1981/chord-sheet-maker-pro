@@ -1227,6 +1227,17 @@ body.exporting .sectionBlock{
     background:var(--bg);
     color:var(--ink);
   }
+  #snStrumPattern{
+    font-size:12px;
+    padding:4px 6px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    width:76px;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:monospace;
+    letter-spacing:1px;
+  }
   .sn-stems-label{
     display:flex;
     align-items:center;
@@ -1375,10 +1386,31 @@ body.exporting .sectionBlock{
               <option value="none">None</option>
               <option value="alt">↓↑ Alternating</option>
               <option value="down">↓↓ All down</option>
+              <option value="custom">Custom…</option>
             </select>
           </label>
+          <input type="text" id="snStrumPattern" placeholder="D U D U" title="D=down ↓  U=up ↑  X=muted ×  -=rest" style="display:none">
           <label class="sn-stems-label" title="Add rhythmic stems to slash noteheads">
             <input type="checkbox" id="snStems"> Stems
+          </label>
+          <label title="Key signature on staff — overrides auto-detected key">Key sig
+            <select id="snKeySig">
+              <option value="auto">Auto</option>
+              <option value="none">None</option>
+              <option value="0">C / Am</option>
+              <option value="1">G / Em (1♯)</option>
+              <option value="2">D / Bm (2♯)</option>
+              <option value="3">A / F♯m (3♯)</option>
+              <option value="4">E / C♯m (4♯)</option>
+              <option value="5">B / G♯m (5♯)</option>
+              <option value="6">F♯ / D♯m (6♯)</option>
+              <option value="-1">F / Dm (1♭)</option>
+              <option value="-2">B♭ / Gm (2♭)</option>
+              <option value="-3">E♭ / Cm (3♭)</option>
+              <option value="-4">A♭ / Fm (4♭)</option>
+              <option value="-5">D♭ / B♭m (5♭)</option>
+              <option value="-6">G♭ / E♭m (6♭)</option>
+            </select>
           </label>
           <div class="sn-export-btns">
             <button id="btnSnSvg" title="Download as SVG file">&#x2193; SVG</button>
@@ -7387,16 +7419,65 @@ window.runCSMPNSelfTests = function(){
   const CLEF_W   = 46;
   const USABLE_W = PAGE_W - MARGIN_H * 2 - CLEF_W; // 642 px
 
+  // ── Key signature data ────────────────────────────────────
+  // Positive = sharps, negative = flats
+  const KEY_SIG_DATA = {
+    'C':0,'Am':0,  'G':1,'Em':1,   'D':2,'Bm':2,   'A':3,'F#m':3,
+    'E':4,'C#m':4, 'B':5,'G#m':5,  'F#':6,'D#m':6, 'C#':7,
+    'F':-1,'Dm':-1, 'Bb':-2,'Gm':-2, 'Eb':-3,'Cm':-3,
+    'Ab':-4,'Fm':-4, 'Db':-5,'Bbm':-5, 'Gb':-6,'Ebm':-6, 'Cb':-7,
+  };
+  // Standard treble-clef accidental y-offsets from staffY (sharp order: F C G D A E B)
+  const SHARP_Y = [0, 12, -4, 8, 20, 4, 16];
+  const FLAT_Y  = [16, 4, 20, 8, 24, 12, 28];
+
+  function keySigFromKey(keyStr){
+    if (!keyStr) return 0;
+    let s = keyStr.trim()
+      .replace(/♭/g,'b').replace(/♯/g,'#')
+      .replace(/\s*(major|maj)\s*$/i,'')
+      .replace(/\s*(minor|min)\s*$/i,'m');
+    s = s[0].toUpperCase() + s.slice(1);
+    if (KEY_SIG_DATA[s] !== undefined) return KEY_SIG_DATA[s];
+    return 0;
+  }
+
+  // Render key signature accidentals to the right of the treble clef
+  function keySigSvg(staffY, count){
+    if (!count) return '';
+    const isSharp = count > 0;
+    const n = Math.min(Math.abs(count), 7);
+    const sym = isSharp ? '♯' : '♭';
+    const yOff = isSharp ? SHARP_Y : FLAT_Y;
+    let svg = '';
+    const x0 = MARGIN_H + 31; // just after the clef character
+    for (let i = 0; i < n; i++){
+      svg += `<text x="${x0 + i * 7}" y="${staffY + yOff[i] + 7}" font-size="9" font-weight="bold" fill="${_snCfg.fgColor}" font-family="Georgia,serif">${sym}</text>`;
+    }
+    return svg;
+  }
+
   // ── Render config snapshot (populated by getSnRenderSettings) ────────
   let _snCfg = {
     bgColor: '#ffffff', fgColor: '#111111', chordColor: '#0044cc',
     chordFontSize: 11.5, chordAnchor: 'middle',
-    showBarlines: true, strumMode: 'none', showStems: false,
+    showBarlines: true, strumMode: 'none', strumPattern: null,
+    showStems: false, keySig: null,
   };
 
   function getSnRenderSettings(){
     const fs = (typeof fbSettings !== 'undefined') ? fbSettings : {};
     const scale = { M: 1, S: 0.85, XS: 0.72 }[fs.fontSize] || 1;
+    const strumMode = snStrumEl ? snStrumEl.value : 'none';
+    // Parse custom strum pattern: "D U D U" → ['D','U','D','U']
+    let strumPattern = null;
+    if (strumMode === 'custom' && snStrumPatEl){
+      const raw = (snStrumPatEl.value || '').toUpperCase().replace(/\s+/g,'');
+      strumPattern = raw.length ? raw.split('').filter(c => 'DUXV-'.includes(c)) : null;
+    }
+    // Key sig: null=auto (resolved from doc.key), 0=none, ±N=accidentals
+    const kv = snKeySigEl ? snKeySigEl.value : 'auto';
+    const keySig = (kv === 'auto') ? null : (kv === 'none') ? 0 : (parseInt(kv, 10) || 0);
     _snCfg = {
       bgColor:       fs.bgColor    || '#ffffff',
       fgColor:       fs.fgColor    || '#111111',
@@ -7404,8 +7485,9 @@ window.runCSMPNSelfTests = function(){
       chordFontSize: Math.round(11.5 * scale * 10) / 10,
       chordAnchor:   (fs.chordAlign === 'center') ? 'middle' : 'start',
       showBarlines:  (fs.barLines !== 'hidden'),
-      strumMode:     snStrumEl ? snStrumEl.value : 'none',
+      strumMode, strumPattern,
       showStems:     snStemsEl ? snStemsEl.checked : false,
+      keySig,
     };
   }
 
@@ -7442,11 +7524,25 @@ window.runCSMPNSelfTests = function(){
     return `<line x1="${x}" y1="${cy - 6}" x2="${x}" y2="${cy - 22}" stroke="${_snCfg.fgColor}" stroke-width="1.3"/>`;
   }
 
+  // Returns the strum character for a given beat (null = no arrow)
+  function strumChar(beat){
+    const mode = _snCfg.strumMode;
+    if (mode === 'none') return null;
+    if (mode === 'custom' && _snCfg.strumPattern && _snCfg.strumPattern.length){
+      const c = _snCfg.strumPattern[beat % _snCfg.strumPattern.length];
+      if (c === 'D') return '↓';
+      if (c === 'U') return '↑';
+      if (c === 'X' || c === 'V') return '×'; // muted / ghost strum
+      return null; // '-' = rest = no arrow
+    }
+    if (mode === 'alt') return beat % 2 === 0 ? '↓' : '↑';
+    return '↓'; // 'down'
+  }
+
   // Strum direction arrow below staff
   function strumArrow(cx, y, beat){
-    const ch = _snCfg.strumMode === 'alt'
-      ? (beat % 2 === 0 ? '↓' : '↑')
-      : '↓'; // 'down' mode
+    const ch = strumChar(beat);
+    if (!ch) return '';
     return `<text x="${cx}" y="${y}" font-size="9" fill="${_snCfg.fgColor}" text-anchor="middle" font-family="sans-serif">${ch}</text>`;
   }
 
@@ -7598,6 +7694,9 @@ window.runCSMPNSelfTests = function(){
       }
     }
 
+    // Key signature accidentals (rendered after time sig, within clef area)
+    if (showClef && _snCfg.keySig) svg += keySigSvg(staffY, _snCfg.keySig);
+
     svg += staffLines(staffX, staffY, totalW);
     svg += svgLine(staffX, staffY, staffX, staffY + STAFF_H, _snCfg.fgColor, 1.5);
 
@@ -7616,11 +7715,16 @@ window.runCSMPNSelfTests = function(){
         if (_snCfg.strumMode !== 'none')   svg += strumArrow(bx, arrowY, beat);
       }
 
-      // Chord symbols above staff
-      const chords = m.chords || [];
-      for (let ci = 0; ci < chords.length; ci++){
-        const cx = beatX(mX, Math.floor(ci * bpm / chords.length));
-        svg += `<text x="${cx}" y="${staffY-8}" font-size="${_snCfg.chordFontSize}" font-family="Georgia,'Times New Roman',serif" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}">${escapeHtml(chords[ci])}</text>`;
+      // Chord symbols above staff (or simile "%" mark for repeat bars)
+      if (m.isSimile){
+        const cx = mX + measureWidth / 2;
+        svg += `<text x="${cx}" y="${staffY-6}" font-size="15" font-weight="bold" fill="${_snCfg.fgColor}" text-anchor="middle" font-family="Georgia,serif">%</text>`;
+      } else {
+        const chords = m.chords || [];
+        for (let ci = 0; ci < chords.length; ci++){
+          const cx = beatX(mX, Math.floor(ci * bpm / chords.length));
+          svg += `<text x="${cx}" y="${staffY-8}" font-size="${_snCfg.chordFontSize}" font-family="Georgia,'Times New Roman',serif" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}">${escapeHtml(chords[ci])}</text>`;
+        }
       }
 
       const rt = m.rightBar === 'repeat-end' ? 'repeat-end'
@@ -7646,6 +7750,9 @@ window.runCSMPNSelfTests = function(){
     const text = (fbSettings.includeLyrics === false) ? filterLyricsLines(original) : original;
     const doc  = parseCSMPN(text);
 
+    // Resolve auto key sig from the chart's key field (null = auto mode)
+    if (_snCfg.keySig === null) _snCfg.keySig = keySigFromKey(doc.key);
+
     if (!doc.blocks.length){
       return '<p style="color:#888;text-align:center;padding:20px 0">Import or paste a chord chart to render slash notation.</p>';
     }
@@ -7664,9 +7771,10 @@ window.runCSMPNSelfTests = function(){
     const processedSections = sections.map(sec => {
       const measures = sec.bars.map(bar => {
         let chords = chordsFromToken(bar.token);
-        if (chords === null){ chords = lastChords.slice(); }
+        const isSimile = (chords === null); // % repeat bar — render simile symbol
+        if (chords === null){ chords = []; }  // don't copy — show "%" instead
         else if (chords.length > 0){ lastChords = chords; }
-        return { chords, leftBar: bar.leftBar || 'single', rightBar: bar.rightBar || 'single' };
+        return { chords, isSimile, leftBar: bar.leftBar || 'single', rightBar: bar.rightBar || 'single' };
       });
       return { label: sec.label, measures };
     });
@@ -7785,19 +7893,27 @@ ${headerHtml}${svg.outerHTML}
 
   // ── Panel wiring ──────────────────────────────────────────
 
-  const panel       = document.getElementById('slashNotationPanel');
-  const output      = document.getElementById('slashNotationOutput');
-  const mprSel      = document.getElementById('snMeasuresPerRow');
-  const overridesEl = document.getElementById('snSectionOverrides');
-  const btnOpen     = document.getElementById('btnSlashNotation');
-  const btnClose    = document.getElementById('btnSnClose');
-  const snStrumEl   = document.getElementById('snStrumArrows');
-  const snStemsEl   = document.getElementById('snStems');
+  const panel        = document.getElementById('slashNotationPanel');
+  const output       = document.getElementById('slashNotationOutput');
+  const mprSel       = document.getElementById('snMeasuresPerRow');
+  const overridesEl  = document.getElementById('snSectionOverrides');
+  const btnOpen      = document.getElementById('btnSlashNotation');
+  const btnClose     = document.getElementById('btnSnClose');
+  const snStrumEl    = document.getElementById('snStrumArrows');
+  const snStrumPatEl = document.getElementById('snStrumPattern');
+  const snStemsEl    = document.getElementById('snStems');
+  const snKeySigEl   = document.getElementById('snKeySig');
 
   function refreshSlashNotation(){
     if (!panel.classList.contains('open')) return;
     output.innerHTML = renderSlashNotationHtml(mprSel.value, overridesEl.value);
   }
+
+  // Show/hide the custom strum pattern text field
+  function updateStrumPatVis(){
+    if (snStrumPatEl) snStrumPatEl.style.display = (snStrumEl && snStrumEl.value === 'custom') ? '' : 'none';
+  }
+  updateStrumPatVis();
 
   window.updateSlashNotationIfOpen = refreshSlashNotation;
 
@@ -7816,8 +7932,14 @@ ${headerHtml}${svg.outerHTML}
   const _debouncedOverrides = debounce(() => { if (panel.classList.contains('open')) refreshSlashNotation(); }, 400);
   overridesEl.addEventListener('input', _debouncedOverrides);
 
-  if (snStrumEl) snStrumEl.addEventListener('change', () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
-  if (snStemsEl) snStemsEl.addEventListener('change', () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+  if (snStrumEl) snStrumEl.addEventListener('change', () => {
+    updateStrumPatVis();
+    if (panel.classList.contains('open')) refreshSlashNotation();
+  });
+  const _debouncedPat = debounce(() => { if (panel.classList.contains('open')) refreshSlashNotation(); }, 300);
+  if (snStrumPatEl) snStrumPatEl.addEventListener('input', _debouncedPat);
+  if (snStemsEl)   snStemsEl.addEventListener('change',   () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+  if (snKeySigEl)  snKeySigEl.addEventListener('change',  () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
 
   document.getElementById('btnSnSvg').addEventListener('click',   downloadSvg);
   document.getElementById('btnSnPng').addEventListener('click',   downloadPng);
