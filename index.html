@@ -1393,6 +1393,9 @@ body.exporting .sectionBlock{
           <label class="sn-stems-label" title="Add rhythmic stems to slash noteheads">
             <input type="checkbox" id="snStems"> Stems
           </label>
+          <label class="sn-stems-label" title="Add palm muting indication above staff (P.M. -------)">
+            <input type="checkbox" id="snPalmMute"> P.M.
+          </label>
           <label title="Key signature on staff — overrides auto-detected key">Key sig
             <select id="snKeySig">
               <option value="auto">Auto</option>
@@ -7419,6 +7422,24 @@ window.runCSMPNSelfTests = function(){
   const CLEF_W   = 46;
   const USABLE_W = PAGE_W - MARGIN_H * 2 - CLEF_W; // 642 px
 
+  // Internal prefix to tag accented chords in the token array (stripped at render)
+  const ACCENT_FLAG = '\x01';
+
+  // ── Navigation & ending-bracket helpers ───────────────────
+  const NAV_RE = /\b(D\.C\.|D\.S\.|FINE|CODA|AL FINE|AL CODA|DAL SEGNO|DA CAPO|TO CODA|SEGNO)\b/i;
+  function extractNavText(label){ return (label && NAV_RE.test(label)) ? label : null; }
+
+  // Matches "1.", "2.", "[1]", "[2]", "1st", "2nd" ending labels
+  function endingNumber(label){
+    if (!label) return null;
+    const s = label.trim();
+    const m = s.match(/^[\[(]?\s*([12])\s*[.)]/);
+    if (m) return m[1];
+    if (/^1\s*st\b/i.test(s)) return '1';
+    if (/^2\s*nd\b/i.test(s)) return '2';
+    return null;
+  }
+
   // ── Key signature data ────────────────────────────────────
   // Positive = sharps, negative = flats
   const KEY_SIG_DATA = {
@@ -7462,7 +7483,7 @@ window.runCSMPNSelfTests = function(){
     bgColor: '#ffffff', fgColor: '#111111', chordColor: '#0044cc',
     chordFontSize: 11.5, chordAnchor: 'middle',
     showBarlines: true, strumMode: 'none', strumPattern: null,
-    showStems: false, keySig: null,
+    showStems: false, palmMute: false, keySig: null,
   };
 
   function getSnRenderSettings(){
@@ -7486,7 +7507,8 @@ window.runCSMPNSelfTests = function(){
       chordAnchor:   (fs.chordAlign === 'center') ? 'middle' : 'start',
       showBarlines:  (fs.barLines !== 'hidden'),
       strumMode, strumPattern,
-      showStems:     snStemsEl ? snStemsEl.checked : false,
+      showStems:     snStemsEl    ? snStemsEl.checked    : false,
+      palmMute:      snPalmMuteEl ? snPalmMuteEl.checked : false,
       keySig,
     };
   }
@@ -7606,27 +7628,37 @@ window.runCSMPNSelfTests = function(){
     return raw.split('_').map(s => {
       const t = s.trim();
       if (!t) return null;
-      const parsed = (typeof parseChordToken === 'function') ? parseChordToken(t) : null;
-      if (!parsed) return t;
-      const bass = parsed.bass ? `/${parsed.bass}` : '';
-      return parsed.root + parsed.quality + bass;
+      // Trailing ! or ^ means accent mark (> above slash head)
+      const accent = t.endsWith('!') || t.endsWith('^');
+      const clean  = accent ? t.slice(0, -1) : t;
+      const parsed = (typeof parseChordToken === 'function') ? parseChordToken(clean) : null;
+      const text   = parsed
+        ? parsed.root + parsed.quality + (parsed.bass ? `/${parsed.bass}` : '')
+        : clean;
+      return (accent ? ACCENT_FLAG : '') + text;
     }).filter(Boolean);
   }
 
-  /** Build sections [{label, bars}] from a parsed CSMPN doc. */
+  /** Build sections [{label, bars, navText}] from a parsed CSMPN doc. */
   function buildSnSections(doc){
     const sections = [];
     let label = null;
     let bars  = [];
 
     const flush = () => {
-      if (bars.length > 0){ sections.push({ label, bars }); bars = []; label = null; }
+      if (bars.length > 0){ sections.push({ label, bars, navText: null }); bars = []; label = null; }
     };
 
     for (const block of doc.blocks){
       if (block.type === 'marker'){
         if (block.marker === '-' || block.marker === ':' || block.marker === '='){
-          flush(); label = block.text || null;
+          const text = block.text || null;
+          // Pure nav marker with no pending bars → attach to most recent section
+          if (extractNavText(text) && !bars.length && sections.length > 0){
+            sections[sections.length - 1].navText = text;
+          } else {
+            flush(); label = text;
+          }
         }
       } else if (block.type === 'bars'){
         bars.push(...parseBarStructures(block.tokens));
@@ -7661,12 +7693,15 @@ window.runCSMPNSelfTests = function(){
 
   // ── Row renderer ──────────────────────────────────────────
 
-  function renderRow(measures, sectionLabel, systemY, measureWidth, bpm, showClef, timeSig){
+  // navText: D.C./D.S./Fine/Coda marker rendered below last barline
+  // ending:  '1' or '2' bracket rendered above first measure of ending section
+  function renderRow(measures, sectionLabel, systemY, measureWidth, bpm, showClef, timeSig, navText, ending){
     const staffX   = MARGIN_H + CLEF_W;
     const hasLabel = !!sectionLabel;
     const staffY   = systemY + (hasLabel ? SECTION_LABEL_H : 0) + CHORD_AREA_H;
     const totalW   = measureWidth * measures.length;
-    const arrowY   = staffY + STAFF_H + 12; // strum arrows sit below the staff
+    const arrowY   = staffY + STAFF_H + 12;
+    const fg       = _snCfg.fgColor;
 
     const beatX = (mX, beat) => {
       const pad = 10, avail = measureWidth - 2 * pad;
@@ -7676,30 +7711,53 @@ window.runCSMPNSelfTests = function(){
 
     let svg = '<g>';
 
+    // ── 1st / 2nd ending bracket ──────────────────────────
+    if (ending){
+      const bx   = staffX;
+      const by   = systemY + (hasLabel ? SECTION_LABEL_H : 0) + 3;
+      const bBot = by + 12;
+      svg += svgLine(bx, bBot, bx, by, fg, 1.2);                                               // left drop
+      svg += svgLine(bx, by, bx + totalW + (ending === '1' ? 4 : 0), by, fg, 1.2);             // top line
+      if (ending !== '1') svg += svgLine(bx + totalW, by, bx + totalW, bBot, fg, 1.2);         // right drop (closed for 2nd)
+      svg += `<text x="${bx+5}" y="${by+10}" font-size="9" fill="${fg}" font-family="Georgia,serif">${ending}.</text>`;
+    }
+
+    // ── Section label ─────────────────────────────────────
     if (sectionLabel){
-      svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="${_snCfg.fgColor}" font-family="Georgia,'Times New Roman',serif">${escapeHtml(sectionLabel)}</text>`;
+      svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="${fg}" font-family="Georgia,'Times New Roman',serif">${escapeHtml(sectionLabel)}</text>`;
     }
 
+    // ── Treble clef ───────────────────────────────────────
     if (showClef){
-      svg += `<text x="${MARGIN_H}" y="${staffY + STAFF_H * 0.82}" font-size="42" fill="${_snCfg.fgColor}" font-family="'Noto Serif',Georgia,serif" letter-spacing="-1">&#x1D11E;</text>`;
+      svg += `<text x="${MARGIN_H}" y="${staffY + STAFF_H * 0.82}" font-size="42" fill="${fg}" font-family="'Noto Serif',Georgia,serif" letter-spacing="-1">&#x1D11E;</text>`;
     }
 
+    // ── Time signature ────────────────────────────────────
     if (showClef && timeSig){
       const parts = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/);
       if (parts){
-        svg += `<g font-family="Georgia,serif" font-weight="bold" fill="${_snCfg.fgColor}" font-size="13">`;
+        svg += `<g font-family="Georgia,serif" font-weight="bold" fill="${fg}" font-size="13">`;
         svg += `<text x="${MARGIN_H+34}" y="${staffY+12}">${escapeHtml(parts[1])}</text>`;
         svg += `<text x="${MARGIN_H+34}" y="${staffY+26}">${escapeHtml(parts[2])}</text>`;
         svg += `</g>`;
       }
     }
 
-    // Key signature accidentals (rendered after time sig, within clef area)
+    // ── Key signature (within clef area) ─────────────────
     if (showClef && _snCfg.keySig) svg += keySigSvg(staffY, _snCfg.keySig);
 
-    svg += staffLines(staffX, staffY, totalW);
-    svg += svgLine(staffX, staffY, staffX, staffY + STAFF_H, _snCfg.fgColor, 1.5);
+    // ── Palm muting (P.M. ------) ─────────────────────────
+    if (_snCfg.palmMute){
+      const pmY = systemY + (hasLabel ? SECTION_LABEL_H : 0) + 8;
+      svg += `<text x="${staffX+2}" y="${pmY+8}" font-size="8" font-style="italic" fill="${fg}" font-family="Georgia,serif">P.M.</text>`;
+      svg += `<line x1="${staffX+25}" y1="${pmY+6}" x2="${staffX+totalW-4}" y2="${pmY+6}" stroke="${fg}" stroke-width="0.8" stroke-dasharray="3,2"/>`;
+    }
 
+    // ── Staff lines + opening barline ─────────────────────
+    svg += staffLines(staffX, staffY, totalW);
+    svg += svgLine(staffX, staffY, staffX, staffY + STAFF_H, fg, 1.5);
+
+    // ── Measures ──────────────────────────────────────────
     for (let mi = 0; mi < measures.length; mi++){
       const m  = measures[mi];
       const mX = staffX + mi * measureWidth;
@@ -7711,19 +7769,27 @@ window.runCSMPNSelfTests = function(){
       for (let beat = 0; beat < bpm; beat++){
         const bx = beatX(mX, beat);
         svg += slashHead(bx, midY);
-        if (_snCfg.showStems)              svg += stemSvg(bx, midY);
-        if (_snCfg.strumMode !== 'none')   svg += strumArrow(bx, arrowY, beat);
+        if (_snCfg.showStems)            svg += stemSvg(bx, midY);
+        if (_snCfg.strumMode !== 'none') svg += strumArrow(bx, arrowY, beat);
       }
 
-      // Chord symbols above staff (or simile "%" mark for repeat bars)
+      // Chord symbols or simile "%" mark
       if (m.isSimile){
         const cx = mX + measureWidth / 2;
-        svg += `<text x="${cx}" y="${staffY-6}" font-size="15" font-weight="bold" fill="${_snCfg.fgColor}" text-anchor="middle" font-family="Georgia,serif">%</text>`;
+        svg += `<text x="${cx}" y="${staffY-6}" font-size="15" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">%</text>`;
       } else {
         const chords = m.chords || [];
         for (let ci = 0; ci < chords.length; ci++){
-          const cx = beatX(mX, Math.floor(ci * bpm / chords.length));
-          svg += `<text x="${cx}" y="${staffY-8}" font-size="${_snCfg.chordFontSize}" font-family="Georgia,'Times New Roman',serif" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}">${escapeHtml(chords[ci])}</text>`;
+          const raw    = chords[ci];
+          const accent = raw.startsWith(ACCENT_FLAG);
+          const txt    = accent ? raw.slice(1) : raw;
+          const cx     = beatX(mX, Math.floor(ci * bpm / chords.length));
+          // Accent mark (>) above chord symbol
+          if (accent){
+            const ay = staffY - 8 - _snCfg.chordFontSize - 2;
+            svg += `<text x="${cx}" y="${ay}" font-size="10" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="middle" font-family="Georgia,serif">&gt;</text>`;
+          }
+          svg += `<text x="${cx}" y="${staffY-8}" font-size="${_snCfg.chordFontSize}" font-family="Georgia,'Times New Roman',serif" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}">${escapeHtml(txt)}</text>`;
         }
       }
 
@@ -7731,6 +7797,11 @@ window.runCSMPNSelfTests = function(){
                : m.rightBar === 'final'      ? 'final'
                : m.rightBar === 'double'     ? 'double' : 'single';
       svg += barlineSvg(rX, staffY, STAFF_H, rt);
+    }
+
+    // ── Navigation text (D.C. al Fine, Coda, etc.) ───────
+    if (navText){
+      svg += `<text x="${staffX + totalW}" y="${staffY + STAFF_H + 16}" font-size="10" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family="Georgia,'Times New Roman',serif">${escapeHtml(navText)}</text>`;
     }
 
     svg += '</g>';
@@ -7776,18 +7847,25 @@ window.runCSMPNSelfTests = function(){
         else if (chords.length > 0){ lastChords = chords; }
         return { chords, isSimile, leftBar: bar.leftBar || 'single', rightBar: bar.rightBar || 'single' };
       });
-      return { label: sec.label, measures };
+      // Nav text: explicit from block order, or auto-detect if label IS a nav marker
+      const navText = sec.navText || extractNavText(sec.label) || null;
+      const ending  = endingNumber(sec.label);
+      return { label: sec.label, measures, navText, ending };
     });
 
     // Per-section measures-per-row
     const rows = [];
     for (const sec of processedSections){
-      const mpr = mprForSection(sec.label, overrides, defaultMpr);
+      const mpr      = mprForSection(sec.label, overrides, defaultMpr);
+      const dispLabel = sec.ending ? null : sec.label; // suppress label for ending sections (bracket serves as label)
       for (let i = 0; i < sec.measures.length; i += mpr){
+        const isLast = (i + mpr >= sec.measures.length);
         rows.push({
           measures:     sec.measures.slice(i, i + mpr),
           measureWidth: USABLE_W / mpr,
-          sectionLabel: i === 0 ? sec.label : undefined,
+          sectionLabel: (i === 0) ? dispLabel : undefined,
+          navText:      isLast ? sec.navText : null,
+          ending:       (i === 0) ? sec.ending : null,
         });
       }
     }
@@ -7803,8 +7881,8 @@ window.runCSMPNSelfTests = function(){
     let curY = 16;
     for (let ri = 0; ri < rows.length; ri++){
       const row      = rows[ri];
-      const showClef = (ri === 0) || !!row.sectionLabel;
-      svgContent += renderRow(row.measures, row.sectionLabel, curY, row.measureWidth, bpm, showClef, timeSig);
+      const showClef = (ri === 0) || !!row.sectionLabel || !!row.ending;
+      svgContent += renderRow(row.measures, row.sectionLabel, curY, row.measureWidth, bpm, showClef, timeSig, row.navText, row.ending);
       curY += (row.sectionLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
     }
 
@@ -7902,6 +7980,7 @@ ${headerHtml}${svg.outerHTML}
   const snStrumEl    = document.getElementById('snStrumArrows');
   const snStrumPatEl = document.getElementById('snStrumPattern');
   const snStemsEl    = document.getElementById('snStems');
+  const snPalmMuteEl = document.getElementById('snPalmMute');
   const snKeySigEl   = document.getElementById('snKeySig');
 
   function refreshSlashNotation(){
@@ -7938,8 +8017,9 @@ ${headerHtml}${svg.outerHTML}
   });
   const _debouncedPat = debounce(() => { if (panel.classList.contains('open')) refreshSlashNotation(); }, 300);
   if (snStrumPatEl) snStrumPatEl.addEventListener('input', _debouncedPat);
-  if (snStemsEl)   snStemsEl.addEventListener('change',   () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
-  if (snKeySigEl)  snKeySigEl.addEventListener('change',  () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+  if (snStemsEl)    snStemsEl.addEventListener('change',    () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+  if (snPalmMuteEl) snPalmMuteEl.addEventListener('change', () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+  if (snKeySigEl)   snKeySigEl.addEventListener('change',   () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
 
   document.getElementById('btnSnSvg').addEventListener('click',   downloadSvg);
   document.getElementById('btnSnPng').addEventListener('click',   downloadPng);
