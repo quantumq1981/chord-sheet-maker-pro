@@ -1,0 +1,9 @@
+{title: Blue Bossa}
+{artist: Kenny Dorham}
+{key: Cm}
+{time: 3/4}
+{tempo: 120}
+{start_of_verse}
+[Cm7]These are lyrics [Dm7b5]some more text
+[G7]Final line [Cm]end
+{end_of_verse}
