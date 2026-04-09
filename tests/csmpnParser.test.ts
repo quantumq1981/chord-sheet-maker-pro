@@ -31,7 +31,7 @@ test('parseCsmpn: title and composer extracted', () => {
   const text = readFileSync(join(fixtureDir, 'simple.csmpn'), 'utf-8');
   const doc = parseCsmpn(text);
 
-  assert.equal(doc.title,  'Blue Bossa');
+  assert.equal(doc.title, 'Blue Bossa');
   assert.equal(doc.artist, 'Kenny Dorham');
 });
 
@@ -39,8 +39,8 @@ test('parseCsmpn: key, time, and tempo extracted', () => {
   const text = readFileSync(join(fixtureDir, 'simple.csmpn'), 'utf-8');
   const doc = parseCsmpn(text);
 
-  assert.equal(doc.key,   'Cm');
-  assert.equal(doc.time,  '3/4');
+  assert.equal(doc.key, 'Cm');
+  assert.equal(doc.time, '3/4');
   assert.equal(doc.tempo, '120');
 });
 

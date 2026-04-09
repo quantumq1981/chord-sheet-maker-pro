@@ -9,7 +9,10 @@ export interface AbcNormalizationResult {
 const HEADER_ORDER = ['X', 'T', 'M', 'L', 'Q', 'K'] as const;
 
 function normalizeHeaderSpacing(line: string): string {
-  return line.replace(/^\s*([A-Za-z])\s*:\s*(.*)$/, (_m, f: string, value: string) => `${f.toUpperCase()}: ${value.trim()}`);
+  return line.replace(
+    /^\s*([A-Za-z])\s*:\s*(.*)$/,
+    (_m, f: string, value: string) => `${f.toUpperCase()}: ${value.trim()}`
+  );
 }
 
 function normalizeQuotedChords(line: string): string {
@@ -39,7 +42,10 @@ export function normalizeAbcForImport(input: string): AbcNormalizationResult {
     }
 
     if (/^[wW]\s*:/.test(line.trim())) {
-      return line.replace(/^[wW]\s*:/, 'w:').replace(/\s+/g, ' ').trim();
+      return line
+        .replace(/^[wW]\s*:/, 'w:')
+        .replace(/\s+/g, ' ')
+        .trim();
     }
 
     let body = normalizeQuotedChords(line);

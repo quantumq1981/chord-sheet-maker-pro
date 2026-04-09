@@ -19,7 +19,7 @@ const DEFAULT_ENDPOINT = 'http://127.0.0.1:8765/oemer/run';
 
 export async function runOemerBridge(
   images: File[],
-  endpoint = DEFAULT_ENDPOINT,
+  endpoint = DEFAULT_ENDPOINT
 ): Promise<OemerBridgeResult> {
   const formData = new FormData();
   for (const image of images) {
@@ -75,7 +75,8 @@ export async function runOemerBridge(
   return {
     ok: true,
     musicXml: successPayload.music_xml,
-    musicXmlPath: typeof successPayload.music_xml_path === 'string' ? successPayload.music_xml_path : undefined,
+    musicXmlPath:
+      typeof successPayload.music_xml_path === 'string' ? successPayload.music_xml_path : undefined,
     logs: Array.isArray(successPayload.logs) ? successPayload.logs.map(String) : [],
   };
 }

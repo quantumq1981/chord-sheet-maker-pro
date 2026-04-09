@@ -13,12 +13,7 @@
  *   - "Use This Chart" callback to push CSMPN into the parent app.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   importUGProPdf,
   DEFAULT_CONFIG,
@@ -47,10 +42,7 @@ type ImportStatus = 'idle' | 'loading' | 'done' | 'error';
  * Draw the debug overlay onto an HTMLCanvasElement.
  * The canvas should already have the rendered PDF page as its background.
  */
-function drawDebugOverlay(
-  overlayCanvas: HTMLCanvasElement,
-  pageRender: PageRenderData,
-): void {
+function drawDebugOverlay(overlayCanvas: HTMLCanvasElement, pageRender: PageRenderData): void {
   const ctx = overlayCanvas.getContext('2d');
   if (!ctx) return;
 
@@ -188,7 +180,7 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
         setStatus('error');
       }
     },
-    [config],
+    [config]
   );
 
   const handleFileChange = useCallback(
@@ -196,7 +188,7 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
       const file = e.target.files?.[0];
       if (file) processFile(file);
     },
-    [processFile],
+    [processFile]
   );
 
   const handleDrop = useCallback(
@@ -205,7 +197,7 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
       const file = e.dataTransfer.files?.[0];
       if (file) processFile(file);
     },
-    [processFile],
+    [processFile]
   );
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault();
@@ -238,7 +230,7 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
   // ── Config helpers ────────────────────────────────────────────────────────
   const handleConfigChange = <K extends keyof UGProImporterConfig>(
     key: K,
-    value: UGProImporterConfig[K],
+    value: UGProImporterConfig[K]
   ) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
   };
@@ -247,9 +239,8 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
   const totalPages = result?.pageRenders.length ?? 0;
   const pagesWithSystems = result?.pageRenders.filter((pr) => pr.systems.length > 0) ?? [];
   const measureCount = result?.debugJson.linear.measures.length ?? 0;
-  const chordCount = result?.debugJson.linear.measures.reduce(
-    (acc, m) => acc + m.chords.length, 0,
-  ) ?? 0;
+  const chordCount =
+    result?.debugJson.linear.measures.reduce((acc, m) => acc + m.chords.length, 0) ?? 0;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -287,7 +278,9 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
             min={10}
             max={100}
             value={config.ySystemClusterThresholdPx}
-            onChange={(e) => handleConfigChange('ySystemClusterThresholdPx', parseInt(e.target.value, 10))}
+            onChange={(e) =>
+              handleConfigChange('ySystemClusterThresholdPx', parseInt(e.target.value, 10))
+            }
             style={styles.configInput}
           />
 
@@ -298,7 +291,9 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
             max={1.0}
             step={0.05}
             value={config.barlinePeakMinHeightRatio}
-            onChange={(e) => handleConfigChange('barlinePeakMinHeightRatio', parseFloat(e.target.value))}
+            onChange={(e) =>
+              handleConfigChange('barlinePeakMinHeightRatio', parseFloat(e.target.value))
+            }
             style={styles.configInput}
           />
 
@@ -308,7 +303,9 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
             min={5}
             max={80}
             value={config.barlinePeakMinSpacingPx}
-            onChange={(e) => handleConfigChange('barlinePeakMinSpacingPx', parseInt(e.target.value))}
+            onChange={(e) =>
+              handleConfigChange('barlinePeakMinSpacingPx', parseInt(e.target.value))
+            }
             style={styles.configInput}
           />
 
@@ -317,8 +314,8 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
               type="checkbox"
               checked={config.fillEmptyMeasuresWithPercent}
               onChange={(e) => handleConfigChange('fillEmptyMeasuresWithPercent', e.target.checked)}
-            />
-            {' '}Empty bars → %
+            />{' '}
+            Empty bars → %
           </label>
           <div />
 
@@ -327,18 +324,17 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
               type="checkbox"
               checked={config.allowMultiChordBars}
               onChange={(e) => handleConfigChange('allowMultiChordBars', e.target.checked)}
-            />
-            {' '}Allow multi-chord bars
+            />{' '}
+            Allow multi-chord bars
           </label>
           <div />
 
           <label style={styles.configLabel}>Output format</label>
           <select
             value={config.outputMode}
-            onChange={(e) => handleConfigChange(
-              'outputMode',
-              e.target.value as UGProImporterConfig['outputMode'],
-            )}
+            onChange={(e) =>
+              handleConfigChange('outputMode', e.target.value as UGProImporterConfig['outputMode'])
+            }
             style={styles.configInput}
           >
             <option value="csmpn-fakebook">Fake-book (- : = prefixes, _ splits)</option>
@@ -374,17 +370,19 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
       </div>
 
       {/* Error */}
-      {status === 'error' && (
-        <div style={styles.errorBox}>{error}</div>
-      )}
+      {status === 'error' && <div style={styles.errorBox}>{error}</div>}
 
       {/* Results */}
       {status === 'done' && result && (
         <div style={styles.results}>
           {/* Summary stats */}
           <div style={styles.stats}>
-            <span>{totalPages} page{totalPages !== 1 ? 's' : ''}</span>
-            <span>{pagesWithSystems.length} system page{pagesWithSystems.length !== 1 ? 's' : ''}</span>
+            <span>
+              {totalPages} page{totalPages !== 1 ? 's' : ''}
+            </span>
+            <span>
+              {pagesWithSystems.length} system page{pagesWithSystems.length !== 1 ? 's' : ''}
+            </span>
             <span>{measureCount} measures</span>
             <span>{chordCount} chords</span>
           </div>
@@ -410,10 +408,7 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
 
           {/* Debug overlay canvas */}
           <div style={styles.canvasWrapper}>
-            <canvas
-              ref={overlayCanvasRef}
-              style={styles.overlayCanvas}
-            />
+            <canvas ref={overlayCanvasRef} style={styles.overlayCanvas} />
           </div>
 
           {/* Legend */}
@@ -454,15 +449,10 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
 
           {/* Debug JSON viewer */}
           <details style={styles.jsonSection}>
-            <summary
-              style={styles.jsonSummary}
-              onClick={() => setShowJson((v) => !v)}
-            >
+            <summary style={styles.jsonSummary} onClick={() => setShowJson((v) => !v)}>
               Debug JSON {showJson ? '▲' : '▼'}
             </summary>
-            <pre style={styles.jsonPre}>
-              {JSON.stringify(result.debugJson, null, 2)}
-            </pre>
+            <pre style={styles.jsonPre}>{JSON.stringify(result.debugJson, null, 2)}</pre>
           </details>
         </div>
       )}

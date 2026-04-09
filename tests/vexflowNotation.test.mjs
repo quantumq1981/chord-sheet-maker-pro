@@ -12,7 +12,9 @@ test('legacy single-bar snippets stay valid', () => {
 });
 
 test('enhanced syntax parses chords, rests, tempo and ties', () => {
-  const parsed = parseVexFlowBlock('[4/4] bass: tempo="Allegro" C3/q[chord="Cm7",dyn="mf"] qr | <C3 E3 G3>/h^ <C3 E3 G3>/h');
+  const parsed = parseVexFlowBlock(
+    '[4/4] bass: tempo="Allegro" C3/q[chord="Cm7",dyn="mf"] qr | <C3 E3 G3>/h^ <C3 E3 G3>/h'
+  );
   assert.equal(parsed.clef, 'bass');
   assert.equal(parsed.tempo, 'Allegro');
   assert.equal(parsed.measures.length, 2);
@@ -24,7 +26,9 @@ test('enhanced syntax parses chords, rests, tempo and ties', () => {
 });
 
 test('modifiers parse articulations, lyrics, text and grace notes', () => {
-  const parsed = parseVexFlowBlock('C4/8[staccato,lyric="Hel",grace="D4/16 E4/16"] D4/8[text="rit."]');
+  const parsed = parseVexFlowBlock(
+    'C4/8[staccato,lyric="Hel",grace="D4/16 E4/16"] D4/8[text="rit."]'
+  );
   const [first, second] = parsed.measures[0].events;
   assert.deepEqual(first.modifiers.articulations, ['staccato']);
   assert.equal(first.modifiers.lyric, 'Hel');

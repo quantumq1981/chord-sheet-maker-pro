@@ -5,7 +5,10 @@ import { normalizeAbcForImport } from './abcNormalization';
 import { scoreImportQuality } from './importQuality';
 import { canonicalizeChordChartDocument } from './canonicalChart';
 import { tryConvertAbcToMusicXmlViaNotaGen } from './notagenBridge';
-import { convertMusicXmlToChordPro, getDefaultConvertOptions } from '../converters/musicXMLtochordpro';
+import {
+  convertMusicXmlToChordPro,
+  getDefaultConvertOptions,
+} from '../converters/musicXMLtochordpro';
 
 export interface ImportPipelineResult {
   document: ChordChartDocument;
@@ -18,12 +21,16 @@ const ABC_FALLBACK_THRESHOLD = 60;
 export async function importWithNotaGenPipeline(
   text: string,
   sourceFormat: SourceFormat,
-  filename: string,
+  filename: string
 ): Promise<ImportPipelineResult> {
   if (sourceFormat !== 'abc') {
     const baseDoc = canonicalizeChordChartDocument(parseChordChart(text, sourceFormat));
     const quality = scoreImportQuality(baseDoc);
-    baseDoc.importQuality = { score: quality.score, warnings: quality.warnings, strategy: 'direct' };
+    baseDoc.importQuality = {
+      score: quality.score,
+      warnings: quality.warnings,
+      strategy: 'direct',
+    };
     baseDoc.importDiagnostics = quality.diagnostics;
     return { document: baseDoc };
   }
@@ -41,10 +48,12 @@ export async function importWithNotaGenPipeline(
     if (fallbackXml) {
       const conversion = convertMusicXmlToChordPro(
         { filename: filename || 'import.abc', xmlText: fallbackXml },
-        getDefaultConvertOptions(),
+        getDefaultConvertOptions()
       );
       if (!conversion.error) {
-        const fallbackDoc = canonicalizeChordChartDocument(parseChordChart(conversion.chordPro, 'chordpro'));
+        const fallbackDoc = canonicalizeChordChartDocument(
+          parseChordChart(conversion.chordPro, 'chordpro')
+        );
         const fallbackQuality = scoreImportQuality(fallbackDoc);
         if (fallbackQuality.score >= quality.score) {
           doc = fallbackDoc;

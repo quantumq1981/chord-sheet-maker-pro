@@ -72,14 +72,14 @@ const MIN_NOTES_FOR_CHORD = 3;
 /** Map a Guitar Pro section marker string to a SectionType. */
 function sectionTypeFromLabel(label: string): SectionType {
   const l = label.toLowerCase();
-  if (l.includes('verse'))                               return 'verse';
-  if (l.includes('chorus') || l.includes('refrain'))    return 'chorus';
-  if (l.includes('bridge'))                             return 'bridge';
-  if (l.includes('intro'))                              return 'intro';
-  if (l.includes('outro') || l.includes('coda'))       return 'outro';
-  if (l.includes('solo'))                               return 'solo';
-  if (l.includes('interlude'))                          return 'interlude';
-  if (l.includes('pre') && l.includes('chorus'))        return 'pre-chorus';
+  if (l.includes('verse')) return 'verse';
+  if (l.includes('chorus') || l.includes('refrain')) return 'chorus';
+  if (l.includes('bridge')) return 'bridge';
+  if (l.includes('intro')) return 'intro';
+  if (l.includes('outro') || l.includes('coda')) return 'outro';
+  if (l.includes('solo')) return 'solo';
+  if (l.includes('interlude')) return 'interlude';
+  if (l.includes('pre') && l.includes('chorus')) return 'pre-chorus';
   return 'unknown';
 }
 
@@ -129,7 +129,7 @@ function chordNameFromBeat(beat: any, openMidiNotes: number[]): string | null {
   // 2. Fret analysis
   const notes: any[] = beat?.notes ? Array.from(beat.notes) : [];
   const soundingNotes = notes.filter(
-    (n: any) => !n.isMute && !n.isDead && typeof n.fret === 'number',
+    (n: any) => !n.isMute && !n.isDead && typeof n.fret === 'number'
   );
   if (soundingNotes.length < MIN_NOTES_FOR_CHORD) return null;
 
@@ -138,7 +138,7 @@ function chordNameFromBeat(beat: any, openMidiNotes: number[]): string | null {
     soundingNotes.map((n: any) => ({
       stringIndex: (n.string as number) - 1, // AlphaTab: 1-based → 0-based
       fret: n.fret as number,
-    })),
+    }))
   );
 }
 
@@ -179,11 +179,7 @@ interface MeasureData {
  * Convert raw track bars into MeasureData, pairing the chord track
  * (for harmony) with the lyric track (for syllables).
  */
-function buildMeasureData(
-  chordBars:  any[],
-  lyricBars:  any[],
-  openMidi:   number[],
-): MeasureData[] {
+function buildMeasureData(chordBars: any[], lyricBars: any[], openMidi: number[]): MeasureData[] {
   const measures: MeasureData[] = [];
   const count = chordBars.length;
 
@@ -319,40 +315,36 @@ function buildTabSection(track: any, _masterBars: any[]): ChartSection | null {
  */
 export async function parseGuitarPro(bytes: Uint8Array): Promise<ChordChartDocument> {
   // ── 1. Load AlphaTab lazily ──
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let at: any;
   try {
     at = await import('@coderline/alphatab');
   } catch {
     throw new Error(
       'Could not load the Guitar Pro parser library (@coderline/alphatab). ' +
-      'Check your network connection and try again.',
+        'Check your network connection and try again.'
     );
   }
 
   // ── 2. Decode the score ──
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let score: any;
   try {
     const settings = new at.Settings();
     score = at.importer.ScoreLoader.loadScoreFromBytes(bytes, settings);
   } catch (err) {
-    throw new Error(
-      `Guitar Pro file could not be read: ${(err as Error).message ?? String(err)}`,
-    );
+    throw new Error(`Guitar Pro file could not be read: ${(err as Error).message ?? String(err)}`);
   }
 
   // ── 3. Document metadata ──
   const doc: ChordChartDocument = {
-    title:        (score.title  as string | undefined)?.trim()  || undefined,
-    artist:       (score.artist as string | undefined)?.trim()  || undefined,
-    tempo:        typeof score.tempo === 'number' ? String(score.tempo) : undefined,
-    sections:     [],
+    title: (score.title as string | undefined)?.trim() || undefined,
+    artist: (score.artist as string | undefined)?.trim() || undefined,
+    tempo: typeof score.tempo === 'number' ? String(score.tempo) : undefined,
+    sections: [],
     sourceFormat: 'guitarpro',
   };
 
   const masterBars: any[] = score.masterBars ? Array.from(score.masterBars) : [];
-  const tracks: any[]     = score.tracks     ? Array.from(score.tracks)     : [];
+  const tracks: any[] = score.tracks ? Array.from(score.tracks) : [];
 
   if (tracks.length === 0 || masterBars.length === 0) return doc;
 
@@ -360,16 +352,16 @@ export async function parseGuitarPro(bytes: Uint8Array): Promise<ChordChartDocum
   const chordTrack = tracks.find((t: any) => !t.isPercussion) ?? tracks[0];
   const lyricTrack = findLyricTrack(tracks, chordTrack);
 
-  const openMidi     = staffTuning(chordTrack);
-  const chordBars    = barsFromTrack(chordTrack);
-  const lyricBars    = barsFromTrack(lyricTrack);
-  const measureData  = buildMeasureData(chordBars, lyricBars, openMidi);
+  const openMidi = staffTuning(chordTrack);
+  const chordBars = barsFromTrack(chordTrack);
+  const lyricBars = barsFromTrack(lyricTrack);
+  const measureData = buildMeasureData(chordBars, lyricBars, openMidi);
 
   // ── 5. Section grouping ──
   // Walk masterBars, watching for section markers to start new sections.
   interface SectionAccum {
-    label:    string | undefined;
-    type:     SectionType;
+    label: string | undefined;
+    type: SectionType;
     measures: MeasureData[];
   }
 
@@ -384,14 +376,14 @@ export async function parseGuitarPro(bytes: Uint8Array): Promise<ChordChartDocum
     if (sectionMarker && current.measures.length > 0) {
       sectionAccums.push(current);
       current = {
-        label:    sectionMarker,
-        type:     sectionTypeFromLabel(sectionMarker),
+        label: sectionMarker,
+        type: sectionTypeFromLabel(sectionMarker),
         measures: [],
       };
     } else if (sectionMarker && current.measures.length === 0) {
       // Label the current (still-empty) section
       current.label = sectionMarker;
-      current.type  = sectionTypeFromLabel(sectionMarker);
+      current.type = sectionTypeFromLabel(sectionMarker);
     }
 
     if (mi < measureData.length) {
@@ -405,7 +397,7 @@ export async function parseGuitarPro(bytes: Uint8Array): Promise<ChordChartDocum
     const lines = measureSliceToLines(accum.measures);
     if (lines.length === 0) continue;
     doc.sections.push({
-      type:  accum.type,
+      type: accum.type,
       label: accum.label,
       lines,
     });

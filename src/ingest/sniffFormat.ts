@@ -18,7 +18,14 @@
  *   8.  Extension fallback            → chordpro | unknown
  */
 
-export type SourceFormat = 'chordpro' | 'ultimateguitar' | 'chords-over-words' | 'abc' | 'guitarpro' | 'fakebook' | 'oemer-image';
+export type SourceFormat =
+  | 'chordpro'
+  | 'ultimateguitar'
+  | 'chords-over-words'
+  | 'abc'
+  | 'guitarpro'
+  | 'fakebook'
+  | 'oemer-image';
 
 export type DetectedFormat =
   | { format: 'mxl' }
@@ -109,7 +116,6 @@ function fileExtension(filename: string): string {
   return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : '';
 }
 
-
 /** Returns true if every non-empty whitespace-delimited token looks like a chord. */
 function isChordLine(line: string): boolean {
   const tokens = line.trim().split(/\s+/).filter(Boolean);
@@ -157,14 +163,12 @@ export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): Detected
   }
   if (
     head.includes('<svg') &&
-    (
-      head.includes('xmlns="http://www.w3.org/2000/svg"') ||
+    (head.includes('xmlns="http://www.w3.org/2000/svg"') ||
       head.includes("xmlns='http://www.w3.org/2000/svg'") ||
       // Namespace may appear on a child element — bare <svg is sufficient when
       // combined with an SVG-characteristic attribute
       head.includes('viewBox=') ||
-      head.includes('xmlns:svg=')
-    )
+      head.includes('xmlns:svg='))
   ) {
     return { format: 'svg' };
   }
@@ -240,12 +244,10 @@ export function sniffFormatFromText(text: string): DetectedFormat {
   // SVG — check before MusicXML for the same reason as in sniffFormatFromBytes
   if (
     head.includes('<svg') &&
-    (
-      head.includes('xmlns="http://www.w3.org/2000/svg"') ||
+    (head.includes('xmlns="http://www.w3.org/2000/svg"') ||
       head.includes("xmlns='http://www.w3.org/2000/svg'") ||
       head.includes('viewBox=') ||
-      head.includes('xmlns:svg=')
-    )
+      head.includes('xmlns:svg='))
   ) {
     return { format: 'svg' };
   }

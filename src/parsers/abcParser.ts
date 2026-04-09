@@ -42,15 +42,15 @@ import { sectionTypeFromLabel, normalizeLineEndings } from '../utils/sectionUtil
 
 /** Map common ABC mode keywords to display suffixes. */
 const MODE_TO_SUFFIX: Array<[RegExp, string]> = [
-  [/^maj(or)?$/i,                   ''],        // major
-  [/^m(in(or)?)?$/i,                'm'],       // minor
-  [/^mix(olydian)?$/i,              ' Mix'],
-  [/^dor(ian)?$/i,                  ' Dor'],
-  [/^phr(ygian)?$/i,                ' Phr'],
-  [/^lyd(ian)?$/i,                  ' Lyd'],
-  [/^loc(rian)?$/i,                 ' Loc'],
-  [/^aeo(lian)?$/i,                 'm'],       // same as minor
-  [/^ion(ian)?$/i,                  ''],        // same as major
+  [/^maj(or)?$/i, ''], // major
+  [/^m(in(or)?)?$/i, 'm'], // minor
+  [/^mix(olydian)?$/i, ' Mix'],
+  [/^dor(ian)?$/i, ' Dor'],
+  [/^phr(ygian)?$/i, ' Phr'],
+  [/^lyd(ian)?$/i, ' Lyd'],
+  [/^loc(rian)?$/i, ' Loc'],
+  [/^aeo(lian)?$/i, 'm'], // same as minor
+  [/^ion(ian)?$/i, ''], // same as major
 ];
 
 /**
@@ -69,7 +69,7 @@ function parseAbcKey(raw: string): string | undefined {
   const m = v.match(/^([A-G][#b]?)\s*(.*)$/i);
   if (!m) return v;
 
-  const root    = m[1];
+  const root = m[1];
   const modePart = (m[2] ?? '').trim();
 
   if (!modePart) return root; // plain major
@@ -89,7 +89,7 @@ function parseAbcKey(raw: string): string | undefined {
  */
 function parseAbcMeter(raw: string): string | undefined {
   const v = raw.trim();
-  if (v === 'C')  return '4/4';
+  if (v === 'C') return '4/4';
   if (v === 'C|') return '2/2';
   if (/^\d+\/\d+$/.test(v)) return v;
   return undefined;
@@ -247,18 +247,18 @@ function buildLines(barChords: string[][], syllables: string[]): ChartLine[] {
 // ─── Tune block parser ────────────────────────────────────────────────────────
 
 interface TuneMeta {
-  title?:    string;
+  title?: string;
   composer?: string;
-  key?:      string;
-  time?:     string;
-  tempo?:    string;
-  genre?:    string;
+  key?: string;
+  time?: string;
+  tempo?: string;
+  genre?: string;
 }
 
 interface TuneBody {
-  bodyText:   string;          // raw body text (after K:)
-  allLyrics:  string[];        // all w: / W: syllables in order
-  partLabels: string[];        // section markers found in body
+  bodyText: string; // raw body text (after K:)
+  allLyrics: string[]; // all w: / W: syllables in order
+  partLabels: string[]; // section markers found in body
 }
 
 function parseTuneLines(tuneLines: string[]): { meta: TuneMeta; body: TuneBody } {
@@ -281,16 +281,29 @@ function parseTuneLines(tuneLines: string[]): { meta: TuneMeta; body: TuneBody }
         const value = rawValue.trim();
 
         switch (field) {
-          case 'T': meta.title    = meta.title    ?? value; break;
-          case 'C': meta.composer = meta.composer ?? value; break;
-          case 'M': meta.time     = parseAbcMeter(value)  ?? meta.time;   break;
-          case 'Q': meta.tempo    = parseAbcTempo(value)  ?? meta.tempo;  break;
-          case 'R': meta.genre    = meta.genre    ?? value; break;
-          case 'W': headerWLines.push(value); break;
-          case 'L': /* unit note length — not needed for chord display */ break;
+          case 'T':
+            meta.title = meta.title ?? value;
+            break;
+          case 'C':
+            meta.composer = meta.composer ?? value;
+            break;
+          case 'M':
+            meta.time = parseAbcMeter(value) ?? meta.time;
+            break;
+          case 'Q':
+            meta.tempo = parseAbcTempo(value) ?? meta.tempo;
+            break;
+          case 'R':
+            meta.genre = meta.genre ?? value;
+            break;
+          case 'W':
+            headerWLines.push(value);
+            break;
+          case 'L':
+            /* unit note length — not needed for chord display */ break;
           case 'K':
             meta.key = parseAbcKey(value);
-            pastKey  = true;
+            pastKey = true;
             break;
           // X:, Z:, S:, A:, N:, G:, H:, O:, F:, B: — informational, skip
         }
@@ -345,7 +358,7 @@ function parseTuneLines(tuneLines: string[]): { meta: TuneMeta; body: TuneBody }
   return {
     meta,
     body: {
-      bodyText:  bodyParts.join('\n'),
+      bodyText: bodyParts.join('\n'),
       allLyrics,
       partLabels,
     },
@@ -362,21 +375,23 @@ function parseTuneLines(tuneLines: string[]): { meta: TuneMeta; body: TuneBody }
  * bar count per part).  Otherwise, the tune is emitted as a single section.
  */
 function assembleSections(
-  barChords:   string[][],
-  allLyrics:   string[],
-  partLabels:  string[],
-  fallbackLabel?: string,
+  barChords: string[][],
+  allLyrics: string[],
+  partLabels: string[],
+  fallbackLabel?: string
 ): ChartSection[] {
   if (barChords.length === 0) return [];
 
   if (partLabels.length === 0) {
     const lines = buildLines(barChords, allLyrics);
     if (lines.length === 0) return [];
-    return [{
-      type:  'unknown',
-      label: fallbackLabel,
-      lines,
-    }];
+    return [
+      {
+        type: 'unknown',
+        label: fallbackLabel,
+        lines,
+      },
+    ];
   }
 
   // Split bars evenly across parts
@@ -385,28 +400,32 @@ function assembleSections(
 
   for (let i = 0; i < partLabels.length; i++) {
     const startBar = i * barsPerPart;
-    const endBar   = Math.min(startBar + barsPerPart, barChords.length);
+    const endBar = Math.min(startBar + barsPerPart, barChords.length);
     const sliceBars = barChords.slice(startBar, endBar);
 
-    const chordsInPart  = sliceBars.reduce((n, b) => n + b.length, 0);
+    const chordsInPart = sliceBars.reduce((n, b) => n + b.length, 0);
     const syllableStart = Math.round((i / partLabels.length) * allLyrics.length);
-    const partLyrics    = allLyrics.slice(syllableStart, syllableStart + chordsInPart);
+    const partLyrics = allLyrics.slice(syllableStart, syllableStart + chordsInPart);
 
     const lines = buildLines(sliceBars, partLyrics);
     if (lines.length === 0) continue;
 
     sections.push({
-      type:  sectionTypeFromLabel(partLabels[i]),
+      type: sectionTypeFromLabel(partLabels[i]),
       label: partLabels[i],
       lines,
     });
   }
 
-  return sections.length > 0 ? sections : [{
-    type:  'unknown',
-    label: fallbackLabel,
-    lines: buildLines(barChords, allLyrics),
-  }];
+  return sections.length > 0
+    ? sections
+    : [
+        {
+          type: 'unknown',
+          label: fallbackLabel,
+          lines: buildLines(barChords, allLyrics),
+        },
+      ];
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -424,9 +443,9 @@ export function parseAbcNotation(text: string): ChordChartDocument {
   const normalized = normalizeLineEndings(text);
 
   // ── Split into individual tunes on X: boundaries ──
-  const allLines   = normalized.split('\n');
+  const allLines = normalized.split('\n');
   const tuneBlocks: string[][] = [];
-  let currentBlock: string[]   = [];
+  let currentBlock: string[] = [];
 
   for (const line of allLines) {
     if (/^\s*X\s*:\s*\d/.test(line) && currentBlock.length > 0) {
@@ -452,22 +471,17 @@ export function parseAbcNotation(text: string): ChordChartDocument {
 
     // Apply document-level metadata from the first tune that has any
     if (!metadataApplied) {
-      if (meta.title)    doc.title    = meta.title;
-      if (meta.composer) doc.artist   = meta.composer;
-      if (meta.key)      doc.key      = meta.key;
-      if (meta.time)     doc.time     = meta.time;
-      if (meta.tempo)    doc.tempo    = meta.tempo;
-      if (meta.genre)    doc.genre    = meta.genre;
+      if (meta.title) doc.title = meta.title;
+      if (meta.composer) doc.artist = meta.composer;
+      if (meta.key) doc.key = meta.key;
+      if (meta.time) doc.time = meta.time;
+      if (meta.tempo) doc.tempo = meta.tempo;
+      if (meta.genre) doc.genre = meta.genre;
       if (meta.title || meta.composer) metadataApplied = true;
     }
 
     const barChords = extractBarChords(body.bodyText);
-    const sections  = assembleSections(
-      barChords,
-      body.allLyrics,
-      body.partLabels,
-      meta.title,
-    );
+    const sections = assembleSections(barChords, body.allLyrics, body.partLabels, meta.title);
 
     doc.sections.push(...sections);
   }
@@ -476,7 +490,7 @@ export function parseAbcNotation(text: string): ChordChartDocument {
   // Reuses the already-parsed body; no second parse needed.
   if (doc.sections.length === 0 && lastBody && lastBody.allLyrics.length > 0) {
     doc.sections.push({
-      type:  'unknown',
+      type: 'unknown',
       lines: [{ tokens: [{ kind: 'lyric', text: lastBody.allLyrics.join(' ') }] }],
     });
   }
