@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jsPDF } from 'jspdf';
-import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay';
+import {
+  type PdfPageSize,
+  PRINT_ZOOM,
+  snapshotEngravingRules,
+  applyPrintProfile,
+  restoreEngravingRules,
+  getBaseFilename,
+  getRenderedSvgs,
+  triggerBlobDownload,
+  serializeSvg,
+  svgToCanvas,
+  canvasToBlob,
+} from './utils/osmdHelpers';
 import {
   convertMusicXmlToChordPro,
   extractMusicXmlTextFromFile,
@@ -31,6 +43,8 @@ import type { ImportQualityResult } from './ingest/importQuality';
 import UGProImporterPanel from './components/UGProImporterPanel';
 import OemerImageImporterPanel from './components/OemerImageImporterPanel';
 import SvgImporterPanel from './components/SvgImporterPanel';
+import { ImportErrorBoundary, SlashNotationBoundary } from './components/ErrorBoundary';
+import { useOsmdRenderer } from './hooks/useOsmdRenderer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,23 +56,7 @@ type AppMode =
   | 'oemer-image-importer'
   | 'svg-importer';
 
-type Diagnostics = {
-  isValidXml: boolean;
-  isMusicXml: boolean;
-  parseError?: string;
-  rootName: string;
-  version: string;
-  parts: number;
-  measures: number;
-  notes: number;
-  harmonies: number;
-  hasKey: boolean;
-  hasTime: boolean;
-  hasDivisions: boolean;
-};
-
-type PdfPageSize = 'letter' | 'a4';
-type PrintPageSize = PdfPageSize;
+// PdfPageSize, PrintPageSize, Diagnostics imported from ./utils/osmdHelpers
 
 type ExportFeedback = {
   type: 'success' | 'error';
@@ -118,289 +116,7 @@ const FILE_INPUT_ACCEPT = [
   'application/pdf',
 ].join(',');
 
-// ─── OSMD helpers ─────────────────────────────────────────────────────────────
-
-const IOS_USER_AGENT = /iPad|iPhone|iPod/;
-const PRINT_ZOOM = 1.0;
-
-type MutableEngravingRules = OpenSheetMusicDisplay['EngravingRules'] & {
-  PageWidth?: number;
-};
-
-type EngravingRulesSnapshot = Partial<{
-  PageWidth: number;
-  PageHeight: number;
-  PageTopMargin: number;
-  PageBottomMargin: number;
-  PageLeftMargin: number;
-  PageRightMargin: number;
-  SystemLeftMargin: number;
-  SystemRightMargin: number;
-}> & {
-  PageFormatWidth?: number;
-  PageFormatHeight?: number;
-};
-
-function getRuleValue(
-  rules: MutableEngravingRules,
-  key: keyof EngravingRulesSnapshot
-): number | undefined {
-  if (!(key in rules)) return undefined;
-  const value = (rules as unknown as Record<string, unknown>)[key];
-  return typeof value === 'number' ? value : undefined;
-}
-
-function setRuleValue(
-  rules: MutableEngravingRules,
-  key: keyof EngravingRulesSnapshot,
-  value: number
-): void {
-  if (!(key in rules)) return;
-  (rules as unknown as Record<string, unknown>)[key] = value;
-}
-
-function snapshotEngravingRules(osmd: OpenSheetMusicDisplay): EngravingRulesSnapshot {
-  const rules = osmd.EngravingRules as MutableEngravingRules;
-  const pageFormat =
-    'PageFormat' in rules
-      ? (rules.PageFormat as { width?: number; height?: number } | undefined)
-      : undefined;
-
-  return {
-    PageWidth: getRuleValue(rules, 'PageWidth'),
-    PageHeight: getRuleValue(rules, 'PageHeight'),
-    PageTopMargin: getRuleValue(rules, 'PageTopMargin'),
-    PageBottomMargin: getRuleValue(rules, 'PageBottomMargin'),
-    PageLeftMargin: getRuleValue(rules, 'PageLeftMargin'),
-    PageRightMargin: getRuleValue(rules, 'PageRightMargin'),
-    SystemLeftMargin: getRuleValue(rules, 'SystemLeftMargin'),
-    SystemRightMargin: getRuleValue(rules, 'SystemRightMargin'),
-    PageFormatWidth: typeof pageFormat?.width === 'number' ? pageFormat.width : undefined,
-    PageFormatHeight: typeof pageFormat?.height === 'number' ? pageFormat.height : undefined,
-  };
-}
-
-function applyPrintProfile(osmd: OpenSheetMusicDisplay, pageSize: PrintPageSize): void {
-  const rules = osmd.EngravingRules as MutableEngravingRules;
-  const formatId = pageSize === 'letter' ? 'Letter_P' : 'A4_P';
-  osmd.setPageFormat(formatId);
-
-  if (pageSize === 'letter') {
-    setRuleValue(rules, 'PageWidth', 8.5);
-    setRuleValue(rules, 'PageHeight', 11);
-    setRuleValue(rules, 'PageTopMargin', 0.5);
-    setRuleValue(rules, 'PageBottomMargin', 0.5);
-    setRuleValue(rules, 'PageLeftMargin', 0.5);
-    setRuleValue(rules, 'PageRightMargin', 0.5);
-  } else {
-    setRuleValue(rules, 'PageWidth', 210);
-    setRuleValue(rules, 'PageHeight', 297);
-    setRuleValue(rules, 'PageTopMargin', 12);
-    setRuleValue(rules, 'PageBottomMargin', 12);
-    setRuleValue(rules, 'PageLeftMargin', 12);
-    setRuleValue(rules, 'PageRightMargin', 12);
-  }
-}
-
-function restoreEngravingRules(
-  osmd: OpenSheetMusicDisplay,
-  snapshot: EngravingRulesSnapshot
-): void {
-  const rules = osmd.EngravingRules as MutableEngravingRules;
-
-  if (
-    typeof snapshot.PageFormatWidth === 'number' &&
-    typeof snapshot.PageFormatHeight === 'number'
-  ) {
-    osmd.setCustomPageFormat(snapshot.PageFormatWidth, snapshot.PageFormatHeight);
-  }
-
-  const ruleKeys: (keyof EngravingRulesSnapshot)[] = [
-    'PageWidth',
-    'PageHeight',
-    'PageTopMargin',
-    'PageBottomMargin',
-    'PageLeftMargin',
-    'PageRightMargin',
-    'SystemLeftMargin',
-    'SystemRightMargin',
-  ];
-
-  for (const key of ruleKeys) {
-    const value = snapshot[key];
-    if (typeof value === 'number') setRuleValue(rules, key, value);
-  }
-}
-
-// ─── General helpers ──────────────────────────────────────────────────────────
-
-function getBaseFilename(name: string): string {
-  const cleaned = name.trim();
-  if (!cleaned) return 'score';
-  const parts = cleaned.split('.');
-  if (parts.length === 1) return cleaned;
-  parts.pop();
-  return parts.join('.') || 'score';
-}
-
-function getRenderedSvgs(container: HTMLDivElement | null): SVGSVGElement[] {
-  if (!container) return [];
-  return Array.from(container.querySelectorAll('svg'));
-}
-
-function isIOSBrowser(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  return IOS_USER_AGENT.test(navigator.userAgent);
-}
-
-function triggerBlobDownload(blob: Blob, filename: string, iOSFallbackToTab = false): void {
-  const url = URL.createObjectURL(blob);
-  if (iOSFallbackToTab && isIOSBrowser()) {
-    const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      URL.revokeObjectURL(url);
-      throw new Error('Popup blocked. Please allow popups and try export again.');
-    }
-    // iOS needs the URL to stay alive while the user interacts with the new tab;
-    // 10 s is sufficient for the browser to start loading the blob.
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    return;
-  }
-
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = 'noopener';
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  // Revoke after a short tick — the browser queues the download synchronously
-  // so the URL is no longer needed once the click event has been processed.
-  setTimeout(() => URL.revokeObjectURL(url), 100);
-}
-
-function serializeSvg(svg: SVGSVGElement): string {
-  return new XMLSerializer().serializeToString(svg);
-}
-
-async function svgToCanvas(svg: SVGSVGElement, scale: number): Promise<HTMLCanvasElement> {
-  const serialized = serializeSvg(svg);
-  const svgBlob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
-  const svgUrl = URL.createObjectURL(svgBlob);
-
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('Failed to decode rendered SVG image.'));
-      img.src = svgUrl;
-    });
-
-    const svgWidth = svg.viewBox.baseVal?.width || svg.clientWidth || image.naturalWidth;
-    const svgHeight = svg.viewBox.baseVal?.height || svg.clientHeight || image.naturalHeight;
-
-    if (svgWidth <= 0 || svgHeight <= 0) throw new Error('Rendered score has invalid dimensions.');
-
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(svgWidth * scale));
-    canvas.height = Math.max(1, Math.round(svgHeight * scale));
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas context is unavailable in this browser.');
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-    return canvas;
-  } finally {
-    URL.revokeObjectURL(svgUrl);
-  }
-}
-
-async function canvasToBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error(`Failed to create ${type} blob.`));
-        return;
-      }
-      resolve(blob);
-    }, type);
-  });
-}
-
-function parseXmlWithDiagnostics(xmlText: string): { doc: Document; diagnostics: Diagnostics } {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, 'application/xml');
-
-  const parserErrorNode =
-    doc.querySelector('parsererror') ?? doc.getElementsByTagName('parsererror').item(0);
-
-  if (parserErrorNode) {
-    const errorText = parserErrorNode.textContent?.trim();
-    return {
-      doc,
-      diagnostics: {
-        isValidXml: false,
-        isMusicXml: false,
-        parseError: errorText ? errorText.slice(0, 300) : 'Invalid XML',
-        rootName: 'error',
-        version: 'n/a',
-        parts: 0,
-        measures: 0,
-        notes: 0,
-        harmonies: 0,
-        hasKey: false,
-        hasTime: false,
-        hasDivisions: false,
-      },
-    };
-  }
-
-  const root = doc.documentElement;
-  const rootName = root?.nodeName ?? 'unknown';
-  const isMusicXml = rootName === 'score-partwise' || rootName === 'score-timewise';
-
-  if (!isMusicXml) {
-    return {
-      doc,
-      diagnostics: {
-        isValidXml: true,
-        isMusicXml: false,
-        rootName,
-        version: 'n/a',
-        parts: 0,
-        measures: 0,
-        notes: 0,
-        harmonies: 0,
-        hasKey: false,
-        hasTime: false,
-        hasDivisions: false,
-      },
-    };
-  }
-
-  const queryCount = (selector: string) => doc.querySelectorAll(selector).length;
-
-  return {
-    doc,
-    diagnostics: {
-      isValidXml: true,
-      isMusicXml: true,
-      parseError: undefined,
-      rootName,
-      version: root?.getAttribute('version') ?? 'n/a',
-      parts: queryCount('part'),
-      measures: queryCount('measure'),
-      notes: queryCount('note'),
-      harmonies: queryCount('harmony'),
-      hasKey: doc.querySelector('attributes > key') !== null,
-      hasTime: doc.querySelector('attributes > time') !== null,
-      hasDivisions: doc.querySelector('attributes > divisions') !== null,
-    },
-  };
-}
+// OSMD helpers, general helpers, and parseXmlWithDiagnostics extracted to src/utils/osmdHelpers.ts
 
 function buildChordProOptionsFromUI(uiState: ChordProUiState) {
   const defaultOptions = getDefaultConvertOptions();
@@ -462,20 +178,22 @@ export default function App() {
   const [renderError, setRenderError] = useState('');
   const [exportFeedback, setExportFeedback] = useState<ExportFeedback | null>(null);
 
-  // ── Notation (OSMD) mode state ──
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
-  const didAutoFitRef = useRef(false);
-  const xmlLoadedRef = useRef('');
+  // ── Notation (OSMD) mode — delegated to useOsmdRenderer ──
+  const {
+    containerRef, osmdRef,
+    loadedXmlText, setLoadedXmlText,
+    isMxl, setIsMxl,
+    renderedPageCount,
+    diagnostics,
+    fitWidth, adjustZoom,
+    resetAutoFit, clearOsmd,
+  } = useOsmdRenderer({ setRenderError });
+
   // Tracks nested dragenter/dragleave events so child elements don't falsely
   // clear the `isDragging` visual state.
   const dragDepthRef = useRef(0);
-  const [loadedXmlText, setLoadedXmlText] = useState('');
-  const [isMxl, setIsMxl] = useState(false);
-  const [zoom, setZoom] = useState(1);
   const [pdfPageSize, setPdfPageSize] = useState<PdfPageSize>('letter');
   const [isDragging, setIsDragging] = useState(false);
-  const [renderedPageCount, setRenderedPageCount] = useState(0);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfFilename, setPdfFilename] = useState('score.pdf');
   const [chordProUi, setChordProUi] = useState<ChordProUiState>({
@@ -505,14 +223,7 @@ export default function App() {
   // ── SVG importer mode state ──
   const [svgFile, setSvgFile] = useState<File | null>(null);
 
-  // ── Derived: XML diagnostics ──
-  const parsedXml = useMemo(() => {
-    if (!loadedXmlText) return null;
-    return parseXmlWithDiagnostics(loadedXmlText);
-  }, [loadedXmlText]);
-
-  const diagnostics = parsedXml?.diagnostics ?? null;
-
+  // ── Derived: XML validation warnings ──
   const xmlWarnings = useMemo(() => {
     if (!diagnostics) return [] as string[];
     if (!diagnostics.isValidXml) return ['Invalid MusicXML/XML (parse error).'];
@@ -527,68 +238,6 @@ export default function App() {
     return list;
   }, [diagnostics]);
 
-  // ── OSMD initialisation ──
-  useEffect(() => {
-    if (!containerRef.current || osmdRef.current) return;
-    osmdRef.current = new OpenSheetMusicDisplay(containerRef.current, {
-      autoResize: true,
-      drawingParameters: 'default',
-    });
-    return () => {
-      osmdRef.current = null;
-    };
-  }, []);
-
-  // ── Notation controls ──
-  const fitWidth = useCallback(() => {
-    const container = containerRef.current;
-    const osmd = osmdRef.current;
-    if (!container || !osmd) return;
-    const firstPage = container.querySelector('.osmd-page') as HTMLElement | null;
-    const containerWidth = container.clientWidth;
-    if (firstPage && firstPage.offsetWidth > 0) {
-      const ratio = containerWidth / firstPage.offsetWidth;
-      const target = osmd.Zoom * ratio;
-      setZoom(Math.max(0.4, Math.min(2.5, Number(target.toFixed(2)))));
-      return;
-    }
-    setZoom(containerWidth < 600 ? 0.6 : containerWidth < 900 ? 0.8 : 1.0);
-  }, []);
-
-  // ── OSMD render on XML / zoom change ──
-  useEffect(() => {
-    const render = async () => {
-      const osmd = osmdRef.current;
-      if (!osmd || !loadedXmlText) return;
-      if (!diagnostics?.isValidXml || !diagnostics.isMusicXml) {
-        if (containerRef.current) containerRef.current.innerHTML = '';
-        xmlLoadedRef.current = '';
-        setRenderedPageCount(0);
-        return;
-      }
-      try {
-        setRenderError('');
-        if (xmlLoadedRef.current !== loadedXmlText) {
-          await osmd.load(loadedXmlText);
-          xmlLoadedRef.current = loadedXmlText;
-        }
-        osmd.Zoom = zoom;
-        osmd.render();
-        setRenderedPageCount(getRenderedSvgs(containerRef.current).length);
-        if (!didAutoFitRef.current) {
-          didAutoFitRef.current = true;
-          requestAnimationFrame(fitWidth);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setRenderError(message);
-        xmlLoadedRef.current = '';
-        setRenderedPageCount(0);
-      }
-    };
-    void render();
-  }, [loadedXmlText, zoom, diagnostics, fitWidth]);
-
   // ── PDF blob cleanup ──
   useEffect(() => {
     return () => {
@@ -602,18 +251,13 @@ export default function App() {
     setLoadedFilename('');
     setRenderError('');
     setExportFeedback(null);
-    // Notation
-    setLoadedXmlText('');
-    setIsMxl(false);
-    setZoom(1);
-    setRenderedPageCount(0);
+    // Notation — delegated to hook
+    clearOsmd();
     setPdfBlobUrl(null);
     setPdfFilename('score.pdf');
     setChordProText('');
     setChordProWarnings([]);
     setChordProDiagnostics(null);
-    xmlLoadedRef.current = '';
-    if (containerRef.current) containerRef.current.innerHTML = '';
     // Chart
     setChartDocument(null);
     setTransposeSteps(0);
@@ -625,7 +269,7 @@ export default function App() {
     setUgProFile(null);
     // SVG importer
     setSvgFile(null);
-  }, []);
+  }, [clearOsmd]);
 
   // ── UG Pro importer: CSMPN import callback ──
   const onImportCsmpn = useCallback((csmpnText: string) => {
@@ -679,8 +323,9 @@ export default function App() {
 
       if (isMusicXmlFormat(detected)) {
         // ── Notation path ──
-        const { filename, xmlText, isMxl: loadedFromMxl } = await extractMusicXmlTextFromFile(file);
-        didAutoFitRef.current = false;
+        const { filename, xmlText, isMxl: loadedFromMxl } =
+          await extractMusicXmlTextFromFile(file);
+        resetAutoFit();
         setLoadedFilename(filename);
         setLoadedXmlText(xmlText);
         setIsMxl(loadedFromMxl);
@@ -727,18 +372,14 @@ export default function App() {
         setDetectedFormatLabel(formatLabels[sourceFormat] ?? sourceFormat);
         setRenderError('');
         setExportFeedback(null);
-        // Clear notation state
-        setLoadedXmlText('');
-        setIsMxl(false);
-        setRenderedPageCount(0);
+        // Clear notation state (OSMD) and shared export state
+        clearOsmd();
         setPdfBlobUrl(null);
         setChordProText('');
         setChordProWarnings([]);
         setChordProDiagnostics(null);
         setImportQuality(null);
         setImportDiagnostics([]);
-        if (containerRef.current) containerRef.current.innerHTML = '';
-        xmlLoadedRef.current = '';
         setAppMode('chord-chart');
       } else if (isGuitarProFormat(detected)) {
         // ── Guitar Pro path (.gp / .gp3 / .gp4 / .gp5 / .gpx) ──
@@ -762,16 +403,12 @@ export default function App() {
         setDetectedFormatLabel('Guitar Pro');
         setRenderError('');
         setExportFeedback(null);
-        // Clear notation state
-        setLoadedXmlText('');
-        setIsMxl(false);
-        setRenderedPageCount(0);
+        // Clear notation state (OSMD) and shared export state
+        clearOsmd();
         setPdfBlobUrl(null);
         setChordProText('');
         setChordProWarnings([]);
         setChordProDiagnostics(null);
-        if (containerRef.current) containerRef.current.innerHTML = '';
-        xmlLoadedRef.current = '';
         setAppMode('chord-chart');
       } else if (isSvgFormat(detected)) {
         // ── SVG path: route to SVG importer panel ──
@@ -781,9 +418,7 @@ export default function App() {
         setExportFeedback(null);
         // Clear all other mode state
         setChartDocument(null);
-        setLoadedXmlText('');
-        setIsMxl(false);
-        setRenderedPageCount(0);
+        clearOsmd();
         setPdfBlobUrl(null);
         setChordProText('');
         setChordProWarnings([]);
@@ -791,8 +426,6 @@ export default function App() {
         setImportQuality(null);
         setImportDiagnostics([]);
         setUgProFile(null);
-        if (containerRef.current) containerRef.current.innerHTML = '';
-        xmlLoadedRef.current = '';
         setAppMode('svg-importer');
       } else if (isPdfFormat(detected)) {
         // ── PDF path: route to UG Pro PDF importer ──
@@ -802,15 +435,11 @@ export default function App() {
         setExportFeedback(null);
         // Clear other mode state
         setChartDocument(null);
-        setLoadedXmlText('');
-        setIsMxl(false);
-        setRenderedPageCount(0);
+        clearOsmd();
         setPdfBlobUrl(null);
         setChordProText('');
         setChordProWarnings([]);
         setChordProDiagnostics(null);
-        if (containerRef.current) containerRef.current.innerHTML = '';
-        xmlLoadedRef.current = '';
         setAppMode('ug-pro-importer');
       } else if (isGuitarProFormat(detected)) {
         // ── Guitar Pro / PowerTab path ──
@@ -834,16 +463,12 @@ export default function App() {
         setDetectedFormatLabel(gpLabel[gpExt] ?? 'Guitar Pro');
         setRenderError('');
         setExportFeedback(null);
-        // Clear notation state
-        setLoadedXmlText('');
-        setIsMxl(false);
-        setRenderedPageCount(0);
+        // Clear notation state (OSMD) and shared export state
+        clearOsmd();
         setPdfBlobUrl(null);
         setChordProText('');
         setChordProWarnings([]);
         setChordProDiagnostics(null);
-        if (containerRef.current) containerRef.current.innerHTML = '';
-        xmlLoadedRef.current = '';
         setAppMode('chord-chart');
       } else {
         setRenderError(
@@ -921,11 +546,6 @@ export default function App() {
     },
     [loadFile]
   );
-
-  // ── Notation controls ──
-  const adjustZoom = useCallback((delta: number) => {
-    setZoom((prev) => Math.max(0.4, Math.min(2.5, Number((prev + delta).toFixed(2)))));
-  }, []);
 
   // ── Feedback helpers ──
   const showExportError = useCallback(
@@ -1414,7 +1034,9 @@ export default function App() {
                 <span>Drop SVG to load</span>
               </div>
             )}
-            <SvgImporterPanel initialFile={svgFile} />
+            <ImportErrorBoundary label="SVG Importer" key={svgFile?.name}>
+              <SvgImporterPanel initialFile={svgFile} />
+            </ImportErrorBoundary>
           </section>
         ) : appMode === 'ug-pro-importer' ? (
           <section
@@ -1430,11 +1052,18 @@ export default function App() {
                 <span>Drop PDF to load</span>
               </div>
             )}
-            <UGProImporterPanel initialFile={ugProFile} onImportCsmpn={onImportCsmpn} />
+            <ImportErrorBoundary label="UG Pro Importer" key={ugProFile?.name}>
+              <UGProImporterPanel
+                initialFile={ugProFile}
+                onImportCsmpn={onImportCsmpn}
+              />
+            </ImportErrorBoundary>
           </section>
         ) : appMode === 'oemer-image-importer' ? (
           <section className="chord-chart-viewport" style={{ gridColumn: '1 / -1' }}>
-            <OemerImageImporterPanel onImportCsmpn={onImportOemerCsmpn} />
+            <ImportErrorBoundary label="OEMER Image Importer">
+              <OemerImageImporterPanel onImportCsmpn={onImportOemerCsmpn} />
+            </ImportErrorBoundary>
           </section>
         ) : appMode !== 'chord-chart' ? (
           <section
@@ -1471,13 +1100,15 @@ export default function App() {
                 <span>Drop to load</span>
               </div>
             )}
-            {chartDocument &&
-              (showSlashNotation ? (
-                <SlashNotationView
-                  document={chartDocument}
-                  transposeSteps={transposeSteps}
-                  measuresPerRow={slashMeasuresPerRow}
-                />
+            {chartDocument && (
+              showSlashNotation ? (
+                <SlashNotationBoundary key={(chartDocument.title ?? '') + chartDocument.sections.length}>
+                  <SlashNotationView
+                    document={chartDocument}
+                    transposeSteps={transposeSteps}
+                    measuresPerRow={slashMeasuresPerRow}
+                  />
+                </SlashNotationBoundary>
               ) : (
                 <ChordChart document={chartDocument} transposeSteps={transposeSteps} />
               ))}
