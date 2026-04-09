@@ -70,7 +70,7 @@ infrastructure should optimize around this, not canvas-based rasterization.
 | 1.5 | tsconfig.test.json for test files | ✅ DONE |
 | +   | engines field in package.json (node >=22) | ✅ DONE |
 
-### SPRINT 2 — Mobile & Performance (CURRENT)
+### ✅ SPRINT 2 — Mobile & Performance (COMPLETE)
 | Item | Task | Status |
 |------|------|--------|
 | 1.2 | ESLint + Prettier (carried) | ✅ DONE — 0 errors, 2 warnings (exhaustive-deps in App.tsx) |
@@ -78,9 +78,9 @@ infrastructure should optimize around this, not canvas-based rasterization.
 | 4.5 | Lazy-load CDN libs (abcjs ~180 KB, VexFlow) | ✅ DONE — html2canvas, jsPDF, abcjs, JSZip, VexFlow all `defer` |
 | 4.1 | Responsive breakpoints (ug-pro-importer.html, validate.html) | ✅ DONE — @media 767px stack + 1024px narrow panels |
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE — break-after/inside rules + SVG width fix in popup |
-| 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ⬜ TODO |
+| 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE — data URL replaces blob URL; fixes canvas taint on iOS Safari |
 
-### SPRINT 3 — index.html Decomposition (Part 1)
+### SPRINT 3 — index.html Decomposition (Part 1) (CURRENT)
 | Item | Task | Status |
 |------|------|--------|
 | 2.1A | Extract utils.js (debounce, escapeHtml, SongModel, etc.) | ⬜ TODO |

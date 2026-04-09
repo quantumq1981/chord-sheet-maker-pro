@@ -16,14 +16,14 @@
 | 1.4 | Source maps in `vite.config.ts` | ✅ DONE |
 | 1.5 | `tsconfig.test.json` covering `src/` + `tests/` | ✅ DONE |
 
-## Active Sprint: Sprint 2 — Mobile & Performance
+## Sprint 2 — Mobile & Performance ✅ COMPLETE
 | # | Task | Status |
 |---|------|--------|
 | 4.4 | Font loading fix (`preconnect` + `swap`) | ✅ DONE |
 | 4.5 | Lazy-load CDN libs (abcjs, VexFlow) | ✅ DONE |
 | 4.1 | Responsive breakpoints (`ug-pro-importer.html`, `validate.html`) | ✅ DONE |
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
-| 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ⬜ TODO |
+| 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
 ## Current State (2026-04-09)
 - **30 tests passing** (`npm run test:all`) — 4 VexFlow + 26 parser/format fixture tests
@@ -48,9 +48,19 @@
 | `tests/` | Node.js native test runner + tsx loader for TypeScript tests |
 | `OPP_ROADMAP.md` | Full 7-phase optimization roadmap with sprint tracker — update it as work completes |
 
+## Active Sprint: Sprint 3 — index.html Decomposition (Part 1)
+| # | Task | Status |
+|---|------|--------|
+| 2.1A | Extract utils.js (debounce, escapeHtml, SongModel, etc.) | ⬜ TODO |
+| 2.1B | Extract chordProcessing.js (~800 lines) | ⬜ TODO |
+| 5.1 | Add error-path + edge-case tests for parsers | ⬜ TODO |
+| — | Fix 2 react-hooks/exhaustive-deps warnings in App.tsx | ⬜ TODO |
+
 ## Next Immediate Actions (pick up where left off)
 ```
-1. iOS Safari SVG export fix (4.3)  → replace html2canvas for slash notation PNG export in index.html
+1. Fix exhaustive-deps warnings (App.tsx) → fitWidth + MAX_FILE_SIZE_BYTES deps
+2. Extract utils.js (2.1A)             → debounce, escapeHtml, SongModel out of index.html
+3. Extract chordProcessing.js (2.1B)   → ~800 lines of chord logic out of index.html
 ```
 
 ---
