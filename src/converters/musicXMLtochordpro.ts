@@ -1,40 +1,22 @@
-import JSZip from "jszip";
+import JSZip from 'jszip';
 
-export type PageSize = "letter" | "a4";
+export type PageSize = 'letter' | 'a4';
 
-export type ChordProFormatMode =
-  | "lyrics-inline"
-  | "grid-only"
-  | "auto";
+export type ChordProFormatMode = 'lyrics-inline' | 'grid-only' | 'auto';
 
-export type RepeatStrategy =
-  | "none"
-  | "simple-unroll"
-  | "full-unroll";
+export type RepeatStrategy = 'none' | 'simple-unroll' | 'full-unroll';
 
-export type ChordBracketStyle =
-  | "separate"
-  | "combined";
+export type ChordBracketStyle = 'separate' | 'combined';
 
-export type BarlineStyle =
-  | "pipes"
-  | "none";
+export type BarlineStyle = 'pipes' | 'none';
 
-export type MeasureWrapPolicy =
-  | "bars-per-line"
-  | "no-wrap";
+export type MeasureWrapPolicy = 'bars-per-line' | 'no-wrap';
 
-export type KeySignaturePolicy =
-  | "emit-if-known"
-  | "omit";
+export type KeySignaturePolicy = 'emit-if-known' | 'omit';
 
-export type TimeSignaturePolicy =
-  | "emit-if-known"
-  | "omit";
+export type TimeSignaturePolicy = 'emit-if-known' | 'omit';
 
-export type MetadataPolicy =
-  | "emit"
-  | "omit";
+export type MetadataPolicy = 'emit' | 'omit';
 
 export interface ConvertOptions {
   barsPerLine: number;
@@ -81,7 +63,7 @@ export interface ConverterDiagnostics {
   repeatMarkersFound: number;
   endingsFound: number;
   barsPerLine: number;
-  formatModeResolved: "lyrics-inline" | "grid-only";
+  formatModeResolved: 'lyrics-inline' | 'grid-only';
   /** Number of mid-song key signature changes detected (0 if none). */
   keyChanges: number;
   /** Number of mid-song time signature changes detected (0 if none). */
@@ -103,7 +85,7 @@ export interface LyricEvent {
   measureIndex: number;
   offsetDivisions: number;
   text: string;
-  syllabic?: "single" | "begin" | "middle" | "end";
+  syllabic?: 'single' | 'begin' | 'middle' | 'end';
   extend?: boolean;
 }
 
@@ -136,62 +118,62 @@ interface ParsedMetadata {
 
 const KIND_SUFFIX_MAP: Record<string, string> = {
   // Triads
-  major: "",
-  minor: "m",
-  diminished: "dim",
-  augmented: "aug",
+  major: '',
+  minor: 'm',
+  diminished: 'dim',
+  augmented: 'aug',
   // Suspended
-  "suspended-second": "sus2",
-  "suspended-fourth": "sus4",
+  'suspended-second': 'sus2',
+  'suspended-fourth': 'sus4',
   // Sixths
-  "major-sixth": "6",
-  "minor-sixth": "m6",
+  'major-sixth': '6',
+  'minor-sixth': 'm6',
   // Seventh family
-  dominant: "7",
-  "major-seventh": "maj7",
-  "augmented-major-seventh": "augmaj7",
-  "minor-seventh": "m7",
-  "diminished-seventh": "dim7",
-  "augmented-seventh": "aug7",
-  "half-diminished": "m7b5",
-  "major-minor": "mmaj7",
+  dominant: '7',
+  'major-seventh': 'maj7',
+  'augmented-major-seventh': 'augmaj7',
+  'minor-seventh': 'm7',
+  'diminished-seventh': 'dim7',
+  'augmented-seventh': 'aug7',
+  'half-diminished': 'm7b5',
+  'major-minor': 'mmaj7',
   // Ninths
-  "dominant-ninth": "9",
-  "major-ninth": "maj9",
-  "minor-ninth": "m9",
+  'dominant-ninth': '9',
+  'major-ninth': 'maj9',
+  'minor-ninth': 'm9',
   // Elevenths
-  "dominant-11th": "11",
-  "major-11th": "maj11",
-  "minor-11th": "m11",
+  'dominant-11th': '11',
+  'major-11th': 'maj11',
+  'minor-11th': 'm11',
   // Thirteenths
-  "dominant-13th": "13",
-  "major-13th": "maj13",
-  "minor-13th": "m13",
+  'dominant-13th': '13',
+  'major-13th': 'maj13',
+  'minor-13th': 'm13',
   // Power / pedal
-  power: "5",
-  pedal: "ped",
+  power: '5',
+  pedal: 'ped',
   // No quality (root only)
-  none: "",
+  none: '',
   // Classical augmented-sixth chords (some notation apps emit these)
-  Neapolitan: "N6",
-  Italian: "It+6",
-  French: "Fr+6",
-  German: "Gr+6",
-  Tristan: "Tr",
+  Neapolitan: 'N6',
+  Italian: 'It+6',
+  French: 'Fr+6',
+  German: 'Gr+6',
+  Tristan: 'Tr',
 };
 
 export function getDefaultConvertOptions(): ConvertOptions {
   return {
     barsPerLine: 4,
-    barlineStyle: "pipes",
-    wrapPolicy: "bars-per-line",
-    chordBracketStyle: "separate",
-    formatMode: "auto",
-    repeatStrategy: "none",
+    barlineStyle: 'pipes',
+    wrapPolicy: 'bars-per-line',
+    chordBracketStyle: 'separate',
+    formatMode: 'auto',
+    repeatStrategy: 'none',
     annotateUnexpandedRepeats: true,
-    metadataPolicy: "emit",
-    keyPolicy: "emit-if-known",
-    timePolicy: "emit-if-known",
+    metadataPolicy: 'emit',
+    keyPolicy: 'emit-if-known',
+    timePolicy: 'emit-if-known',
     normalizeWhitespace: true,
   };
 }
@@ -202,29 +184,29 @@ export async function extractMusicXmlTextFromFile(file: File): Promise<{
   isMxl: boolean;
 }> {
   const filename = file.name;
-  const isMxl = filename.toLowerCase().endsWith(".mxl");
+  const isMxl = filename.toLowerCase().endsWith('.mxl');
 
   if (!isMxl) {
     return { filename, xmlText: await file.text(), isMxl: false };
   }
 
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
-  const containerEntry = zip.file("META-INF/container.xml");
+  const containerEntry = zip.file('META-INF/container.xml');
   if (!containerEntry) {
-    throw new Error("Invalid MXL: META-INF/container.xml was not found.");
+    throw new Error('Invalid MXL: META-INF/container.xml was not found.');
   }
 
-  const containerText = await containerEntry.async("text");
-  const containerDoc = new DOMParser().parseFromString(containerText, "application/xml");
-  const parserError = containerDoc.querySelector("parsererror");
+  const containerText = await containerEntry.async('text');
+  const containerDoc = new DOMParser().parseFromString(containerText, 'application/xml');
+  const parserError = containerDoc.querySelector('parsererror');
   if (parserError) {
-    throw new Error("Invalid MXL: container.xml could not be parsed.");
+    throw new Error('Invalid MXL: container.xml could not be parsed.');
   }
 
-  const rootfile = containerDoc.querySelector("rootfile");
-  const rootPath = rootfile?.getAttribute("full-path")?.trim();
+  const rootfile = containerDoc.querySelector('rootfile');
+  const rootPath = rootfile?.getAttribute('full-path')?.trim();
   if (!rootPath) {
-    throw new Error("Invalid MXL: rootfile full-path not found in container.xml.");
+    throw new Error('Invalid MXL: rootfile full-path not found in container.xml.');
   }
 
   const scoreEntry = zip.file(rootPath);
@@ -234,7 +216,7 @@ export async function extractMusicXmlTextFromFile(file: File): Promise<{
 
   return {
     filename,
-    xmlText: await scoreEntry.async("text"),
+    xmlText: await scoreEntry.async('text'),
     isMxl: true,
   };
 }
@@ -246,14 +228,14 @@ export function convertMusicXmlToChordPro(
   const mergedOptions = { ...getDefaultConvertOptions(), ...(options ?? {}) };
   const warnings: string[] = [];
 
-  const xmlDoc = new DOMParser().parseFromString(input.xmlText, "application/xml");
-  const parseIssue = xmlDoc.querySelector("parsererror");
+  const xmlDoc = new DOMParser().parseFromString(input.xmlText, 'application/xml');
+  const parseIssue = xmlDoc.querySelector('parsererror');
 
   const diagnostics: ConverterDiagnostics = {
     filename: input.filename,
     timestampIso: new Date().toISOString(),
-    isMxl: Boolean(input.filename?.toLowerCase().endsWith(".mxl")),
-    partsCount: xmlDoc.querySelectorAll("score-partwise > part").length,
+    isMxl: Boolean(input.filename?.toLowerCase().endsWith('.mxl')),
+    partsCount: xmlDoc.querySelectorAll('score-partwise > part').length,
     measuresCount: 0,
     versesDetected: [],
     hasAnyLyrics: false,
@@ -261,7 +243,7 @@ export function convertMusicXmlToChordPro(
     repeatMarkersFound: 0,
     endingsFound: 0,
     barsPerLine: mergedOptions.barsPerLine,
-    formatModeResolved: "grid-only",
+    formatModeResolved: 'grid-only',
     keyChanges: 0,
     timeChanges: 0,
     hasPickupBar: false,
@@ -270,9 +252,9 @@ export function convertMusicXmlToChordPro(
 
   if (parseIssue) {
     return {
-      chordPro: "{title: Untitled}\n% Failed to parse MusicXML.",
+      chordPro: '{title: Untitled}\n% Failed to parse MusicXML.',
       warnings,
-      error: "MusicXML parser error",
+      error: 'MusicXML parser error',
       diagnostics,
     };
   }
@@ -299,16 +281,18 @@ export function convertMusicXmlToChordPro(
 
     if (attrChanges.keyChanges > 0) {
       warnings.push(
-        `Mid-song key change detected (${attrChanges.keyChanges} change${attrChanges.keyChanges > 1 ? "s" : ""}); only the opening key is reflected in the output.`
+        `Mid-song key change detected (${attrChanges.keyChanges} change${attrChanges.keyChanges > 1 ? 's' : ''}); only the opening key is reflected in the output.`
       );
     }
     if (attrChanges.timeChanges > 0) {
       warnings.push(
-        `Mid-song time signature change detected (${attrChanges.timeChanges} change${attrChanges.timeChanges > 1 ? "s" : ""}); grid quantization uses the opening time signature.`
+        `Mid-song time signature change detected (${attrChanges.timeChanges} change${attrChanges.timeChanges > 1 ? 's' : ''}); grid quantization uses the opening time signature.`
       );
     }
     if (diagnostics.hasPickupBar) {
-      warnings.push("First measure appears to be a pickup/anacrusis bar (shorter than subsequent measures).");
+      warnings.push(
+        'First measure appears to be a pickup/anacrusis bar (shorter than subsequent measures).'
+      );
     }
 
     const verseSet = new Set<string>();
@@ -335,29 +319,36 @@ export function convertMusicXmlToChordPro(
       }
     }
 
-    diagnostics.versesDetected = [...verseSet].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    diagnostics.versesDetected = [...verseSet].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    );
     diagnostics.hasAnyLyrics = hasAnyLyrics;
     diagnostics.hasAnyHarmony = hasAnyHarmony;
     diagnostics.repeatMarkersFound = repeatMarkersFound;
     diagnostics.endingsFound = endingsFound;
 
     const measureOrder = resolveMeasureOrder(measures, mergedOptions, warnings, diagnostics);
-    const orderedMeasures = measureOrder.map((i) => measures[i]).filter((m): m is MeasureData => Boolean(m));
+    const orderedMeasures = measureOrder
+      .map((i) => measures[i])
+      .filter((m): m is MeasureData => Boolean(m));
 
-    const formatModeResolved = mergedOptions.formatMode === "auto"
-      ? (hasAnyLyrics ? "lyrics-inline" : "grid-only")
-      : mergedOptions.formatMode;
+    const formatModeResolved =
+      mergedOptions.formatMode === 'auto'
+        ? hasAnyLyrics
+          ? 'lyrics-inline'
+          : 'grid-only'
+        : mergedOptions.formatMode;
     diagnostics.formatModeResolved = formatModeResolved;
 
     if (!hasAnyHarmony) {
-      warnings.push("no harmony found");
+      warnings.push('no harmony found');
     }
-    if (!hasAnyLyrics && formatModeResolved !== "grid-only") {
-      warnings.push("no lyrics found");
+    if (!hasAnyLyrics && formatModeResolved !== 'grid-only') {
+      warnings.push('no lyrics found');
     }
 
     const lines: string[] = [];
-    if (mergedOptions.metadataPolicy === "emit") {
+    if (mergedOptions.metadataPolicy === 'emit') {
       if (metadata.title) {
         lines.push(`{title: ${metadata.title}}`);
       }
@@ -366,10 +357,10 @@ export function convertMusicXmlToChordPro(
       if (metadata.composer) {
         lines.push(`{artist: ${metadata.composer}}`);
       }
-      if (mergedOptions.keyPolicy === "emit-if-known" && metadata.key) {
+      if (mergedOptions.keyPolicy === 'emit-if-known' && metadata.key) {
         lines.push(`{key: ${metadata.key}}`);
       }
-      if (mergedOptions.timePolicy === "emit-if-known" && metadata.time) {
+      if (mergedOptions.timePolicy === 'emit-if-known' && metadata.time) {
         lines.push(`{time: ${metadata.time}}`);
       }
       if (metadata.tempo) {
@@ -387,8 +378,8 @@ export function convertMusicXmlToChordPro(
     }
     diagnostics.sectionsDetected = [...sectionLabelSet].sort();
 
-    if (formatModeResolved === "lyrics-inline") {
-      const verseKeys = diagnostics.versesDetected.length > 0 ? diagnostics.versesDetected : ["1"];
+    if (formatModeResolved === 'lyrics-inline') {
+      const verseKeys = diagnostics.versesDetected.length > 0 ? diagnostics.versesDetected : ['1'];
 
       for (let gi = 0; gi < measureGroups.length; gi++) {
         const group = measureGroups[gi];
@@ -397,7 +388,7 @@ export function convertMusicXmlToChordPro(
           continue;
         }
         if (lines.length > 0) {
-          lines.push("");
+          lines.push('');
         }
         if (group.sectionLabel) {
           lines.push(`{comment: ${group.sectionLabel}}`);
@@ -412,7 +403,7 @@ export function convertMusicXmlToChordPro(
           continue;
         }
         if (lines.length > 0) {
-          lines.push("");
+          lines.push('');
         }
         if (group.sectionLabel) {
           lines.push(`{comment: ${group.sectionLabel}}`);
@@ -422,27 +413,27 @@ export function convertMusicXmlToChordPro(
     }
 
     if (
-      mergedOptions.repeatStrategy === "none" &&
+      mergedOptions.repeatStrategy === 'none' &&
       repeatMarkersFound > 0 &&
       mergedOptions.annotateUnexpandedRepeats
     ) {
-      warnings.push("repeats present but not expanded");
-      lines.push("% Repeats in the original score are not expanded.");
+      warnings.push('repeats present but not expanded');
+      lines.push('% Repeats in the original score are not expanded.');
     }
 
     if (lines.length === 0) {
-      lines.push("{title: Untitled}");
+      lines.push('{title: Untitled}');
     }
 
     return {
-      chordPro: lines.join("\n"),
+      chordPro: lines.join('\n'),
       warnings,
       diagnostics,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown conversion failure";
+    const message = error instanceof Error ? error.message : 'Unknown conversion failure';
     return {
-      chordPro: "{title: Untitled}\n% Failed to convert MusicXML.",
+      chordPro: '{title: Untitled}\n% Failed to convert MusicXML.',
       warnings,
       error: message,
       diagnostics,
@@ -451,26 +442,28 @@ export function convertMusicXmlToChordPro(
 }
 
 function parseMetadata(xmlDoc: Document): ParsedMetadata {
-  const title = textAt(xmlDoc, "work > work-title") ?? textAt(xmlDoc, "movement-title");
+  const title = textAt(xmlDoc, 'work > work-title') ?? textAt(xmlDoc, 'movement-title');
 
-  const composerNode = [...xmlDoc.querySelectorAll("identification > creator")]
-    .find((creator) => (creator.getAttribute("type") ?? "").toLowerCase() === "composer");
+  const composerNode = [...xmlDoc.querySelectorAll('identification > creator')].find(
+    (creator) => (creator.getAttribute('type') ?? '').toLowerCase() === 'composer'
+  );
   const composer = composerNode?.textContent?.trim() || undefined;
 
-  const firstAttributes = xmlDoc.querySelector("part > measure > attributes") ?? xmlDoc.querySelector("attributes");
-  const fifthsRaw = firstAttributes?.querySelector("key > fifths")?.textContent?.trim();
-  const modeRaw = firstAttributes?.querySelector("key > mode")?.textContent?.trim();
+  const firstAttributes =
+    xmlDoc.querySelector('part > measure > attributes') ?? xmlDoc.querySelector('attributes');
+  const fifthsRaw = firstAttributes?.querySelector('key > fifths')?.textContent?.trim();
+  const modeRaw = firstAttributes?.querySelector('key > mode')?.textContent?.trim();
 
   const key = buildKeySignature(fifthsRaw, modeRaw);
-  const beats = firstAttributes?.querySelector("time > beats")?.textContent?.trim();
-  const beatType = firstAttributes?.querySelector("time > beat-type")?.textContent?.trim();
+  const beats = firstAttributes?.querySelector('time > beats')?.textContent?.trim();
+  const beatType = firstAttributes?.querySelector('time > beat-type')?.textContent?.trim();
   const time = beats && beatType ? `${beats}/${beatType}` : undefined;
 
   // Tempo: look for the first <sound tempo="..."> in any <direction>
   let tempo: string | undefined;
-  const soundEls = xmlDoc.querySelectorAll("direction > sound[tempo], sound[tempo]");
+  const soundEls = xmlDoc.querySelectorAll('direction > sound[tempo], sound[tempo]');
   for (const el of soundEls) {
-    const raw = el.getAttribute("tempo");
+    const raw = el.getAttribute('tempo');
     if (raw) {
       const bpm = Math.round(Number(raw));
       if (Number.isFinite(bpm) && bpm > 0) {
@@ -490,13 +483,13 @@ function parseMetadata(xmlDoc: Document): ParsedMetadata {
 }
 
 function selectLyricPart(xmlDoc: Document): string | undefined {
-  const parts = [...xmlDoc.querySelectorAll("score-partwise > part")];
+  const parts = [...xmlDoc.querySelectorAll('score-partwise > part')];
   let bestId: string | undefined;
   let bestCount = -1;
 
   for (const part of parts) {
-    const id = part.getAttribute("id") || undefined;
-    const count = part.querySelectorAll("lyric > text").length;
+    const id = part.getAttribute('id') || undefined;
+    const count = part.querySelectorAll('lyric > text').length;
     if (count > bestCount) {
       bestCount = count;
       bestId = id;
@@ -508,19 +501,20 @@ function selectLyricPart(xmlDoc: Document): string | undefined {
 
 function buildMeasureData(
   xmlDoc: Document,
-  selectedLyricPartId: string | undefined,
+  selectedLyricPartId: string | undefined
 ): MeasureData[] {
-  const parts = [...xmlDoc.querySelectorAll("score-partwise > part")];
-  const lyricPart = parts.find((part) => part.getAttribute("id") === selectedLyricPartId) ?? parts[0];
-  const lyricMeasures = lyricPart ? [...lyricPart.querySelectorAll(":scope > measure")] : [];
+  const parts = [...xmlDoc.querySelectorAll('score-partwise > part')];
+  const lyricPart =
+    parts.find((part) => part.getAttribute('id') === selectedLyricPartId) ?? parts[0];
+  const lyricMeasures = lyricPart ? [...lyricPart.querySelectorAll(':scope > measure')] : [];
 
-  const allPartsMeasures = parts.map((part) => [...part.querySelectorAll(":scope > measure")]);
+  const allPartsMeasures = parts.map((part) => [...part.querySelectorAll(':scope > measure')]);
 
   let divisions = 1;
   const result: MeasureData[] = [];
 
   lyricMeasures.forEach((measureEl, measureIndex) => {
-    const divisionsText = measureEl.querySelector("attributes > divisions")?.textContent?.trim();
+    const divisionsText = measureEl.querySelector('attributes > divisions')?.textContent?.trim();
     if (divisionsText) {
       const parsed = Number.parseInt(divisionsText, 10);
       if (Number.isFinite(parsed) && parsed > 0) {
@@ -533,35 +527,35 @@ function buildMeasureData(
     const lyricsByVerse: Record<string, LyricEvent[]> = {};
 
     for (const child of [...measureEl.children]) {
-      if (child.tagName === "backup") {
-        const shift = parseIntText(child.querySelector("duration")?.textContent, 0);
+      if (child.tagName === 'backup') {
+        const shift = parseIntText(child.querySelector('duration')?.textContent, 0);
         cursor = Math.max(0, cursor - shift);
         continue;
       }
-      if (child.tagName === "forward") {
-        const shift = parseIntText(child.querySelector("duration")?.textContent, 0);
+      if (child.tagName === 'forward') {
+        const shift = parseIntText(child.querySelector('duration')?.textContent, 0);
         cursor += shift;
         durationDivisions = Math.max(durationDivisions, cursor);
         continue;
       }
-      if (child.tagName !== "note") {
+      if (child.tagName !== 'note') {
         continue;
       }
 
       const noteStart = cursor;
-      const duration = parseIntText(child.querySelector("duration")?.textContent, 0);
+      const duration = parseIntText(child.querySelector('duration')?.textContent, 0);
       cursor += duration;
       durationDivisions = Math.max(durationDivisions, cursor);
 
-      const lyricNodes = [...child.querySelectorAll(":scope > lyric")];
+      const lyricNodes = [...child.querySelectorAll(':scope > lyric')];
       for (const lyricEl of lyricNodes) {
-        const text = lyricEl.querySelector("text")?.textContent?.trim();
+        const text = lyricEl.querySelector('text')?.textContent?.trim();
         if (!text) {
           continue;
         }
 
-        const verse = lyricEl.getAttribute("number")?.trim() || "1";
-        const syllabicText = lyricEl.querySelector("syllabic")?.textContent?.trim();
+        const verse = lyricEl.getAttribute('number')?.trim() || '1';
+        const syllabicText = lyricEl.querySelector('syllabic')?.textContent?.trim();
         const syllabic = normalizeSyllabic(syllabicText);
         const event: LyricEvent = {
           verse,
@@ -569,7 +563,7 @@ function buildMeasureData(
           offsetDivisions: noteStart,
           text,
           syllabic,
-          extend: Boolean(lyricEl.querySelector("extend")),
+          extend: Boolean(lyricEl.querySelector('extend')),
         };
         (lyricsByVerse[verse] ??= []).push(event);
       }
@@ -581,10 +575,12 @@ function buildMeasureData(
 
     const harmonies = collectHarmoniesForMeasure(allPartsMeasures, measureIndex, divisions);
 
-    const repeatStart = [...measureEl.querySelectorAll("barline repeat")]
-      .some((repeat) => (repeat.getAttribute("direction") ?? "") === "forward");
-    const repeatEnd = [...measureEl.querySelectorAll("barline repeat")]
-      .some((repeat) => (repeat.getAttribute("direction") ?? "") === "backward");
+    const repeatStart = [...measureEl.querySelectorAll('barline repeat')].some(
+      (repeat) => (repeat.getAttribute('direction') ?? '') === 'forward'
+    );
+    const repeatEnd = [...measureEl.querySelectorAll('barline repeat')].some(
+      (repeat) => (repeat.getAttribute('direction') ?? '') === 'backward'
+    );
 
     const endings = parseEndings(measureEl);
     const sectionLabel = parseDirectionLabel(measureEl);
@@ -618,16 +614,16 @@ function renderLyricsInline(
     });
 
     if (verseKeys.length > 1) {
-      lines.push("{start_of_verse}");
+      lines.push('{start_of_verse}');
       lines.push(`{comment: Verse ${verse}}`);
     }
 
     lines.push(...emitWrappedBars(measureTexts, options));
 
     if (verseKeys.length > 1) {
-      lines.push("{end_of_verse}");
+      lines.push('{end_of_verse}');
       if (verseIdx < verseKeys.length - 1) {
-        lines.push("");
+        lines.push('');
       }
     }
   });
@@ -647,18 +643,21 @@ function renderGrid(
   const droppedChordNames: string[] = [];
 
   const measureTexts = measures.map((measure) => {
-    const slots = Array(slotsPerMeasure).fill(".");
+    const slots = Array(slotsPerMeasure).fill('.');
     const harmonies = [...measure.harmonies].sort((a, b) => a.offsetDivisions - b.offsetDivisions);
     if (harmonies.length > 1) {
       measuresWithMultipleChords += 1;
     }
 
     for (const harmony of harmonies) {
-      const slotIndexRaw = measure.durationDivisions > 0
-        ? Math.floor((harmony.offsetDivisions / Math.max(1, measure.durationDivisions)) * slotsPerMeasure)
-        : 0;
+      const slotIndexRaw =
+        measure.durationDivisions > 0
+          ? Math.floor(
+              (harmony.offsetDivisions / Math.max(1, measure.durationDivisions)) * slotsPerMeasure
+            )
+          : 0;
       const slotIndex = Math.max(0, Math.min(slotsPerMeasure - 1, slotIndexRaw));
-      if (slots[slotIndex] !== ".") {
+      if (slots[slotIndex] !== '.') {
         totalCollisions += 1;
         droppedChordNames.push(harmony.chordText);
         continue;
@@ -666,28 +665,25 @@ function renderGrid(
       slots[slotIndex] = `[${harmony.chordText}]`;
     }
 
-    return slots.join(" ");
+    return slots.join(' ');
   });
 
   if (measuresWithMultipleChords > 0) {
     warnings.push(
-      `Grid quantized to ${slotsPerMeasure} slots/measure; ${measuresWithMultipleChords} measure${measuresWithMultipleChords > 1 ? "s" : ""} contain multiple chord changes.`
+      `Grid quantized to ${slotsPerMeasure} slots/measure; ${measuresWithMultipleChords} measure${measuresWithMultipleChords > 1 ? 's' : ''} contain multiple chord changes.`
     );
   }
   if (totalCollisions > 0) {
-    const preview = droppedChordNames.length <= 6
-      ? droppedChordNames.join(", ")
-      : `${droppedChordNames.slice(0, 6).join(", ")} … (${droppedChordNames.length - 6} more)`;
+    const preview =
+      droppedChordNames.length <= 6
+        ? droppedChordNames.join(', ')
+        : `${droppedChordNames.slice(0, 6).join(', ')} … (${droppedChordNames.length - 6} more)`;
     warnings.push(
-      `${totalCollisions} chord${totalCollisions > 1 ? "s" : ""} dropped due to grid slot collisions (${preview}). Switch to lyrics-inline mode or increase grid resolution.`
+      `${totalCollisions} chord${totalCollisions > 1 ? 's' : ''} dropped due to grid slot collisions (${preview}). Switch to lyrics-inline mode or increase grid resolution.`
     );
   }
 
-  return [
-    "{start_of_grid}",
-    ...emitWrappedBars(measureTexts, options),
-    "{end_of_grid}",
-  ];
+  return ['{start_of_grid}', ...emitWrappedBars(measureTexts, options), '{end_of_grid}'];
 }
 
 function resolveGridSlotsPerMeasure(options: ConvertOptions, timeSignature?: string): number {
@@ -700,7 +696,7 @@ function resolveGridSlotsPerMeasure(options: ConvertOptions, timeSignature?: str
     return 4;
   }
 
-  const [beatsText] = timeSignature.split("/");
+  const [beatsText] = timeSignature.split('/');
   const beats = Number.parseInt(beatsText, 10);
   if (!Number.isFinite(beats) || beats <= 0) {
     return 4;
@@ -716,16 +712,16 @@ function emitWrappedBars(measureTexts: string[], options: ConvertOptions): strin
   }
 
   const barsPerLine = Math.max(1, Math.floor(options.barsPerLine || 4));
-  const usePipes = options.barlineStyle === "pipes";
-  const chunkSize = options.wrapPolicy === "no-wrap" ? measureTexts.length : barsPerLine;
+  const usePipes = options.barlineStyle === 'pipes';
+  const chunkSize = options.wrapPolicy === 'no-wrap' ? measureTexts.length : barsPerLine;
   const lines: string[] = [];
 
   for (let idx = 0; idx < measureTexts.length; idx += chunkSize) {
     const chunk = measureTexts.slice(idx, idx + chunkSize);
     if (usePipes) {
-      lines.push(`| ${chunk.join(" | ")} |`);
+      lines.push(`| ${chunk.join(' | ')} |`);
     } else {
-      lines.push(chunk.join("  "));
+      lines.push(chunk.join('  '));
     }
   }
 
@@ -739,11 +735,13 @@ function renderSingleMeasureLyrics(
 ): string {
   if (lyricEvents.length === 0) {
     const fallbackChord = measure.harmonies[0]?.chordText;
-    return fallbackChord ? `[${fallbackChord}]` : "";
+    return fallbackChord ? `[${fallbackChord}]` : '';
   }
 
   const sortedLyrics = [...lyricEvents].sort((a, b) => a.offsetDivisions - b.offsetDivisions);
-  const sortedHarmonies = [...measure.harmonies].sort((a, b) => a.offsetDivisions - b.offsetDivisions);
+  const sortedHarmonies = [...measure.harmonies].sort(
+    (a, b) => a.offsetDivisions - b.offsetDivisions
+  );
 
   const chordBucket = new Map<number, string[]>();
   let carryIndex = 0;
@@ -763,14 +761,15 @@ function renderSingleMeasureLyrics(
   const tokens: string[] = [];
   sortedLyrics.forEach((lyric, lyricIdx) => {
     const attached = chordBucket.get(lyricIdx) ?? [];
-    const prefix = attached.length === 0 ? "" : formatChordPrefix(attached, options.chordBracketStyle);
-    const suffix = lyric.syllabic === "begin" || lyric.syllabic === "middle" ? "-" : "";
+    const prefix =
+      attached.length === 0 ? '' : formatChordPrefix(attached, options.chordBracketStyle);
+    const suffix = lyric.syllabic === 'begin' || lyric.syllabic === 'middle' ? '-' : '';
     const token = `${prefix}${lyric.text}${suffix}`;
     tokens.push(token);
   });
 
-  const joined = tokens.join(" ");
-  return options.normalizeWhitespace ? joined.replace(/\s+/g, " ").trim() : joined;
+  const joined = tokens.join(' ');
+  return options.normalizeWhitespace ? joined.replace(/\s+/g, ' ').trim() : joined;
 }
 
 function collectHarmoniesForMeasure(
@@ -788,19 +787,18 @@ function collectHarmoniesForMeasure(
 
     let cursor = 0;
     for (const child of [...measure.children]) {
-      if (child.tagName === "backup") {
-        const shift = parseIntText(child.querySelector("duration")?.textContent, 0);
+      if (child.tagName === 'backup') {
+        const shift = parseIntText(child.querySelector('duration')?.textContent, 0);
         cursor = Math.max(0, cursor - shift);
-      } else if (child.tagName === "forward") {
-        const shift = parseIntText(child.querySelector("duration")?.textContent, 0);
+      } else if (child.tagName === 'forward') {
+        const shift = parseIntText(child.querySelector('duration')?.textContent, 0);
         cursor += shift;
-      } else if (child.tagName === "note") {
-        cursor += parseIntText(child.querySelector("duration")?.textContent, 0);
-      } else if (child.tagName === "harmony") {
-        const offsetRaw = child.querySelector(":scope > offset")?.textContent;
-        const offset = offsetRaw != null
-          ? Math.max(0, Math.round(parseFloat(offsetRaw) * divisions))
-          : cursor;
+      } else if (child.tagName === 'note') {
+        cursor += parseIntText(child.querySelector('duration')?.textContent, 0);
+      } else if (child.tagName === 'harmony') {
+        const offsetRaw = child.querySelector(':scope > offset')?.textContent;
+        const offset =
+          offsetRaw != null ? Math.max(0, Math.round(parseFloat(offsetRaw) * divisions)) : cursor;
         const chordText = harmonyToChordText(child);
         if (!chordText) {
           continue;
@@ -821,26 +819,33 @@ function collectHarmoniesForMeasure(
 }
 
 function harmonyToChordText(harmonyEl: Element): string {
-  const rootStep = harmonyEl.querySelector(":scope > root > root-step")?.textContent?.trim() ?? "";
+  const rootStep = harmonyEl.querySelector(':scope > root > root-step')?.textContent?.trim() ?? '';
   if (!rootStep) {
-    return "";
+    return '';
   }
-  const rootAlter = parseIntText(harmonyEl.querySelector(":scope > root > root-alter")?.textContent, 0);
+  const rootAlter = parseIntText(
+    harmonyEl.querySelector(':scope > root > root-alter')?.textContent,
+    0
+  );
   const root = `${rootStep}${accidentalFromAlter(rootAlter)}`;
 
-  const kindEl = harmonyEl.querySelector(":scope > kind");
-  const kindText = kindEl?.getAttribute("text")?.trim();
-  const kindValue = kindEl?.textContent?.trim() ?? "major";
-  const suffix = kindText && kindText.length > 0 ? kindText : (KIND_SUFFIX_MAP[kindValue] ?? kindValue);
+  const kindEl = harmonyEl.querySelector(':scope > kind');
+  const kindText = kindEl?.getAttribute('text')?.trim();
+  const kindValue = kindEl?.textContent?.trim() ?? 'major';
+  const suffix =
+    kindText && kindText.length > 0 ? kindText : (KIND_SUFFIX_MAP[kindValue] ?? kindValue);
 
   // Parse <degree> elements for added/altered chord tones (e.g. add9, b5, #11)
   const degreeStr = parseDegreeModifications(harmonyEl);
 
-  const bassStep = harmonyEl.querySelector(":scope > bass > bass-step")?.textContent?.trim();
-  const bassAlter = parseIntText(harmonyEl.querySelector(":scope > bass > bass-alter")?.textContent, 0);
-  const bass = bassStep ? `${bassStep}${accidentalFromAlter(bassAlter)}` : "";
+  const bassStep = harmonyEl.querySelector(':scope > bass > bass-step')?.textContent?.trim();
+  const bassAlter = parseIntText(
+    harmonyEl.querySelector(':scope > bass > bass-alter')?.textContent,
+    0
+  );
+  const bass = bassStep ? `${bassStep}${accidentalFromAlter(bassAlter)}` : '';
 
-  return `${root}${suffix}${degreeStr}${bass ? `/${bass}` : ""}`;
+  return `${root}${suffix}${degreeStr}${bass ? `/${bass}` : ''}`;
 }
 
 /**
@@ -853,32 +858,32 @@ function harmonyToChordText(harmonyEl: Element): string {
  *   subtract — removes a tone; not representable in plain text notation, skipped
  */
 function parseDegreeModifications(harmonyEl: Element): string {
-  const degrees = [...harmonyEl.querySelectorAll(":scope > degree")];
+  const degrees = [...harmonyEl.querySelectorAll(':scope > degree')];
   if (degrees.length === 0) {
-    return "";
+    return '';
   }
 
   const parts: string[] = [];
   for (const degree of degrees) {
-    const value = parseIntText(degree.querySelector("degree-value")?.textContent, 0);
-    const alter = parseIntText(degree.querySelector("degree-alter")?.textContent, 0);
-    const type = degree.querySelector("degree-type")?.textContent?.trim() ?? "add";
+    const value = parseIntText(degree.querySelector('degree-value')?.textContent, 0);
+    const alter = parseIntText(degree.querySelector('degree-alter')?.textContent, 0);
+    const type = degree.querySelector('degree-type')?.textContent?.trim() ?? 'add';
 
-    if (value <= 0 || type === "subtract") {
+    if (value <= 0 || type === 'subtract') {
       continue;
     }
 
-    const acc = alter > 0 ? "#".repeat(alter) : alter < 0 ? "b".repeat(-alter) : "";
+    const acc = alter > 0 ? '#'.repeat(alter) : alter < 0 ? 'b'.repeat(-alter) : '';
 
-    if (type === "add") {
+    if (type === 'add') {
       parts.push(`add${acc}${value}`);
-    } else if (type === "alter") {
+    } else if (type === 'alter') {
       // Altered extensions: b5, #11, b13, etc.
       parts.push(`${acc}${value}`);
     }
   }
 
-  return parts.join("");
+  return parts.join('');
 }
 
 function resolveMeasureOrder(
@@ -889,15 +894,15 @@ function resolveMeasureOrder(
 ): number[] {
   const baseOrder = measures.map((measure) => measure.measureIndex);
 
-  if (options.repeatStrategy === "none") {
+  if (options.repeatStrategy === 'none') {
     return baseOrder;
   }
 
-  if (options.repeatStrategy === "simple-unroll") {
+  if (options.repeatStrategy === 'simple-unroll') {
     // Legacy path: bail out when volta endings are present.
     if (diagnostics.endingsFound > 0) {
       warnings.push(
-        "Repeat endings (volta brackets) found but not supported by Simple Unroll — switch to Full Unroll for volta expansion."
+        'Repeat endings (volta brackets) found but not supported by Simple Unroll — switch to Full Unroll for volta expansion.'
       );
       return baseOrder;
     }
@@ -912,14 +917,10 @@ function resolveMeasureOrder(
     }
 
     const duplicatedRange = baseOrder.slice(startIdx, endIdx + 1);
-    return [
-      ...baseOrder.slice(0, endIdx + 1),
-      ...duplicatedRange,
-      ...baseOrder.slice(endIdx + 1),
-    ];
+    return [...baseOrder.slice(0, endIdx + 1), ...duplicatedRange, ...baseOrder.slice(endIdx + 1)];
   }
 
-  if (options.repeatStrategy === "full-unroll") {
+  if (options.repeatStrategy === 'full-unroll') {
     return fullUnrollWithVolta(measures, warnings);
   }
 
@@ -992,9 +993,7 @@ function fullUnrollWithVolta(measures: MeasureData[], warnings: string[]): numbe
     const sectionMeasures = measures.slice(repeatStartIdx, sectionEndIdx + 1);
 
     // Find where volta endings first appear within this section.
-    const firstEndingOffset = sectionMeasures.findIndex(
-      (m) => m.endings && m.endings.length > 0
-    );
+    const firstEndingOffset = sectionMeasures.findIndex((m) => m.endings && m.endings.length > 0);
 
     if (firstEndingOffset < 0) {
       // No endings — simple double (play the section twice).
@@ -1035,7 +1034,7 @@ function fullUnrollWithVolta(measures: MeasureData[], warnings: string[]): numbe
 
   if (expansionCount > 0) {
     warnings.push(
-      `${expansionCount} repeat section${expansionCount > 1 ? "s" : ""} fully expanded (volta-aware).`
+      `${expansionCount} repeat section${expansionCount > 1 ? 's' : ''} fully expanded (volta-aware).`
     );
   }
 
@@ -1047,17 +1046,17 @@ function fullUnrollWithVolta(measures: MeasureData[], warnings: string[]): numbe
  * times the key or time signature changes after its first appearance.
  */
 function detectAttributeChanges(xmlDoc: Document): { keyChanges: number; timeChanges: number } {
-  const allAttributes = [...xmlDoc.querySelectorAll("part > measure > attributes")];
+  const allAttributes = [...xmlDoc.querySelectorAll('part > measure > attributes')];
   let lastKey: string | undefined;
   let lastTime: string | undefined;
   let keyChanges = 0;
   let timeChanges = 0;
 
   for (const attrs of allAttributes) {
-    const fifthsText = attrs.querySelector("key > fifths")?.textContent?.trim();
-    const modeText = attrs.querySelector("key > mode")?.textContent?.trim();
-    const beatsText = attrs.querySelector("time > beats")?.textContent?.trim();
-    const beatTypeText = attrs.querySelector("time > beat-type")?.textContent?.trim();
+    const fifthsText = attrs.querySelector('key > fifths')?.textContent?.trim();
+    const modeText = attrs.querySelector('key > mode')?.textContent?.trim();
+    const beatsText = attrs.querySelector('time > beats')?.textContent?.trim();
+    const beatTypeText = attrs.querySelector('time > beat-type')?.textContent?.trim();
 
     if (fifthsText !== undefined) {
       const key = buildKeySignature(fifthsText, modeText) ?? fifthsText;
@@ -1106,7 +1105,7 @@ function detectPickupBar(measures: MeasureData[]): boolean {
  */
 function parseDirectionLabel(measureEl: Element): string | undefined {
   // Rehearsal marks take highest priority (e.g. <rehearsal>Chorus</rehearsal>)
-  const rehearsalEl = measureEl.querySelector("direction direction-type rehearsal");
+  const rehearsalEl = measureEl.querySelector('direction direction-type rehearsal');
   if (rehearsalEl) {
     const text = rehearsalEl.textContent?.trim();
     if (text && text.length > 0 && text.length <= 32) {
@@ -1115,7 +1114,7 @@ function parseDirectionLabel(measureEl: Element): string | undefined {
   }
 
   // Direction <words> that begin with a recognised section keyword
-  const wordEls = [...measureEl.querySelectorAll("direction direction-type words")];
+  const wordEls = [...measureEl.querySelectorAll('direction direction-type words')];
   for (const wordEl of wordEls) {
     const text = wordEl.textContent?.trim();
     if (!text || text.length > 40) {
@@ -1172,14 +1171,14 @@ function groupBySection(measures: MeasureData[]): MeasureGroup[] {
 
 function parseEndings(measureEl: Element): number[] {
   const endings = new Set<number>();
-  const endingNodes = [...measureEl.querySelectorAll("barline ending")];
+  const endingNodes = [...measureEl.querySelectorAll('barline ending')];
 
   for (const endingEl of endingNodes) {
-    const numberText = endingEl.getAttribute("number")?.trim();
+    const numberText = endingEl.getAttribute('number')?.trim();
     if (!numberText) {
       continue;
     }
-    const parts = numberText.split(",").map((token) => Number.parseInt(token.trim(), 10));
+    const parts = numberText.split(',').map((token) => Number.parseInt(token.trim(), 10));
     for (const value of parts) {
       if (Number.isFinite(value)) {
         endings.add(value);
@@ -1190,17 +1189,20 @@ function parseEndings(measureEl: Element): number[] {
   return [...endings].sort((a, b) => a - b);
 }
 
-function normalizeSyllabic(input: string | undefined): LyricEvent["syllabic"] | undefined {
+function normalizeSyllabic(input: string | undefined): LyricEvent['syllabic'] | undefined {
   if (!input) {
     return undefined;
   }
-  if (input === "single" || input === "begin" || input === "middle" || input === "end") {
+  if (input === 'single' || input === 'begin' || input === 'middle' || input === 'end') {
     return input;
   }
   return undefined;
 }
 
-function buildKeySignature(fifthsRaw: string | undefined, modeRaw: string | undefined): string | undefined {
+function buildKeySignature(
+  fifthsRaw: string | undefined,
+  modeRaw: string | undefined
+): string | undefined {
   if (fifthsRaw == null) {
     return undefined;
   }
@@ -1209,16 +1211,32 @@ function buildKeySignature(fifthsRaw: string | undefined, modeRaw: string | unde
     return undefined;
   }
 
-  const majorByFifths = ["Cb", "Gb", "Db", "Ab", "Eb", "Bb", "F", "C", "G", "D", "A", "E", "B", "F#", "C#"];
+  const majorByFifths = [
+    'Cb',
+    'Gb',
+    'Db',
+    'Ab',
+    'Eb',
+    'Bb',
+    'F',
+    'C',
+    'G',
+    'D',
+    'A',
+    'E',
+    'B',
+    'F#',
+    'C#',
+  ];
   const idx = fifths + 7;
   if (idx < 0 || idx >= majorByFifths.length) {
     return undefined;
   }
   const major = majorByFifths[idx];
-  const mode = (modeRaw ?? "major").toLowerCase();
+  const mode = (modeRaw ?? 'major').toLowerCase();
 
-  if (mode === "minor") {
-    const notes = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"];
+  if (mode === 'minor') {
+    const notes = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
     const majorSemitone = noteToSemitone(major);
     if (majorSemitone === undefined) {
       return `${major}m`;
@@ -1234,23 +1252,23 @@ function buildKeySignature(fifthsRaw: string | undefined, modeRaw: string | unde
 function noteToSemitone(note: string): number | undefined {
   const table: Record<string, number> = {
     C: 0,
-    "B#": 0,
-    "C#": 1,
+    'B#': 0,
+    'C#': 1,
     Db: 1,
     D: 2,
-    "D#": 3,
+    'D#': 3,
     Eb: 3,
     E: 4,
     Fb: 4,
-    "E#": 5,
+    'E#': 5,
     F: 5,
-    "F#": 6,
+    'F#': 6,
     Gb: 6,
     G: 7,
-    "G#": 8,
+    'G#': 8,
     Ab: 8,
     A: 9,
-    "A#": 10,
+    'A#': 10,
     Bb: 10,
     B: 11,
     Cb: 11,
@@ -1260,22 +1278,22 @@ function noteToSemitone(note: string): number | undefined {
 
 function formatChordPrefix(chords: string[], style: ChordBracketStyle): string {
   if (chords.length === 0) {
-    return "";
+    return '';
   }
-  if (style === "combined") {
-    return `[${chords.join(" ")}]`;
+  if (style === 'combined') {
+    return `[${chords.join(' ')}]`;
   }
-  return chords.map((chord) => `[${chord}]`).join("");
+  return chords.map((chord) => `[${chord}]`).join('');
 }
 
 function accidentalFromAlter(alter: number): string {
   if (alter > 0) {
-    return "#".repeat(alter);
+    return '#'.repeat(alter);
   }
   if (alter < 0) {
-    return "b".repeat(Math.abs(alter));
+    return 'b'.repeat(Math.abs(alter));
   }
-  return "";
+  return '';
 }
 
 function parseIntText(text: string | null | undefined, fallback: number): number {

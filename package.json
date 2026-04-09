@@ -10,6 +10,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "lint": "eslint src tests",
+    "lint:fix": "eslint src tests --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,mts,mjs}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,mts,mjs}\"",
     "test": "node --test tests/vexflowNotation.test.mjs",
     "test:parsers": "node --import tsx/esm --test tests/sniffFormat.test.ts tests/chordProParser.test.ts tests/csmpnParser.test.ts",
     "test:all": "npm test && npm run test:parsers"
@@ -28,8 +32,14 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.6.3",
+    "typescript-eslint": "^8.58.1",
     "vite": "^5.4.10"
   }
 }

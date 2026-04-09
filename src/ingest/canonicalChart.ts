@@ -18,11 +18,11 @@ function normalizeSection(section: ChartSection): ChartSection {
     .map((line) => ({
       ...line,
       tokens: line.tokens
-        .map((token) => (
+        .map((token) =>
           token.kind === 'barline'
             ? token
             : { ...token, text: token.text.replace(/\s+/g, ' ').trim() }
-        ))
+        )
         .filter((token) => (token.kind === 'barline' ? true : token.text.length > 0)),
     }))
     .filter((line) => line.tokens.length > 0);

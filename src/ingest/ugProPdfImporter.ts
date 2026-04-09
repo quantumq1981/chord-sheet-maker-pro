@@ -27,7 +27,7 @@ import type { PDFPageProxy, TextItem } from 'pdfjs-dist/types/src/display/api';
 
 GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
+  import.meta.url
 ).href;
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -96,7 +96,16 @@ export interface ChordEvent {
 }
 
 export interface Marker {
-  type: 'rehearsal' | 'repeat-start' | 'repeat-end' | 'coda' | 'segno' | 'fine' | 'ds' | 'dc' | 'nc';
+  type:
+    | 'rehearsal'
+    | 'repeat-start'
+    | 'repeat-end'
+    | 'coda'
+    | 'segno'
+    | 'fine'
+    | 'ds'
+    | 'dc'
+    | 'nc';
   value: string;
   x: number;
   y: number;
@@ -209,15 +218,42 @@ export function normalizeChordSymbol(raw: string): string {
 // ─── Chord classification ─────────────────────────────────────────────────────
 
 /** Regex to match a plausible chord symbol rooted on a note name. */
-const CHORD_REGEX = /^[A-G][b#]?(?:maj7|maj|m7b5|m7|m6|m9|m11|m13|mM7|m|dim7|dim|aug7|aug|sus4|sus2|sus|add9|add11|add13|add|7M|[Øø]7?|°7?|Δ7?|M7?|[0-9]+(?:[b#][0-9]+)*)(?:\/[A-G][b#]?)?$/;
+const CHORD_REGEX =
+  /^[A-G][b#]?(?:maj7|maj|m7b5|m7|m6|m9|m11|m13|mM7|m|dim7|dim|aug7|aug|sus4|sus2|sus|add9|add11|add13|add|7M|[Øø]7?|°7?|Δ7?|M7?|[0-9]+(?:[b#][0-9]+)*)(?:\/[A-G][b#]?)?$/;
 
 /** Direction / structural text that must NOT be classified as chords. */
 const DIRECTION_TEXTS = new Set([
-  'N.C.', 'NC', 'Fine', 'Coda', 'D.S.', 'DS', 'D.C.', 'DC',
-  'D.S.al', 'D.C.al', 'To', 'Double-time', 'Half-time', 'Freely',
-  'Tacet', 'Simile', 'Vamp', 'Rit.', 'Rit', 'Rail.', 'Accel.',
-  'Intro', 'Verse', 'Chorus', 'Bridge', 'Solo', 'Outro', 'Coda',
-  'Interlude', 'Pre', 'Post',
+  'N.C.',
+  'NC',
+  'Fine',
+  'Coda',
+  'D.S.',
+  'DS',
+  'D.C.',
+  'DC',
+  'D.S.al',
+  'D.C.al',
+  'To',
+  'Double-time',
+  'Half-time',
+  'Freely',
+  'Tacet',
+  'Simile',
+  'Vamp',
+  'Rit.',
+  'Rit',
+  'Rail.',
+  'Accel.',
+  'Intro',
+  'Verse',
+  'Chorus',
+  'Bridge',
+  'Solo',
+  'Outro',
+  'Coda',
+  'Interlude',
+  'Pre',
+  'Post',
 ]);
 
 /**
@@ -227,12 +263,13 @@ const DIRECTION_TEXTS = new Set([
 function isChordCandidate(span: TextSpan): boolean {
   const t = span.text.trim();
   if (!t || t.length > 16) return false;
-  if (/^\d+$/.test(t)) return false;          // bar numbers
-  if (/^[A-Z]$/.test(t)) return false;        // rehearsal letters (A, B, C …)
+  if (/^\d+$/.test(t)) return false; // bar numbers
+  if (/^[A-Z]$/.test(t)) return false; // rehearsal letters (A, B, C …)
   if (DIRECTION_TEXTS.has(t)) return false;
 
   // Allow common direction marker detection
-  const directionPattern = /^(N\.C\.|Fine|Coda|D\.S|D\.C|To\s|Double|Half-time|Freely|Tacet|Simile|Vamp|Rit|Rail|Accel)/i;
+  const directionPattern =
+    /^(N\.C\.|Fine|Coda|D\.S|D\.C|To\s|Double|Half-time|Freely|Tacet|Simile|Vamp|Rit|Rail|Accel)/i;
   if (directionPattern.test(t)) return false;
 
   // Must start with a note root
@@ -254,7 +291,8 @@ function isRehearsalMarker(span: TextSpan): boolean {
 function classifyDirective(span: TextSpan): Marker | null {
   const t = span.text.trim().replace(/\s+/g, ' ');
   const upper = t.toUpperCase();
-  if (upper === 'N.C.' || upper === 'NC') return { type: 'nc', value: 'N.C.', x: span.x, y: span.y };
+  if (upper === 'N.C.' || upper === 'NC')
+    return { type: 'nc', value: 'N.C.', x: span.x, y: span.y };
   if (/^(D\.S\.|DS)/i.test(t)) return { type: 'ds', value: t, x: span.x, y: span.y };
   if (/^(D\.C\.|DC)/i.test(t)) return { type: 'dc', value: t, x: span.x, y: span.y };
   if (/^fine$/i.test(t)) return { type: 'fine', value: 'Fine', x: span.x, y: span.y };
@@ -309,10 +347,7 @@ function clusterIntoSystems(spans: TextSpan[], thresholdPx: number): SpanGroup[]
 /**
  * Render a PDF page to an HTMLCanvasElement at the given scale.
  */
-async function renderPageToCanvas(
-  page: PDFPageProxy,
-  scale: number,
-): Promise<HTMLCanvasElement> {
+async function renderPageToCanvas(page: PDFPageProxy, scale: number): Promise<HTMLCanvasElement> {
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement('canvas');
   canvas.width = viewport.width;
@@ -343,7 +378,7 @@ function detectBarlinesInBand(
   bandX1: number,
   config: UGProImporterConfig,
   /** Conversion: canvas pixels → PDF user units. */
-  scale: number,
+  scale: number
 ): number[] {
   const ctx = canvas.getContext('2d')!;
   const bandH = Math.max(1, bandY1 - bandY0);
@@ -431,27 +466,42 @@ function extractMetadata(spans: TextSpan[], pageHeight: number): SongMetadata {
   for (const span of allFirstPage) {
     const t = span.text.trim();
     const tempoMatch = t.match(/[♩=]\s*=?\s*(\d{2,3})/);
-    if (tempoMatch) { meta.tempo = tempoMatch[1]; break; }
+    if (tempoMatch) {
+      meta.tempo = tempoMatch[1];
+      break;
+    }
     // bare "= 120" style
     const bareMatch = t.match(/^=\s*(\d{2,3})$/);
-    if (bareMatch) { meta.tempo = bareMatch[1]; break; }
+    if (bareMatch) {
+      meta.tempo = bareMatch[1];
+      break;
+    }
   }
 
   // Key: look for e.g. "Key: C" or "Key of G" patterns
   for (const span of allFirstPage) {
     const t = span.text.trim();
     const keyMatch = t.match(/[Kk]ey\s*(?:of\s*)?([A-G][b#]?\s*(?:major|minor|maj|min|m)?)/);
-    if (keyMatch) { meta.key = keyMatch[1].trim(); break; }
+    if (keyMatch) {
+      meta.key = keyMatch[1].trim();
+      break;
+    }
     // Standalone key signature text like "C Major" or "Bb"
     const sigMatch = t.match(/^([A-G][b#]?)\s+(Major|Minor|major|minor)$/);
-    if (sigMatch) { meta.key = `${sigMatch[1]} ${sigMatch[2]}`; break; }
+    if (sigMatch) {
+      meta.key = `${sigMatch[1]} ${sigMatch[2]}`;
+      break;
+    }
   }
 
   // Time signature: look for "4/4", "3/4", "6/8" etc.
   for (const span of allFirstPage) {
     const t = span.text.trim();
     const timeMatch = t.match(/^(\d+\/\d+)$/);
-    if (timeMatch) { meta.time = timeMatch[1]; break; }
+    if (timeMatch) {
+      meta.time = timeMatch[1];
+      break;
+    }
   }
 
   return meta;
@@ -499,10 +549,10 @@ function fakebookSectionPrefix(label: string): string {
 function barToken(
   m: LinearMeasure,
   lastChord: string,
-  fillPercent: boolean,
+  fillPercent: boolean
 ): [token: string, newLastChord: string] {
   if (m.chords.length === 0) {
-    return [fillPercent && lastChord ? '%' : (lastChord || '%'), lastChord];
+    return [fillPercent && lastChord ? '%' : lastChord || '%', lastChord];
   }
   const token = m.chords.join('_');
   return [token, m.chords[m.chords.length - 1]];
@@ -519,17 +569,17 @@ function emitFakebook(
   metadata: SongMetadata,
   sections: SectionDef[],
   linearMeasures: LinearMeasure[],
-  config: UGProImporterConfig,
+  config: UGProImporterConfig
 ): string {
   const out: string[] = [];
 
   // Header — same fields, no ♩ glyph in Tempo line for cleaner copy-paste
-  if (metadata.title)    out.push(`Title: ${metadata.title}`);
+  if (metadata.title) out.push(`Title: ${metadata.title}`);
   if (metadata.composer) out.push(`Composer: ${metadata.composer}`);
-  if (metadata.style)    out.push(`Style: ${metadata.style}`);
-  if (metadata.tempo)    out.push(`Tempo: ${metadata.tempo}`);
-  if (metadata.time)     out.push(`Time: ${metadata.time}`);
-  if (metadata.key)      out.push(`Key: ${metadata.key}`);
+  if (metadata.style) out.push(`Style: ${metadata.style}`);
+  if (metadata.tempo) out.push(`Tempo: ${metadata.tempo}`);
+  if (metadata.time) out.push(`Time: ${metadata.time}`);
+  if (metadata.key) out.push(`Key: ${metadata.key}`);
   out.push('');
 
   const mpl = config.measuresPerLine;
@@ -571,16 +621,16 @@ function emitBarlinesStyle(
   metadata: SongMetadata,
   sections: SectionDef[],
   linearMeasures: LinearMeasure[],
-  config: UGProImporterConfig,
+  config: UGProImporterConfig
 ): string {
   const out: string[] = [];
 
-  if (metadata.title)    out.push(`Title: ${metadata.title}`);
+  if (metadata.title) out.push(`Title: ${metadata.title}`);
   if (metadata.composer) out.push(`Composer: ${metadata.composer}`);
-  if (metadata.style)    out.push(`Style: ${metadata.style}`);
-  if (metadata.tempo)    out.push(`Tempo: ♩=${metadata.tempo}`);
-  if (metadata.key)      out.push(`Key: ${metadata.key}`);
-  if (metadata.time)     out.push(`Time: ${metadata.time}`);
+  if (metadata.style) out.push(`Style: ${metadata.style}`);
+  if (metadata.tempo) out.push(`Tempo: ♩=${metadata.tempo}`);
+  if (metadata.key) out.push(`Key: ${metadata.key}`);
+  if (metadata.time) out.push(`Time: ${metadata.time}`);
   out.push('');
 
   const mpl = config.measuresPerLine;
@@ -598,7 +648,7 @@ function emitBarlinesStyle(
     // Build bar tokens (spaces for multi-chord bars in barline mode)
     const tokens: string[] = secMeasures.map((m) => {
       if (m.chords.length === 0) {
-        const tok = config.fillEmptyMeasuresWithPercent && lastChord ? '%' : (lastChord || '%');
+        const tok = config.fillEmptyMeasuresWithPercent && lastChord ? '%' : lastChord || '%';
         return tok;
       }
       const tok = m.chords.join(' ');
@@ -630,7 +680,7 @@ function emitBarlinesStyle(
 
 export async function importUGProPdf(
   file: File,
-  cfg: Partial<UGProImporterConfig> = {},
+  cfg: Partial<UGProImporterConfig> = {}
 ): Promise<ImportResult> {
   const config: UGProImporterConfig = { ...DEFAULT_CONFIG, ...cfg };
 
@@ -749,7 +799,7 @@ export async function importUGProPdf(
         canvasX0,
         canvasX1,
         config,
-        scale,
+        scale
       );
 
       // Always add left and right edges as boundary barlines if not present
@@ -805,7 +855,12 @@ export async function importUGProPdf(
       const systemMarkers: Marker[] = [];
       for (const rSpan of rehearsalSpans) {
         if (rSpan.y >= y0 && rSpan.y <= y1) {
-          systemMarkers.push({ type: 'rehearsal', value: rSpan.text.trim(), x: rSpan.x, y: rSpan.y });
+          systemMarkers.push({
+            type: 'rehearsal',
+            value: rSpan.text.trim(),
+            x: rSpan.x,
+            y: rSpan.y,
+          });
         }
       }
       for (const dir of directionSpans) {
@@ -896,9 +951,10 @@ export async function importUGProPdf(
   }
 
   // ── Emit ─────────────────────────────────────────────────────────────────
-  const csmpnText = config.outputMode === 'csmpn-fakebook'
-    ? emitFakebook(metadata, sections, linearMeasures, config)
-    : emitBarlinesStyle(metadata, sections, linearMeasures, config);
+  const csmpnText =
+    config.outputMode === 'csmpn-fakebook'
+      ? emitFakebook(metadata, sections, linearMeasures, config)
+      : emitBarlinesStyle(metadata, sections, linearMeasures, config);
 
   // ── Build debugJson ──────────────────────────────────────────────────────
   const debugJson: DebugJson = {

@@ -39,9 +39,16 @@ const CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', '
 /** Normalise enharmonic equivalents to the nearest sharp for lookup. */
 const ENHARMONIC: Record<string, string> = {
   // Flats → sharps
-  Db: 'C#', Eb: 'D#', Fb: 'E',  Gb: 'F#', Ab: 'G#', Bb: 'A#', Cb: 'B',
+  Db: 'C#',
+  Eb: 'D#',
+  Fb: 'E',
+  Gb: 'F#',
+  Ab: 'G#',
+  Bb: 'A#',
+  Cb: 'B',
   // Double-sharps / theoretical sharps → naturals
-  'B#': 'C', 'E#': 'F',
+  'B#': 'C',
+  'E#': 'F',
 };
 
 function transposeRoot(root: string, steps: number): string {
@@ -49,7 +56,7 @@ function transposeRoot(root: string, steps: number): string {
   const normalized = ENHARMONIC[root] ?? root;
   const idx = CHROMATIC.indexOf(normalized as (typeof CHROMATIC)[number]);
   if (idx === -1) return root;
-  return CHROMATIC[((idx + steps) % 12 + 12) % 12];
+  return CHROMATIC[(((idx + steps) % 12) + 12) % 12];
 }
 
 /** Returns true when `chord` looks like a valid chord symbol we can transpose. */
@@ -185,13 +192,19 @@ function FakeBookRow({ tokens, steps }: { tokens: ChartToken[]; steps: number })
           className={[
             'cc-grid-bar',
             bar.repeatStart ? 'cc-grid-bar--repeat-start' : '',
-            bar.repeatEnd   ? 'cc-grid-bar--repeat-end'   : '',
-          ].filter(Boolean).join(' ')}
+            bar.repeatEnd ? 'cc-grid-bar--repeat-end' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
         >
           {bar.chords.map((t, j) => {
             if (t.kind !== 'chord') return null;
             if (t.text === SIMILE) {
-              return <span key={j} className="cc-simile">{SIMILE}</span>;
+              return (
+                <span key={j} className="cc-simile">
+                  {SIMILE}
+                </span>
+              );
             }
             return <ChordSpan key={j} text={t.text} steps={steps} />;
           })}
@@ -227,11 +240,13 @@ function LineRow({ line, steps }: LineProps) {
   if (hasChord && !hasLyric) {
     return (
       <div className="cc-line cc-chords-only">
-        {tokens.filter((t) => t.kind === 'chord').map((t, i) => (
-          <span key={i} className="cc-chords-only__cell">
-            <ChordSpan text={t.text} steps={steps} />
-          </span>
-        ))}
+        {tokens
+          .filter((t) => t.kind === 'chord')
+          .map((t, i) => (
+            <span key={i} className="cc-chords-only__cell">
+              <ChordSpan text={t.text} steps={steps} />
+            </span>
+          ))}
       </div>
     );
   }
@@ -240,9 +255,11 @@ function LineRow({ line, steps }: LineProps) {
   if (!hasChord && hasLyric) {
     return (
       <div className="cc-line cc-lyrics-only">
-        {tokens.filter((t) => t.kind === 'lyric').map((t, i) => (
-          <span key={i}>{t.text}</span>
-        ))}
+        {tokens
+          .filter((t) => t.kind === 'lyric')
+          .map((t, i) => (
+            <span key={i}>{t.text}</span>
+          ))}
       </div>
     );
   }
@@ -291,7 +308,7 @@ function buildTabRow(columns: TabColumn[], stringCount: number): string[] {
     col.strings.reduce((w: number, f: number | null) => {
       if (f === null || f === -1) return Math.max(w, 1);
       return Math.max(w, String(f).length);
-    }, 1),
+    }, 1)
   );
 
   const lines: string[] = [];
@@ -330,13 +347,12 @@ function TabSectionBlock({ section, steps }: TabSectionProps) {
 
   // Apply transposition: shift every non-null, non-muted fret by `steps`.
   // Fret numbers are clamped to ≥ 0 (can't go below the nut).
-  const columns: TabColumn[] = steps === 0
-    ? rawColumns
-    : rawColumns.map((col) => ({
-        strings: col.strings.map((f) =>
-          f !== null && f >= 0 ? Math.max(0, f + steps) : f,
-        ),
-      }));
+  const columns: TabColumn[] =
+    steps === 0
+      ? rawColumns
+      : rawColumns.map((col) => ({
+          strings: col.strings.map((f) => (f !== null && f >= 0 ? Math.max(0, f + steps) : f)),
+        }));
 
   // Slice into rows
   const rows: TabColumn[][] = [];
@@ -386,8 +402,7 @@ export interface ChordChartProps {
 }
 
 export default function ChordChart({ document: doc, transposeSteps = 0 }: ChordChartProps) {
-  const displayKey =
-    doc.key ? transposeChord(doc.key, transposeSteps) : undefined;
+  const displayKey = doc.key ? transposeChord(doc.key, transposeSteps) : undefined;
 
   return (
     <div className="chord-chart">

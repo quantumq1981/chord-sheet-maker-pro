@@ -211,7 +211,10 @@ export interface SvgImportResult {
  * The SVG spec allows commas and/or whitespace as delimiters.
  */
 function parseViewBox(raw: string): SvgViewBox | undefined {
-  const parts = raw.trim().split(/[\s,]+/).map(Number);
+  const parts = raw
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
   if (parts.length === 4 && parts.every(Number.isFinite)) {
     return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
   }
@@ -244,16 +247,36 @@ function strAttr(el: Element, name: string): string | undefined {
  * fields.  Any attribute outside this set goes into `otherAttributes`.
  */
 const MAPPED_ATTRS = new Set([
-  'id', 'class',
-  'x', 'y', 'width', 'height',
-  'cx', 'cy', 'r', 'rx', 'ry',
-  'd', 'points',
-  'x1', 'y1', 'x2', 'y2',
-  'fill', 'stroke', 'stroke-width', 'opacity',
-  'style', 'transform',
+  'id',
+  'class',
+  'x',
+  'y',
+  'width',
+  'height',
+  'cx',
+  'cy',
+  'r',
+  'rx',
+  'ry',
+  'd',
+  'points',
+  'x1',
+  'y1',
+  'x2',
+  'y2',
+  'fill',
+  'stroke',
+  'stroke-width',
+  'opacity',
+  'style',
+  'transform',
   // Root-level metadata attributes (excluded from "other")
-  'xmlns', 'viewBox', 'version',
-  'xmlns:xlink', 'xml:space', 'xml:lang',
+  'xmlns',
+  'viewBox',
+  'version',
+  'xmlns:xlink',
+  'xml:space',
+  'xml:lang',
 ]);
 
 /** Collect all attributes NOT in MAPPED_ATTRS into a plain object. */
@@ -284,50 +307,76 @@ const TEXT_TAGS = new Set(['text', 'tspan', 'textpath', 'altglyph', 'altglyphdef
 function parseElement(
   el: Element,
   stats: SvgElementStats,
-  extractedText: string[],
+  extractedText: string[]
 ): SvgElementRecord {
   const tag = el.localName.toLowerCase();
 
   // ── Update element-type counters ──────────────────────────────────────────
   stats.totalElements++;
   switch (tag) {
-    case 'path':     stats.paths++;     break;
-    case 'rect':     stats.rects++;     break;
-    case 'circle':   stats.circles++;   break;
-    case 'ellipse':  stats.ellipses++;  break;
-    case 'line':     stats.lines++;     break;
-    case 'polygon':  stats.polygons++;  break;
-    case 'polyline': stats.polylines++; break;
-    case 'g':        stats.groups++;    break;
+    case 'path':
+      stats.paths++;
+      break;
+    case 'rect':
+      stats.rects++;
+      break;
+    case 'circle':
+      stats.circles++;
+      break;
+    case 'ellipse':
+      stats.ellipses++;
+      break;
+    case 'line':
+      stats.lines++;
+      break;
+    case 'polygon':
+      stats.polygons++;
+      break;
+    case 'polyline':
+      stats.polylines++;
+      break;
+    case 'g':
+      stats.groups++;
+      break;
     case 'text':
     case 'tspan':
-    case 'textpath': stats.texts++;     break;
-    case 'image':    stats.images++;    break;
-    case 'use':      stats.uses++;      break;
-    case 'defs':     stats.defs++;      break;
-    default:         stats.other++;     break;
+    case 'textpath':
+      stats.texts++;
+      break;
+    case 'image':
+      stats.images++;
+      break;
+    case 'use':
+      stats.uses++;
+      break;
+    case 'defs':
+      stats.defs++;
+      break;
+    default:
+      stats.other++;
+      break;
   }
 
   // ── Build attribute-centric record ────────────────────────────────────────
   const record: SvgElementRecord = {
     tag,
 
-    id:        strAttr(el, 'id'),
+    id: strAttr(el, 'id'),
     className: strAttr(el, 'class'),
 
     // Geometry via getAttribute() — not nodeValue
-    x:      numAttr(el, 'x'),
-    y:      numAttr(el, 'y'),
-    width:  numAttr(el, 'width'),
+    x: numAttr(el, 'x'),
+    y: numAttr(el, 'y'),
+    width: numAttr(el, 'width'),
     height: numAttr(el, 'height'),
 
     cx: numAttr(el, 'cx'),
     cy: numAttr(el, 'cy'),
-    r:  numAttr(el, 'r'),
+    r: numAttr(el, 'r'),
     rx: numAttr(el, 'rx'),
     ry: numAttr(el, 'ry'),
 
-    d:      strAttr(el, 'd'),      // path data — verbatim
+    d: strAttr(el, 'd'), // path data — verbatim
     points: strAttr(el, 'points'),
 
     x1: numAttr(el, 'x1'),
@@ -336,11 +385,11 @@ function parseElement(
     y2: numAttr(el, 'y2'),
 
     // Styling — from presentation attributes
-    fill:        strAttr(el, 'fill'),
-    stroke:      strAttr(el, 'stroke'),
+    fill: strAttr(el, 'fill'),
+    stroke: strAttr(el, 'stroke'),
     strokeWidth: strAttr(el, 'stroke-width'),
-    opacity:     strAttr(el, 'opacity'),
-    style:       strAttr(el, 'style'),
+    opacity: strAttr(el, 'opacity'),
+    style: strAttr(el, 'style'),
 
     // Spatial transform — preserved verbatim for recursive group handling
     transform: strAttr(el, 'transform'),
@@ -366,9 +415,7 @@ function parseElement(
   for (let i = 0; i < el.childNodes.length; i++) {
     const child = el.childNodes[i];
     if (child.nodeType === Node.ELEMENT_NODE) {
-      record.children.push(
-        parseElement(child as Element, stats, extractedText),
-      );
+      record.children.push(parseElement(child as Element, stats, extractedText));
     }
   }
 
@@ -415,8 +462,7 @@ export function importSvg(svgSource: string): SvgImportResult {
 
   const strictDoc = parser.parseFromString(svgSource, 'image/svg+xml');
   const strictErr =
-    strictDoc.querySelector('parsererror') ??
-    strictDoc.getElementsByTagName('parsererror').item(0);
+    strictDoc.querySelector('parsererror') ?? strictDoc.getElementsByTagName('parsererror').item(0);
 
   let doc: Document;
 
@@ -434,7 +480,7 @@ export function importSvg(svgSource: string): SvgImportResult {
 
     warnings.push(
       'Strict SVG parsing (image/svg+xml) failed; fell back to text/xml mode. ' +
-      'The document may have a non-standard namespace declaration.',
+        'The document may have a non-standard namespace declaration.'
     );
     doc = lenientDoc;
   } else {
@@ -456,8 +502,7 @@ export function importSvg(svgSource: string): SvgImportResult {
     svgRoot = docRoot;
   } else {
     warnings.push(
-      `Root element is <${docRootTag}>, expected <svg>. ` +
-      'Searching for a nested <svg> element.',
+      `Root element is <${docRootTag}>, expected <svg>. ` + 'Searching for a nested <svg> element.'
     );
 
     // Query with namespace first, then without (covers both strict & lenient parse results)
@@ -468,7 +513,7 @@ export function importSvg(svgSource: string): SvgImportResult {
     if (!nested) {
       throw new Error(
         `No <svg> element found in the document (root is <${docRootTag}>). ` +
-        'Please upload a valid SVG file.',
+          'Please upload a valid SVG file.'
       );
     }
 
@@ -478,15 +523,12 @@ export function importSvg(svgSource: string): SvgImportResult {
 
   // ── Stage 3: Extract document-level metadata ──────────────────────────────
 
-  const xmlns =
-    svgRoot.getAttribute('xmlns') ??
-    svgRoot.namespaceURI ??
-    SVG_NAMESPACE;
+  const xmlns = svgRoot.getAttribute('xmlns') ?? svgRoot.namespaceURI ?? SVG_NAMESPACE;
 
   if (xmlns !== SVG_NAMESPACE && !xmlns.toLowerCase().includes('svg')) {
     warnings.push(
       `SVG root xmlns is "${xmlns}"; expected "${SVG_NAMESPACE}". ` +
-      'Namespace-qualified queries may not resolve correctly.',
+        'Namespace-qualified queries may not resolve correctly.'
     );
   }
 
@@ -498,9 +540,9 @@ export function importSvg(svgSource: string): SvgImportResult {
   }
 
   // Dimensions — prefer explicit attributes; fall back to viewBox values
-  const widthAttr  = strAttr(svgRoot, 'width');
+  const widthAttr = strAttr(svgRoot, 'width');
   const heightAttr = strAttr(svgRoot, 'height');
-  const width  = widthAttr  ?? (viewBox ? String(viewBox.width)  : undefined);
+  const width = widthAttr ?? (viewBox ? String(viewBox.width) : undefined);
   const height = heightAttr ?? (viewBox ? String(viewBox.height) : undefined);
 
   // Optional document-level title / description (namespace-aware queries)
@@ -511,16 +553,25 @@ export function importSvg(svgSource: string): SvgImportResult {
     svgRoot.getElementsByTagNameNS(SVG_NAMESPACE, 'desc').item(0) ??
     svgRoot.getElementsByTagName('desc').item(0);
 
-  const title       = titleEl?.textContent?.trim() || undefined;
-  const description = descEl?.textContent?.trim()  || undefined;
+  const title = titleEl?.textContent?.trim() || undefined;
+  const description = descEl?.textContent?.trim() || undefined;
 
   // ── Stage 4: Walk the element tree ────────────────────────────────────────
 
   const stats: SvgElementStats = {
     totalElements: 0,
-    paths: 0, rects: 0, circles: 0, ellipses: 0,
-    lines: 0, polygons: 0, polylines: 0,
-    groups: 0, texts: 0, images: 0, uses: 0, defs: 0,
+    paths: 0,
+    rects: 0,
+    circles: 0,
+    ellipses: 0,
+    lines: 0,
+    polygons: 0,
+    polylines: 0,
+    groups: 0,
+    texts: 0,
+    images: 0,
+    uses: 0,
+    defs: 0,
     other: 0,
   };
   const extractedText: string[] = [];

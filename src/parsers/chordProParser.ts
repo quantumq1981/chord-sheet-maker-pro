@@ -29,32 +29,47 @@ import { sectionTypeFromLabel, normalizeLineEndings } from '../utils/sectionUtil
 /** Maps lower-cased directive names to ChordChartDocument metadata keys. */
 const DIRECTIVE_META: Record<
   string,
-  keyof Pick<ChordChartDocument, 'title' | 'artist' | 'subtitle' | 'key' | 'capo' | 'tempo' | 'time' | 'genre'>
+  keyof Pick<
+    ChordChartDocument,
+    'title' | 'artist' | 'subtitle' | 'key' | 'capo' | 'tempo' | 'time' | 'genre'
+  >
 > = {
   // Title
-  title: 'title',  t: 'title',
+  title: 'title',
+  t: 'title',
   // Artist / composer — MusicXML converters often emit {composer:} or {author:}
-  artist: 'artist', a: 'artist',
-  composer: 'artist', author: 'artist',
+  artist: 'artist',
+  a: 'artist',
+  composer: 'artist',
+  author: 'artist',
   // Other metadata
-  subtitle: 'subtitle', st: 'subtitle',
+  subtitle: 'subtitle',
+  st: 'subtitle',
   key: 'key',
   capo: 'capo',
   // Tempo — accept both {tempo:} and {bpm:}
-  tempo: 'tempo', bpm: 'tempo',
+  tempo: 'tempo',
+  bpm: 'tempo',
   // Time — accept both {time:} and {meter:}
-  time: 'time', meter: 'time',
+  time: 'time',
+  meter: 'time',
   // Genre / style
-  genre: 'genre', style: 'genre',
+  genre: 'genre',
+  style: 'genre',
 };
 
 /** Maps lower-cased section-start directive names to SectionType. */
 const SECTION_START: Record<string, SectionType> = {
-  start_of_chorus: 'chorus',   soc: 'chorus',
-  start_of_verse: 'verse',     sov: 'verse',
-  start_of_bridge: 'bridge',   sob: 'bridge',
-  start_of_grid: 'grid',       sog: 'grid',
-  start_of_tab: 'tab',         sot: 'tab',
+  start_of_chorus: 'chorus',
+  soc: 'chorus',
+  start_of_verse: 'verse',
+  sov: 'verse',
+  start_of_bridge: 'bridge',
+  sob: 'bridge',
+  start_of_grid: 'grid',
+  sog: 'grid',
+  start_of_tab: 'tab',
+  sot: 'tab',
   start_of_pre_chorus: 'pre-chorus',
   start_of_intro: 'intro',
   start_of_outro: 'outro',
@@ -64,11 +79,16 @@ const SECTION_START: Record<string, SectionType> = {
 
 /** Lower-cased section-end directive names. */
 const SECTION_END = new Set([
-  'end_of_chorus', 'eoc',
-  'end_of_verse', 'eov',
-  'end_of_bridge', 'eob',
-  'end_of_grid', 'eog',
-  'end_of_tab', 'eot',
+  'end_of_chorus',
+  'eoc',
+  'end_of_verse',
+  'eov',
+  'end_of_bridge',
+  'eob',
+  'end_of_grid',
+  'eog',
+  'end_of_tab',
+  'eot',
   'end_of_pre_chorus',
   'end_of_intro',
   'end_of_outro',
@@ -256,7 +276,12 @@ export function parseUltimateGuitar(text: string): ChordChartDocument {
   // Scan all lines before the first UG section header for "Key: Value" pairs.
   // We also scan a short window past section headers in case metadata appears
   // after a blank intro section (some editors put it there).
-  const headerMeta: Partial<Pick<ChordChartDocument, 'title' | 'artist' | 'subtitle' | 'key' | 'capo' | 'tempo' | 'time' | 'genre'>> = {};
+  const headerMeta: Partial<
+    Pick<
+      ChordChartDocument,
+      'title' | 'artist' | 'subtitle' | 'key' | 'capo' | 'tempo' | 'time' | 'genre'
+    >
+  > = {};
   let foundFirstSection = false;
   let linesScannedPastSection = 0;
 
@@ -285,19 +310,33 @@ export function parseUltimateGuitar(text: string): ChordChartDocument {
 
     switch (key) {
       case 'song':
-      case 'title':   headerMeta.title    = headerMeta.title    ?? value; break;
+      case 'title':
+        headerMeta.title = headerMeta.title ?? value;
+        break;
       case 'artist':
       case 'author':
-      case 'composer':headerMeta.artist   = headerMeta.artist   ?? value; break;
-      case 'key':     headerMeta.key      = headerMeta.key      ?? value; break;
-      case 'capo':    headerMeta.capo     = headerMeta.capo     ?? value; break;
+      case 'composer':
+        headerMeta.artist = headerMeta.artist ?? value;
+        break;
+      case 'key':
+        headerMeta.key = headerMeta.key ?? value;
+        break;
+      case 'capo':
+        headerMeta.capo = headerMeta.capo ?? value;
+        break;
       case 'bpm':
-      case 'tempo':   headerMeta.tempo    = headerMeta.tempo    ?? value; break;
+      case 'tempo':
+        headerMeta.tempo = headerMeta.tempo ?? value;
+        break;
       case 'time':
       case 'meter':
-      case 'timesignature': headerMeta.time = headerMeta.time   ?? value; break;
+      case 'timesignature':
+        headerMeta.time = headerMeta.time ?? value;
+        break;
       case 'genre':
-      case 'style':   headerMeta.genre    = headerMeta.genre    ?? value; break;
+      case 'style':
+        headerMeta.genre = headerMeta.genre ?? value;
+        break;
       case 'tuning':
         // Preserve tuning as subtitle only if nothing else is there
         headerMeta.subtitle = headerMeta.subtitle ?? `Tuning: ${value}`;
@@ -311,13 +350,13 @@ export function parseUltimateGuitar(text: string): ChordChartDocument {
 
   // Merge: header metadata wins over anything the ChordPro parser found
   // (UG files rarely have ChordPro-style directives, but handle the case)
-  if (headerMeta.title)    doc.title    = headerMeta.title;
-  if (headerMeta.artist)   doc.artist   = headerMeta.artist;
-  if (headerMeta.key)      doc.key      = headerMeta.key;
-  if (headerMeta.capo)     doc.capo     = headerMeta.capo;
-  if (headerMeta.tempo)    doc.tempo    = headerMeta.tempo;
-  if (headerMeta.time)     doc.time     = headerMeta.time;
-  if (headerMeta.genre)    doc.genre    = headerMeta.genre;
+  if (headerMeta.title) doc.title = headerMeta.title;
+  if (headerMeta.artist) doc.artist = headerMeta.artist;
+  if (headerMeta.key) doc.key = headerMeta.key;
+  if (headerMeta.capo) doc.capo = headerMeta.capo;
+  if (headerMeta.tempo) doc.tempo = headerMeta.tempo;
+  if (headerMeta.time) doc.time = headerMeta.time;
+  if (headerMeta.genre) doc.genre = headerMeta.genre;
   if (headerMeta.subtitle) doc.subtitle = headerMeta.subtitle;
 
   return doc;
@@ -348,7 +387,10 @@ export function parseChordsOverWords(text: string): ChordChartDocument {
     const line = rawLines[i];
     const trimmed = line.trim();
 
-    if (!trimmed) { i++; continue; }
+    if (!trimmed) {
+      i++;
+      continue;
+    }
 
     if (isChordLine(trimmed)) {
       const chordTokens: ChartToken[] = trimmed
@@ -489,15 +531,29 @@ export function parseFakeBook(text: string): ChordChartDocument {
       const key = metaMatch[1].toLowerCase();
       const value = metaMatch[2].trim();
       switch (key) {
-        case 'title':    doc.title    = doc.title    ?? value; break;
+        case 'title':
+          doc.title = doc.title ?? value;
+          break;
         case 'artist':
-        case 'composer': doc.artist   = doc.artist   ?? value; break;
-        case 'subtitle': doc.subtitle = doc.subtitle ?? value; break;
-        case 'key':      doc.key      = doc.key      ?? value; break;
-        case 'tempo':    doc.tempo    = doc.tempo    ?? value; break;
-        case 'time':     doc.time     = doc.time     ?? value; break;
+        case 'composer':
+          doc.artist = doc.artist ?? value;
+          break;
+        case 'subtitle':
+          doc.subtitle = doc.subtitle ?? value;
+          break;
+        case 'key':
+          doc.key = doc.key ?? value;
+          break;
+        case 'tempo':
+          doc.tempo = doc.tempo ?? value;
+          break;
+        case 'time':
+          doc.time = doc.time ?? value;
+          break;
         case 'style':
-        case 'genre':    doc.genre    = doc.genre    ?? value; break;
+        case 'genre':
+          doc.genre = doc.genre ?? value;
+          break;
       }
       continue;
     }
@@ -547,10 +603,15 @@ export function parseFakeBook(text: string): ChordChartDocument {
  */
 export function parseChordChart(text: string, sourceFormat: SourceFormat): ChordChartDocument {
   switch (sourceFormat) {
-    case 'ultimateguitar':    return parseUltimateGuitar(text);
-    case 'chords-over-words': return parseChordsOverWords(text);
-    case 'abc':               return parseAbcNotation(text);
-    case 'fakebook':          return parseFakeBook(text);
-    default:                  return parseChordPro(text);
+    case 'ultimateguitar':
+      return parseUltimateGuitar(text);
+    case 'chords-over-words':
+      return parseChordsOverWords(text);
+    case 'abc':
+      return parseAbcNotation(text);
+    case 'fakebook':
+      return parseFakeBook(text);
+    default:
+      return parseChordPro(text);
   }
 }

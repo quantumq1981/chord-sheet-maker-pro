@@ -28,15 +28,14 @@ export function parseMusicXmlForFakebook(xmlText: string): ParsedMusicXml {
   }
 
   const title =
-    score.querySelector('work > work-title')?.textContent?.trim()
-    || score.querySelector('movement-title')?.textContent?.trim()
-    || undefined;
+    score.querySelector('work > work-title')?.textContent?.trim() ||
+    score.querySelector('movement-title')?.textContent?.trim() ||
+    undefined;
 
   const composer =
-    Array.from(score.querySelectorAll('identification > creator')).find((el) =>
-      (el.getAttribute('type') ?? '').toLowerCase() === 'composer',
-    )?.textContent?.trim()
-    || undefined;
+    Array.from(score.querySelectorAll('identification > creator'))
+      .find((el) => (el.getAttribute('type') ?? '').toLowerCase() === 'composer')
+      ?.textContent?.trim() || undefined;
 
   const measures = Array.from(score.querySelectorAll('part > measure'));
   const parsedMeasures: ParsedMusicXmlMeasure[] = [];
@@ -74,7 +73,9 @@ export function parseMusicXmlForFakebook(xmlText: string): ParsedMusicXml {
       }
     }
 
-    const harmonies = Array.from(measure.querySelectorAll('harmony')).map(formatHarmony).filter(Boolean);
+    const harmonies = Array.from(measure.querySelectorAll('harmony'))
+      .map(formatHarmony)
+      .filter(Boolean);
     parsedMeasures.push({ number: Number.isNaN(number) ? i + 1 : number, harmonies });
   }
 
@@ -121,19 +122,24 @@ function formatHarmony(harmonyNode: Element): string {
 
   const alter = rootAlter === '1' ? '#' : rootAlter === '-1' ? 'b' : '';
   const kind = harmonyNode.querySelector('kind')?.textContent?.trim() ?? '';
-  const degree = Array.from(harmonyNode.querySelectorAll('degree')).map((node) => {
-    const value = node.querySelector('degree-value')?.textContent?.trim() ?? '';
-    const type = node.querySelector('degree-type')?.textContent?.trim() ?? '';
-    if (!value || !type) return '';
-    if (type === 'add') return `add${value}`;
-    if (type === 'alter') return `#${value}`;
-    if (type === 'subtract') return `no${value}`;
-    return '';
-  }).filter(Boolean).join('');
+  const degree = Array.from(harmonyNode.querySelectorAll('degree'))
+    .map((node) => {
+      const value = node.querySelector('degree-value')?.textContent?.trim() ?? '';
+      const type = node.querySelector('degree-type')?.textContent?.trim() ?? '';
+      if (!value || !type) return '';
+      if (type === 'add') return `add${value}`;
+      if (type === 'alter') return `#${value}`;
+      if (type === 'subtract') return `no${value}`;
+      return '';
+    })
+    .filter(Boolean)
+    .join('');
 
   const bassStep = harmonyNode.querySelector('bass > bass-step')?.textContent?.trim() ?? '';
   const bassAlter = harmonyNode.querySelector('bass > bass-alter')?.textContent?.trim() ?? '';
-  const bass = bassStep ? `/${bassStep}${bassAlter === '1' ? '#' : bassAlter === '-1' ? 'b' : ''}` : '';
+  const bass = bassStep
+    ? `/${bassStep}${bassAlter === '1' ? '#' : bassAlter === '-1' ? 'b' : ''}`
+    : '';
 
   return `${rootStep}${alter}${normalizeKind(kind)}${degree}${bass}`;
 }
@@ -152,8 +158,40 @@ function normalizeKind(kind: string): string {
 }
 
 function keyFromFifths(fifths: number, mode?: string): string {
-  const majorKeys = ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
-  const minorKeys = ['Abm', 'Ebm', 'Bbm', 'Fm', 'Cm', 'Gm', 'Dm', 'Am', 'Em', 'Bm', 'F#m', 'C#m', 'G#m', 'D#m', 'A#m'];
+  const majorKeys = [
+    'Cb',
+    'Gb',
+    'Db',
+    'Ab',
+    'Eb',
+    'Bb',
+    'F',
+    'C',
+    'G',
+    'D',
+    'A',
+    'E',
+    'B',
+    'F#',
+    'C#',
+  ];
+  const minorKeys = [
+    'Abm',
+    'Ebm',
+    'Bbm',
+    'Fm',
+    'Cm',
+    'Gm',
+    'Dm',
+    'Am',
+    'Em',
+    'Bm',
+    'F#m',
+    'C#m',
+    'G#m',
+    'D#m',
+    'A#m',
+  ];
   const index = Math.max(0, Math.min(14, fifths + 7));
   return (mode ?? '').toLowerCase() === 'minor' ? minorKeys[index] : majorKeys[index];
 }

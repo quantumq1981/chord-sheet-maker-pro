@@ -40,12 +40,12 @@ type ZoomMode = number | 'fit';
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function SvgImporterPanel({ initialFile }: Props) {
-  const [status, setStatus]           = useState<ImportStatus>('idle');
-  const [error, setError]             = useState('');
-  const [result, setResult]           = useState<SvgImportResult | null>(null);
-  const [previewUrl, setPreviewUrl]   = useState<string | null>(null);
-  const [zoom, setZoom]               = useState<ZoomMode>('fit');
-  const [filename, setFilename]       = useState('');
+  const [status, setStatus] = useState<ImportStatus>('idle');
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<SvgImportResult | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<ZoomMode>('fit');
+  const [filename, setFilename] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -85,7 +85,7 @@ export default function SvgImporterPanel({ initialFile }: Props) {
       // Using <img> (not dangerouslySetInnerHTML) keeps script execution
       // fully sandboxed by the browser regardless of SVG content.
       const blob = new Blob([parsed.svgSource], { type: 'image/svg+xml' });
-      const url  = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
 
       setResult(parsed);
       setPreviewUrl(url);
@@ -110,7 +110,7 @@ export default function SvgImporterPanel({ initialFile }: Props) {
       const file = e.target.files?.[0];
       if (file) void processFile(file);
     },
-    [processFile],
+    [processFile]
   );
 
   const handleDrop = useCallback(
@@ -119,7 +119,7 @@ export default function SvgImporterPanel({ initialFile }: Props) {
       const file = e.dataTransfer.files?.[0];
       if (file) void processFile(file);
     },
-    [processFile],
+    [processFile]
   );
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault();
@@ -139,9 +139,9 @@ export default function SvgImporterPanel({ initialFile }: Props) {
   const handleDownload = useCallback(() => {
     if (!result?.svgSource) return;
     const blob = new Blob([result.svgSource], { type: 'image/svg+xml' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
     a.download = filename || 'export.svg';
     document.body.appendChild(a);
     a.click();
@@ -210,18 +210,19 @@ export default function SvgImporterPanel({ initialFile }: Props) {
       {/* ── Result ── */}
       {status === 'done' && result && (
         <div style={s.results}>
-
           {/* ── Action bar ── */}
           <div style={s.actionBar}>
             <div style={s.fileLabel}>
               <span style={s.fileLabelIcon}>◈</span>
-              <span style={s.fileLabelText}>
-                {result.title ?? filename ?? 'SVG Document'}
-              </span>
+              <span style={s.fileLabelText}>{result.title ?? filename ?? 'SVG Document'}</span>
             </div>
             <div style={s.actionBtns}>
-              <button style={s.btn} onClick={handleReset}>← New File</button>
-              <button style={s.btn} onClick={handleDownload}>Download SVG</button>
+              <button style={s.btn} onClick={handleReset}>
+                ← New File
+              </button>
+              <button style={s.btn} onClick={handleDownload}>
+                Download SVG
+              </button>
             </div>
           </div>
 
@@ -230,24 +231,33 @@ export default function SvgImporterPanel({ initialFile }: Props) {
             <div style={s.warningBox}>
               <strong style={s.warningTitle}>Parser notices:</strong>
               <ul style={s.warningList}>
-                {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                {result.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
               </ul>
             </div>
           )}
 
           {/* ── Two-column body: preview + metadata ── */}
           <div style={s.twoCol}>
-
             {/* ── Left: SVG preview ── */}
             <div style={s.previewCol}>
               <div style={s.previewHeader}>
                 <span style={s.sectionLabel}>Preview</span>
                 <div style={s.zoomRow}>
-                  <button style={s.zoomBtn} onClick={() => zoomStep(-0.25)}>−</button>
+                  <button style={s.zoomBtn} onClick={() => zoomStep(-0.25)}>
+                    −
+                  </button>
                   <span style={s.zoomValue}>{zoomLabel}</span>
-                  <button style={s.zoomBtn} onClick={() => zoomStep(+0.25)}>+</button>
-                  <button style={s.zoomBtn} onClick={() => setZoom(1)}>1:1</button>
-                  <button style={s.zoomBtn} onClick={() => setZoom('fit')}>Fit</button>
+                  <button style={s.zoomBtn} onClick={() => zoomStep(+0.25)}>
+                    +
+                  </button>
+                  <button style={s.zoomBtn} onClick={() => setZoom(1)}>
+                    1:1
+                  </button>
+                  <button style={s.zoomBtn} onClick={() => setZoom('fit')}>
+                    Fit
+                  </button>
                 </div>
               </div>
 
@@ -271,7 +281,6 @@ export default function SvgImporterPanel({ initialFile }: Props) {
 
             {/* ── Right: metadata + stats ── */}
             <div style={s.metaCol}>
-
               {/* Document metadata */}
               <div style={s.card}>
                 <div style={s.cardTitle}>Document Metadata</div>
@@ -305,10 +314,12 @@ export default function SvgImporterPanel({ initialFile }: Props) {
                     )}
                     <tr>
                       <td style={s.metaKey}>xmlns</td>
-                      <td style={{
-                        ...s.metaVal,
-                        ...(result.xmlns === SVG_NAMESPACE ? s.metaOk : s.metaWarn),
-                      }}>
+                      <td
+                        style={{
+                          ...s.metaVal,
+                          ...(result.xmlns === SVG_NAMESPACE ? s.metaOk : s.metaWarn),
+                        }}
+                      >
                         {result.xmlns}
                       </td>
                     </tr>
@@ -337,19 +348,19 @@ export default function SvgImporterPanel({ initialFile }: Props) {
                 <div style={s.statsGrid}>
                   {(
                     [
-                      ['Paths',      result.stats.paths],
-                      ['Rects',      result.stats.rects],
-                      ['Circles',    result.stats.circles],
-                      ['Ellipses',   result.stats.ellipses],
-                      ['Lines',      result.stats.lines],
-                      ['Polygons',   result.stats.polygons],
-                      ['Polylines',  result.stats.polylines],
-                      ['Groups',     result.stats.groups],
-                      ['Texts',      result.stats.texts],
-                      ['Images',     result.stats.images],
-                      ['Uses',       result.stats.uses],
-                      ['Defs',       result.stats.defs],
-                      ['Other',      result.stats.other],
+                      ['Paths', result.stats.paths],
+                      ['Rects', result.stats.rects],
+                      ['Circles', result.stats.circles],
+                      ['Ellipses', result.stats.ellipses],
+                      ['Lines', result.stats.lines],
+                      ['Polygons', result.stats.polygons],
+                      ['Polylines', result.stats.polylines],
+                      ['Groups', result.stats.groups],
+                      ['Texts', result.stats.texts],
+                      ['Images', result.stats.images],
+                      ['Uses', result.stats.uses],
+                      ['Defs', result.stats.defs],
+                      ['Other', result.stats.other],
                     ] as [string, number][]
                   )
                     .filter(([, n]) => n > 0)
@@ -371,7 +382,9 @@ export default function SvgImporterPanel({ initialFile }: Props) {
                   </div>
                   <ul style={s.textList}>
                     {result.extractedText.map((t, i) => (
-                      <li key={i} style={s.textItem}>&ldquo;{t}&rdquo;</li>
+                      <li key={i} style={s.textItem}>
+                        &ldquo;{t}&rdquo;
+                      </li>
                     ))}
                   </ul>
                 </div>
@@ -386,7 +399,6 @@ export default function SvgImporterPanel({ initialFile }: Props) {
                   </p>
                 </div>
               )}
-
             </div>
           </div>
         </div>
