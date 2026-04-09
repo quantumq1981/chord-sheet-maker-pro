@@ -22,7 +22,7 @@
 | 4.4 | Font loading fix (`preconnect` + `swap`) | ✅ DONE |
 | 4.5 | Lazy-load CDN libs (abcjs, VexFlow) | ✅ DONE |
 | 4.1 | Responsive breakpoints (`ug-pro-importer.html`, `validate.html`) | ✅ DONE |
-| 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ⬜ TODO |
+| 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ⬜ TODO |
 
 ## Current State (2026-04-09)
@@ -50,8 +50,7 @@
 
 ## Next Immediate Actions (pick up where left off)
 ```
-1. Print stylesheet hardening (4.2) → slash notation SVG page-break, section orphan rules in index.html
-2. iOS Safari SVG export fix (4.3)  → replace html2canvas for slash notation PNG export
+1. iOS Safari SVG export fix (4.3)  → replace html2canvas for slash notation PNG export in index.html
 ```
 
 ---

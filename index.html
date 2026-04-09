@@ -805,6 +805,12 @@ body.exporting .sectionBlock{
     .sheet{ max-width:none; margin:0; border:0; }
     /* Ensure barline rows don't clip in print */
     .barlineRow{ overflow-x:visible !important; }
+    /* Keep title block together with content below it */
+    .sheetHeader{ break-after:avoid; }
+    /* Prevent orphaned section labels — section header always stays with its first row of bars */
+    .sectionBlock{ break-after:avoid; }
+    /* Keep each row of bars intact — no mid-row page splits */
+    .barlineRow{ break-inside:avoid; }
   }
 
   /* ===== Import Diagnostics Panel ===== */
@@ -7962,7 +7968,7 @@ body{margin:1cm;font-family:Georgia,serif;background:${_snCfg.bgColor || '#fff'}
 .sn-song-artist{font-size:0.9rem;color:#555;font-style:italic;}
 .sn-song-meta{font-size:0.78rem;color:#666;margin-top:2px;}
 svg{max-width:100%;height:auto;display:block;overflow:visible;}
-@media print{@page{margin:0.5in;} body{margin:0;}}
+@media print{@page{margin:0.5in;} body{margin:0;} svg{width:100% !important;height:auto !important;overflow:visible !important;}}
 </style></head><body>
 ${headerHtml}${svg.outerHTML}
 <script>window.onload=function(){window.print();window.close();};<\/script>
