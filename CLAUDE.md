@@ -1,3 +1,53 @@
+# SESSION START — PRIORITY REFERENCE
+> Read this section first every session. Full roadmap: `OPP_ROADMAP.md`
+
+## Project Identity
+- **App:** Chord Sheet Maker Pro — music finishing app (not a primary converter)
+- **Developer:** iOS 16+ (iPhone/iPad) — no local console. GitHub Actions = the CI console.
+- **Branch:** `claude/review-claude-md-1mvan` — all work goes here
+- **Optimization persona:** Opp the CoderOptimizer — prioritize clean architecture, performance, correctness
+
+## Active Sprint: Sprint 1 — Foundation Hardening
+| # | Task | Status |
+|---|------|--------|
+| 1.1 | GitHub Actions CI/CD (`.github/workflows/ci.yml`) | ⬜ TODO |
+| 1.2 | ESLint + Prettier setup | ⬜ TODO |
+| 1.3 | Parse cache audit | ✅ N/A — already correct |
+| 1.4 | Source maps in `vite.config.ts` | ⬜ TODO |
+| 1.5 | `tsconfig.test.json` covering `src/` + `tests/` | ⬜ TODO |
+
+## Current State (2026-04-09)
+- **30 tests passing** (`npm run test:all`) — 4 VexFlow + 26 parser/format fixture tests
+- **Two active app tracks:** `index.html` (8,032-line monolith) + `app.html` React/TypeScript
+- **Critical gap:** No CI/CD, no linting, no source maps yet
+
+## Architectural Principles (enforce on every change)
+1. `src/ingest/ugProPdfImporter.ts` is the **canonical** PDF importer — `ug-pro-importer.html` must not diverge from it
+2. Never add features to both tracks simultaneously — pick canonical location, update one
+3. All dynamic HTML in `index.html` must pass through `escapeHtml()` — no raw interpolation
+4. Tests before features — every new exported function gets a corresponding test
+5. iOS Safari print-to-PDF is the **primary export path** — optimize for it, not canvas rasterization
+6. Lazy-load heavy CDN libs (abcjs, VexFlow) — they cost ~180 KB+ on initial iOS parse
+
+## Quick Reference: Key Files
+| File | Purpose |
+|------|---------|
+| `index.html` | Legacy monolith — fake-book renderer, slash notation IIFE, self-tests |
+| `app.html` + `src/` | React app — importers, OSMD notation, chord chart view |
+| `src/ingest/ugProPdfImporter.ts` | Canonical PDF importer (not the standalone HTML) |
+| `src/parsers/` | Zero-dependency TypeScript parsers (chordPro, csmpn, abc, gp, musicXml) |
+| `tests/` | Node.js native test runner + tsx loader for TypeScript tests |
+| `OPP_ROADMAP.md` | Full 7-phase optimization roadmap with sprint tracker — update it as work completes |
+
+## Next Immediate Actions (pick up where left off)
+```
+1. Create .github/workflows/ci.yml  → enables automated testing on every push
+2. Add ESLint config                 → stops code style drift
+3. Add source maps to vite.config.ts → 1-line change, makes debugging possible
+```
+
+---
+
 # CSMPN Builder — Slash Notation Feature Guide
 
 **File:** `index.html` (CSMPN Builder, Power Mode only)  
@@ -220,4 +270,4 @@ All exports use `_snCfg.bgColor` as the background and `safeFilename(doc.title)`
 | VexFlow integration | Full renderer rewrite; deferred pending need |
 | Dedicated TXT importer page | `public/ug-txt-importer.html` — separate deliverable |
 | CI/CD pipeline | No `.github/workflows` yet — add GitHub Actions for lint/test/build |
-| Importer fixture tests | Accuracy benchmarks for PDF and TXT import paths |
+| ~~Importer fixture tests~~ | ✅ Done — `tests/sniffFormat.test.ts`, `tests/chordProParser.test.ts`, `tests/csmpnParser.test.ts` (2026-04-09) |
