@@ -70,14 +70,15 @@ infrastructure should optimize around this, not canvas-based rasterization.
 | 1.5 | tsconfig.test.json for test files | ✅ DONE |
 | +   | engines field in package.json (node >=22) | ✅ DONE |
 
-### SPRINT 2 — Mobile & Performance
+### SPRINT 2 — Mobile & Performance (CURRENT)
 | Item | Task | Status |
 |------|------|--------|
+| 1.2 | ESLint + Prettier (carried) | ✅ DONE — 0 errors, 2 warnings (exhaustive-deps in App.tsx) |
+| 4.4 | Font loading fix (preconnect + swap) | ⬜ TODO — next |
+| 4.5 | Lazy-load CDN libs (abcjs ~180 KB, VexFlow) | ⬜ TODO — next |
 | 4.1 | Responsive breakpoints (ug-pro-importer.html, validate.html) | ⬜ TODO |
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ⬜ TODO |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ⬜ TODO |
-| 4.4 | Font loading fix (preconnect + swap, consider self-hosting) | ⬜ TODO |
-| 4.5 | Lazy-load CDN libs (abcjs, VexFlow — wrap in async import) | ⬜ TODO |
 
 ### SPRINT 3 — index.html Decomposition (Part 1)
 | Item | Task | Status |

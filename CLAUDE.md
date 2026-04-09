@@ -11,7 +11,7 @@
 | # | Task | Status |
 |---|------|--------|
 | 1.1 | GitHub Actions CI/CD (`.github/workflows/ci.yml`) | ✅ DONE |
-| 1.2 | ESLint + Prettier setup | ⬜ TODO — next up |
+| 1.2 | ESLint + Prettier setup | ✅ DONE |
 | 1.3 | Parse cache audit | ✅ N/A — already correct |
 | 1.4 | Source maps in `vite.config.ts` | ✅ DONE |
 | 1.5 | `tsconfig.test.json` covering `src/` + `tests/` | ✅ DONE |
@@ -19,17 +19,16 @@
 ## Active Sprint: Sprint 2 — Mobile & Performance
 | # | Task | Status |
 |---|------|--------|
-| 1.2 | ESLint + Prettier setup (carried from Sprint 1) | ⬜ TODO |
+| 4.4 | Font loading fix (`preconnect` + `swap`) | ⬜ TODO |
+| 4.5 | Lazy-load CDN libs (abcjs, VexFlow) | ⬜ TODO |
 | 4.1 | Responsive breakpoints (`ug-pro-importer.html`, `validate.html`) | ⬜ TODO |
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ⬜ TODO |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ⬜ TODO |
-| 4.4 | Font loading fix (`preconnect` + `swap`) | ⬜ TODO |
-| 4.5 | Lazy-load CDN libs (abcjs, VexFlow) | ⬜ TODO |
 
 ## Current State (2026-04-09)
 - **30 tests passing** (`npm run test:all`) — 4 VexFlow + 26 parser/format fixture tests
 - **Two active app tracks:** `index.html` (8,032-line monolith) + `app.html` React/TypeScript
-- **Critical gap:** No CI/CD, no linting, no source maps yet
+- **2 open lint warnings** — `react-hooks/exhaustive-deps` in `App.tsx` (fitWidth, MAX_FILE_SIZE_BYTES) — real issues, tracked for Sprint 3
 
 ## Architectural Principles (enforce on every change)
 1. `src/ingest/ugProPdfImporter.ts` is the **canonical** PDF importer — `ug-pro-importer.html` must not diverge from it
@@ -51,9 +50,9 @@
 
 ## Next Immediate Actions (pick up where left off)
 ```
-1. ESLint + Prettier setup (1.2)     → stops code style drift across both tracks
-2. Responsive breakpoints (4.1)      → ug-pro-importer.html & validate.html need @media
-3. Print stylesheet hardening (4.2)  → slash notation SVG + section orphan prevention
+1. Font loading fix (4.4)        → add preconnect + font-display:swap to index.html <head>
+2. Lazy-load CDN libs (4.5)      → wrap abcjs + VexFlow CDN imports in async loaders
+3. Responsive breakpoints (4.1)  → ug-pro-importer.html & validate.html need @media rules
 ```
 
 ---
