@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Tests target Node.js, not bundler — use NodeNext for proper ESM resolution
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // Allow importing .ts extensions directly (tsx resolves these at runtime)
+    "allowImportingTsExtensions": true,
+    // Tests don't need strict unused-param checking
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["src", "tests"]
+}
