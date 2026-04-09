@@ -19,8 +19,8 @@
 ## Active Sprint: Sprint 2 — Mobile & Performance
 | # | Task | Status |
 |---|------|--------|
-| 4.4 | Font loading fix (`preconnect` + `swap`) | ⬜ TODO |
-| 4.5 | Lazy-load CDN libs (abcjs, VexFlow) | ⬜ TODO |
+| 4.4 | Font loading fix (`preconnect` + `swap`) | ✅ DONE |
+| 4.5 | Lazy-load CDN libs (abcjs, VexFlow) | ✅ DONE |
 | 4.1 | Responsive breakpoints (`ug-pro-importer.html`, `validate.html`) | ⬜ TODO |
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ⬜ TODO |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ⬜ TODO |
@@ -50,9 +50,9 @@
 
 ## Next Immediate Actions (pick up where left off)
 ```
-1. Font loading fix (4.4)        → add preconnect + font-display:swap to index.html <head>
-2. Lazy-load CDN libs (4.5)      → wrap abcjs + VexFlow CDN imports in async loaders
-3. Responsive breakpoints (4.1)  → ug-pro-importer.html & validate.html need @media rules
+1. Responsive breakpoints (4.1)  → ug-pro-importer.html & validate.html need @media rules
+2. Print stylesheet hardening (4.2) → slash notation SVG page-break, section orphan rules
+3. iOS Safari SVG export fix (4.3)  → replace html2canvas for slash notation PNG export
 ```
 
 ---

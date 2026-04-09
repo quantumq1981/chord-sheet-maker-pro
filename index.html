@@ -10,25 +10,26 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand+SC&family=Caveat:wght@400;700&family=Kalam:wght@300;400;700&family=Architects+Daughter&family=Handlee&family=Permanent+Marker&display=swap" rel="stylesheet">
 <!-- GNU FreeSerif for extended Unicode music symbols -->
+<link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin>
 <link href="https://fonts.cdnfonts.com/css/freeserif" rel="stylesheet">
 
 <!-- PDF.js (required for UG Pro PDF text extraction) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<!-- html2canvas for image/PDF capture -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- html2canvas for image/PDF capture — defer: only used on explicit export action -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<!-- jsPDF for optional PDF export (print remains the primary PDF workflow) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- jsPDF for optional PDF export — defer: print is the primary path; jsPDF is a fallback -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<!-- abcjs for ABC import parsing/mining -->
-<script src="https://cdn.jsdelivr.net/npm/abcjs@6.2.2/dist/abcjs-basic-min.js"></script>
+<!-- abcjs for ABC import fallback — defer: only called on user-triggered ABC file import -->
+<script defer src="https://cdn.jsdelivr.net/npm/abcjs@6.2.2/dist/abcjs-basic-min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<!-- JSZip for MXL (compressed MusicXML) decompression — BSD-3-Clause -->
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- JSZip for MXL decompression — defer: only used when user imports a .mxl file -->
+<script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<!-- VexFlow for {vt ...} notation block rendering — MIT License -->
-<script src="https://cdn.jsdelivr.net/npm/vexflow@3.0.9/releases/vexflow-min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- VexFlow for {vt ...} notation blocks — defer: render-time only, null-checked at call site -->
+<script defer src="https://cdn.jsdelivr.net/npm/vexflow@3.0.9/releases/vexflow-min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 <style>
   :root{
