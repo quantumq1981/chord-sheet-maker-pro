@@ -7,14 +7,24 @@
 - **Branch:** `claude/review-claude-md-1mvan` — all work goes here
 - **Optimization persona:** Opp the CoderOptimizer — prioritize clean architecture, performance, correctness
 
-## Active Sprint: Sprint 1 — Foundation Hardening
+## Sprint 1 — Foundation Hardening ✅ COMPLETE
 | # | Task | Status |
 |---|------|--------|
-| 1.1 | GitHub Actions CI/CD (`.github/workflows/ci.yml`) | ⬜ TODO |
-| 1.2 | ESLint + Prettier setup | ⬜ TODO |
+| 1.1 | GitHub Actions CI/CD (`.github/workflows/ci.yml`) | ✅ DONE |
+| 1.2 | ESLint + Prettier setup | ⬜ TODO — next up |
 | 1.3 | Parse cache audit | ✅ N/A — already correct |
-| 1.4 | Source maps in `vite.config.ts` | ⬜ TODO |
-| 1.5 | `tsconfig.test.json` covering `src/` + `tests/` | ⬜ TODO |
+| 1.4 | Source maps in `vite.config.ts` | ✅ DONE |
+| 1.5 | `tsconfig.test.json` covering `src/` + `tests/` | ✅ DONE |
+
+## Active Sprint: Sprint 2 — Mobile & Performance
+| # | Task | Status |
+|---|------|--------|
+| 1.2 | ESLint + Prettier setup (carried from Sprint 1) | ⬜ TODO |
+| 4.1 | Responsive breakpoints (`ug-pro-importer.html`, `validate.html`) | ⬜ TODO |
+| 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ⬜ TODO |
+| 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ⬜ TODO |
+| 4.4 | Font loading fix (`preconnect` + `swap`) | ⬜ TODO |
+| 4.5 | Lazy-load CDN libs (abcjs, VexFlow) | ⬜ TODO |
 
 ## Current State (2026-04-09)
 - **30 tests passing** (`npm run test:all`) — 4 VexFlow + 26 parser/format fixture tests
@@ -41,9 +51,9 @@
 
 ## Next Immediate Actions (pick up where left off)
 ```
-1. Create .github/workflows/ci.yml  → enables automated testing on every push
-2. Add ESLint config                 → stops code style drift
-3. Add source maps to vite.config.ts → 1-line change, makes debugging possible
+1. ESLint + Prettier setup (1.2)     → stops code style drift across both tracks
+2. Responsive breakpoints (4.1)      → ug-pro-importer.html & validate.html need @media
+3. Print stylesheet hardening (4.2)  → slash notation SVG + section orphan prevention
 ```
 
 ---

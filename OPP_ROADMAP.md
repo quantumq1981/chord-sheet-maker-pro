@@ -60,14 +60,15 @@ infrastructure should optimize around this, not canvas-based rasterization.
 
 ## SPRINT EXECUTION PLAN
 
-### ✅ SPRINT 1 — Foundation (CURRENT)
+### ✅ SPRINT 1 — Foundation (COMPLETE)
 | Item | Task | Status |
 |------|------|--------|
-| 1.1 | GitHub Actions CI/CD (.github/workflows/ci.yml) | ⬜ TODO |
-| 1.2 | ESLint + Prettier setup | ⬜ TODO |
+| 1.1 | GitHub Actions CI/CD (.github/workflows/ci.yml) | ✅ DONE |
+| 1.2 | ESLint + Prettier setup | ⬜ TODO (Sprint 2 prep) |
 | 1.3 | Parse cache audit → verified correct, no fix needed | ✅ N/A |
-| 1.4 | Source maps in vite.config.ts | ⬜ TODO |
-| 1.5 | tsconfig.test.json for test files | ⬜ TODO |
+| 1.4 | Source maps in vite.config.ts | ✅ DONE |
+| 1.5 | tsconfig.test.json for test files | ✅ DONE |
+| +   | engines field in package.json (node >=22) | ✅ DONE |
 
 ### SPRINT 2 — Mobile & Performance
 | Item | Task | Status |

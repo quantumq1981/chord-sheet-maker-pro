@@ -22,5 +22,8 @@ export default defineConfig({
     // Target modern browsers only — avoids unnecessary transpilation and
     // keeps the output smaller and faster.
     target: 'esnext',
+    // Source maps for production — essential for debugging on iOS Safari
+    // (DevTools shows original TypeScript, not minified bundle).
+    sourcemap: true,
   },
 });
