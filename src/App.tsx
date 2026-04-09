@@ -378,6 +378,10 @@ function serializeChordProFromDocument(doc: ChordChartDocument, transposeSteps: 
   return serializeChordProDocument(doc, transposeSteps);
 }
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function App() {
@@ -491,7 +495,7 @@ export default function App() {
       }
     };
     void render();
-  }, [loadedXmlText, zoom, diagnostics]);
+  }, [loadedXmlText, zoom, diagnostics, fitWidth]);
 
   // ── PDF blob cleanup ──
   useEffect(() => {
@@ -566,8 +570,6 @@ export default function App() {
   }, []);
 
   // ── File loading ──
-  const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
-
   const loadFile = useCallback(async (file: File) => {
     if (file.size > MAX_FILE_SIZE_BYTES) {
       setRenderError(

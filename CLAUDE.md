@@ -51,16 +51,16 @@
 ## Active Sprint: Sprint 3 — index.html Decomposition (Part 1)
 | # | Task | Status |
 |---|------|--------|
-| 2.1A | Extract utils.js (debounce, escapeHtml, SongModel, etc.) | ⬜ TODO |
-| 2.1B | Extract chordProcessing.js (~800 lines) | ⬜ TODO |
+| 2.1A | Extract utils.js (debounce, escapeHtml, SongModel, etc.) | ✅ DONE — 6 pure fns, index.html −60 lines |
+| 2.1B | Extract chordProcessing.js (~800 lines) | ✅ DONE — 18 fns, index.html −659 lines total |
+| — | Fix 2 react-hooks/exhaustive-deps warnings in App.tsx | ✅ DONE |
 | 5.1 | Add error-path + edge-case tests for parsers | ⬜ TODO |
-| — | Fix 2 react-hooks/exhaustive-deps warnings in App.tsx | ⬜ TODO |
 
 ## Next Immediate Actions (pick up where left off)
 ```
-1. Fix exhaustive-deps warnings (App.tsx) → fitWidth + MAX_FILE_SIZE_BYTES deps
-2. Extract utils.js (2.1A)             → debounce, escapeHtml, SongModel out of index.html
-3. Extract chordProcessing.js (2.1B)   → ~800 lines of chord logic out of index.html
+1. Error-path tests (5.1)  → add edge-case tests for parsers (chordProcessing, importPipeline)
+2. App.tsx decomposition   → extract hooks + views (~300-line target)
+3. React error boundaries  → ImportErrorBoundary, SlashNotationBoundary (Sprint 4 item 3.3)
 ```
 
 ---

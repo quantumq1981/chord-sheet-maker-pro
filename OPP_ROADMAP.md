@@ -83,8 +83,8 @@ infrastructure should optimize around this, not canvas-based rasterization.
 ### SPRINT 3 — index.html Decomposition (Part 1) (CURRENT)
 | Item | Task | Status |
 |------|------|--------|
-| 2.1A | Extract utils.js (debounce, escapeHtml, SongModel, etc.) | ⬜ TODO |
-| 2.1B | Extract chordProcessing.js (~800 lines) | ⬜ TODO |
+| 2.1A | Extract utils.js (debounce, escapeHtml, SongModel, etc.) | ✅ DONE — 6 pure fns extracted |
+| 2.1B | Extract chordProcessing.js (~800 lines) | ✅ DONE — 659 lines extracted; index.html now 7,373 lines |
 | 5.1 | Add error-path + edge-case tests for parsers | ⬜ TODO |
 
 ### SPRINT 4 — React App Optimization
