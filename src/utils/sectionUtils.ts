@@ -14,15 +14,15 @@ import type { SectionType } from '../models/ChordChartModel';
 export function sectionTypeFromLabel(label: string): SectionType {
   const l = label.toLowerCase();
   if (l.includes('pre-chorus') || l.includes('prechorus')) return 'pre-chorus';
-  if (l.includes('chorus') || l.includes('refrain'))       return 'chorus';
-  if (l.includes('verse'))                                  return 'verse';
-  if (l.includes('bridge'))                                return 'bridge';
-  if (l.includes('intro'))                                 return 'intro';
-  if (l.includes('outro') || l.includes('coda'))          return 'outro';
-  if (l.includes('interlude'))                             return 'interlude';
-  if (l.includes('solo'))                                  return 'solo';
-  if (l.includes('grid'))                                  return 'grid';
-  if (l.includes('tab'))                                   return 'tab';
+  if (l.includes('chorus') || l.includes('refrain')) return 'chorus';
+  if (l.includes('verse')) return 'verse';
+  if (l.includes('bridge')) return 'bridge';
+  if (l.includes('intro')) return 'intro';
+  if (l.includes('outro') || l.includes('coda')) return 'outro';
+  if (l.includes('interlude')) return 'interlude';
+  if (l.includes('solo')) return 'solo';
+  if (l.includes('grid')) return 'grid';
+  if (l.includes('tab')) return 'tab';
   return 'unknown';
 }
 

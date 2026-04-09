@@ -34,7 +34,13 @@ import SvgImporterPanel from './components/SvgImporterPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AppMode = 'empty' | 'notation' | 'chord-chart' | 'ug-pro-importer' | 'oemer-image-importer' | 'svg-importer';
+type AppMode =
+  | 'empty'
+  | 'notation'
+  | 'chord-chart'
+  | 'ug-pro-importer'
+  | 'oemer-image-importer'
+  | 'svg-importer';
 
 type Diagnostics = {
   isValidXml: boolean;
@@ -74,23 +80,42 @@ type ChordProUiState = {
 
 const FILE_INPUT_ACCEPT = [
   // SVG vector graphics
-  '.svg', 'image/svg+xml',
+  '.svg',
+  'image/svg+xml',
   // MusicXML / MXL
-  '.xml', '.musicxml', '.mxl',
+  '.xml',
+  '.musicxml',
+  '.mxl',
   'application/vnd.recordare.musicxml+xml',
-  'application/xml', 'text/xml', 'application/zip',
+  'application/xml',
+  'text/xml',
+  'application/zip',
   // Guitar Pro (binary GP3-GP5 and ZIP-based GPX/GP7)
-  '.gp', '.gp3', '.gp4', '.gp5', '.gpx',
+  '.gp',
+  '.gp3',
+  '.gp4',
+  '.gp5',
+  '.gpx',
   // ChordPro dialects
-  '.cho', '.chopro', '.chord', '.crd', '.pro',
+  '.cho',
+  '.chopro',
+  '.chord',
+  '.crd',
+  '.pro',
   // Generic text (UG-style, chords-over-words)
   '.txt',
   // ABC notation (folk / traditional music)
   '.abc',
   // Guitar Pro (GP3–GP5 binary, GP6 GPX, GP7/8 GP) and PowerTab
-  '.gp', '.gp3', '.gp4', '.gp5', '.gpx', '.ptb',
+  '.gp',
+  '.gp3',
+  '.gp4',
+  '.gp5',
+  '.gpx',
+  '.ptb',
   // PDF (UG exports, chord sheets exported from notation apps, etc.)
-  '.pdf', 'application/pdf',
+  '.pdf',
+  'application/pdf',
 ].join(',');
 
 // ─── OSMD helpers ─────────────────────────────────────────────────────────────
@@ -116,22 +141,30 @@ type EngravingRulesSnapshot = Partial<{
   PageFormatHeight?: number;
 };
 
-function getRuleValue(rules: MutableEngravingRules, key: keyof EngravingRulesSnapshot): number | undefined {
+function getRuleValue(
+  rules: MutableEngravingRules,
+  key: keyof EngravingRulesSnapshot
+): number | undefined {
   if (!(key in rules)) return undefined;
   const value = (rules as unknown as Record<string, unknown>)[key];
   return typeof value === 'number' ? value : undefined;
 }
 
-function setRuleValue(rules: MutableEngravingRules, key: keyof EngravingRulesSnapshot, value: number): void {
+function setRuleValue(
+  rules: MutableEngravingRules,
+  key: keyof EngravingRulesSnapshot,
+  value: number
+): void {
   if (!(key in rules)) return;
   (rules as unknown as Record<string, unknown>)[key] = value;
 }
 
 function snapshotEngravingRules(osmd: OpenSheetMusicDisplay): EngravingRulesSnapshot {
   const rules = osmd.EngravingRules as MutableEngravingRules;
-  const pageFormat = 'PageFormat' in rules
-    ? (rules.PageFormat as { width?: number; height?: number } | undefined)
-    : undefined;
+  const pageFormat =
+    'PageFormat' in rules
+      ? (rules.PageFormat as { width?: number; height?: number } | undefined)
+      : undefined;
 
   return {
     PageWidth: getRuleValue(rules, 'PageWidth'),
@@ -169,18 +202,28 @@ function applyPrintProfile(osmd: OpenSheetMusicDisplay, pageSize: PrintPageSize)
   }
 }
 
-function restoreEngravingRules(osmd: OpenSheetMusicDisplay, snapshot: EngravingRulesSnapshot): void {
+function restoreEngravingRules(
+  osmd: OpenSheetMusicDisplay,
+  snapshot: EngravingRulesSnapshot
+): void {
   const rules = osmd.EngravingRules as MutableEngravingRules;
 
-  if (typeof snapshot.PageFormatWidth === 'number' && typeof snapshot.PageFormatHeight === 'number') {
+  if (
+    typeof snapshot.PageFormatWidth === 'number' &&
+    typeof snapshot.PageFormatHeight === 'number'
+  ) {
     osmd.setCustomPageFormat(snapshot.PageFormatWidth, snapshot.PageFormatHeight);
   }
 
   const ruleKeys: (keyof EngravingRulesSnapshot)[] = [
-    'PageWidth', 'PageHeight',
-    'PageTopMargin', 'PageBottomMargin',
-    'PageLeftMargin', 'PageRightMargin',
-    'SystemLeftMargin', 'SystemRightMargin',
+    'PageWidth',
+    'PageHeight',
+    'PageTopMargin',
+    'PageBottomMargin',
+    'PageLeftMargin',
+    'PageRightMargin',
+    'SystemLeftMargin',
+    'SystemRightMargin',
   ];
 
   for (const key of ruleKeys) {
@@ -278,7 +321,10 @@ async function svgToCanvas(svg: SVGSVGElement, scale: number): Promise<HTMLCanva
 async function canvasToBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
-      if (!blob) { reject(new Error(`Failed to create ${type} blob.`)); return; }
+      if (!blob) {
+        reject(new Error(`Failed to create ${type} blob.`));
+        return;
+      }
       resolve(blob);
     }, type);
   });
@@ -296,11 +342,18 @@ function parseXmlWithDiagnostics(xmlText: string): { doc: Document; diagnostics:
     return {
       doc,
       diagnostics: {
-        isValidXml: false, isMusicXml: false,
+        isValidXml: false,
+        isMusicXml: false,
         parseError: errorText ? errorText.slice(0, 300) : 'Invalid XML',
-        rootName: 'error', version: 'n/a',
-        parts: 0, measures: 0, notes: 0, harmonies: 0,
-        hasKey: false, hasTime: false, hasDivisions: false,
+        rootName: 'error',
+        version: 'n/a',
+        parts: 0,
+        measures: 0,
+        notes: 0,
+        harmonies: 0,
+        hasKey: false,
+        hasTime: false,
+        hasDivisions: false,
       },
     };
   }
@@ -313,9 +366,17 @@ function parseXmlWithDiagnostics(xmlText: string): { doc: Document; diagnostics:
     return {
       doc,
       diagnostics: {
-        isValidXml: true, isMusicXml: false, rootName, version: 'n/a',
-        parts: 0, measures: 0, notes: 0, harmonies: 0,
-        hasKey: false, hasTime: false, hasDivisions: false,
+        isValidXml: true,
+        isMusicXml: false,
+        rootName,
+        version: 'n/a',
+        parts: 0,
+        measures: 0,
+        notes: 0,
+        harmonies: 0,
+        hasKey: false,
+        hasTime: false,
+        hasDivisions: false,
       },
     };
   }
@@ -325,8 +386,11 @@ function parseXmlWithDiagnostics(xmlText: string): { doc: Document; diagnostics:
   return {
     doc,
     diagnostics: {
-      isValidXml: true, isMusicXml: true, parseError: undefined,
-      rootName, version: root?.getAttribute('version') ?? 'n/a',
+      isValidXml: true,
+      isMusicXml: true,
+      parseError: undefined,
+      rootName,
+      version: root?.getAttribute('version') ?? 'n/a',
       parts: queryCount('part'),
       measures: queryCount('measure'),
       notes: queryCount('note'),
@@ -341,13 +405,18 @@ function parseXmlWithDiagnostics(xmlText: string): { doc: Document; diagnostics:
 function buildChordProOptionsFromUI(uiState: ChordProUiState) {
   const defaultOptions = getDefaultConvertOptions();
   const formatModeMap: Record<ChordProModeUi, ChordProFormatMode> = {
-    auto: 'auto', 'lyrics-inline': 'lyrics-inline', 'grid-only': 'grid-only',
+    auto: 'auto',
+    'lyrics-inline': 'lyrics-inline',
+    'grid-only': 'grid-only',
   };
   const bracketStyleMap: Record<ChordProBracketUi, ChordBracketStyle> = {
-    separate: 'separate', combined: 'combined',
+    separate: 'separate',
+    combined: 'combined',
   };
   const repeatMap: Record<ChordProRepeatUi, RepeatStrategy> = {
-    none: 'none', 'simple-unroll': 'simple-unroll', 'full-unroll': 'full-unroll',
+    none: 'none',
+    'simple-unroll': 'simple-unroll',
+    'full-unroll': 'full-unroll',
   };
 
   return {
@@ -406,7 +475,10 @@ export default function App() {
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfFilename, setPdfFilename] = useState('score.pdf');
   const [chordProUi, setChordProUi] = useState<ChordProUiState>({
-    barsPerLine: 4, mode: 'auto', chordBracketStyle: 'separate', repeatStrategy: 'none',
+    barsPerLine: 4,
+    mode: 'auto',
+    chordBracketStyle: 'separate',
+    repeatStrategy: 'none',
   });
   const [chordProText, setChordProText] = useState('');
   const [chordProWarnings, setChordProWarnings] = useState<string[]>([]);
@@ -442,10 +514,12 @@ export default function App() {
     if (!diagnostics.isValidXml) return ['Invalid MusicXML/XML (parse error).'];
     if (!diagnostics.isMusicXml) return ['XML is valid but not MusicXML.'];
     const list: string[] = [];
-    if (diagnostics.harmonies === 0) list.push('No chord symbols (<harmony>) found — showing notation only.');
+    if (diagnostics.harmonies === 0)
+      list.push('No chord symbols (<harmony>) found — showing notation only.');
     if (!diagnostics.hasKey) list.push('No key signature found — key may be inferred.');
     if (!diagnostics.hasTime) list.push('No time signature found — time may be inferred.');
-    if (!diagnostics.hasDivisions) list.push('No <divisions> found — rhythmic rendering may be unreliable.');
+    if (!diagnostics.hasDivisions)
+      list.push('No <divisions> found — rhythmic rendering may be unreliable.');
     return list;
   }, [diagnostics]);
 
@@ -456,7 +530,9 @@ export default function App() {
       autoResize: true,
       drawingParameters: 'default',
     });
-    return () => { osmdRef.current = null; };
+    return () => {
+      osmdRef.current = null;
+    };
   }, []);
 
   // ── OSMD render on XML / zoom change ──
@@ -495,7 +571,9 @@ export default function App() {
 
   // ── PDF blob cleanup ──
   useEffect(() => {
-    return () => { if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl); };
+    return () => {
+      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
+    };
   }, [pdfBlobUrl]);
 
   // ── Clear all ──
@@ -572,7 +650,7 @@ export default function App() {
     if (file.size > MAX_FILE_SIZE_BYTES) {
       setRenderError(
         `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). ` +
-        `Maximum supported size is ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB.`
+          `Maximum supported size is ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB.`
       );
       return;
     }
@@ -583,8 +661,7 @@ export default function App() {
 
       if (isMusicXmlFormat(detected)) {
         // ── Notation path ──
-        const { filename, xmlText, isMxl: loadedFromMxl } =
-          await extractMusicXmlTextFromFile(file);
+        const { filename, xmlText, isMxl: loadedFromMxl } = await extractMusicXmlTextFromFile(file);
         didAutoFitRef.current = false;
         setLoadedFilename(filename);
         setLoadedXmlText(xmlText);
@@ -601,7 +678,6 @@ export default function App() {
         setImportQuality(null);
         setImportDiagnostics([]);
         setAppMode('notation');
-
       } else if (isChordChartFormat(detected)) {
         // ── Chord-chart path ──
         const text = new TextDecoder('utf-8').decode(bytes);
@@ -619,11 +695,15 @@ export default function App() {
 
         setLoadedFilename(file.name);
         setChartDocument(doc);
-        setImportQuality(doc.importQuality ? {
-          score: doc.importQuality.score,
-          warnings: doc.importQuality.warnings,
-          diagnostics: doc.importDiagnostics ?? [],
-        } : null);
+        setImportQuality(
+          doc.importQuality
+            ? {
+                score: doc.importQuality.score,
+                warnings: doc.importQuality.warnings,
+                diagnostics: doc.importDiagnostics ?? [],
+              }
+            : null
+        );
         setImportDiagnostics(doc.importDiagnostics ?? []);
         setTransposeSteps(0);
         setDetectedFormatLabel(formatLabels[sourceFormat] ?? sourceFormat);
@@ -642,7 +722,6 @@ export default function App() {
         if (containerRef.current) containerRef.current.innerHTML = '';
         xmlLoadedRef.current = '';
         setAppMode('chord-chart');
-
       } else if (isGuitarProFormat(detected)) {
         // ── Guitar Pro path (.gp / .gp3 / .gp4 / .gp5 / .gpx) ──
         // AlphaTab is loaded lazily on first GP file open (~3 MB chunk).
@@ -651,11 +730,15 @@ export default function App() {
 
         setLoadedFilename(file.name);
         setChartDocument(doc);
-        setImportQuality(doc.importQuality ? {
-          score: doc.importQuality.score,
-          warnings: doc.importQuality.warnings,
-          diagnostics: doc.importDiagnostics ?? [],
-        } : null);
+        setImportQuality(
+          doc.importQuality
+            ? {
+                score: doc.importQuality.score,
+                warnings: doc.importQuality.warnings,
+                diagnostics: doc.importDiagnostics ?? [],
+              }
+            : null
+        );
         setImportDiagnostics(doc.importDiagnostics ?? []);
         setTransposeSteps(0);
         setDetectedFormatLabel('Guitar Pro');
@@ -672,7 +755,6 @@ export default function App() {
         if (containerRef.current) containerRef.current.innerHTML = '';
         xmlLoadedRef.current = '';
         setAppMode('chord-chart');
-
       } else if (isSvgFormat(detected)) {
         // ── SVG path: route to SVG importer panel ──
         setLoadedFilename(file.name);
@@ -694,7 +776,6 @@ export default function App() {
         if (containerRef.current) containerRef.current.innerHTML = '';
         xmlLoadedRef.current = '';
         setAppMode('svg-importer');
-
       } else if (isPdfFormat(detected)) {
         // ── PDF path: route to UG Pro PDF importer ──
         setLoadedFilename(file.name);
@@ -713,7 +794,6 @@ export default function App() {
         if (containerRef.current) containerRef.current.innerHTML = '';
         xmlLoadedRef.current = '';
         setAppMode('ug-pro-importer');
-
       } else if (isGuitarProFormat(detected)) {
         // ── Guitar Pro / PowerTab path ──
         const { parseGuitarPro } = await import('./parsers/gpParser');
@@ -747,25 +827,41 @@ export default function App() {
         if (containerRef.current) containerRef.current.innerHTML = '';
         xmlLoadedRef.current = '';
         setAppMode('chord-chart');
-
       } else {
         setRenderError(
           'Unsupported file type. Upload .svg (SVG graphic), .xml/.mxl (notation), ' +
-          '.gp/.gp5/.gpx (Guitar Pro), ' +
-          '.cho/.pro/.abc/.txt (chord chart), or .pdf. For OEMER, use "OEMER Image OMR".'
+            '.gp/.gp5/.gpx (Guitar Pro), ' +
+            '.cho/.pro/.abc/.txt (chord chart), or .pdf. For OEMER, use "OEMER Image OMR".'
         );
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // Surface actionable context where possible.
-      if (message.toLowerCase().includes('out of memory') || message.toLowerCase().includes('quota')) {
-        setRenderError('Not enough memory to open this file. Try a smaller file or close other browser tabs.');
-      } else if (message.toLowerCase().includes('not allowed') || message.toLowerCase().includes('permission')) {
-        setRenderError('Permission denied reading the file. Try saving it locally and re-uploading.');
-      } else if (message.toLowerCase().includes('network') || message.toLowerCase().includes('fetch')) {
-        setRenderError('Network error while loading the file. Check your connection and try again.');
+      if (
+        message.toLowerCase().includes('out of memory') ||
+        message.toLowerCase().includes('quota')
+      ) {
+        setRenderError(
+          'Not enough memory to open this file. Try a smaller file or close other browser tabs.'
+        );
+      } else if (
+        message.toLowerCase().includes('not allowed') ||
+        message.toLowerCase().includes('permission')
+      ) {
+        setRenderError(
+          'Permission denied reading the file. Try saving it locally and re-uploading.'
+        );
+      } else if (
+        message.toLowerCase().includes('network') ||
+        message.toLowerCase().includes('fetch')
+      ) {
+        setRenderError(
+          'Network error while loading the file. Check your connection and try again.'
+        );
       } else {
-        setRenderError(`Could not open file: ${message}. Verify the file is not corrupted and matches a supported format.`);
+        setRenderError(
+          `Could not open file: ${message}. Verify the file is not corrupted and matches a supported format.`
+        );
       }
     }
   }, []);
@@ -777,7 +873,7 @@ export default function App() {
       await loadFile(file);
       event.target.value = '';
     },
-    [loadFile],
+    [loadFile]
   );
 
   const onDragEnter = useCallback((event: React.DragEvent) => {
@@ -805,7 +901,7 @@ export default function App() {
       if (!file) return;
       await loadFile(file);
     },
-    [loadFile],
+    [loadFile]
   );
 
   // ── Notation controls ──
@@ -829,115 +925,186 @@ export default function App() {
   }, []);
 
   // ── Feedback helpers ──
-  const showExportError   = useCallback((msg: string) => setExportFeedback({ type: 'error', message: msg }), []);
-  const showExportSuccess = useCallback((msg: string) => setExportFeedback({ type: 'success', message: msg }), []);
+  const showExportError = useCallback(
+    (msg: string) => setExportFeedback({ type: 'error', message: msg }),
+    []
+  );
+  const showExportSuccess = useCallback(
+    (msg: string) => setExportFeedback({ type: 'success', message: msg }),
+    []
+  );
 
-  const clearPdfOutput = useCallback(() => { setPdfBlobUrl(null); setPdfFilename('score.pdf'); }, []);
+  const clearPdfOutput = useCallback(() => {
+    setPdfBlobUrl(null);
+    setPdfFilename('score.pdf');
+  }, []);
 
   const baseName = getBaseFilename(loadedFilename);
 
   // ── Notation exports ──
   const downloadXml = useCallback(() => {
-    if (!loadedXmlText) { showExportError('Load a file before downloading XML.'); return; }
+    if (!loadedXmlText) {
+      showExportError('Load a file before downloading XML.');
+      return;
+    }
     try {
-      triggerBlobDownload(new Blob([loadedXmlText], { type: 'application/xml;charset=utf-8' }), `${baseName}.xml`);
+      triggerBlobDownload(
+        new Blob([loadedXmlText], { type: 'application/xml;charset=utf-8' }),
+        `${baseName}.xml`
+      );
       showExportSuccess('Downloaded XML.');
     } catch (error) {
-      showExportError(`XML download failed: ${error instanceof Error ? error.message : String(error)}`);
+      showExportError(
+        `XML download failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }, [baseName, loadedXmlText, showExportError, showExportSuccess]);
 
   const downloadDiagnostics = useCallback(() => {
-    if (!loadedXmlText) { showExportError('Load a file before downloading diagnostics.'); return; }
+    if (!loadedXmlText) {
+      showExportError('Load a file before downloading diagnostics.');
+      return;
+    }
     try {
-      const payload = { filename: loadedFilename || `${baseName}.xml`, diagnostics, warnings: xmlWarnings, renderError: renderError || null, timestamp: new Date().toISOString() };
-      triggerBlobDownload(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' }), `${baseName}.diagnostics.json`);
+      const payload = {
+        filename: loadedFilename || `${baseName}.xml`,
+        diagnostics,
+        warnings: xmlWarnings,
+        renderError: renderError || null,
+        timestamp: new Date().toISOString(),
+      };
+      triggerBlobDownload(
+        new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' }),
+        `${baseName}.diagnostics.json`
+      );
       showExportSuccess('Downloaded diagnostics JSON.');
     } catch (error) {
-      showExportError(`Diagnostics export failed: ${error instanceof Error ? error.message : String(error)}`);
+      showExportError(
+        `Diagnostics export failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
-  }, [baseName, diagnostics, loadedFilename, loadedXmlText, renderError, showExportError, showExportSuccess, xmlWarnings]);
+  }, [
+    baseName,
+    diagnostics,
+    loadedFilename,
+    loadedXmlText,
+    renderError,
+    showExportError,
+    showExportSuccess,
+    xmlWarnings,
+  ]);
 
   const exportSvg = useCallback(() => {
     const svg = getRenderedSvgs(containerRef.current)[0];
-    if (!svg) { showExportError('No rendered score found.'); return; }
+    if (!svg) {
+      showExportError('No rendered score found.');
+      return;
+    }
     try {
-      triggerBlobDownload(new Blob([serializeSvg(svg)], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.page1.svg`);
+      triggerBlobDownload(
+        new Blob([serializeSvg(svg)], { type: 'image/svg+xml;charset=utf-8' }),
+        `${baseName}.page1.svg`
+      );
       showExportSuccess('Exported first SVG page.');
     } catch (error) {
-      showExportError(`SVG export failed: ${error instanceof Error ? error.message : String(error)}`);
+      showExportError(
+        `SVG export failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }, [baseName, showExportError, showExportSuccess]);
 
   const exportPng = useCallback(async () => {
     const svg = getRenderedSvgs(containerRef.current)[0];
-    if (!svg) { showExportError('No rendered score found.'); return; }
+    if (!svg) {
+      showExportError('No rendered score found.');
+      return;
+    }
     try {
       const canvas = await svgToCanvas(svg, 2);
       const blob = await canvasToBlob(canvas, 'image/png');
       triggerBlobDownload(blob, `${baseName}.png`, true);
       showExportSuccess('Exported first page as PNG.');
     } catch (error) {
-      showExportError(`PNG export failed: ${error instanceof Error ? error.message : String(error)}`);
+      showExportError(
+        `PNG export failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }, [baseName, showExportError, showExportSuccess]);
 
-  const exportPdf = useCallback(async (maxPages?: number) => {
-    const osmd = osmdRef.current;
-    if (!osmd) { showExportError('Renderer is not ready yet.'); return; }
-    const initialSvgs = getRenderedSvgs(containerRef.current);
-    if (initialSvgs.length === 0) { showExportError('No rendered score found.'); return; }
-
-    const isLetter = pdfPageSize === 'letter';
-    const unit = isLetter ? 'in' : 'mm';
-    const format: [number, number] = isLetter ? [8.5, 11] : [210, 297];
-    const margin = isLetter ? 0.5 : 12;
-    const rulesSnapshot = snapshotEngravingRules(osmd);
-    const zoomSnapshot = osmd.Zoom;
-
-    try {
-      applyPrintProfile(osmd, pdfPageSize);
-      osmd.Zoom = PRINT_ZOOM;
-      osmd.render();
-      const svgs = getRenderedSvgs(containerRef.current);
-      if (svgs.length === 0) throw new Error('No rendered score found after applying print layout.');
-      const pdf = new jsPDF({ orientation: 'portrait', unit, format });
-      const pagesToExport = typeof maxPages === 'number' ? svgs.slice(0, maxPages) : svgs;
-
-      for (let index = 0; index < pagesToExport.length; index++) {
-        const canvas = await svgToCanvas(pagesToExport[index], 1.5);
-        const jpegData = canvas.toDataURL('image/jpeg', 0.92);
-        if (index > 0) pdf.addPage(format, 'portrait');
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
-        const availableWidth = pageWidth - margin * 2;
-        const availableHeight = pageHeight - margin * 2;
-        const imgAspect = canvas.width / canvas.height;
-        let w = availableWidth;
-        let h = w / imgAspect;
-        if (h > availableHeight) { h = availableHeight; w = h * imgAspect; }
-        const x = (pageWidth - w) / 2;
-        const y = (pageHeight - h) / 2;
-        pdf.addImage(jpegData, 'JPEG', x, y, w, h, undefined, 'FAST');
+  const exportPdf = useCallback(
+    async (maxPages?: number) => {
+      const osmd = osmdRef.current;
+      if (!osmd) {
+        showExportError('Renderer is not ready yet.');
+        return;
+      }
+      const initialSvgs = getRenderedSvgs(containerRef.current);
+      if (initialSvgs.length === 0) {
+        showExportError('No rendered score found.');
+        return;
       }
 
-      const blob = pdf.output('blob');
-      const url = URL.createObjectURL(blob);
-      setPdfBlobUrl(url);
-      setPdfFilename(`${baseName}.pdf`);
-      showExportSuccess('PDF ready. Tap Open PDF.');
-    } catch (error) {
-      showExportError(`PDF export failed: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      restoreEngravingRules(osmd, rulesSnapshot);
-      osmd.Zoom = zoomSnapshot;
-      osmd.render();
-    }
-  }, [baseName, pdfPageSize, showExportError, showExportSuccess]);
+      const isLetter = pdfPageSize === 'letter';
+      const unit = isLetter ? 'in' : 'mm';
+      const format: [number, number] = isLetter ? [8.5, 11] : [210, 297];
+      const margin = isLetter ? 0.5 : 12;
+      const rulesSnapshot = snapshotEngravingRules(osmd);
+      const zoomSnapshot = osmd.Zoom;
+
+      try {
+        applyPrintProfile(osmd, pdfPageSize);
+        osmd.Zoom = PRINT_ZOOM;
+        osmd.render();
+        const svgs = getRenderedSvgs(containerRef.current);
+        if (svgs.length === 0)
+          throw new Error('No rendered score found after applying print layout.');
+        const pdf = new jsPDF({ orientation: 'portrait', unit, format });
+        const pagesToExport = typeof maxPages === 'number' ? svgs.slice(0, maxPages) : svgs;
+
+        for (let index = 0; index < pagesToExport.length; index++) {
+          const canvas = await svgToCanvas(pagesToExport[index], 1.5);
+          const jpegData = canvas.toDataURL('image/jpeg', 0.92);
+          if (index > 0) pdf.addPage(format, 'portrait');
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          const availableWidth = pageWidth - margin * 2;
+          const availableHeight = pageHeight - margin * 2;
+          const imgAspect = canvas.width / canvas.height;
+          let w = availableWidth;
+          let h = w / imgAspect;
+          if (h > availableHeight) {
+            h = availableHeight;
+            w = h * imgAspect;
+          }
+          const x = (pageWidth - w) / 2;
+          const y = (pageHeight - h) / 2;
+          pdf.addImage(jpegData, 'JPEG', x, y, w, h, undefined, 'FAST');
+        }
+
+        const blob = pdf.output('blob');
+        const url = URL.createObjectURL(blob);
+        setPdfBlobUrl(url);
+        setPdfFilename(`${baseName}.pdf`);
+        showExportSuccess('PDF ready. Tap Open PDF.');
+      } catch (error) {
+        showExportError(
+          `PDF export failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      } finally {
+        restoreEngravingRules(osmd, rulesSnapshot);
+        osmd.Zoom = zoomSnapshot;
+        osmd.render();
+      }
+    },
+    [baseName, pdfPageSize, showExportError, showExportSuccess]
+  );
 
   const printScore = useCallback(() => {
     const osmd = osmdRef.current;
-    if (!osmd || renderedPageCount === 0) { showExportError('No rendered score found.'); return; }
+    if (!osmd || renderedPageCount === 0) {
+      showExportError('No rendered score found.');
+      return;
+    }
     const rulesSnapshot = snapshotEngravingRules(osmd);
     const zoomSnapshot = osmd.Zoom;
     let restored = false;
@@ -964,18 +1131,29 @@ export default function App() {
 
   // ── MusicXML → ChordPro ──
   const generateChordPro = useCallback(async () => {
-    if (!loadedXmlText) { showExportError('Load a MusicXML file before generating ChordPro.'); return; }
+    if (!loadedXmlText) {
+      showExportError('Load a MusicXML file before generating ChordPro.');
+      return;
+    }
     try {
       const options = buildChordProOptionsFromUI(chordProUi);
-      const result = await convertMusicXmlToChordPro({ filename: loadedFilename, xmlText: loadedXmlText }, options);
+      const result = await convertMusicXmlToChordPro(
+        { filename: loadedFilename, xmlText: loadedXmlText },
+        options
+      );
       setChordProText(result.chordPro);
       setChordProWarnings(result.warnings);
       setChordProDiagnostics(result.diagnostics);
-      if (result.error) { showExportError(`ChordPro generated with issues: ${result.error}`); return; }
+      if (result.error) {
+        showExportError(`ChordPro generated with issues: ${result.error}`);
+        return;
+      }
       showExportSuccess('ChordPro generated.');
       return result.chordPro;
     } catch (error) {
-      showExportError(`ChordPro conversion failed: ${error instanceof Error ? error.message : String(error)}`);
+      showExportError(
+        `ChordPro conversion failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
     return undefined;
   }, [loadedXmlText, loadedFilename, chordProUi, showExportError, showExportSuccess]);
@@ -985,7 +1163,7 @@ export default function App() {
     // Reuse existing ChordPro text if it's already been generated, otherwise generate fresh
     let pro = chordProText;
     if (!pro) {
-      pro = await generateChordPro() ?? '';
+      pro = (await generateChordPro()) ?? '';
       if (!pro) return;
     }
     const doc = canonicalizeChordChartDocument(parseChordChart(pro, 'chordpro'));
@@ -999,76 +1177,113 @@ export default function App() {
     setAppMode('chord-chart');
   }, [chordProText, generateChordPro]);
 
-  const copyChordPro = useCallback(async (text: string) => {
-    if (!text) { showExportError('Nothing to copy.'); return; }
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.setAttribute('readonly', 'true');
-        textarea.style.cssText = 'position:fixed;opacity:0';
-        document.body.append(textarea);
-        textarea.select();
-        const copied = document.execCommand('copy');
-        textarea.remove();
-        if (!copied) throw new Error('Copy command was not successful.');
+  const copyChordPro = useCallback(
+    async (text: string) => {
+      if (!text) {
+        showExportError('Nothing to copy.');
+        return;
       }
-      showExportSuccess('Copied.');
-    } catch (error) {
-      showExportError(`Copy failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, [showExportError, showExportSuccess]);
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.setAttribute('readonly', 'true');
+          textarea.style.cssText = 'position:fixed;opacity:0';
+          document.body.append(textarea);
+          textarea.select();
+          const copied = document.execCommand('copy');
+          textarea.remove();
+          if (!copied) throw new Error('Copy command was not successful.');
+        }
+        showExportSuccess('Copied.');
+      } catch (error) {
+        showExportError(`Copy failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+    [showExportError, showExportSuccess]
+  );
 
-  const downloadChordProText = useCallback((text: string, filename: string) => {
-    if (!text) { showExportError('Nothing to download.'); return; }
-    try {
-      triggerBlobDownload(new Blob([text], { type: 'text/plain;charset=utf-8' }), filename);
-      showExportSuccess('Downloaded .pro file.');
-    } catch (error) {
-      showExportError(`ChordPro download failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, [showExportError, showExportSuccess]);
+  const downloadChordProText = useCallback(
+    (text: string, filename: string) => {
+      if (!text) {
+        showExportError('Nothing to download.');
+        return;
+      }
+      try {
+        triggerBlobDownload(new Blob([text], { type: 'text/plain;charset=utf-8' }), filename);
+        showExportSuccess('Downloaded .pro file.');
+      } catch (error) {
+        showExportError(
+          `ChordPro download failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    },
+    [showExportError, showExportSuccess]
+  );
 
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
-  const shareText = useCallback(async (text: string, filename: string) => {
-    if (!text) { showExportError('Nothing to share.'); return; }
-    if (!canShare) { showExportError('Share is not supported in this browser.'); return; }
-    try {
-      const file = new File([text], filename, { type: 'text/plain' });
-      await navigator.share({ files: [file], title: filename });
-      showExportSuccess('Shared.');
-    } catch (error) {
-      showExportError(`Share failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, [canShare, showExportError, showExportSuccess]);
+  const shareText = useCallback(
+    async (text: string, filename: string) => {
+      if (!text) {
+        showExportError('Nothing to share.');
+        return;
+      }
+      if (!canShare) {
+        showExportError('Share is not supported in this browser.');
+        return;
+      }
+      try {
+        const file = new File([text], filename, { type: 'text/plain' });
+        await navigator.share({ files: [file], title: filename });
+        showExportSuccess('Shared.');
+      } catch (error) {
+        showExportError(`Share failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+    [canShare, showExportError, showExportSuccess]
+  );
 
-  const canSharePdf = typeof navigator !== 'undefined' &&
+  const canSharePdf =
+    typeof navigator !== 'undefined' &&
     typeof navigator.share === 'function' &&
     typeof navigator.canShare === 'function';
 
   const sharePdf = useCallback(async () => {
-    if (!pdfBlobUrl) { showExportError('Generate PDF first.'); return; }
-    if (!canSharePdf) { showExportError('PDF share is not supported in this browser.'); return; }
+    if (!pdfBlobUrl) {
+      showExportError('Generate PDF first.');
+      return;
+    }
+    if (!canSharePdf) {
+      showExportError('PDF share is not supported in this browser.');
+      return;
+    }
     try {
       const response = await fetch(pdfBlobUrl);
       const blob = await response.blob();
       const file = new File([blob], pdfFilename, { type: 'application/pdf' });
-      if (!navigator.canShare({ files: [file] })) { showExportError('PDF share is not supported in this browser.'); return; }
+      if (!navigator.canShare({ files: [file] })) {
+        showExportError('PDF share is not supported in this browser.');
+        return;
+      }
       await navigator.share({ files: [file], title: pdfFilename });
       showExportSuccess('PDF shared.');
     } catch (error) {
-      showExportError(`PDF share failed: ${error instanceof Error ? error.message : String(error)}`);
+      showExportError(
+        `PDF share failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }, [canSharePdf, pdfBlobUrl, pdfFilename, showExportError, showExportSuccess]);
 
   // ── Chord-chart controls ──
   const adjustTranspose = useCallback((delta: number) => {
-    setTransposeSteps((prev) => ((prev + delta + 12) % 12 + 12) % 12 === 0 && delta < 0
-      ? -12 + ((prev + delta + 12) % 12 + 12) % 12
-      : prev + delta);
+    setTransposeSteps((prev) =>
+      (((prev + delta + 12) % 12) + 12) % 12 === 0 && delta < 0
+        ? -12 + ((((prev + delta + 12) % 12) + 12) % 12)
+        : prev + delta
+    );
   }, []);
 
   const normalizedTranspose = ((transposeSteps % 12) + 12) % 12;
@@ -1091,26 +1306,37 @@ export default function App() {
           Upload
           <input type="file" accept={FILE_INPUT_ACCEPT} onChange={onFileInput} />
         </label>
-        <button type="button" onClick={() => setAppMode('oemer-image-importer')}>OEMER Image OMR</button>
+        <button type="button" onClick={() => setAppMode('oemer-image-importer')}>
+          OEMER Image OMR
+        </button>
 
         {appMode === 'empty' && (
           <span className="hint">
-            Drag &amp; drop .svg (graphic), .xml / .mxl (notation), .gp / .gp5 / .gpx (Guitar Pro), or .cho / .pro / .abc / .txt / .pdf (chord chart)
+            Drag &amp; drop .svg (graphic), .xml / .mxl (notation), .gp / .gp5 / .gpx (Guitar Pro),
+            or .cho / .pro / .abc / .txt / .pdf (chord chart)
           </span>
         )}
 
         {appMode === 'notation' && (
           <>
             <span className="mode-badge mode-badge--notation">Notation</span>
-            <button type="button" onClick={() => adjustZoom(-0.1)}>Zoom −</button>
-            <button type="button" onClick={() => adjustZoom(0.1)}>Zoom +</button>
-            <button type="button" onClick={fitWidth}>Fit Width</button>
+            <button type="button" onClick={() => adjustZoom(-0.1)}>
+              Zoom −
+            </button>
+            <button type="button" onClick={() => adjustZoom(0.1)}>
+              Zoom +
+            </button>
+            <button type="button" onClick={fitWidth}>
+              Fit Width
+            </button>
           </>
         )}
 
         {appMode === 'chord-chart' && (
           <>
-            <span className="mode-badge mode-badge--chart">Chord Chart · {detectedFormatLabel}</span>
+            <span className="mode-badge mode-badge--chart">
+              Chord Chart · {detectedFormatLabel}
+            </span>
             {chartDocument && (
               <div className="top-slash-controls">
                 <button
@@ -1154,19 +1380,22 @@ export default function App() {
         )}
 
         {appMode !== 'empty' && (
-          <button type="button" onClick={clearAll}>Clear</button>
+          <button type="button" onClick={clearAll}>
+            Clear
+          </button>
         )}
       </header>
 
       {/* ── Error banners ── */}
       {loadedXmlText && diagnostics && !diagnostics.isValidXml && (
-        <div className="error-banner">XML parse error: {diagnostics.parseError ?? 'Invalid XML'}</div>
+        <div className="error-banner">
+          XML parse error: {diagnostics.parseError ?? 'Invalid XML'}
+        </div>
       )}
       {renderError && <div className="error-banner">{renderError}</div>}
 
       {/* ── Content area ── */}
       <main className="content-grid">
-
         {/* ── Left: score viewport OR chord chart OR importer panels ── */}
         {appMode === 'svg-importer' ? (
           <section
@@ -1198,10 +1427,7 @@ export default function App() {
                 <span>Drop PDF to load</span>
               </div>
             )}
-            <UGProImporterPanel
-              initialFile={ugProFile}
-              onImportCsmpn={onImportCsmpn}
-            />
+            <UGProImporterPanel initialFile={ugProFile} onImportCsmpn={onImportCsmpn} />
           </section>
         ) : appMode === 'oemer-image-importer' ? (
           <section className="chord-chart-viewport" style={{ gridColumn: '1 / -1' }}>
@@ -1222,7 +1448,8 @@ export default function App() {
             )}
             {appMode === 'empty' && !isDragging && (
               <p className="placeholder">
-                Drop a file here, or use the file picker below.<br />
+                Drop a file here, or use the file picker below.
+                <br />
                 Supports MusicXML / MXL, ChordPro / text chord charts, and PDF chord sheets.
               </p>
             )}
@@ -1241,8 +1468,8 @@ export default function App() {
                 <span>Drop to load</span>
               </div>
             )}
-            {chartDocument && (
-              showSlashNotation ? (
+            {chartDocument &&
+              (showSlashNotation ? (
                 <SlashNotationView
                   document={chartDocument}
                   transposeSteps={transposeSteps}
@@ -1250,14 +1477,12 @@ export default function App() {
                 />
               ) : (
                 <ChordChart document={chartDocument} transposeSteps={transposeSteps} />
-              )
-            )}
+              ))}
           </section>
         )}
 
         {/* ── Right: side panel ── */}
         <aside className="side-panel">
-
           {/* ── Chord-chart mode panel ── */}
           {appMode === 'chord-chart' && chartDocument && (
             <>
@@ -1273,27 +1498,66 @@ export default function App() {
               )}
               <h2>Chart Info</h2>
               <ul>
-                <li><strong>File:</strong> {loadedFilename}</li>
-                <li><strong>Format:</strong> {detectedFormatLabel}</li>
+                <li>
+                  <strong>File:</strong> {loadedFilename}
+                </li>
+                <li>
+                  <strong>Format:</strong> {detectedFormatLabel}
+                </li>
                 {importQuality && (
                   <li>
                     <strong>Import confidence:</strong> {importQuality.score}/100
-                    {chartDocument.importQuality?.strategy === 'abc-via-musicxml-fallback' && ' (ABC→MusicXML fallback)'}
+                    {chartDocument.importQuality?.strategy === 'abc-via-musicxml-fallback' &&
+                      ' (ABC→MusicXML fallback)'}
                   </li>
                 )}
-                {chartDocument.title && <li><strong>Title:</strong> {chartDocument.title}</li>}
-                {chartDocument.artist && <li><strong>Artist:</strong> {chartDocument.artist}</li>}
-                {chartDocument.key && <li><strong>Key:</strong> {chartDocument.key}</li>}
-                {chartDocument.capo && <li><strong>Capo:</strong> {chartDocument.capo}</li>}
-                {chartDocument.tempo && <li><strong>Tempo:</strong> {chartDocument.tempo} BPM</li>}
-                {chartDocument.time && <li><strong>Time:</strong> {chartDocument.time}</li>}
-                {chartDocument.genre && <li><strong>Genre:</strong> {chartDocument.genre}</li>}
-                <li><strong>Sections:</strong> {chartDocument.sections.length}</li>
+                {chartDocument.title && (
+                  <li>
+                    <strong>Title:</strong> {chartDocument.title}
+                  </li>
+                )}
+                {chartDocument.artist && (
+                  <li>
+                    <strong>Artist:</strong> {chartDocument.artist}
+                  </li>
+                )}
+                {chartDocument.key && (
+                  <li>
+                    <strong>Key:</strong> {chartDocument.key}
+                  </li>
+                )}
+                {chartDocument.capo && (
+                  <li>
+                    <strong>Capo:</strong> {chartDocument.capo}
+                  </li>
+                )}
+                {chartDocument.tempo && (
+                  <li>
+                    <strong>Tempo:</strong> {chartDocument.tempo} BPM
+                  </li>
+                )}
+                {chartDocument.time && (
+                  <li>
+                    <strong>Time:</strong> {chartDocument.time}
+                  </li>
+                )}
+                {chartDocument.genre && (
+                  <li>
+                    <strong>Genre:</strong> {chartDocument.genre}
+                  </li>
+                )}
+                <li>
+                  <strong>Sections:</strong> {chartDocument.sections.length}
+                </li>
               </ul>
               {importQuality && importQuality.warnings.length > 0 && (
                 <div className="warning-block">
                   <strong>Import warnings</strong>
-                  <ul>{importQuality.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+                  <ul>
+                    {importQuality.warnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
               {importDiagnostics.length > 0 && (
@@ -1316,7 +1580,8 @@ export default function App() {
                   <input
                     id="sn-mpr"
                     type="number"
-                    min={1} max={8}
+                    min={1}
+                    max={8}
                     value={slashMeasuresPerRow}
                     onChange={(e) => {
                       const v = parseInt(e.target.value, 10);
@@ -1328,12 +1593,20 @@ export default function App() {
 
               <h2>Transpose</h2>
               <div className="transpose-row">
-                <button type="button" onClick={() => adjustTranspose(-1)}>−1</button>
+                <button type="button" onClick={() => adjustTranspose(-1)}>
+                  −1
+                </button>
                 <span className="transpose-value">
                   {displayTranspose > 0 ? `+${displayTranspose}` : displayTranspose}
                 </span>
-                <button type="button" onClick={() => adjustTranspose(1)}>+1</button>
-                <button type="button" onClick={() => setTransposeSteps(0)} disabled={transposeSteps === 0}>
+                <button type="button" onClick={() => adjustTranspose(1)}>
+                  +1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTransposeSteps(0)}
+                  disabled={transposeSteps === 0}
+                >
                   Reset
                 </button>
               </div>
@@ -1343,11 +1616,19 @@ export default function App() {
                 <button type="button" onClick={() => void copyChordPro(chartProText)}>
                   Copy ChordPro
                 </button>
-                <button type="button" onClick={() => downloadChordProText(chartProText, deriveProFilename(loadedFilename))}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadChordProText(chartProText, deriveProFilename(loadedFilename))
+                  }
+                >
                   Download .pro
                 </button>
                 {canShare && (
-                  <button type="button" onClick={() => void shareText(chartProText, deriveProFilename(loadedFilename))}>
+                  <button
+                    type="button"
+                    onClick={() => void shareText(chartProText, deriveProFilename(loadedFilename))}
+                  >
                     Share
                   </button>
                 )}
@@ -1370,20 +1651,44 @@ export default function App() {
               <h2>Diagnostics</h2>
               {diagnostics ? (
                 <ul>
-                  <li><strong>File:</strong> {loadedFilename || 'n/a'}</li>
-                  <li><strong>Root:</strong> {diagnostics.rootName}</li>
-                  <li><strong>Version:</strong> {diagnostics.version}</li>
+                  <li>
+                    <strong>File:</strong> {loadedFilename || 'n/a'}
+                  </li>
+                  <li>
+                    <strong>Root:</strong> {diagnostics.rootName}
+                  </li>
+                  <li>
+                    <strong>Version:</strong> {diagnostics.version}
+                  </li>
                   {!diagnostics.isValidXml && diagnostics.parseError && (
-                    <li><strong>Parse error:</strong> {diagnostics.parseError}</li>
+                    <li>
+                      <strong>Parse error:</strong> {diagnostics.parseError}
+                    </li>
                   )}
-                  <li><strong>Parts:</strong> {diagnostics.parts}</li>
-                  <li><strong>Measures:</strong> {diagnostics.measures}</li>
-                  <li><strong>Notes:</strong> {diagnostics.notes}</li>
-                  <li><strong>Harmonies:</strong> {diagnostics.harmonies}</li>
-                  <li><strong>Has key:</strong> {diagnostics.hasKey ? 'yes' : 'no'}</li>
-                  <li><strong>Has time:</strong> {diagnostics.hasTime ? 'yes' : 'no'}</li>
-                  <li><strong>Has divisions:</strong> {diagnostics.hasDivisions ? 'yes' : 'no'}</li>
-                  <li><strong>Source type:</strong> {isMxl ? 'MXL archive' : 'XML text'}</li>
+                  <li>
+                    <strong>Parts:</strong> {diagnostics.parts}
+                  </li>
+                  <li>
+                    <strong>Measures:</strong> {diagnostics.measures}
+                  </li>
+                  <li>
+                    <strong>Notes:</strong> {diagnostics.notes}
+                  </li>
+                  <li>
+                    <strong>Harmonies:</strong> {diagnostics.harmonies}
+                  </li>
+                  <li>
+                    <strong>Has key:</strong> {diagnostics.hasKey ? 'yes' : 'no'}
+                  </li>
+                  <li>
+                    <strong>Has time:</strong> {diagnostics.hasTime ? 'yes' : 'no'}
+                  </li>
+                  <li>
+                    <strong>Has divisions:</strong> {diagnostics.hasDivisions ? 'yes' : 'no'}
+                  </li>
+                  <li>
+                    <strong>Source type:</strong> {isMxl ? 'MXL archive' : 'XML text'}
+                  </li>
                 </ul>
               ) : (
                 <p>No file loaded.</p>
@@ -1391,38 +1696,79 @@ export default function App() {
 
               <h2>Warnings</h2>
               {xmlWarnings.length > 0 ? (
-                <ul>{xmlWarnings.map((w) => <li key={w}>{w}</li>)}</ul>
+                <ul>
+                  {xmlWarnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
               ) : (
                 <p>No warnings.</p>
               )}
 
               <h2>ChordPro Export</h2>
               <div className="chordpro-options-grid">
-                <label className="export-label" htmlFor="chordpro-bars">Bars per line</label>
+                <label className="export-label" htmlFor="chordpro-bars">
+                  Bars per line
+                </label>
                 <input
-                  id="chordpro-bars" type="number" min={1} max={16}
+                  id="chordpro-bars"
+                  type="number"
+                  min={1}
+                  max={16}
                   value={chordProUi.barsPerLine}
                   onChange={(e) => {
                     const v = Number(e.target.value);
-                    setChordProUi((p) => ({ ...p, barsPerLine: Number.isFinite(v) ? Math.max(1, Math.min(16, v)) : p.barsPerLine }));
+                    setChordProUi((p) => ({
+                      ...p,
+                      barsPerLine: Number.isFinite(v)
+                        ? Math.max(1, Math.min(16, v))
+                        : p.barsPerLine,
+                    }));
                   }}
                 />
-                <label className="export-label" htmlFor="chordpro-mode">Mode</label>
-                <select id="chordpro-mode" value={chordProUi.mode}
-                  onChange={(e) => setChordProUi((p) => ({ ...p, mode: e.target.value as ChordProModeUi }))}>
+                <label className="export-label" htmlFor="chordpro-mode">
+                  Mode
+                </label>
+                <select
+                  id="chordpro-mode"
+                  value={chordProUi.mode}
+                  onChange={(e) =>
+                    setChordProUi((p) => ({ ...p, mode: e.target.value as ChordProModeUi }))
+                  }
+                >
                   <option value="auto">Auto</option>
                   <option value="lyrics-inline">Lyrics Inline</option>
                   <option value="grid-only">Grid Only</option>
                 </select>
-                <label className="export-label" htmlFor="chordpro-brackets">Chord bracket style</label>
-                <select id="chordpro-brackets" value={chordProUi.chordBracketStyle}
-                  onChange={(e) => setChordProUi((p) => ({ ...p, chordBracketStyle: e.target.value as ChordProBracketUi }))}>
+                <label className="export-label" htmlFor="chordpro-brackets">
+                  Chord bracket style
+                </label>
+                <select
+                  id="chordpro-brackets"
+                  value={chordProUi.chordBracketStyle}
+                  onChange={(e) =>
+                    setChordProUi((p) => ({
+                      ...p,
+                      chordBracketStyle: e.target.value as ChordProBracketUi,
+                    }))
+                  }
+                >
                   <option value="separate">Separate</option>
                   <option value="combined">Combined</option>
                 </select>
-                <label className="export-label" htmlFor="chordpro-repeat">Repeat</label>
-                <select id="chordpro-repeat" value={chordProUi.repeatStrategy}
-                  onChange={(e) => setChordProUi((p) => ({ ...p, repeatStrategy: e.target.value as ChordProRepeatUi }))}>
+                <label className="export-label" htmlFor="chordpro-repeat">
+                  Repeat
+                </label>
+                <select
+                  id="chordpro-repeat"
+                  value={chordProUi.repeatStrategy}
+                  onChange={(e) =>
+                    setChordProUi((p) => ({
+                      ...p,
+                      repeatStrategy: e.target.value as ChordProRepeatUi,
+                    }))
+                  }
+                >
                   <option value="none">None</option>
                   <option value="simple-unroll">Simple Unroll</option>
                   <option value="full-unroll">Full Unroll (Volta)</option>
@@ -1430,7 +1776,11 @@ export default function App() {
               </div>
 
               <div className="export-actions">
-                <button type="button" onClick={() => void generateChordPro()} disabled={!canExportNotation}>
+                <button
+                  type="button"
+                  onClick={() => void generateChordPro()}
+                  disabled={!canExportNotation}
+                >
                   Generate ChordPro
                 </button>
                 <button
@@ -1442,14 +1792,28 @@ export default function App() {
                 >
                   View as Fakebook
                 </button>
-                <button type="button" onClick={() => void copyChordPro(chordProText)} disabled={!chordProText}>
+                <button
+                  type="button"
+                  onClick={() => void copyChordPro(chordProText)}
+                  disabled={!chordProText}
+                >
                   Copy
                 </button>
-                <button type="button" onClick={() => downloadChordProText(chordProText, deriveProFilename(loadedFilename))} disabled={!chordProText}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadChordProText(chordProText, deriveProFilename(loadedFilename))
+                  }
+                  disabled={!chordProText}
+                >
                   Download .pro
                 </button>
                 {canShare && (
-                  <button type="button" onClick={() => void shareText(chordProText, deriveProFilename(loadedFilename))} disabled={!chordProText}>
+                  <button
+                    type="button"
+                    onClick={() => void shareText(chordProText, deriveProFilename(loadedFilename))}
+                    disabled={!chordProText}
+                  >
                     Share
                   </button>
                 )}
@@ -1459,47 +1823,63 @@ export default function App() {
                 className="chordpro-output"
                 value={chordProText}
                 placeholder="Generated ChordPro will appear here..."
-                wrap="off" spellCheck={false} readOnly
+                wrap="off"
+                spellCheck={false}
+                readOnly
               />
 
               {chordProWarnings.length > 0 && (
                 <div className="warning-block">
                   <strong>ChordPro warnings</strong>
-                  <ul>{chordProWarnings.map((w) => <li key={w}>{w}</li>)}</ul>
+                  <ul>
+                    {chordProWarnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
 
               {chordProDiagnostics && (
                 <p className="hint-text">
-                  Resolved mode: <strong>{chordProDiagnostics.formatModeResolved}</strong> · Measures:{' '}
-                  {chordProDiagnostics.measuresCount}
+                  Resolved mode: <strong>{chordProDiagnostics.formatModeResolved}</strong> ·
+                  Measures: {chordProDiagnostics.measuresCount}
                   {chordProDiagnostics.keyChanges > 0 && (
                     <span className="diag-badge diag-badge--warn">
-                      {chordProDiagnostics.keyChanges} key change{chordProDiagnostics.keyChanges > 1 ? 's' : ''}
+                      {chordProDiagnostics.keyChanges} key change
+                      {chordProDiagnostics.keyChanges > 1 ? 's' : ''}
                     </span>
                   )}
                   {chordProDiagnostics.timeChanges > 0 && (
                     <span className="diag-badge diag-badge--warn">
-                      {chordProDiagnostics.timeChanges} time sig change{chordProDiagnostics.timeChanges > 1 ? 's' : ''}
+                      {chordProDiagnostics.timeChanges} time sig change
+                      {chordProDiagnostics.timeChanges > 1 ? 's' : ''}
                     </span>
                   )}
                   {chordProDiagnostics.hasPickupBar && (
                     <span className="diag-badge diag-badge--info">pickup bar</span>
                   )}
                   {chordProDiagnostics.sectionsDetected.length > 0 && (
-                    <span className="diag-badge diag-badge--info"
-                      title={chordProDiagnostics.sectionsDetected.join(', ')}>
-                      {chordProDiagnostics.sectionsDetected.length} section{chordProDiagnostics.sectionsDetected.length > 1 ? 's' : ''}
+                    <span
+                      className="diag-badge diag-badge--info"
+                      title={chordProDiagnostics.sectionsDetected.join(', ')}
+                    >
+                      {chordProDiagnostics.sectionsDetected.length} section
+                      {chordProDiagnostics.sectionsDetected.length > 1 ? 's' : ''}
                     </span>
                   )}
                 </p>
               )}
 
               <h2>Export</h2>
-              <label className="export-label" htmlFor="pdf-page-size">PDF Page Size</label>
-              <select id="pdf-page-size" value={pdfPageSize}
+              <label className="export-label" htmlFor="pdf-page-size">
+                PDF Page Size
+              </label>
+              <select
+                id="pdf-page-size"
+                value={pdfPageSize}
                 onChange={(e) => setPdfPageSize(e.target.value as PdfPageSize)}
-                disabled={!canExportNotation}>
+                disabled={!canExportNotation}
+              >
                 <option value="letter">Letter (Portrait)</option>
                 <option value="a4">A4 (Portrait)</option>
               </select>
@@ -1514,14 +1894,26 @@ export default function App() {
                 <button type="button" onClick={exportSvg} disabled={!canExportNotation}>
                   Export SVG (first page)
                 </button>
-                <button type="button" onClick={() => void exportPng()} disabled={!canExportNotation}>
+                <button
+                  type="button"
+                  onClick={() => void exportPng()}
+                  disabled={!canExportNotation}
+                >
                   Export PNG (first page)
                 </button>
-                <button type="button" onClick={() => void exportPdf()} disabled={!canExportNotation}>
+                <button
+                  type="button"
+                  onClick={() => void exportPdf()}
+                  disabled={!canExportNotation}
+                >
                   Generate PDF
                 </button>
                 {renderedPageCount > 6 && (
-                  <button type="button" onClick={() => void exportPdf(1)} disabled={!canExportNotation}>
+                  <button
+                    type="button"
+                    onClick={() => void exportPdf(1)}
+                    disabled={!canExportNotation}
+                  >
                     Export PDF (First Page)
                   </button>
                 )}
@@ -1534,14 +1926,25 @@ export default function App() {
                 <div className="pdf-ready-box">
                   <p className="pdf-ready-title">PDF Ready</p>
                   <div className="pdf-ready-actions">
-                    <a href={pdfBlobUrl} target="_blank" rel="noopener noreferrer" className="open-pdf-link">
+                    <a
+                      href={pdfBlobUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="open-pdf-link"
+                    >
                       Open PDF
                     </a>
-                    <a href={pdfBlobUrl} download={pdfFilename}>Download PDF</a>
+                    <a href={pdfBlobUrl} download={pdfFilename}>
+                      Download PDF
+                    </a>
                     {canSharePdf && (
-                      <button type="button" onClick={() => void sharePdf()}>Share PDF</button>
+                      <button type="button" onClick={() => void sharePdf()}>
+                        Share PDF
+                      </button>
                     )}
-                    <button type="button" onClick={clearPdfOutput}>Clear PDF</button>
+                    <button type="button" onClick={clearPdfOutput}>
+                      Clear PDF
+                    </button>
                   </div>
                 </div>
               )}
@@ -1549,9 +1952,7 @@ export default function App() {
           )}
 
           {/* ── Empty state ── */}
-          {appMode === 'empty' && (
-            <p>Upload a file to get started.</p>
-          )}
+          {appMode === 'empty' && <p>Upload a file to get started.</p>}
 
           {exportFeedback && (
             <p className={`export-feedback ${exportFeedback.type}`}>{exportFeedback.message}</p>

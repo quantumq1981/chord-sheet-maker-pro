@@ -48,10 +48,10 @@ test('parseChordPro: chord tokens present in section', () => {
   const doc = parseChordPro(text);
   const chords = allChordTexts(doc);
 
-  assert.ok(chords.includes('Cm7'),   'Cm7 should be present');
+  assert.ok(chords.includes('Cm7'), 'Cm7 should be present');
   assert.ok(chords.includes('Dm7b5'), 'Dm7b5 should be present');
-  assert.ok(chords.includes('G7'),    'G7 should be present');
-  assert.ok(chords.includes('Cm'),    'Cm should be present');
+  assert.ok(chords.includes('G7'), 'G7 should be present');
+  assert.ok(chords.includes('Cm'), 'Cm should be present');
 });
 
 // ── Ultimate Guitar format ──────────────────────────────────────────────────
@@ -67,9 +67,15 @@ test('parseUltimateGuitar: section labels match input headers', () => {
   const text = readFileSync(join(fixtureDir, 'simple-ug.txt'), 'utf-8');
   const doc = parseUltimateGuitar(text);
 
-  const labels = doc.sections.map(s => s.label ?? '');
-  assert.ok(labels.some(l => l.includes('Verse')),  'First section should contain "Verse"');
-  assert.ok(labels.some(l => l.includes('Chorus')), 'Second section should contain "Chorus"');
+  const labels = doc.sections.map((s) => s.label ?? '');
+  assert.ok(
+    labels.some((l) => l.includes('Verse')),
+    'First section should contain "Verse"'
+  );
+  assert.ok(
+    labels.some((l) => l.includes('Chorus')),
+    'Second section should contain "Chorus"'
+  );
 });
 
 test('parseUltimateGuitar: section types inferred correctly', () => {
@@ -87,14 +93,14 @@ test('parseUltimateGuitar: chord names appear in line content', () => {
   // UG chords-over-words lines are stored as lyric tokens with raw text;
   // chord tokens are only produced when the source uses [bracket] syntax.
   const allText = doc.sections
-    .flatMap(s => s.lines)
-    .flatMap(l => l.tokens)
-    .map(t => t.text)
+    .flatMap((s) => s.lines)
+    .flatMap((l) => l.tokens)
+    .map((t) => t.text)
     .join(' ');
 
   assert.ok(allText.includes('Am7'), 'Am7 should appear in line content');
-  assert.ok(allText.includes('F7'),  'F7 should appear in line content');
-  assert.ok(allText.includes('Cm'),  'Cm should appear in line content');
-  assert.ok(allText.includes('G7'),  'G7 should appear in line content');
-  assert.ok(allText.includes('Fm'),  'Fm should appear in line content');
+  assert.ok(allText.includes('F7'), 'F7 should appear in line content');
+  assert.ok(allText.includes('Cm'), 'Cm should appear in line content');
+  assert.ok(allText.includes('G7'), 'G7 should appear in line content');
+  assert.ok(allText.includes('Fm'), 'Fm should appear in line content');
 });

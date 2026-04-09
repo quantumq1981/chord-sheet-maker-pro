@@ -72,17 +72,27 @@ export function parseCsmpn(text: string): ChordChartDocument {
       const field = headerMatch[1].toLowerCase();
       const value = headerMatch[2].trim();
       switch (field) {
-        case 'title':    doc.title = value; break;
-        case 'composer': doc.artist = value; break;
-        case 'style':    doc.genre = value; break;
+        case 'title':
+          doc.title = value;
+          break;
+        case 'composer':
+          doc.artist = value;
+          break;
+        case 'style':
+          doc.genre = value;
+          break;
         case 'tempo': {
           // Extract numeric BPM from "♩=120" or just "120"
           const bpm = value.match(/(\d{2,3})/)?.[1] ?? value;
           doc.tempo = bpm;
           break;
         }
-        case 'key':  doc.key = value; break;
-        case 'time': doc.time = value; break;
+        case 'key':
+          doc.key = value;
+          break;
+        case 'time':
+          doc.time = value;
+          break;
       }
       continue;
     }

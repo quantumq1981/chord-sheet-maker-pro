@@ -6,7 +6,14 @@ interface Props {
   onImportCsmpn?: (csmpnText: string) => void;
 }
 
-type Step = 'idle' | 'loading-images' | 'running-oemer' | 'parsing-musicxml' | 'generating-csmpn' | 'done' | 'error';
+type Step =
+  | 'idle'
+  | 'loading-images'
+  | 'running-oemer'
+  | 'parsing-musicxml'
+  | 'generating-csmpn'
+  | 'done'
+  | 'error';
 
 const ACCEPT = '.png,image/png,.jpg,.jpeg,image/jpeg';
 
@@ -21,7 +28,7 @@ export default function OemerImageImporterPanel({ onImportCsmpn }: Props) {
 
   const sortedFiles = useMemo(
     () => [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
-    [files],
+    [files]
   );
 
   const appendLog = useCallback((line: string) => {
@@ -93,7 +100,12 @@ export default function OemerImageImporterPanel({ onImportCsmpn }: Props) {
       </p>
 
       <div
-        style={{ border: '1px dashed #64748b', borderRadius: 10, padding: 16, background: '#f8fafc' }}
+        style={{
+          border: '1px dashed #64748b',
+          borderRadius: 10,
+          padding: 16,
+          background: '#f8fafc',
+        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
@@ -108,33 +120,62 @@ export default function OemerImageImporterPanel({ onImportCsmpn }: Props) {
           onChange={(e) => handleFiles(e.target.files)}
           style={{ display: 'none' }}
         />
-        <button type="button" onClick={() => inputRef.current?.click()}>Upload page images</button>
+        <button type="button" onClick={() => inputRef.current?.click()}>
+          Upload page images
+        </button>
         <div style={{ marginTop: 10, fontSize: 13 }}>
-          {sortedFiles.length === 0 ? 'No files selected.' : sortedFiles.map((file) => file.name).join(', ')}
+          {sortedFiles.length === 0
+            ? 'No files selected.'
+            : sortedFiles.map((file) => file.name).join(', ')}
         </div>
       </div>
 
       <div>
-        <button type="button" onClick={() => void onRun()} disabled={step === 'running-oemer' || step === 'parsing-musicxml' || step === 'generating-csmpn'}>
+        <button
+          type="button"
+          onClick={() => void onRun()}
+          disabled={
+            step === 'running-oemer' || step === 'parsing-musicxml' || step === 'generating-csmpn'
+          }
+        >
           Run OEMER OMR
         </button>
       </div>
 
       {error && <div style={{ color: '#b91c1c', fontWeight: 600 }}>{error}</div>}
 
-      <div style={{ background: '#0f172a', color: '#e2e8f0', borderRadius: 8, padding: 12, fontFamily: 'monospace', fontSize: 12, minHeight: 120 }}>
+      <div
+        style={{
+          background: '#0f172a',
+          color: '#e2e8f0',
+          borderRadius: 8,
+          padding: 12,
+          fontFamily: 'monospace',
+          fontSize: 12,
+          minHeight: 120,
+        }}
+      >
         <div>Status: {step}</div>
-        {logs.map((line, idx) => <div key={`${line}-${idx}`}>{line}</div>)}
+        {logs.map((line, idx) => (
+          <div key={`${line}-${idx}`}>{line}</div>
+        ))}
       </div>
 
       {csmpnText && (
         <>
-          <button type="button" onClick={() => onImportCsmpn?.(csmpnText)}>Use This Chart</button>
+          <button type="button" onClick={() => onImportCsmpn?.(csmpnText)}>
+            Use This Chart
+          </button>
           <textarea value={csmpnText} readOnly rows={10} style={{ width: '100%' }} />
         </>
       )}
 
-      {musicXml && <details><summary>MusicXML output</summary><pre style={{ whiteSpace: 'pre-wrap' }}>{musicXml}</pre></details>}
+      {musicXml && (
+        <details>
+          <summary>MusicXML output</summary>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{musicXml}</pre>
+        </details>
+      )}
     </div>
   );
 }

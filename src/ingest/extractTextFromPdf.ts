@@ -24,7 +24,7 @@ import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 // build time.  This is the recommended way to reference web workers in Vite.
 GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
+  import.meta.url
 ).href;
 
 /** Vertical tolerance in PDF user units for considering items on the same line. */
@@ -66,7 +66,10 @@ export async function extractTextFromPdf(data: ArrayBuffer): Promise<string> {
       const y = roundToLine(item.transform[5] as number);
 
       let row = lineMap.get(y);
-      if (!row) { row = []; lineMap.set(y, row); }
+      if (!row) {
+        row = [];
+        lineMap.set(y, row);
+      }
       row.push({ x, text: str });
     }
 

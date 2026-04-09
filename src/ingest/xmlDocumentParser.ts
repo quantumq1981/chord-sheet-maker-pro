@@ -160,7 +160,7 @@ type XmlFormat = 'svg' | 'musicxml' | 'unknown';
  */
 function detectXmlFormat(source: string, filename = ''): XmlFormat {
   const head = source.slice(0, 2048);
-  const ext  = filename.includes('.')
+  const ext = filename.includes('.')
     ? filename.slice(filename.lastIndexOf('.') + 1).toLowerCase()
     : '';
 
@@ -174,9 +174,9 @@ function detectXmlFormat(source: string, filename = ''): XmlFormat {
     ext === 'svg' ||
     (head.includes('<svg') &&
       (head.includes(`xmlns="${SVG_NAMESPACE}"`) ||
-       head.includes(`xmlns='${SVG_NAMESPACE}'`) ||
-       head.includes('viewBox=') ||
-       head.includes('xmlns:svg='))) ||
+        head.includes(`xmlns='${SVG_NAMESPACE}'`) ||
+        head.includes('viewBox=') ||
+        head.includes('xmlns:svg='))) ||
     // Bare <svg> tag (inline / namespace-stripped fragments)
     /^(<\?xml[^>]*\?>\s*)?<svg[\s>/]/i.test(head.trimStart())
   ) {
@@ -195,33 +195,33 @@ function detectXmlFormat(source: string, filename = ''): XmlFormat {
  */
 function normalizeKind(kind: string): string {
   const v = kind.toLowerCase().trim();
-  if (!v || v === 'major')              return '';
-  if (v === 'minor')                    return 'm';
-  if (v === 'dominant')                 return '7';
-  if (v === 'major-seventh')            return 'maj7';
-  if (v === 'minor-seventh')            return 'm7';
-  if (v === 'dominant-ninth')           return '9';
-  if (v === 'major-ninth')              return 'maj9';
-  if (v === 'minor-ninth')              return 'm9';
-  if (v === 'dominant-11th')            return '11';
-  if (v === 'dominant-13th')            return '13';
-  if (v === 'half-diminished')          return 'm7b5';
-  if (v === 'diminished')               return 'dim';
-  if (v === 'diminished-seventh')       return 'dim7';
-  if (v === 'augmented')                return 'aug';
-  if (v === 'augmented-seventh')        return 'aug7';
-  if (v === 'suspended-second')         return 'sus2';
-  if (v === 'suspended-fourth')         return 'sus4';
-  if (v === 'major-minor')              return 'mMaj7';
-  if (v === 'pedal')                    return 'ped';
-  if (v === 'power')                    return '5';
+  if (!v || v === 'major') return '';
+  if (v === 'minor') return 'm';
+  if (v === 'dominant') return '7';
+  if (v === 'major-seventh') return 'maj7';
+  if (v === 'minor-seventh') return 'm7';
+  if (v === 'dominant-ninth') return '9';
+  if (v === 'major-ninth') return 'maj9';
+  if (v === 'minor-ninth') return 'm9';
+  if (v === 'dominant-11th') return '11';
+  if (v === 'dominant-13th') return '13';
+  if (v === 'half-diminished') return 'm7b5';
+  if (v === 'diminished') return 'dim';
+  if (v === 'diminished-seventh') return 'dim7';
+  if (v === 'augmented') return 'aug';
+  if (v === 'augmented-seventh') return 'aug7';
+  if (v === 'suspended-second') return 'sus2';
+  if (v === 'suspended-fourth') return 'sus4';
+  if (v === 'major-minor') return 'mMaj7';
+  if (v === 'pedal') return 'ped';
+  if (v === 'power') return '5';
   // Unknown quality — return the raw value so nothing is silently lost
   return kind;
 }
 
 /** Resolve an alter value string ("-1" / "0" / "1") to a symbol. */
 function alterSymbol(alterText: string | null): string {
-  if (alterText === '1'  || alterText === '1.0')  return '#';
+  if (alterText === '1' || alterText === '1.0') return '#';
   if (alterText === '-1' || alterText === '-1.0') return 'b';
   return '';
 }
@@ -231,30 +231,33 @@ function alterSymbol(alterText: string | null): string {
  * Returns null when the element has no root-step (malformed / comment harmony).
  */
 function parseHarmonyElement(el: Element): HarmonySymbol | null {
-  const rootStep  = el.querySelector('root > root-step')?.textContent?.trim() ?? '';
+  const rootStep = el.querySelector('root > root-step')?.textContent?.trim() ?? '';
   if (!rootStep) return null;
 
   const rootAlter = el.querySelector('root > root-alter')?.textContent?.trim() ?? null;
-  const root      = rootStep + alterSymbol(rootAlter);
+  const root = rootStep + alterSymbol(rootAlter);
 
   const kindRaw = el.querySelector('kind')?.textContent?.trim() ?? '';
-  const kind    = normalizeKind(kindRaw);
+  const kind = normalizeKind(kindRaw);
 
   // Degree modifications — add / alter / subtract
-  const degreeStr = Array.from(el.querySelectorAll('degree')).map((d) => {
-    const val  = d.querySelector('degree-value')?.textContent?.trim() ?? '';
-    const type = d.querySelector('degree-type')?.textContent?.trim()  ?? '';
-    if (!val || !type) return '';
-    if (type === 'add')      return `add${val}`;
-    if (type === 'alter')    return `#${val}`;
-    if (type === 'subtract') return `no${val}`;
-    return '';
-  }).filter(Boolean).join('');
+  const degreeStr = Array.from(el.querySelectorAll('degree'))
+    .map((d) => {
+      const val = d.querySelector('degree-value')?.textContent?.trim() ?? '';
+      const type = d.querySelector('degree-type')?.textContent?.trim() ?? '';
+      if (!val || !type) return '';
+      if (type === 'add') return `add${val}`;
+      if (type === 'alter') return `#${val}`;
+      if (type === 'subtract') return `no${val}`;
+      return '';
+    })
+    .filter(Boolean)
+    .join('');
 
   // Bass note
-  const bassStep  = el.querySelector('bass > bass-step')?.textContent?.trim() ?? '';
+  const bassStep = el.querySelector('bass > bass-step')?.textContent?.trim() ?? '';
   const bassAlter = el.querySelector('bass > bass-alter')?.textContent?.trim() ?? null;
-  const bass      = bassStep ? bassStep + alterSymbol(bassAlter) : undefined;
+  const bass = bassStep ? bassStep + alterSymbol(bassAlter) : undefined;
 
   const formatted = `${root}${kind}${degreeStr}${bass ? `/${bass}` : ''}`;
 
@@ -277,9 +280,25 @@ function extractLyrics(measure: Element): string[] {
 
 /** Convert circle-of-fifths integer + mode to a key string, e.g. "Bb" or "Gm". */
 function keyFromFifths(fifths: number, mode?: string): string {
-  const major = ['Cb','Gb','Db','Ab','Eb','Bb','F','C','G','D','A','E','B','F#','C#'];
-  const minor = ['Abm','Ebm','Bbm','Fm','Cm','Gm','Dm','Am','Em','Bm','F#m','C#m','G#m','D#m','A#m'];
-  const idx   = Math.max(0, Math.min(14, fifths + 7));
+  const major = ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
+  const minor = [
+    'Abm',
+    'Ebm',
+    'Bbm',
+    'Fm',
+    'Cm',
+    'Gm',
+    'Dm',
+    'Am',
+    'Em',
+    'Bm',
+    'F#m',
+    'C#m',
+    'G#m',
+    'D#m',
+    'A#m',
+  ];
+  const idx = Math.max(0, Math.min(14, fifths + 7));
   return (mode ?? '').toLowerCase() === 'minor' ? minor[idx] : major[idx];
 }
 
@@ -291,10 +310,10 @@ function parseSvgDocument(source: string): UnifiedDocument {
 
   // Pull metadata from svgData fields (already extracted by svgImporter)
   const metadata: DocumentMetadata = {
-    title:       svgData.title,
+    title: svgData.title,
     description: svgData.description,
     // SVG has no formal creator field — check description for "by …" pattern
-    creator:     svgData.description
+    creator: svgData.description
       ? (/^by\s+(.+)/i.exec(svgData.description.split('\n')[0]) ?? [])[1]?.trim()
       : undefined,
   };
@@ -308,12 +327,11 @@ function parseSvgDocument(source: string): UnifiedDocument {
  */
 function parseMusicXmlDocument(source: string): UnifiedDocument {
   const domParser = new DOMParser();
-  const doc       = domParser.parseFromString(source, 'application/xml');
+  const doc = domParser.parseFromString(source, 'application/xml');
 
   // Surface any parse error immediately with a clear message
-  const parseErr  =
-    doc.querySelector('parsererror') ??
-    doc.getElementsByTagName('parsererror').item(0);
+  const parseErr =
+    doc.querySelector('parsererror') ?? doc.getElementsByTagName('parsererror').item(0);
   if (parseErr) {
     const msg = parseErr.textContent?.trim().slice(0, 300) ?? 'XML parse error';
     throw new Error(`MusicXML parse failed: ${msg}`);
@@ -323,7 +341,7 @@ function parseMusicXmlDocument(source: string): UnifiedDocument {
   if (!score) {
     throw new Error(
       'Document is not a MusicXML score. ' +
-      'Expected root element <score-partwise> or <score-timewise>.',
+        'Expected root element <score-partwise> or <score-timewise>.'
     );
   }
 
@@ -331,7 +349,7 @@ function parseMusicXmlDocument(source: string): UnifiedDocument {
 
   const title =
     score.querySelector('work > work-title')?.textContent?.trim() ||
-    score.querySelector('movement-title')?.textContent?.trim()    ||
+    score.querySelector('movement-title')?.textContent?.trim() ||
     undefined;
 
   const creator =
@@ -344,7 +362,7 @@ function parseMusicXmlDocument(source: string): UnifiedDocument {
 
   // Key and time are tracked as running state while walking measures
   let keyFifths: number | undefined;
-  let keyMode:   string | undefined;
+  let keyMode: string | undefined;
   let timeBeats: string | undefined;
   let timeBeatType: string | undefined;
 
@@ -352,7 +370,7 @@ function parseMusicXmlDocument(source: string): UnifiedDocument {
 
   const partNames: Record<string, string> = {};
   for (const scorePart of score.querySelectorAll('part-list > score-part')) {
-    const id   = scorePart.getAttribute('id') ?? '';
+    const id = scorePart.getAttribute('id') ?? '';
     const name = scorePart.querySelector('part-name')?.textContent?.trim() ?? '';
     if (id) partNames[id] = name;
   }
@@ -360,11 +378,11 @@ function parseMusicXmlDocument(source: string): UnifiedDocument {
   // ── Parts & measures ──────────────────────────────────────────────────────
 
   const allHarmonies: HarmonySymbol[] = [];
-  const allLyrics:    string[]        = [];
-  const parts: PartData[]             = [];
+  const allLyrics: string[] = [];
+  const parts: PartData[] = [];
 
   for (const partEl of score.querySelectorAll('part')) {
-    const partId   = partEl.getAttribute('id') ?? `P${parts.length + 1}`;
+    const partId = partEl.getAttribute('id') ?? `P${parts.length + 1}`;
     const partName = partNames[partId] || undefined;
     const measures: MeasureData[] = [];
 
@@ -372,7 +390,7 @@ function parseMusicXmlDocument(source: string): UnifiedDocument {
     for (const measureEl of partEl.querySelectorAll('measure')) {
       measureIndex++;
       const numAttr = measureEl.getAttribute('number');
-      const number  = numAttr !== null ? (parseInt(numAttr, 10) || measureIndex) : measureIndex;
+      const number = numAttr !== null ? parseInt(numAttr, 10) || measureIndex : measureIndex;
 
       // Update running key / time signature from <attributes>
       const attrsEl = measureEl.querySelector('attributes');
@@ -414,12 +432,8 @@ function parseMusicXmlDocument(source: string): UnifiedDocument {
   const metadata: DocumentMetadata = {
     title,
     creator,
-    key:  typeof keyFifths === 'number'
-      ? keyFromFifths(keyFifths, keyMode)
-      : undefined,
-    time: timeBeats && timeBeatType
-      ? `${timeBeats}/${timeBeatType}`
-      : undefined,
+    key: typeof keyFifths === 'number' ? keyFromFifths(keyFifths, keyMode) : undefined,
+    time: timeBeats && timeBeatType ? `${timeBeats}/${timeBeatType}` : undefined,
   };
 
   return {
@@ -465,9 +479,9 @@ export function parseXmlDocument(source: string, filename = ''): UnifiedDocument
     default:
       throw new Error(
         'Unsupported XML format. ' +
-        'Expected an SVG document (root <svg> with xmlns="http://www.w3.org/2000/svg") ' +
-        'or a MusicXML score (root <score-partwise>). ' +
-        `The supplied ${filename ? `file "${filename}"` : 'document'} matches neither.`,
+          'Expected an SVG document (root <svg> with xmlns="http://www.w3.org/2000/svg") ' +
+          'or a MusicXML score (root <score-partwise>). ' +
+          `The supplied ${filename ? `file "${filename}"` : 'document'} matches neither.`
       );
   }
 }
@@ -482,7 +496,7 @@ export function parseXmlDocument(source: string, filename = ''): UnifiedDocument
  * }
  */
 export function isSvgDocument(
-  doc: UnifiedDocument,
+  doc: UnifiedDocument
 ): doc is UnifiedDocument & { svgData: SvgImportResult } {
   return doc.type === 'svg' && doc.svgData !== undefined;
 }
@@ -497,7 +511,7 @@ export function isSvgDocument(
  * }
  */
 export function isMusicXmlDocument(
-  doc: UnifiedDocument,
+  doc: UnifiedDocument
 ): doc is UnifiedDocument & { musicData: MusicXmlDocumentData } {
   return doc.type === 'musicxml' && doc.musicData !== undefined;
 }

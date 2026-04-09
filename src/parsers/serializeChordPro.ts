@@ -20,17 +20,28 @@ import type { ChordChartDocument, SectionType } from '../models/ChordChartModel'
  */
 function directiveBase(type: SectionType): string | null {
   switch (type) {
-    case 'chorus':     return 'chorus';
-    case 'verse':      return 'verse';
-    case 'bridge':     return 'bridge';
-    case 'grid':       return 'grid';
-    case 'tab':        return 'tab';
-    case 'pre-chorus': return 'pre_chorus';   // spec: underscore, not hyphen
-    case 'intro':      return 'intro';
-    case 'outro':      return 'outro';
-    case 'interlude':  return 'interlude';
-    case 'solo':       return 'solo';
-    default:           return null;
+    case 'chorus':
+      return 'chorus';
+    case 'verse':
+      return 'verse';
+    case 'bridge':
+      return 'bridge';
+    case 'grid':
+      return 'grid';
+    case 'tab':
+      return 'tab';
+    case 'pre-chorus':
+      return 'pre_chorus'; // spec: underscore, not hyphen
+    case 'intro':
+      return 'intro';
+    case 'outro':
+      return 'outro';
+    case 'interlude':
+      return 'interlude';
+    case 'solo':
+      return 'solo';
+    default:
+      return null;
   }
 }
 
@@ -43,25 +54,20 @@ function directiveBase(type: SectionType): string | null {
  * @param transposeSteps Semitone shift applied to every chord and to the key
  *                       directive (positive = up, negative = down).
  */
-export function serializeChordProDocument(
-  doc: ChordChartDocument,
-  transposeSteps = 0,
-): string {
+export function serializeChordProDocument(doc: ChordChartDocument, transposeSteps = 0): string {
   const lines: string[] = [];
 
   // ── Header metadata ──
-  if (doc.title)    lines.push(`{title: ${doc.title}}`);
-  if (doc.artist)   lines.push(`{artist: ${doc.artist}}`);
+  if (doc.title) lines.push(`{title: ${doc.title}}`);
+  if (doc.artist) lines.push(`{artist: ${doc.artist}}`);
   if (doc.subtitle) lines.push(`{subtitle: ${doc.subtitle}}`);
   if (doc.key) {
-    const displayKey = transposeSteps !== 0
-      ? transposeChord(doc.key, transposeSteps)
-      : doc.key;
+    const displayKey = transposeSteps !== 0 ? transposeChord(doc.key, transposeSteps) : doc.key;
     lines.push(`{key: ${displayKey}}`);
   }
-  if (doc.capo)  lines.push(`{capo: ${doc.capo}}`);
+  if (doc.capo) lines.push(`{capo: ${doc.capo}}`);
   if (doc.tempo) lines.push(`{tempo: ${doc.tempo}}`);
-  if (doc.time)  lines.push(`{time: ${doc.time}}`);
+  if (doc.time) lines.push(`{time: ${doc.time}}`);
   if (doc.genre) lines.push(`{genre: ${doc.genre}}`);
 
   // ── Sections ──
@@ -85,9 +91,8 @@ export function serializeChordProDocument(
       const parts: string[] = [];
       for (const token of line.tokens) {
         if (token.kind === 'chord') {
-          const displayed = transposeSteps !== 0
-            ? transposeChord(token.text, transposeSteps)
-            : token.text;
+          const displayed =
+            transposeSteps !== 0 ? transposeChord(token.text, transposeSteps) : token.text;
           parts.push(`[${displayed}]`);
         } else if (token.kind === 'lyric') {
           parts.push(token.text);

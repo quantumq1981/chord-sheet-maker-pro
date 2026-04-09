@@ -29,23 +29,23 @@
  * first match wins the most-common interpretation.
  */
 const CHORD_PATTERNS: ReadonlyArray<{ suffix: string; intervals: readonly number[] }> = [
-  { suffix: '',      intervals: [0, 4, 7] },        // major
-  { suffix: 'm',     intervals: [0, 3, 7] },        // minor
-  { suffix: '5',     intervals: [0, 7] },            // power chord
-  { suffix: '7',     intervals: [0, 4, 7, 10] },    // dominant 7
-  { suffix: 'maj7',  intervals: [0, 4, 7, 11] },    // major 7
-  { suffix: 'm7',    intervals: [0, 3, 7, 10] },    // minor 7
-  { suffix: 'mM7',   intervals: [0, 3, 7, 11] },    // minor-major 7
-  { suffix: 'm7b5',  intervals: [0, 3, 6, 10] },    // half-diminished
-  { suffix: 'dim7',  intervals: [0, 3, 6, 9] },     // diminished 7
-  { suffix: 'dim',   intervals: [0, 3, 6] },        // diminished triad
-  { suffix: 'aug',   intervals: [0, 4, 8] },        // augmented
-  { suffix: 'sus4',  intervals: [0, 5, 7] },        // suspended 4
-  { suffix: 'sus2',  intervals: [0, 2, 7] },        // suspended 2
-  { suffix: 'add9',  intervals: [0, 2, 4, 7] },     // add9
-  { suffix: '6',     intervals: [0, 4, 7, 9] },     // major 6
-  { suffix: 'm6',    intervals: [0, 3, 7, 9] },     // minor 6
-  { suffix: '9',     intervals: [0, 2, 4, 7, 10] }, // dominant 9
+  { suffix: '', intervals: [0, 4, 7] }, // major
+  { suffix: 'm', intervals: [0, 3, 7] }, // minor
+  { suffix: '5', intervals: [0, 7] }, // power chord
+  { suffix: '7', intervals: [0, 4, 7, 10] }, // dominant 7
+  { suffix: 'maj7', intervals: [0, 4, 7, 11] }, // major 7
+  { suffix: 'm7', intervals: [0, 3, 7, 10] }, // minor 7
+  { suffix: 'mM7', intervals: [0, 3, 7, 11] }, // minor-major 7
+  { suffix: 'm7b5', intervals: [0, 3, 6, 10] }, // half-diminished
+  { suffix: 'dim7', intervals: [0, 3, 6, 9] }, // diminished 7
+  { suffix: 'dim', intervals: [0, 3, 6] }, // diminished triad
+  { suffix: 'aug', intervals: [0, 4, 8] }, // augmented
+  { suffix: 'sus4', intervals: [0, 5, 7] }, // suspended 4
+  { suffix: 'sus2', intervals: [0, 2, 7] }, // suspended 2
+  { suffix: 'add9', intervals: [0, 2, 4, 7] }, // add9
+  { suffix: '6', intervals: [0, 4, 7, 9] }, // major 6
+  { suffix: 'm6', intervals: [0, 3, 7, 9] }, // minor 6
+  { suffix: '9', intervals: [0, 2, 4, 7, 10] }, // dominant 9
 ];
 
 // ─── Note names (sharps) ──────────────────────────────────────────────────────
@@ -83,10 +83,7 @@ export interface FretNote {
  * @param notes          Non-muted, non-dead notes to analyse.
  * @returns  Chord name string (e.g. "Am", "Cmaj7") or null if unrecognised.
  */
-export function fretsToChordName(
-  openMidiNotes: number[],
-  notes: FretNote[],
-): string | null {
+export function fretsToChordName(openMidiNotes: number[], notes: FretNote[]): string | null {
   if (notes.length < 2) return null;
 
   // Build unique pitch-class set

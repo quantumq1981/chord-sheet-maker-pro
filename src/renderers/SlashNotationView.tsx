@@ -48,18 +48,18 @@ interface SlashSection {
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
 const STAFF_LINES = 5;
-const LINE_GAP = 8;                          // px between staff lines
+const LINE_GAP = 8; // px between staff lines
 const STAFF_H = (STAFF_LINES - 1) * LINE_GAP; // 32 px
-const CHORD_AREA_H = 30;                     // space above staff for chord names
-const SYSTEM_PAD_BOTTOM = 30;               // breathing room beneath staff
+const CHORD_AREA_H = 30; // space above staff for chord names
+const SYSTEM_PAD_BOTTOM = 30; // breathing room beneath staff
 
 // Height of one system row (no section label — label handled separately)
 const SYSTEM_ROW_H = CHORD_AREA_H + STAFF_H + SYSTEM_PAD_BOTTOM;
-const SECTION_LABEL_H = 20;                  // height reserved for label row
+const SECTION_LABEL_H = 20; // height reserved for label row
 
 const PAGE_W = 760;
 const MARGIN_H = 36;
-const CLEF_W = 46;                           // space for clef glyph + time sig
+const CLEF_W = 46; // space for clef glyph + time sig
 const USABLE_W = PAGE_W - MARGIN_H * 2 - CLEF_W;
 
 // ─── Parse helpers ────────────────────────────────────────────────────────────
@@ -175,9 +175,12 @@ function StaffLines({ x, y, width }: { x: number; y: number; width: number }) {
       {Array.from({ length: STAFF_LINES }, (_, i) => (
         <line
           key={i}
-          x1={x} y1={y + i * LINE_GAP}
-          x2={x + width} y2={y + i * LINE_GAP}
-          stroke="#4a4a4a" strokeWidth={0.75}
+          x1={x}
+          y1={y + i * LINE_GAP}
+          x2={x + width}
+          y2={y + i * LINE_GAP}
+          stroke="#4a4a4a"
+          strokeWidth={0.75}
         />
       ))}
     </>
@@ -189,9 +192,9 @@ function StaffLines({ x, y, width }: { x: number; y: number; width: number }) {
  * Matches the Real Book style illustrated in the user screenshots.
  */
 function SlashHead({ cx, cy }: { cx: number; cy: number }) {
-  const w = 7.5;   // half-width
-  const h = 4.5;   // half-height
-  const lean = 4;  // horizontal lean (right-up slant)
+  const w = 7.5; // half-width
+  const h = 4.5; // half-height
+  const lean = 4; // horizontal lean (right-up slant)
   const pts = [
     `${cx - w + lean},${cy - h}`,
     `${cx + w + lean},${cy - h}`,
@@ -203,13 +206,19 @@ function SlashHead({ cx, cy }: { cx: number; cy: number }) {
 
 /** Single, double, repeat-start, or repeat-end barline. */
 function Barline({
-  x, y, h,
+  x,
+  y,
+  h,
   double: isDouble = false,
   repeatStart = false,
   repeatEnd = false,
 }: {
-  x: number; y: number; h: number;
-  double?: boolean; repeatStart?: boolean; repeatEnd?: boolean;
+  x: number;
+  y: number;
+  h: number;
+  double?: boolean;
+  repeatStart?: boolean;
+  repeatEnd?: boolean;
 }) {
   if (repeatStart) {
     return (
@@ -255,8 +264,13 @@ interface SystemRowProps {
 }
 
 function SystemRow({
-  measures, sectionLabel, systemY, measureWidth,
-  transposeSteps, timeSig, showClef,
+  measures,
+  sectionLabel,
+  systemY,
+  measureWidth,
+  transposeSteps,
+  timeSig,
+  showClef,
 }: SystemRowProps) {
   const staffX = MARGIN_H + CLEF_W;
   const staffY = systemY + (sectionLabel ? SECTION_LABEL_H : 0) + CHORD_AREA_H;
@@ -301,27 +315,34 @@ function SystemRow({
       )}
 
       {/* Time signature */}
-      {showClef && timeSig && (
+      {showClef &&
+        timeSig &&
         (() => {
           const parts = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/);
           if (!parts) return null;
           return (
             <g fontFamily="Georgia, serif" fontWeight="bold" fill="#2a2a2a" fontSize={13}>
-              <text x={MARGIN_H + 34} y={staffY + 12}>{parts[1]}</text>
-              <text x={MARGIN_H + 34} y={staffY + 26}>{parts[2]}</text>
+              <text x={MARGIN_H + 34} y={staffY + 12}>
+                {parts[1]}
+              </text>
+              <text x={MARGIN_H + 34} y={staffY + 26}>
+                {parts[2]}
+              </text>
             </g>
           );
-        })()
-      )}
+        })()}
 
       {/* Staff lines */}
       <StaffLines x={staffX} y={staffY} width={totalStaffW} />
 
       {/* Left system barline */}
       <line
-        x1={staffX} y1={staffY}
-        x2={staffX} y2={staffY + STAFF_H}
-        stroke="#2a2a2a" strokeWidth={1.5}
+        x1={staffX}
+        y1={staffY}
+        x2={staffX}
+        y2={staffY + STAFF_H}
+        stroke="#2a2a2a"
+        strokeWidth={1.5}
       />
 
       {/* Measures */}
@@ -334,9 +355,7 @@ function SystemRow({
         return (
           <g key={mi}>
             {/* Repeat-start decoration before this measure */}
-            {m.repeatStart && (
-              <Barline x={mX} y={staffY} h={STAFF_H} repeatStart />
-            )}
+            {m.repeatStart && <Barline x={mX} y={staffY} h={STAFF_H} repeatStart />}
 
             {/* Beat slashes */}
             {Array.from({ length: m.beatsPerMeasure }, (_, beat) => {
@@ -400,8 +419,7 @@ export default function SlashNotationView({
     return doc.sections
       .filter((s) => s.type !== 'tab')
       .map((s) => {
-        const label =
-          s.label ?? (s.type !== 'unknown' ? s.type : undefined);
+        const label = s.label ?? (s.type !== 'unknown' ? s.type : undefined);
         return { label, measures: measuresFromSection(s, bpm) };
       })
       .filter((s) => s.measures.length > 0);
@@ -442,9 +460,7 @@ export default function SlashNotationView({
     curY += (row.sectionLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
   }
 
-  const displayKey = doc.key
-    ? transposeChord(doc.key, transposeSteps)
-    : undefined;
+  const displayKey = doc.key ? transposeChord(doc.key, transposeSteps) : undefined;
 
   return (
     <div className="sn-view">
