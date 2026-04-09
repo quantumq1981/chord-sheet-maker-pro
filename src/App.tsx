@@ -463,6 +463,22 @@ export default function App() {
     return () => { osmdRef.current = null; };
   }, []);
 
+  // ── Notation controls ──
+  const fitWidth = useCallback(() => {
+    const container = containerRef.current;
+    const osmd = osmdRef.current;
+    if (!container || !osmd) return;
+    const firstPage = container.querySelector('.osmd-page') as HTMLElement | null;
+    const containerWidth = container.clientWidth;
+    if (firstPage && firstPage.offsetWidth > 0) {
+      const ratio = containerWidth / firstPage.offsetWidth;
+      const target = osmd.Zoom * ratio;
+      setZoom(Math.max(0.4, Math.min(2.5, Number(target.toFixed(2)))));
+      return;
+    }
+    setZoom(containerWidth < 600 ? 0.6 : containerWidth < 900 ? 0.8 : 1.0);
+  }, []);
+
   // ── OSMD render on XML / zoom change ──
   useEffect(() => {
     const render = async () => {
@@ -813,21 +829,6 @@ export default function App() {
   // ── Notation controls ──
   const adjustZoom = useCallback((delta: number) => {
     setZoom((prev) => Math.max(0.4, Math.min(2.5, Number((prev + delta).toFixed(2)))));
-  }, []);
-
-  const fitWidth = useCallback(() => {
-    const container = containerRef.current;
-    const osmd = osmdRef.current;
-    if (!container || !osmd) return;
-    const firstPage = container.querySelector('.osmd-page') as HTMLElement | null;
-    const containerWidth = container.clientWidth;
-    if (firstPage && firstPage.offsetWidth > 0) {
-      const ratio = containerWidth / firstPage.offsetWidth;
-      const target = osmd.Zoom * ratio;
-      setZoom(Math.max(0.4, Math.min(2.5, Number(target.toFixed(2)))));
-      return;
-    }
-    setZoom(containerWidth < 600 ? 0.6 : containerWidth < 900 ? 0.8 : 1.0);
   }, []);
 
   // ── Feedback helpers ──
