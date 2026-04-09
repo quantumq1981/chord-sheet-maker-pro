@@ -89,6 +89,18 @@
   .log-box { display: none; background: #000; border-radius: 4px; padding: 6px;
     font-family: monospace; font-size: 10px; max-height: 100px; overflow-y: auto;
     color: #0f0; white-space: pre-wrap; margin-top: 4px; }
+
+  /* ── Responsive: narrow screens ── */
+  @media (max-width: 767px) {
+    h1 { padding: 12px; font-size: 15px; }
+    .toolbar { flex-wrap: wrap; padding: 8px 12px; gap: 6px; }
+    .fixtures { padding: 10px 12px; }
+    .fixture-header { flex-wrap: wrap; }
+    .file-pick { flex-wrap: wrap; }
+    .file-label { min-width: 0; }
+    .metrics-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+    #summary { margin: 0 12px 16px; }
+  }
 </style>
 </head>
 <body>

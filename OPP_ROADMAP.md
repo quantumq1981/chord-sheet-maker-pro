@@ -76,7 +76,7 @@ infrastructure should optimize around this, not canvas-based rasterization.
 | 1.2 | ESLint + Prettier (carried) | ✅ DONE — 0 errors, 2 warnings (exhaustive-deps in App.tsx) |
 | 4.4 | Font loading fix (preconnect + swap) | ✅ DONE — FreeSerif CDN preconnect added; 5 CDN scripts deferred |
 | 4.5 | Lazy-load CDN libs (abcjs ~180 KB, VexFlow) | ✅ DONE — html2canvas, jsPDF, abcjs, JSZip, VexFlow all `defer` |
-| 4.1 | Responsive breakpoints (ug-pro-importer.html, validate.html) | ⬜ TODO |
+| 4.1 | Responsive breakpoints (ug-pro-importer.html, validate.html) | ✅ DONE — @media 767px stack + 1024px narrow panels |
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ⬜ TODO |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ⬜ TODO |
 
