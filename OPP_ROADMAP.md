@@ -70,20 +70,21 @@ infrastructure should optimize around this, not canvas-based rasterization.
 | 1.5 | tsconfig.test.json for test files | ✅ DONE |
 | +   | engines field in package.json (node >=22) | ✅ DONE |
 
-### SPRINT 2 — Mobile & Performance
+### ✅ SPRINT 2 — Mobile & Performance (COMPLETE)
 | Item | Task | Status |
 |------|------|--------|
-| 4.1 | Responsive breakpoints (ug-pro-importer.html, validate.html) | ⬜ TODO |
-| 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ⬜ TODO |
-| 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ⬜ TODO |
-| 4.4 | Font loading fix (preconnect + swap, consider self-hosting) | ⬜ TODO |
-| 4.5 | Lazy-load CDN libs (abcjs, VexFlow — wrap in async import) | ⬜ TODO |
+| 1.2 | ESLint + Prettier (carried) | ✅ DONE — 0 errors, 2 warnings (exhaustive-deps in App.tsx) |
+| 4.4 | Font loading fix (preconnect + swap) | ✅ DONE — FreeSerif CDN preconnect added; 5 CDN scripts deferred |
+| 4.5 | Lazy-load CDN libs (abcjs ~180 KB, VexFlow) | ✅ DONE — html2canvas, jsPDF, abcjs, JSZip, VexFlow all `defer` |
+| 4.1 | Responsive breakpoints (ug-pro-importer.html, validate.html) | ✅ DONE — @media 767px stack + 1024px narrow panels |
+| 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE — break-after/inside rules + SVG width fix in popup |
+| 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE — data URL replaces blob URL; fixes canvas taint on iOS Safari |
 
-### SPRINT 3 — index.html Decomposition (Part 1)
+### SPRINT 3 — index.html Decomposition (Part 1) (CURRENT)
 | Item | Task | Status |
 |------|------|--------|
-| 2.1A | Extract utils.js (debounce, escapeHtml, SongModel, etc.) | ⬜ TODO |
-| 2.1B | Extract chordProcessing.js (~800 lines) | ⬜ TODO |
+| 2.1A | Extract utils.js (debounce, escapeHtml, SongModel, etc.) | ✅ DONE — 6 pure fns extracted |
+| 2.1B | Extract chordProcessing.js (~800 lines) | ✅ DONE — 659 lines extracted; index.html now 7,373 lines |
 | 5.1 | Add error-path + edge-case tests for parsers | ⬜ TODO |
 
 ### SPRINT 4 — React App Optimization

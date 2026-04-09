@@ -11,25 +11,24 @@
 | # | Task | Status |
 |---|------|--------|
 | 1.1 | GitHub Actions CI/CD (`.github/workflows/ci.yml`) | ✅ DONE |
-| 1.2 | ESLint + Prettier setup | ⬜ TODO — next up |
+| 1.2 | ESLint + Prettier setup | ✅ DONE |
 | 1.3 | Parse cache audit | ✅ N/A — already correct |
 | 1.4 | Source maps in `vite.config.ts` | ✅ DONE |
 | 1.5 | `tsconfig.test.json` covering `src/` + `tests/` | ✅ DONE |
 
-## Active Sprint: Sprint 2 — Mobile & Performance
+## Sprint 2 — Mobile & Performance ✅ COMPLETE
 | # | Task | Status |
 |---|------|--------|
-| 1.2 | ESLint + Prettier setup (carried from Sprint 1) | ⬜ TODO |
-| 4.1 | Responsive breakpoints (`ug-pro-importer.html`, `validate.html`) | ⬜ TODO |
-| 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ⬜ TODO |
-| 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ⬜ TODO |
-| 4.4 | Font loading fix (`preconnect` + `swap`) | ⬜ TODO |
-| 4.5 | Lazy-load CDN libs (abcjs, VexFlow) | ⬜ TODO |
+| 4.4 | Font loading fix (`preconnect` + `swap`) | ✅ DONE |
+| 4.5 | Lazy-load CDN libs (abcjs, VexFlow) | ✅ DONE |
+| 4.1 | Responsive breakpoints (`ug-pro-importer.html`, `validate.html`) | ✅ DONE |
+| 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
+| 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
 ## Current State (2026-04-09)
 - **30 tests passing** (`npm run test:all`) — 4 VexFlow + 26 parser/format fixture tests
 - **Two active app tracks:** `index.html` (8,032-line monolith) + `app.html` React/TypeScript
-- **Critical gap:** No CI/CD, no linting, no source maps yet
+- **2 open lint warnings** — `react-hooks/exhaustive-deps` in `App.tsx` (fitWidth, MAX_FILE_SIZE_BYTES) — real issues, tracked for Sprint 3
 
 ## Architectural Principles (enforce on every change)
 1. `src/ingest/ugProPdfImporter.ts` is the **canonical** PDF importer — `ug-pro-importer.html` must not diverge from it
@@ -49,11 +48,19 @@
 | `tests/` | Node.js native test runner + tsx loader for TypeScript tests |
 | `OPP_ROADMAP.md` | Full 7-phase optimization roadmap with sprint tracker — update it as work completes |
 
+## Active Sprint: Sprint 3 — index.html Decomposition (Part 1)
+| # | Task | Status |
+|---|------|--------|
+| 2.1A | Extract utils.js (debounce, escapeHtml, SongModel, etc.) | ✅ DONE — 6 pure fns, index.html −60 lines |
+| 2.1B | Extract chordProcessing.js (~800 lines) | ✅ DONE — 18 fns, index.html −659 lines total |
+| — | Fix 2 react-hooks/exhaustive-deps warnings in App.tsx | ✅ DONE |
+| 5.1 | Add error-path + edge-case tests for parsers | ⬜ TODO |
+
 ## Next Immediate Actions (pick up where left off)
 ```
-1. ESLint + Prettier setup (1.2)     → stops code style drift across both tracks
-2. Responsive breakpoints (4.1)      → ug-pro-importer.html & validate.html need @media
-3. Print stylesheet hardening (4.2)  → slash notation SVG + section orphan prevention
+1. Error-path tests (5.1)  → add edge-case tests for parsers (chordProcessing, importPipeline)
+2. App.tsx decomposition   → extract hooks + views (~300-line target)
+3. React error boundaries  → ImportErrorBoundary, SlashNotationBoundary (Sprint 4 item 3.3)
 ```
 
 ---
