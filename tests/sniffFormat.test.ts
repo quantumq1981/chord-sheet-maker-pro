@@ -58,3 +58,44 @@ test('ZIP magic bytes (non-GP) → mxl', () => {
   const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]);
   assert.equal(sniffFormatFromBytes(bytes, 'score.mxl').format, 'mxl');
 });
+
+test('.xml extension with <?xml and score-partwise → musicxml', () => {
+  const bytes = new TextEncoder().encode(
+    '<?xml version="1.0"?>\n<score-partwise>\n</score-partwise>'
+  );
+  assert.equal(sniffFormatFromBytes(bytes, 'score.xml').format, 'musicxml');
+});
+
+test('.gp5 extension → guitarpro regardless of content', () => {
+  const bytes = new TextEncoder().encode('irrelevant content');
+  assert.equal(sniffFormatFromBytes(bytes, 'tab.gp5').format, 'guitarpro');
+});
+
+test('fakebook simile marker in byte-decoded text → fakebook', () => {
+  const text = 'Title: My Song\n\n[A]\n| Cmaj7 \u00B7/\u00B7 | F7 |\n';
+  const bytes = new TextEncoder().encode(text);
+  assert.equal(sniffFormatFromBytes(bytes, 'song.txt').format, 'fakebook');
+});
+
+// ── Edge cases: empty / plain content ──────────────────────────────────────
+
+test('empty string → unknown', () => {
+  assert.equal(sniffFormatFromText('').format, 'unknown');
+});
+
+test('plain prose (no music signals) → unknown', () => {
+  const text =
+    'This is just a paragraph of text.\nNo chords or directives here.\nJust words and sentences.';
+  assert.equal(sniffFormatFromText(text).format, 'unknown');
+});
+
+test('chord-over-words (two all-chord lines above lyric lines) → chords-over-words', () => {
+  // Each chord line must have ≥2 chord tokens and ≥70% chord tokens
+  const text = 'Am7 F7 C G\nThese are lyrics\nEm7 Dm7 G7 C\nMore lyrics here\n';
+  assert.equal(sniffFormatFromText(text).format, 'chords-over-words');
+});
+
+test('SVG content with viewBox attribute → svg', () => {
+  const text = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"></svg>';
+  assert.equal(sniffFormatFromText(text).format, 'svg');
+});

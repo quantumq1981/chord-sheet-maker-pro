@@ -8,8 +8,9 @@
 
 | Track | File | Size | Status |
 |-------|------|------|--------|
-| Legacy Monolith | `index.html` | 8,032 lines / 296 KB | Active production |
-| React App | `app.html` + `src/` | ~8,750 lines TypeScript | Active, parallel |
+| Legacy Monolith | `index.html` | 7,299 lines | Active production |
+| React App | `app.html` + `src/` | ~8,500 lines TypeScript | Active, parallel |
+| React App | `src/App.tsx` | 1,234 lines (was 1,575) | Decomposition in progress |
 
 **Developer context:** All development on iOS 16+ (iPhone/iPad). No local console.
 GitHub Actions = the CI console. Every workflow must be browser or GitHub-hosted.
@@ -80,19 +81,19 @@ infrastructure should optimize around this, not canvas-based rasterization.
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE — break-after/inside rules + SVG width fix in popup |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE — data URL replaces blob URL; fixes canvas taint on iOS Safari |
 
-### SPRINT 3 — index.html Decomposition (Part 1) (CURRENT)
+### ✅ SPRINT 3 — index.html Decomposition (Part 1) (COMPLETE)
 | Item | Task | Status |
 |------|------|--------|
 | 2.1A | Extract utils.js (debounce, escapeHtml, SongModel, etc.) | ✅ DONE — 6 pure fns extracted |
-| 2.1B | Extract chordProcessing.js (~800 lines) | ✅ DONE — 659 lines extracted; index.html now 7,373 lines |
-| 5.1 | Add error-path + edge-case tests for parsers | ⬜ TODO |
+| 2.1B | Extract chordProcessing.js (~800 lines) | ✅ DONE — 659 lines extracted; index.html 7,373 lines |
+| 5.1 | Add error-path + edge-case tests for parsers | ✅ DONE — 21 new edge-case tests; 51 total passing |
 
-### SPRINT 4 — React App Optimization
+### ✅ SPRINT 4 — React App Optimization (COMPLETE)
 | Item | Task | Status |
 |------|------|--------|
-| 2.1C | Extract csmpnParser.js from index.html | ⬜ TODO |
-| 3.1 | App.tsx decomposition → hooks + views (~300 line target) | ⬜ TODO |
-| 3.3 | React error boundaries (ImportErrorBoundary, SlashNotationBoundary) | ⬜ TODO |
+| 2.1C | Extract csmpnParser.js from index.html | ✅ DONE — index.html 7,299 lines (−74) |
+| 3.1 | App.tsx decomposition → hooks + views (~300 line target) | ✅ DONE — 1,145 lines (was 1,598 after merge); `osmdHelpers.ts` + `useOsmdRenderer.ts` + `useExportActions.ts` + `appTypes.ts` extracted |
+| 3.3 | React error boundaries (ImportErrorBoundary, SlashNotationBoundary) | ✅ DONE — `src/components/ErrorBoundary.tsx` |
 
 ### SPRINT 5 — Unification
 | Item | Task | Status |
@@ -185,4 +186,19 @@ npm run typecheck         # tsc --noEmit
 
 ---
 
-*Last updated: 2026-04-09 | Maintain this file as a living document — check off items as completed*
+*Last updated: 2026-04-10 | Maintain this file as a living document — check off items as completed*
+
+## SPRINT 4 PROGRESS NOTES
+
+**2026-04-09:** Sprint 3 completed. Sprint 4 in progress.
+- 51 tests passing (4 VexFlow + 47 parser/format fixture tests incl. 21 new edge-case tests)
+- csmpnParser.js extracted from index.html (−74 lines)
+- App.tsx: 1,575 → 1,234 lines (−341) via `src/utils/osmdHelpers.ts` + `src/hooks/useOsmdRenderer.ts`
+- Error boundaries added: `src/components/ErrorBoundary.tsx` (ImportErrorBoundary, SlashNotationBoundary)
+
+**2026-04-10:** Sprint 4 completed. Sprint 5 next.
+- Resolved remote branch divergence (PR #116/#117 merged): rebased + pushed cleanly
+- `src/hooks/useExportActions.ts` extracted (~350 lines): all export callbacks + PDF/ChordPro state
+- `src/types/appTypes.ts` created: AppMode, ExportFeedback, ChordProUiState and related UI types
+- App.tsx: 1,598 (post-merge) → 1,145 lines (−453) — export actions fully delegated to hook
+- Sprint 5 next: split musicXMLtochordpro.ts (1,291 lines → 4 modules)

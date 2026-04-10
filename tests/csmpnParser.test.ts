@@ -100,3 +100,64 @@ test('parseCsmpn: simile marker present for % bar', () => {
 
   assert.ok(chords.includes(SIMILE), '% should render as simile marker ·/·');
 });
+
+// ── Edge cases ──────────────────────────────────────────────────────────────
+
+test('parseCsmpn: empty string returns one default section with no lines', () => {
+  const doc = parseCsmpn('');
+
+  assert.equal(doc.sections.length, 1);
+  assert.equal(doc.sections[0].label, 'Chart');
+  assert.equal(doc.sections[0].lines.length, 0);
+});
+
+test('parseCsmpn: metadata-only input extracts metadata and creates default section', () => {
+  const text = 'Title: My Song\nComposer: John Doe\nKey: G\nTime: 4/4\n';
+  const doc = parseCsmpn(text);
+
+  assert.equal(doc.title, 'My Song');
+  assert.equal(doc.artist, 'John Doe');
+  assert.equal(doc.key, 'G');
+  assert.equal(doc.time, '4/4');
+  // No bar content → falls back to default empty section
+  assert.equal(doc.sections.length, 1);
+  assert.equal(doc.sections[0].lines.length, 0);
+});
+
+test('parseCsmpn: two named sections both appear in correct order', () => {
+  const text = '[A]\n| Cmaj7 | Dm7 | G7 | Cmaj7 |\n\n[B]\n| Fmaj7 | Em7 | Dm7 | Cmaj7 |\n';
+  const doc = parseCsmpn(text);
+
+  assert.equal(doc.sections.length, 2);
+  assert.equal(doc.sections[0].label, 'A');
+  assert.equal(doc.sections[1].label, 'B');
+});
+
+test('parseCsmpn: N.C. token produces chord token with text "N.C."', () => {
+  const text = '[Intro]\n| N.C. | Cmaj7 |\n';
+  const doc = parseCsmpn(text);
+  const chords = sectionChords(doc);
+
+  assert.ok(chords.includes('N.C.'), 'N.C. should appear as a chord token');
+});
+
+test('parseCsmpn: |: and :| repeat barlines produce correct barline tokens', () => {
+  const text = '[A]\n|: Cmaj7 | F7 :|\n';
+  const doc = parseCsmpn(text);
+  const barlines = doc.sections[0].lines[0].tokens
+    .filter((t) => t.kind === 'barline')
+    .map((t) => t.text);
+
+  assert.ok(barlines.includes('|:'), 'Should include |: open-repeat barline');
+  assert.ok(barlines.includes(':|'), 'Should include :| close-repeat barline');
+});
+
+test('parseCsmpn: bare bar content outside any section auto-creates Chart section', () => {
+  const text = '| Cmaj7 | F7 | G7 | Cmaj7 |\n';
+  const doc = parseCsmpn(text);
+
+  assert.equal(doc.sections.length, 1);
+  assert.equal(doc.sections[0].label, 'Chart');
+  const chords = sectionChords(doc);
+  assert.ok(chords.includes('Cmaj7'));
+});

@@ -77,6 +77,18 @@ select:disabled {
   color: #991b1b;
 }
 
+.error-boundary-card {
+  margin: 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #dc2626;
+  border-radius: 0.5rem;
+  background: #fff1f2;
+  color: #991b1b;
+}
+.error-boundary-card strong { display: block; margin-bottom: 0.4rem; }
+.error-boundary-card p { margin: 0.25rem 0; font-size: 0.875rem; }
+.error-boundary-card button { margin-top: 0.75rem; }
+
 .content-grid {
   display: grid;
   grid-template-columns: 1fr 320px;
