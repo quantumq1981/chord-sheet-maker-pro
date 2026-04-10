@@ -39,7 +39,9 @@ export class ImportErrorBoundary extends Component<ImportErrorProps, ImportError
         <div className="error-boundary-card" role="alert">
           <strong>{label} failed to render</strong>
           <p>{this.state.error.message}</p>
-          <button type="button" onClick={this.reset}>Retry</button>
+          <button type="button" onClick={this.reset}>
+            Retry
+          </button>
         </div>
       );
     }

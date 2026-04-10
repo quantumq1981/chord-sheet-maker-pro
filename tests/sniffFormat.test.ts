@@ -60,7 +60,9 @@ test('ZIP magic bytes (non-GP) → mxl', () => {
 });
 
 test('.xml extension with <?xml and score-partwise → musicxml', () => {
-  const bytes = new TextEncoder().encode('<?xml version="1.0"?>\n<score-partwise>\n</score-partwise>');
+  const bytes = new TextEncoder().encode(
+    '<?xml version="1.0"?>\n<score-partwise>\n</score-partwise>'
+  );
   assert.equal(sniffFormatFromBytes(bytes, 'score.xml').format, 'musicxml');
 });
 
@@ -82,7 +84,8 @@ test('empty string → unknown', () => {
 });
 
 test('plain prose (no music signals) → unknown', () => {
-  const text = 'This is just a paragraph of text.\nNo chords or directives here.\nJust words and sentences.';
+  const text =
+    'This is just a paragraph of text.\nNo chords or directives here.\nJust words and sentences.';
   assert.equal(sniffFormatFromText(text).format, 'unknown');
 });
 

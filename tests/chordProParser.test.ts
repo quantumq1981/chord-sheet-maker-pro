@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { parseChordPro, parseUltimateGuitar, parseFakeBook, parseChordsOverWords } from '../src/parsers/chordProParser.js';
+import {
+  parseChordPro,
+  parseUltimateGuitar,
+  parseFakeBook,
+  parseChordsOverWords,
+} from '../src/parsers/chordProParser.js';
 import type { ChordToken } from '../src/models/ChordChartModel.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -117,9 +122,9 @@ test('parseChordPro: metadata-only directives extract metadata and produce no se
   const text = '{title: Blue Bossa}\n{artist: Kenny Dorham}\n{key: Cm}\n';
   const doc = parseChordPro(text);
 
-  assert.equal(doc.title,  'Blue Bossa');
+  assert.equal(doc.title, 'Blue Bossa');
   assert.equal(doc.artist, 'Kenny Dorham');
-  assert.equal(doc.key,    'Cm');
+  assert.equal(doc.key, 'Cm');
   // No chord/lyric content → empty sections are discarded
   assert.equal(doc.sections.length, 0);
 });
@@ -128,10 +133,14 @@ test('parseChordPro: unknown directive is recorded in importDiagnostics', () => 
   const text = '{title: Test}\n{weird_custom_directive: value}\n[Cm]some lyrics\n';
   const doc = parseChordPro(text);
 
-  assert.ok(Array.isArray(doc.importDiagnostics) && doc.importDiagnostics.length > 0,
-    'importDiagnostics should be populated');
-  assert.ok(doc.importDiagnostics!.some(d => d.includes('weird_custom_directive')),
-    'Diagnostic should mention the unknown directive');
+  assert.ok(
+    Array.isArray(doc.importDiagnostics) && doc.importDiagnostics.length > 0,
+    'importDiagnostics should be populated'
+  );
+  assert.ok(
+    doc.importDiagnostics!.some((d) => d.includes('weird_custom_directive')),
+    'Diagnostic should mention the unknown directive'
+  );
 });
 
 // ── Edge cases: parseUltimateGuitar ────────────────────────────────────────
@@ -150,7 +159,7 @@ test('parseFakeBook: metadata-only returns no sections but extracts metadata', (
   const doc = parseFakeBook(text);
 
   assert.equal(doc.title, 'My Blues');
-  assert.equal(doc.key,   'Bb');
+  assert.equal(doc.key, 'Bb');
   assert.equal(doc.sections.length, 0);
 });
 
@@ -167,8 +176,8 @@ test('parseFakeBook: repeat barlines |: and :| appear as barline tokens', () => 
   const text = '- A\n|: Cmaj7 F7 :|\n';
   const doc = parseFakeBook(text);
   const barlines = doc.sections[0].lines[0].tokens
-    .filter(t => t.kind === 'barline')
-    .map(t => t.text);
+    .filter((t) => t.kind === 'barline')
+    .map((t) => t.text);
 
   assert.ok(barlines.includes('|:'), 'Should include |: open-repeat');
   assert.ok(barlines.includes(':|'), 'Should include :| close-repeat');
@@ -181,12 +190,12 @@ test('parseChordsOverWords: chord lines paired with lyric lines produce chord to
   const doc = parseChordsOverWords(text);
 
   const chordTexts = doc.sections
-    .flatMap(s => s.lines)
-    .flatMap(l => l.tokens)
-    .filter(t => t.kind === 'chord')
-    .map(t => t.text);
+    .flatMap((s) => s.lines)
+    .flatMap((l) => l.tokens)
+    .filter((t) => t.kind === 'chord')
+    .map((t) => t.text);
 
   assert.ok(chordTexts.includes('Am7'), 'Am7 should be a chord token');
-  assert.ok(chordTexts.includes('F7'),  'F7 should be a chord token');
+  assert.ok(chordTexts.includes('F7'), 'F7 should be a chord token');
   assert.ok(chordTexts.includes('Em7'), 'Em7 should be a chord token');
 });

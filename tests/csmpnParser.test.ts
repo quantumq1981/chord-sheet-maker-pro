@@ -115,10 +115,10 @@ test('parseCsmpn: metadata-only input extracts metadata and creates default sect
   const text = 'Title: My Song\nComposer: John Doe\nKey: G\nTime: 4/4\n';
   const doc = parseCsmpn(text);
 
-  assert.equal(doc.title,  'My Song');
+  assert.equal(doc.title, 'My Song');
   assert.equal(doc.artist, 'John Doe');
-  assert.equal(doc.key,    'G');
-  assert.equal(doc.time,   '4/4');
+  assert.equal(doc.key, 'G');
+  assert.equal(doc.time, '4/4');
   // No bar content → falls back to default empty section
   assert.equal(doc.sections.length, 1);
   assert.equal(doc.sections[0].lines.length, 0);
@@ -145,8 +145,8 @@ test('parseCsmpn: |: and :| repeat barlines produce correct barline tokens', () 
   const text = '[A]\n|: Cmaj7 | F7 :|\n';
   const doc = parseCsmpn(text);
   const barlines = doc.sections[0].lines[0].tokens
-    .filter(t => t.kind === 'barline')
-    .map(t => t.text);
+    .filter((t) => t.kind === 'barline')
+    .map((t) => t.text);
 
   assert.ok(barlines.includes('|:'), 'Should include |: open-repeat barline');
   assert.ok(barlines.includes(':|'), 'Should include :| close-repeat barline');

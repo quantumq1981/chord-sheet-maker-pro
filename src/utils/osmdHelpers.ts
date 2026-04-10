@@ -53,33 +53,41 @@ type EngravingRulesSnapshot = Partial<{
   PageFormatHeight?: number;
 };
 
-export function getRuleValue(rules: MutableEngravingRules, key: keyof EngravingRulesSnapshot): number | undefined {
+export function getRuleValue(
+  rules: MutableEngravingRules,
+  key: keyof EngravingRulesSnapshot
+): number | undefined {
   if (!(key in rules)) return undefined;
   const value = (rules as unknown as Record<string, unknown>)[key];
   return typeof value === 'number' ? value : undefined;
 }
 
-export function setRuleValue(rules: MutableEngravingRules, key: keyof EngravingRulesSnapshot, value: number): void {
+export function setRuleValue(
+  rules: MutableEngravingRules,
+  key: keyof EngravingRulesSnapshot,
+  value: number
+): void {
   if (!(key in rules)) return;
   (rules as unknown as Record<string, unknown>)[key] = value;
 }
 
 export function snapshotEngravingRules(osmd: OpenSheetMusicDisplay): EngravingRulesSnapshot {
   const rules = osmd.EngravingRules as MutableEngravingRules;
-  const pageFormat = 'PageFormat' in rules
-    ? (rules.PageFormat as { width?: number; height?: number } | undefined)
-    : undefined;
+  const pageFormat =
+    'PageFormat' in rules
+      ? (rules.PageFormat as { width?: number; height?: number } | undefined)
+      : undefined;
 
   return {
-    PageWidth:        getRuleValue(rules, 'PageWidth'),
-    PageHeight:       getRuleValue(rules, 'PageHeight'),
-    PageTopMargin:    getRuleValue(rules, 'PageTopMargin'),
+    PageWidth: getRuleValue(rules, 'PageWidth'),
+    PageHeight: getRuleValue(rules, 'PageHeight'),
+    PageTopMargin: getRuleValue(rules, 'PageTopMargin'),
     PageBottomMargin: getRuleValue(rules, 'PageBottomMargin'),
-    PageLeftMargin:   getRuleValue(rules, 'PageLeftMargin'),
-    PageRightMargin:  getRuleValue(rules, 'PageRightMargin'),
+    PageLeftMargin: getRuleValue(rules, 'PageLeftMargin'),
+    PageRightMargin: getRuleValue(rules, 'PageRightMargin'),
     SystemLeftMargin: getRuleValue(rules, 'SystemLeftMargin'),
-    SystemRightMargin:getRuleValue(rules, 'SystemRightMargin'),
-    PageFormatWidth:  typeof pageFormat?.width  === 'number' ? pageFormat.width  : undefined,
+    SystemRightMargin: getRuleValue(rules, 'SystemRightMargin'),
+    PageFormatWidth: typeof pageFormat?.width === 'number' ? pageFormat.width : undefined,
     PageFormatHeight: typeof pageFormat?.height === 'number' ? pageFormat.height : undefined,
   };
 }
@@ -90,34 +98,44 @@ export function applyPrintProfile(osmd: OpenSheetMusicDisplay, pageSize: PrintPa
   osmd.setPageFormat(formatId);
 
   if (pageSize === 'letter') {
-    setRuleValue(rules, 'PageWidth',        8.5);
-    setRuleValue(rules, 'PageHeight',       11);
-    setRuleValue(rules, 'PageTopMargin',    0.5);
+    setRuleValue(rules, 'PageWidth', 8.5);
+    setRuleValue(rules, 'PageHeight', 11);
+    setRuleValue(rules, 'PageTopMargin', 0.5);
     setRuleValue(rules, 'PageBottomMargin', 0.5);
-    setRuleValue(rules, 'PageLeftMargin',   0.5);
-    setRuleValue(rules, 'PageRightMargin',  0.5);
+    setRuleValue(rules, 'PageLeftMargin', 0.5);
+    setRuleValue(rules, 'PageRightMargin', 0.5);
   } else {
-    setRuleValue(rules, 'PageWidth',        210);
-    setRuleValue(rules, 'PageHeight',       297);
-    setRuleValue(rules, 'PageTopMargin',    12);
+    setRuleValue(rules, 'PageWidth', 210);
+    setRuleValue(rules, 'PageHeight', 297);
+    setRuleValue(rules, 'PageTopMargin', 12);
     setRuleValue(rules, 'PageBottomMargin', 12);
-    setRuleValue(rules, 'PageLeftMargin',   12);
-    setRuleValue(rules, 'PageRightMargin',  12);
+    setRuleValue(rules, 'PageLeftMargin', 12);
+    setRuleValue(rules, 'PageRightMargin', 12);
   }
 }
 
-export function restoreEngravingRules(osmd: OpenSheetMusicDisplay, snapshot: EngravingRulesSnapshot): void {
+export function restoreEngravingRules(
+  osmd: OpenSheetMusicDisplay,
+  snapshot: EngravingRulesSnapshot
+): void {
   const rules = osmd.EngravingRules as MutableEngravingRules;
 
-  if (typeof snapshot.PageFormatWidth === 'number' && typeof snapshot.PageFormatHeight === 'number') {
+  if (
+    typeof snapshot.PageFormatWidth === 'number' &&
+    typeof snapshot.PageFormatHeight === 'number'
+  ) {
     osmd.setCustomPageFormat(snapshot.PageFormatWidth, snapshot.PageFormatHeight);
   }
 
   const ruleKeys: (keyof EngravingRulesSnapshot)[] = [
-    'PageWidth', 'PageHeight',
-    'PageTopMargin', 'PageBottomMargin',
-    'PageLeftMargin', 'PageRightMargin',
-    'SystemLeftMargin', 'SystemRightMargin',
+    'PageWidth',
+    'PageHeight',
+    'PageTopMargin',
+    'PageBottomMargin',
+    'PageLeftMargin',
+    'PageRightMargin',
+    'SystemLeftMargin',
+    'SystemRightMargin',
   ];
 
   for (const key of ruleKeys) {
@@ -187,13 +205,13 @@ export async function svgToCanvas(svg: SVGSVGElement, scale: number): Promise<HT
       img.src = svgUrl;
     });
 
-    const svgWidth  = svg.viewBox.baseVal?.width  || svg.clientWidth  || image.naturalWidth;
+    const svgWidth = svg.viewBox.baseVal?.width || svg.clientWidth || image.naturalWidth;
     const svgHeight = svg.viewBox.baseVal?.height || svg.clientHeight || image.naturalHeight;
 
     if (svgWidth <= 0 || svgHeight <= 0) throw new Error('Rendered score has invalid dimensions.');
 
     const canvas = document.createElement('canvas');
-    canvas.width  = Math.max(1, Math.round(svgWidth  * scale));
+    canvas.width = Math.max(1, Math.round(svgWidth * scale));
     canvas.height = Math.max(1, Math.round(svgHeight * scale));
 
     const ctx = canvas.getContext('2d');
@@ -212,7 +230,10 @@ export async function svgToCanvas(svg: SVGSVGElement, scale: number): Promise<HT
 export async function canvasToBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob> {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
-      if (!blob) { reject(new Error(`Failed to create ${type} blob.`)); return; }
+      if (!blob) {
+        reject(new Error(`Failed to create ${type} blob.`));
+        return;
+      }
       resolve(blob);
     }, type);
   });
@@ -220,7 +241,10 @@ export async function canvasToBlob(canvas: HTMLCanvasElement, type: string): Pro
 
 // ─── XML / MusicXML diagnostics ───────────────────────────────────────────────
 
-export function parseXmlWithDiagnostics(xmlText: string): { doc: Document; diagnostics: Diagnostics } {
+export function parseXmlWithDiagnostics(xmlText: string): {
+  doc: Document;
+  diagnostics: Diagnostics;
+} {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
 
@@ -232,11 +256,18 @@ export function parseXmlWithDiagnostics(xmlText: string): { doc: Document; diagn
     return {
       doc,
       diagnostics: {
-        isValidXml: false, isMusicXml: false,
+        isValidXml: false,
+        isMusicXml: false,
         parseError: errorText ? errorText.slice(0, 300) : 'Invalid XML',
-        rootName: 'error', version: 'n/a',
-        parts: 0, measures: 0, notes: 0, harmonies: 0,
-        hasKey: false, hasTime: false, hasDivisions: false,
+        rootName: 'error',
+        version: 'n/a',
+        parts: 0,
+        measures: 0,
+        notes: 0,
+        harmonies: 0,
+        hasKey: false,
+        hasTime: false,
+        hasDivisions: false,
       },
     };
   }
@@ -249,9 +280,17 @@ export function parseXmlWithDiagnostics(xmlText: string): { doc: Document; diagn
     return {
       doc,
       diagnostics: {
-        isValidXml: true, isMusicXml: false, rootName, version: 'n/a',
-        parts: 0, measures: 0, notes: 0, harmonies: 0,
-        hasKey: false, hasTime: false, hasDivisions: false,
+        isValidXml: true,
+        isMusicXml: false,
+        rootName,
+        version: 'n/a',
+        parts: 0,
+        measures: 0,
+        notes: 0,
+        harmonies: 0,
+        hasKey: false,
+        hasTime: false,
+        hasDivisions: false,
       },
     };
   }
@@ -261,15 +300,18 @@ export function parseXmlWithDiagnostics(xmlText: string): { doc: Document; diagn
   return {
     doc,
     diagnostics: {
-      isValidXml: true, isMusicXml: true, parseError: undefined,
-      rootName, version: root?.getAttribute('version') ?? 'n/a',
-      parts:     queryCount('part'),
-      measures:  queryCount('measure'),
-      notes:     queryCount('note'),
+      isValidXml: true,
+      isMusicXml: true,
+      parseError: undefined,
+      rootName,
+      version: root?.getAttribute('version') ?? 'n/a',
+      parts: queryCount('part'),
+      measures: queryCount('measure'),
+      notes: queryCount('note'),
       harmonies: queryCount('harmony'),
-      hasKey:        doc.querySelector('attributes > key')       !== null,
-      hasTime:       doc.querySelector('attributes > time')      !== null,
-      hasDivisions:  doc.querySelector('attributes > divisions') !== null,
+      hasKey: doc.querySelector('attributes > key') !== null,
+      hasTime: doc.querySelector('attributes > time') !== null,
+      hasDivisions: doc.querySelector('attributes > divisions') !== null,
     },
   };
 }

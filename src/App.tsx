@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   sniffFormatFromBytes,
   isMusicXmlFormat,
@@ -9,7 +9,6 @@ import {
   asSourceFormat,
 } from './ingest/sniffFormat';
 import { extractMusicXmlTextFromFile } from './converters/musicXMLtochordpro';
-import { parseChordChart } from './parsers/chordProParser';
 import { parseCsmpn } from './parsers/csmpnParser';
 import { serializeChordProDocument } from './parsers/serializeChordPro';
 import type { ChordChartDocument } from './models/ChordChartModel';
@@ -24,7 +23,13 @@ import SvgImporterPanel from './components/SvgImporterPanel';
 import { ImportErrorBoundary, SlashNotationBoundary } from './components/ErrorBoundary';
 import { useOsmdRenderer } from './hooks/useOsmdRenderer';
 import { useExportActions } from './hooks/useExportActions';
-import type { AppMode, ChordProModeUi, ChordProBracketUi, ChordProRepeatUi } from './types/appTypes';
+import type {
+  AppMode,
+  ChordProModeUi,
+  ChordProBracketUi,
+  ChordProRepeatUi,
+} from './types/appTypes';
+import type { PdfPageSize } from './utils/osmdHelpers';
 
 // ─── File-accept string ───────────────────────────────────────────────────────
 
@@ -98,17 +103,21 @@ export default function App() {
   // ── Shared ──
   const [loadedFilename, setLoadedFilename] = useState('');
   const [renderError, setRenderError] = useState('');
-  const [exportFeedback, setExportFeedback] = useState<ExportFeedback | null>(null);
 
   // ── Notation (OSMD) mode — delegated to useOsmdRenderer ──
   const {
-    containerRef, osmdRef,
-    loadedXmlText, setLoadedXmlText,
-    isMxl, setIsMxl,
+    containerRef,
+    osmdRef,
+    loadedXmlText,
+    setLoadedXmlText,
+    isMxl,
+    setIsMxl,
     renderedPageCount,
     diagnostics,
-    fitWidth, adjustZoom,
-    resetAutoFit, clearOsmd,
+    fitWidth,
+    adjustZoom,
+    resetAutoFit,
+    clearOsmd,
   } = useOsmdRenderer({ setRenderError });
 
   // Tracks nested dragenter/dragleave events so child elements don't falsely
@@ -150,27 +159,49 @@ export default function App() {
 
   // ── Export actions — delegated to useExportActions ──
   const {
-    exportFeedback, setExportFeedback,
-    pdfPageSize, setPdfPageSize,
-    pdfBlobUrl, pdfFilename,
-    chordProUi, setChordProUi,
+    exportFeedback,
+    setExportFeedback,
+    pdfPageSize,
+    setPdfPageSize,
+    pdfBlobUrl,
+    pdfFilename,
+    chordProUi,
+    setChordProUi,
     chordProText,
     chordProWarnings,
     chordProDiagnostics,
-    canShare, canSharePdf,
-    clearPdfOutput, clearExportState,
-    showExportError, showExportSuccess,
-    downloadXml, downloadDiagnostics,
-    exportSvg, exportPng, exportPdf, printScore,
-    generateChordPro, viewAsFakebook,
-    copyChordPro, downloadChordProText,
-    shareText, sharePdf,
+    canShare,
+    canSharePdf,
+    clearPdfOutput,
+    clearExportState,
+    downloadXml,
+    downloadDiagnostics,
+    exportSvg,
+    exportPng,
+    exportPdf,
+    printScore,
+    generateChordPro,
+    viewAsFakebook,
+    copyChordPro,
+    downloadChordProText,
+    shareText,
+    sharePdf,
   } = useExportActions({
-    containerRef, osmdRef,
-    loadedXmlText, loadedFilename,
-    diagnostics, xmlWarnings, renderError, renderedPageCount,
-    setRenderError, setChartDocument, setImportQuality, setImportDiagnostics,
-    setTransposeSteps, setDetectedFormatLabel, setAppMode,
+    containerRef,
+    osmdRef,
+    loadedXmlText,
+    loadedFilename,
+    diagnostics,
+    xmlWarnings,
+    renderError,
+    renderedPageCount,
+    setRenderError,
+    setChartDocument,
+    setImportQuality,
+    setImportDiagnostics,
+    setTransposeSteps,
+    setDetectedFormatLabel,
+    setAppMode,
   });
 
   // ── Clear all ──
@@ -247,8 +278,7 @@ export default function App() {
 
       if (isMusicXmlFormat(detected)) {
         // ── Notation path ──
-        const { filename, xmlText, isMxl: loadedFromMxl } =
-          await extractMusicXmlTextFromFile(file);
+        const { filename, xmlText, isMxl: loadedFromMxl } = await extractMusicXmlTextFromFile(file);
         resetAutoFit();
         setLoadedFilename(filename);
         setLoadedXmlText(xmlText);
@@ -600,10 +630,7 @@ export default function App() {
               </div>
             )}
             <ImportErrorBoundary label="UG Pro Importer" key={ugProFile?.name}>
-              <UGProImporterPanel
-                initialFile={ugProFile}
-                onImportCsmpn={onImportCsmpn}
-              />
+              <UGProImporterPanel initialFile={ugProFile} onImportCsmpn={onImportCsmpn} />
             </ImportErrorBoundary>
           </section>
         ) : appMode === 'oemer-image-importer' ? (
@@ -647,9 +674,11 @@ export default function App() {
                 <span>Drop to load</span>
               </div>
             )}
-            {chartDocument && (
-              showSlashNotation ? (
-                <SlashNotationBoundary key={(chartDocument.title ?? '') + chartDocument.sections.length}>
+            {chartDocument &&
+              (showSlashNotation ? (
+                <SlashNotationBoundary
+                  key={(chartDocument.title ?? '') + chartDocument.sections.length}
+                >
                   <SlashNotationView
                     document={chartDocument}
                     transposeSteps={transposeSteps}

@@ -17,11 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay';
-import {
-  parseXmlWithDiagnostics,
-  getRenderedSvgs,
-  type Diagnostics,
-} from '../utils/osmdHelpers';
+import { parseXmlWithDiagnostics, getRenderedSvgs, type Diagnostics } from '../utils/osmdHelpers';
 
 // ─── Hook ──────────────────────────────────────────────────────────────────────
 
@@ -58,7 +54,9 @@ export function useOsmdRenderer({ setRenderError }: UseOsmdRendererProps) {
       autoResize: true,
       drawingParameters: 'default',
     });
-    return () => { osmdRef.current = null; };
+    return () => {
+      osmdRef.current = null;
+    };
   }, []);
 
   // ── Fit-to-width callback ──
@@ -109,8 +107,8 @@ export function useOsmdRenderer({ setRenderError }: UseOsmdRendererProps) {
       }
     };
     void render();
-  // setRenderError is stable (React setState setter); safe to omit from deps.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // setRenderError is stable (React setState setter); safe to omit from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadedXmlText, zoom, diagnostics, fitWidth]);
 
   // ── Zoom adjustment ──
@@ -119,7 +117,9 @@ export function useOsmdRenderer({ setRenderError }: UseOsmdRendererProps) {
   }, []);
 
   // ── Reset auto-fit flag (called before setLoadedXmlText on new file load) ──
-  const resetAutoFit = useCallback(() => { didAutoFitRef.current = false; }, []);
+  const resetAutoFit = useCallback(() => {
+    didAutoFitRef.current = false;
+  }, []);
 
   // ── Full reset (called by clearAll and when switching away from notation mode) ──
   const clearOsmd = useCallback(() => {
