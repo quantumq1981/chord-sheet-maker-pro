@@ -88,11 +88,11 @@ infrastructure should optimize around this, not canvas-based rasterization.
 | 2.1B | Extract chordProcessing.js (~800 lines) | ✅ DONE — 659 lines extracted; index.html 7,373 lines |
 | 5.1 | Add error-path + edge-case tests for parsers | ✅ DONE — 21 new edge-case tests; 51 total passing |
 
-### SPRINT 4 — React App Optimization (CURRENT)
+### ✅ SPRINT 4 — React App Optimization (COMPLETE)
 | Item | Task | Status |
 |------|------|--------|
 | 2.1C | Extract csmpnParser.js from index.html | ✅ DONE — index.html 7,299 lines (−74) |
-| 3.1 | App.tsx decomposition → hooks + views (~300 line target) | 🔄 IN PROGRESS — 1,234 lines (was 1,575; −341); `osmdHelpers.ts` + `useOsmdRenderer.ts` extracted |
+| 3.1 | App.tsx decomposition → hooks + views (~300 line target) | ✅ DONE — 1,145 lines (was 1,598 after merge); `osmdHelpers.ts` + `useOsmdRenderer.ts` + `useExportActions.ts` + `appTypes.ts` extracted |
 | 3.3 | React error boundaries (ImportErrorBoundary, SlashNotationBoundary) | ✅ DONE — `src/components/ErrorBoundary.tsx` |
 
 ### SPRINT 5 — Unification
@@ -186,7 +186,7 @@ npm run typecheck         # tsc --noEmit
 
 ---
 
-*Last updated: 2026-04-09 | Maintain this file as a living document — check off items as completed*
+*Last updated: 2026-04-10 | Maintain this file as a living document — check off items as completed*
 
 ## SPRINT 4 PROGRESS NOTES
 
@@ -195,4 +195,10 @@ npm run typecheck         # tsc --noEmit
 - csmpnParser.js extracted from index.html (−74 lines)
 - App.tsx: 1,575 → 1,234 lines (−341) via `src/utils/osmdHelpers.ts` + `src/hooks/useOsmdRenderer.ts`
 - Error boundaries added: `src/components/ErrorBoundary.tsx` (ImportErrorBoundary, SlashNotationBoundary)
-- Remaining for 3.1: export actions hook (~235 lines), view components (~350 lines) → target ~300 lines
+
+**2026-04-10:** Sprint 4 completed. Sprint 5 next.
+- Resolved remote branch divergence (PR #116/#117 merged): rebased + pushed cleanly
+- `src/hooks/useExportActions.ts` extracted (~350 lines): all export callbacks + PDF/ChordPro state
+- `src/types/appTypes.ts` created: AppMode, ExportFeedback, ChordProUiState and related UI types
+- App.tsx: 1,598 (post-merge) → 1,145 lines (−453) — export actions fully delegated to hook
+- Sprint 5 next: split musicXMLtochordpro.ts (1,291 lines → 4 modules)

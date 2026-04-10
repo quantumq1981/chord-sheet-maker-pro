@@ -25,11 +25,11 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-04-09)
+## Current State (2026-04-10)
 - **51 tests passing** (`npm run test:all`) — 4 VexFlow + 47 parser/format fixture tests
 - **Two active app tracks:** `index.html` (7,299-line monolith) + `app.html` React/TypeScript
-- **App.tsx:** 1,234 lines (down from 1,575) — OSMD renderer and utilities extracted to hooks/utils
-- **0 lint warnings / 0 type errors**
+- **App.tsx:** 1,145 lines (down from 1,598 after remote merge) — OSMD renderer, export actions, and utilities extracted to hooks/utils
+- **0 type errors**
 
 ## Architectural Principles (enforce on every change)
 1. `src/ingest/ugProPdfImporter.ts` is the **canonical** PDF importer — `ug-pro-importer.html` must not diverge from it
@@ -47,7 +47,9 @@
 | `src/ingest/ugProPdfImporter.ts` | Canonical PDF importer (not the standalone HTML) |
 | `src/parsers/` | Zero-dependency TypeScript parsers (chordPro, csmpn, abc, gp, musicXml) |
 | `src/hooks/useOsmdRenderer.ts` | OSMD renderer state + effects extracted from App.tsx |
+| `src/hooks/useExportActions.ts` | All export callbacks + PDF/ChordPro state extracted from App.tsx |
 | `src/utils/osmdHelpers.ts` | Pure OSMD/SVG/canvas utilities extracted from App.tsx |
+| `src/types/appTypes.ts` | Shared UI types: AppMode, ExportFeedback, ChordProUiState |
 | `src/components/ErrorBoundary.tsx` | ImportErrorBoundary + SlashNotationBoundary class components |
 | `tests/` | Node.js native test runner + tsx loader for TypeScript tests |
 | `OPP_ROADMAP.md` | Full 7-phase optimization roadmap with sprint tracker — update it as work completes |
@@ -60,18 +62,18 @@
 | — | Fix 2 react-hooks/exhaustive-deps warnings in App.tsx | ✅ DONE |
 | 5.1 | Add error-path + edge-case tests for parsers | ✅ DONE — 21 new edge-case tests (51 total) |
 
-## Sprint 4 — React App Optimization (IN PROGRESS)
+## Sprint 4 — React App Optimization ✅ COMPLETE
 | # | Task | Status |
 |---|------|--------|
 | 2.1C | Extract csmpnParser.js from index.html | ✅ DONE — index.html 7,299 lines (−74) |
-| 3.1 | App.tsx decomposition → hooks + views | 🔄 IN PROGRESS — 1,234 lines (was 1,575); `useOsmdRenderer` + `osmdHelpers` extracted |
+| 3.1 | App.tsx decomposition → hooks + views | ✅ DONE — 1,145 lines (was 1,598 after merge); `useOsmdRenderer` + `useExportActions` + `osmdHelpers` + `appTypes` extracted |
 | 3.3 | React error boundaries (ImportErrorBoundary, SlashNotationBoundary) | ✅ DONE |
 
-## Next Immediate Actions (pick up where left off)
+## Next Immediate Actions (Sprint 5)
 ```
-1. App.tsx decomposition (3.1 continued) → extract useExportActions hook (~235 lines), then view components
-2. csmpnParser.js error-path tests (5.1 extension) → edge cases for index.html parseCSMPN
-3. Sprint 5: Split musicXMLtochordpro.ts (1,291 lines → 4 modules)
+1. Split musicXMLtochordpro.ts (1,291 lines → 4 modules): xmlParser, chordExtractor, formatter, pipeline
+2. Unify ugProPdfImporter: standalone page → build artifact using src/ingest/ugProPdfImporter.ts
+3. Remaining index.html extractions (renderer, importPipeline, settings) — items 2.1D-F
 ```
 
 ---
