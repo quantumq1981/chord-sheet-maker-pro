@@ -301,3 +301,12 @@ All exports use `_snCfg.bgColor` as the background and `safeFilename(doc.title)`
 | Dedicated TXT importer page | `public/ug-txt-importer.html` — separate deliverable |
 | CI/CD pipeline | No `.github/workflows` yet — add GitHub Actions for lint/test/build |
 | ~~Importer fixture tests~~ | ✅ Done — `tests/sniffFormat.test.ts`, `tests/chordProParser.test.ts`, `tests/csmpnParser.test.ts` (2026-04-09) |
+
+## SPRINT 4 PROGRESS NOTES
+
+
+**2026-04-10 (CI stabilization update):**
+- Resolved 4 failing CI checks reported on PR #120 (`Lint & Format` + `Type-check & Build` on both push and pull_request).
+- Fixed `react-hooks/exhaustive-deps` warnings in `src/App.tsx` by adding missing `useCallback` dependencies (`setExportFeedback`, `clearExportState`, `clearOsmd`, `resetAutoFit`, `setIsMxl`, `setLoadedXmlText`).
+- Verified locally: `npm run lint`, `npm run format:check`, `npm run build`, and `npm run test:all` all pass.
+

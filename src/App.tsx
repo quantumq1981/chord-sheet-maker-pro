@@ -227,213 +227,226 @@ export default function App() {
   }, [clearOsmd, clearExportState]);
 
   // ── UG Pro importer: CSMPN import callback ──
-  const onImportCsmpn = useCallback((csmpnText: string) => {
-    try {
-      const doc = parseCsmpn(csmpnText);
-      setChartDocument(canonicalizeChordChartDocument(doc));
-      setTransposeSteps(0);
-      setDetectedFormatLabel('UG Pro PDF (CSMPN)');
-      setImportQuality(null);
-      setImportDiagnostics([]);
-      setRenderError('');
-      setExportFeedback(null);
-      setUgProFile(null);
-      setAppMode('chord-chart');
-    } catch (err) {
-      setRenderError(`CSMPN parse error: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }, []);
+  const onImportCsmpn = useCallback(
+    (csmpnText: string) => {
+      try {
+        const doc = parseCsmpn(csmpnText);
+        setChartDocument(canonicalizeChordChartDocument(doc));
+        setTransposeSteps(0);
+        setDetectedFormatLabel('UG Pro PDF (CSMPN)');
+        setImportQuality(null);
+        setImportDiagnostics([]);
+        setRenderError('');
+        setExportFeedback(null);
+        setUgProFile(null);
+        setAppMode('chord-chart');
+      } catch (err) {
+        setRenderError(`CSMPN parse error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [setExportFeedback]
+  );
 
-  const onImportOemerCsmpn = useCallback((csmpnText: string) => {
-    try {
-      const doc = parseCsmpn(csmpnText);
-      doc.sourceFormat = 'oemer-image';
-      setChartDocument(canonicalizeChordChartDocument(doc));
-      setTransposeSteps(0);
-      setDetectedFormatLabel('oemer-image');
-      setImportQuality(null);
-      setImportDiagnostics([]);
-      setRenderError('');
-      setExportFeedback(null);
-      setUgProFile(null);
-      setAppMode('chord-chart');
-    } catch (err) {
-      setRenderError(`CSMPN parse error: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }, []);
+  const onImportOemerCsmpn = useCallback(
+    (csmpnText: string) => {
+      try {
+        const doc = parseCsmpn(csmpnText);
+        doc.sourceFormat = 'oemer-image';
+        setChartDocument(canonicalizeChordChartDocument(doc));
+        setTransposeSteps(0);
+        setDetectedFormatLabel('oemer-image');
+        setImportQuality(null);
+        setImportDiagnostics([]);
+        setRenderError('');
+        setExportFeedback(null);
+        setUgProFile(null);
+        setAppMode('chord-chart');
+      } catch (err) {
+        setRenderError(`CSMPN parse error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [setExportFeedback]
+  );
 
   // ── File loading ──
-  const loadFile = useCallback(async (file: File) => {
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      setRenderError(
-        `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). ` +
-          `Maximum supported size is ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB.`
-      );
-      return;
-    }
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      const detected = sniffFormatFromBytes(bytes, file.name);
-
-      if (isMusicXmlFormat(detected)) {
-        // ── Notation path ──
-        const { filename, xmlText, isMxl: loadedFromMxl } = await extractMusicXmlTextFromFile(file);
-        resetAutoFit();
-        setLoadedFilename(filename);
-        setLoadedXmlText(xmlText);
-        setIsMxl(loadedFromMxl);
-        setRenderError('');
-        clearExportState();
-        // Clear chord-chart state
-        setChartDocument(null);
-        setTransposeSteps(0);
-        setDetectedFormatLabel(detected.format === 'mxl' ? 'MXL' : 'MusicXML');
-        setImportQuality(null);
-        setImportDiagnostics([]);
-        setAppMode('notation');
-      } else if (isChordChartFormat(detected)) {
-        // ── Chord-chart path ──
-        const text = new TextDecoder('utf-8').decode(bytes);
-        const sourceFormat = asSourceFormat(detected)!;
-        const imported = await importWithNotaGenPipeline(text, sourceFormat, file.name);
-        const doc = imported.document;
-
-        const formatLabels: Record<string, string> = {
-          chordpro: 'ChordPro',
-          ultimateguitar: 'Ultimate Guitar',
-          'chords-over-words': 'Chords over Words',
-          abc: 'ABC Notation',
-          fakebook: 'Fake Book',
-        };
-
-        setLoadedFilename(file.name);
-        setChartDocument(doc);
-        setImportQuality(
-          doc.importQuality
-            ? {
-                score: doc.importQuality.score,
-                warnings: doc.importQuality.warnings,
-                diagnostics: doc.importDiagnostics ?? [],
-              }
-            : null
-        );
-        setImportDiagnostics(doc.importDiagnostics ?? []);
-        setTransposeSteps(0);
-        setDetectedFormatLabel(formatLabels[sourceFormat] ?? sourceFormat);
-        setRenderError('');
-        clearOsmd();
-        clearExportState();
-        setImportQuality(null);
-        setImportDiagnostics([]);
-        setAppMode('chord-chart');
-      } else if (isGuitarProFormat(detected)) {
-        // ── Guitar Pro path (.gp / .gp3 / .gp4 / .gp5 / .gpx) ──
-        // AlphaTab is loaded lazily on first GP file open (~3 MB chunk).
-        const { parseGuitarPro } = await import('./parsers/gpParser');
-        const doc = await parseGuitarPro(bytes);
-
-        setLoadedFilename(file.name);
-        setChartDocument(doc);
-        setImportQuality(
-          doc.importQuality
-            ? {
-                score: doc.importQuality.score,
-                warnings: doc.importQuality.warnings,
-                diagnostics: doc.importDiagnostics ?? [],
-              }
-            : null
-        );
-        setImportDiagnostics(doc.importDiagnostics ?? []);
-        setTransposeSteps(0);
-        setDetectedFormatLabel('Guitar Pro');
-        setRenderError('');
-        clearOsmd();
-        clearExportState();
-        setAppMode('chord-chart');
-      } else if (isSvgFormat(detected)) {
-        // ── SVG path: route to SVG importer panel ──
-        setLoadedFilename(file.name);
-        setSvgFile(file);
-        setRenderError('');
-        setChartDocument(null);
-        clearOsmd();
-        clearExportState();
-        setImportQuality(null);
-        setImportDiagnostics([]);
-        setUgProFile(null);
-        setAppMode('svg-importer');
-      } else if (isPdfFormat(detected)) {
-        // ── PDF path: route to UG Pro PDF importer ──
-        setLoadedFilename(file.name);
-        setUgProFile(file);
-        setRenderError('');
-        setChartDocument(null);
-        clearOsmd();
-        clearExportState();
-        setAppMode('ug-pro-importer');
-      } else if (isGuitarProFormat(detected)) {
-        // ── Guitar Pro / PowerTab path ──
-        const { parseGuitarPro } = await import('./parsers/gpParser');
-        const doc = await parseGuitarPro(bytes);
-
-        // Determine a human-readable label from the file extension.
-        const gpExt = file.name.split('.').pop()?.toLowerCase() ?? '';
-        const gpLabel: Record<string, string> = {
-          gp: 'Guitar Pro 7/8',
-          gpx: 'Guitar Pro 6',
-          gp5: 'Guitar Pro 5',
-          gp4: 'Guitar Pro 4',
-          gp3: 'Guitar Pro 3',
-          ptb: 'PowerTab',
-        };
-
-        setLoadedFilename(file.name);
-        setChartDocument(doc);
-        setTransposeSteps(0);
-        setDetectedFormatLabel(gpLabel[gpExt] ?? 'Guitar Pro');
-        setRenderError('');
-        clearOsmd();
-        clearExportState();
-        setAppMode('chord-chart');
-      } else {
+  const loadFile = useCallback(
+    async (file: File) => {
+      if (file.size > MAX_FILE_SIZE_BYTES) {
         setRenderError(
-          'Unsupported file type. Upload .svg (SVG graphic), .xml/.mxl (notation), ' +
-            '.gp/.gp5/.gpx (Guitar Pro), ' +
-            '.cho/.pro/.abc/.txt (chord chart), or .pdf. For OEMER, use "OEMER Image OMR".'
+          `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). ` +
+            `Maximum supported size is ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB.`
         );
+        return;
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      // Surface actionable context where possible.
-      if (
-        message.toLowerCase().includes('out of memory') ||
-        message.toLowerCase().includes('quota')
-      ) {
-        setRenderError(
-          'Not enough memory to open this file. Try a smaller file or close other browser tabs.'
-        );
-      } else if (
-        message.toLowerCase().includes('not allowed') ||
-        message.toLowerCase().includes('permission')
-      ) {
-        setRenderError(
-          'Permission denied reading the file. Try saving it locally and re-uploading.'
-        );
-      } else if (
-        message.toLowerCase().includes('network') ||
-        message.toLowerCase().includes('fetch')
-      ) {
-        setRenderError(
-          'Network error while loading the file. Check your connection and try again.'
-        );
-      } else {
-        setRenderError(
-          `Could not open file: ${message}. Verify the file is not corrupted and matches a supported format.`
-        );
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        const detected = sniffFormatFromBytes(bytes, file.name);
+
+        if (isMusicXmlFormat(detected)) {
+          // ── Notation path ──
+          const {
+            filename,
+            xmlText,
+            isMxl: loadedFromMxl,
+          } = await extractMusicXmlTextFromFile(file);
+          resetAutoFit();
+          setLoadedFilename(filename);
+          setLoadedXmlText(xmlText);
+          setIsMxl(loadedFromMxl);
+          setRenderError('');
+          clearExportState();
+          // Clear chord-chart state
+          setChartDocument(null);
+          setTransposeSteps(0);
+          setDetectedFormatLabel(detected.format === 'mxl' ? 'MXL' : 'MusicXML');
+          setImportQuality(null);
+          setImportDiagnostics([]);
+          setAppMode('notation');
+        } else if (isChordChartFormat(detected)) {
+          // ── Chord-chart path ──
+          const text = new TextDecoder('utf-8').decode(bytes);
+          const sourceFormat = asSourceFormat(detected)!;
+          const imported = await importWithNotaGenPipeline(text, sourceFormat, file.name);
+          const doc = imported.document;
+
+          const formatLabels: Record<string, string> = {
+            chordpro: 'ChordPro',
+            ultimateguitar: 'Ultimate Guitar',
+            'chords-over-words': 'Chords over Words',
+            abc: 'ABC Notation',
+            fakebook: 'Fake Book',
+          };
+
+          setLoadedFilename(file.name);
+          setChartDocument(doc);
+          setImportQuality(
+            doc.importQuality
+              ? {
+                  score: doc.importQuality.score,
+                  warnings: doc.importQuality.warnings,
+                  diagnostics: doc.importDiagnostics ?? [],
+                }
+              : null
+          );
+          setImportDiagnostics(doc.importDiagnostics ?? []);
+          setTransposeSteps(0);
+          setDetectedFormatLabel(formatLabels[sourceFormat] ?? sourceFormat);
+          setRenderError('');
+          clearOsmd();
+          clearExportState();
+          setImportQuality(null);
+          setImportDiagnostics([]);
+          setAppMode('chord-chart');
+        } else if (isGuitarProFormat(detected)) {
+          // ── Guitar Pro path (.gp / .gp3 / .gp4 / .gp5 / .gpx) ──
+          // AlphaTab is loaded lazily on first GP file open (~3 MB chunk).
+          const { parseGuitarPro } = await import('./parsers/gpParser');
+          const doc = await parseGuitarPro(bytes);
+
+          setLoadedFilename(file.name);
+          setChartDocument(doc);
+          setImportQuality(
+            doc.importQuality
+              ? {
+                  score: doc.importQuality.score,
+                  warnings: doc.importQuality.warnings,
+                  diagnostics: doc.importDiagnostics ?? [],
+                }
+              : null
+          );
+          setImportDiagnostics(doc.importDiagnostics ?? []);
+          setTransposeSteps(0);
+          setDetectedFormatLabel('Guitar Pro');
+          setRenderError('');
+          clearOsmd();
+          clearExportState();
+          setAppMode('chord-chart');
+        } else if (isSvgFormat(detected)) {
+          // ── SVG path: route to SVG importer panel ──
+          setLoadedFilename(file.name);
+          setSvgFile(file);
+          setRenderError('');
+          setChartDocument(null);
+          clearOsmd();
+          clearExportState();
+          setImportQuality(null);
+          setImportDiagnostics([]);
+          setUgProFile(null);
+          setAppMode('svg-importer');
+        } else if (isPdfFormat(detected)) {
+          // ── PDF path: route to UG Pro PDF importer ──
+          setLoadedFilename(file.name);
+          setUgProFile(file);
+          setRenderError('');
+          setChartDocument(null);
+          clearOsmd();
+          clearExportState();
+          setAppMode('ug-pro-importer');
+        } else if (isGuitarProFormat(detected)) {
+          // ── Guitar Pro / PowerTab path ──
+          const { parseGuitarPro } = await import('./parsers/gpParser');
+          const doc = await parseGuitarPro(bytes);
+
+          // Determine a human-readable label from the file extension.
+          const gpExt = file.name.split('.').pop()?.toLowerCase() ?? '';
+          const gpLabel: Record<string, string> = {
+            gp: 'Guitar Pro 7/8',
+            gpx: 'Guitar Pro 6',
+            gp5: 'Guitar Pro 5',
+            gp4: 'Guitar Pro 4',
+            gp3: 'Guitar Pro 3',
+            ptb: 'PowerTab',
+          };
+
+          setLoadedFilename(file.name);
+          setChartDocument(doc);
+          setTransposeSteps(0);
+          setDetectedFormatLabel(gpLabel[gpExt] ?? 'Guitar Pro');
+          setRenderError('');
+          clearOsmd();
+          clearExportState();
+          setAppMode('chord-chart');
+        } else {
+          setRenderError(
+            'Unsupported file type. Upload .svg (SVG graphic), .xml/.mxl (notation), ' +
+              '.gp/.gp5/.gpx (Guitar Pro), ' +
+              '.cho/.pro/.abc/.txt (chord chart), or .pdf. For OEMER, use "OEMER Image OMR".'
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // Surface actionable context where possible.
+        if (
+          message.toLowerCase().includes('out of memory') ||
+          message.toLowerCase().includes('quota')
+        ) {
+          setRenderError(
+            'Not enough memory to open this file. Try a smaller file or close other browser tabs.'
+          );
+        } else if (
+          message.toLowerCase().includes('not allowed') ||
+          message.toLowerCase().includes('permission')
+        ) {
+          setRenderError(
+            'Permission denied reading the file. Try saving it locally and re-uploading.'
+          );
+        } else if (
+          message.toLowerCase().includes('network') ||
+          message.toLowerCase().includes('fetch')
+        ) {
+          setRenderError(
+            'Network error while loading the file. Check your connection and try again.'
+          );
+        } else {
+          setRenderError(
+            `Could not open file: ${message}. Verify the file is not corrupted and matches a supported format.`
+          );
+        }
       }
-    }
-  }, []);
+    },
+    [clearExportState, clearOsmd, resetAutoFit, setIsMxl, setLoadedXmlText]
+  );
 
   const onFileInput = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
