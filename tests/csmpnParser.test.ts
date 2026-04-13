@@ -161,3 +161,27 @@ test('parseCsmpn: bare bar content outside any section auto-creates Chart sectio
   const chords = sectionChords(doc);
   assert.ok(chords.includes('Cmaj7'));
 });
+
+test('parseCsmpn: legacy ASC separator "?" remains parseable as chord token text', () => {
+  const text = '[A]\n| D?F# | G7 |\n';
+  const doc = parseCsmpn(text);
+  const chords = sectionChords(doc);
+
+  assert.ok(chords.includes('D?F#'));
+});
+
+test('parseCsmpn: ASC flatter-angle suffix "z" is preserved in chord text', () => {
+  const text = '[A]\n| D/F#z | G7 |\n';
+  const doc = parseCsmpn(text);
+  const chords = sectionChords(doc);
+
+  assert.ok(chords.includes('D/F#z'));
+});
+
+test('parseCsmpn: ASC small-caps marker "`" is preserved in chord text', () => {
+  const text = '[A]\n| D/F#` | G7 |\n';
+  const doc = parseCsmpn(text);
+  const chords = sectionChords(doc);
+
+  assert.ok(chords.includes('D/F#`'));
+});
