@@ -98,7 +98,7 @@ infrastructure should optimize around this, not canvas-based rasterization.
 ### SPRINT 5 — Unification
 | Item | Task | Status |
 |------|------|--------|
-| 3.2 | Split musicXMLtochordpro.ts (1,309 lines → 4 modules) | ✅ DONE — mxmlTypes.ts (185) + mxmlXmlParser.ts (505) + mxmlFormatter.ts (230) + orchestrator (~350); 0 TS errors, 51 tests pass |
+| 3.2 | Split musicXMLtochordpro.ts (1,291 lines → 4 modules) | ⬜ TODO |
 | 3.4 | Unify ugProPdfImporter (standalone → build artifact) | ⬜ TODO |
 | 2.1D-F | Remaining index.html extractions (renderer, importPipeline, settings) | ⬜ TODO |
 
@@ -187,16 +187,6 @@ npm run typecheck         # tsc --noEmit
 ---
 
 *Last updated: 2026-04-10 | Maintain this file as a living document — check off items as completed*
-
-## SPRINT 5 PROGRESS NOTES
-
-**2026-04-10:** Sprint 5 in progress.
-- `src/converters/musicXMLtochordpro.ts` split into 4 modules (item 3.2):
-  - `mxmlTypes.ts` (185 lines) — types, interfaces, KIND_SUFFIX_MAP, getDefaultConvertOptions
-  - `mxmlXmlParser.ts` (505 lines) — all DOM/Element parsing helpers (16 functions)
-  - `mxmlFormatter.ts` (230 lines) — ChordPro text rendering (7 functions)
-  - `musicXMLtochordpro.ts` (~350 lines) — pipeline orchestrator; re-exports full public API
-- 51 tests passing, 0 TypeScript errors
 
 ## SPRINT 4 PROGRESS NOTES
 
