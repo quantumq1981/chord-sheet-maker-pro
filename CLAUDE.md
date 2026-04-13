@@ -184,6 +184,21 @@ Example: `D U D U` for a basic 4/4 strum; `D D U U D U` for a common 6-feel patt
 
 ---
 
+### Angled Slash Chords (ASC/ASL Support)
+
+Slash chords (for example `D/F#`) can render with a diagonal slash when compatible ASC/ASL fonts are installed.
+
+- **Default syntax:** Standard `Chord/Bass` (e.g., `Ebm7/F`) enables angled slash features.
+- **Legacy syntax:** `?` can be used as the slash separator (e.g., `Ebm7?F#`) and is normalized to `/` at render time.
+- **Advanced suffixes (legacy mode):**
+  - `z` → flatter slash angle (`ss02`)
+  - `` ` `` → small-caps bass rendering (`smcp`)
+  - `~` → end-of-chord slash position (`ss03`)
+- **Accent compatibility:** trailing `!` / `^` remains reserved for chord accents in Slash Notation.
+- **Font requirement:** set `window.__SLASH_FONT_FAMILY` (or use default fallback list) and install licensed fonts on the device. If unavailable, output falls back to standard slash rendering.
+
+---
+
 ### Rhythmic Stems
 
 When **Stems** is checked, a vertical line is drawn above each slash notehead (`cx+4.5, cy-6` to `cy-22`), giving a quarter-note appearance common in professional guitar rhythm charts.
@@ -309,4 +324,3 @@ All exports use `_snCfg.bgColor` as the background and `safeFilename(doc.title)`
 - Resolved 4 failing CI checks reported on PR #120 (`Lint & Format` + `Type-check & Build` on both push and pull_request).
 - Fixed `react-hooks/exhaustive-deps` warnings in `src/App.tsx` by adding missing `useCallback` dependencies (`setExportFeedback`, `clearExportState`, `clearOsmd`, `resetAutoFit`, `setIsMxl`, `setLoadedXmlText`).
 - Verified locally: `npm run lint`, `npm run format:check`, `npm run build`, and `npm run test:all` all pass.
-

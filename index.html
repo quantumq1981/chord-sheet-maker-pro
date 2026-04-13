@@ -6687,8 +6687,7 @@ window.runCSMPNSelfTests = function(){
   const CLEF_W   = 46;
   const USABLE_W = PAGE_W - MARGIN_H * 2 - CLEF_W; // 642 px
 
-  // Internal prefix to tag accented chords in the token array (stripped at render)
-  const ACCENT_FLAG = '\x01';
+  const DEFAULT_SLASH_CHORD_FONT_FAMILY = "Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif";
 
   // ── Navigation & ending-bracket helpers ───────────────────
   const NAV_RE = /\b(D\.C\.|D\.S\.|FINE|CODA|AL FINE|AL CODA|DAL SEGNO|DA CAPO|TO CODA|SEGNO)\b/i;
@@ -6749,6 +6748,7 @@ window.runCSMPNSelfTests = function(){
     chordFontSize: 11.5, chordAnchor: 'middle',
     showBarlines: true, strumMode: 'none', strumPattern: null,
     showStems: false, palmMute: false, keySig: null,
+    slashChordFontFamily: DEFAULT_SLASH_CHORD_FONT_FAMILY,
   };
 
   function getSnRenderSettings(){
@@ -6775,6 +6775,55 @@ window.runCSMPNSelfTests = function(){
       showStems:     snStemsEl    ? snStemsEl.checked    : false,
       palmMute:      snPalmMuteEl ? snPalmMuteEl.checked : false,
       keySig,
+      slashChordFontFamily: (window.__SLASH_FONT_FAMILY || DEFAULT_SLASH_CHORD_FONT_FAMILY),
+    };
+  }
+
+  /**
+   * Optional override for angled slash chord fonts.
+   * Install licensed ASC/ASL fonts on the device and set:
+   *   window.__SLASH_FONT_FAMILY = "Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif";
+   * Falls back to standard slash rendering automatically when unavailable.
+   */
+  if (typeof window.__SLASH_FONT_FAMILY !== 'string' || !window.__SLASH_FONT_FAMILY.trim()){
+    window.__SLASH_FONT_FAMILY = DEFAULT_SLASH_CHORD_FONT_FAMILY;
+  }
+
+  function getChordFontFeatures(chordString){
+    let displayString = (chordString || '').trim();
+    const tags = [];
+    if (!displayString) return { displayString: '', fontFeatureSettings: '' };
+
+    // Legacy ASC input: "D?F#" → "D/F#" + angled slash
+    if (displayString.includes('?')){
+      displayString = displayString.replace(/\?/g, '/');
+      tags.push('ss01');
+    }
+
+    if (displayString.includes('/')) tags.push('ss01'); // angled slash default
+
+    // Flatter slash angle
+    if (/z$/i.test(displayString)){
+      displayString = displayString.slice(0, -1);
+      tags.push('ss02');
+    }
+
+    // End-of-chord slash position marker (uses "~" to avoid conflict with accent "!").
+    if (displayString.endsWith('~')){
+      displayString = displayString.slice(0, -1);
+      tags.push('ss03');
+    }
+
+    // Small-caps bass note marker
+    if (displayString.endsWith('`')){
+      displayString = displayString.slice(0, -1);
+      tags.push('smcp');
+    }
+
+    const uniqTags = Array.from(new Set(tags));
+    return {
+      displayString,
+      fontFeatureSettings: uniqTags.map(tag => `"${tag}" 1`).join(', ')
     };
   }
 
@@ -6889,7 +6938,7 @@ window.runCSMPNSelfTests = function(){
     if (!raw) return [];
     if (raw === '%' || raw === '%%' || /^%\d+$/.test(raw)) return null; // repeat
     const up = raw.toUpperCase();
-    if (up === 'N.C.' || up === 'NC') return ['N.C.'];
+    if (up === 'N.C.' || up === 'NC') return [{ text: 'N.C.', accent: false, fontFeatureSettings: '' }];
     return raw.split('_').map(s => {
       const t = s.trim();
       if (!t) return null;
@@ -6900,7 +6949,8 @@ window.runCSMPNSelfTests = function(){
       const text   = parsed
         ? parsed.root + parsed.quality + (parsed.bass ? `/${parsed.bass}` : '')
         : clean;
-      return (accent ? ACCENT_FLAG : '') + text;
+      const styled = getChordFontFeatures(text);
+      return { text: styled.displayString, accent, fontFeatureSettings: styled.fontFeatureSettings };
     }).filter(Boolean);
   }
 
@@ -7045,16 +7095,17 @@ window.runCSMPNSelfTests = function(){
       } else {
         const chords = m.chords || [];
         for (let ci = 0; ci < chords.length; ci++){
-          const raw    = chords[ci];
-          const accent = raw.startsWith(ACCENT_FLAG);
-          const txt    = accent ? raw.slice(1) : raw;
+          const chord  = chords[ci] || {};
+          const accent = !!chord.accent;
+          const txt    = chord.text || '';
           const cx     = beatX(mX, Math.floor(ci * bpm / chords.length));
           // Accent mark (>) above chord symbol
           if (accent){
             const ay = staffY - 8 - _snCfg.chordFontSize - 2;
             svg += `<text x="${cx}" y="${ay}" font-size="10" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="middle" font-family="Georgia,serif">&gt;</text>`;
           }
-          svg += `<text x="${cx}" y="${staffY-8}" font-size="${_snCfg.chordFontSize}" font-family="Georgia,'Times New Roman',serif" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}">${escapeHtml(txt)}</text>`;
+          const featureAttr = chord.fontFeatureSettings ? ` font-feature-settings="${escapeHtml(chord.fontFeatureSettings)}"` : '';
+          svg += `<text class="chord-symbol" x="${cx}" y="${staffY-8}" font-size="${_snCfg.chordFontSize}" font-family="${escapeHtml(_snCfg.slashChordFontFamily)}" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}"${featureAttr}>${escapeHtml(txt)}</text>`;
         }
       }
 
@@ -7229,6 +7280,7 @@ body{margin:1cm;font-family:Georgia,serif;background:${_snCfg.bgColor || '#fff'}
 .sn-song-meta{font-size:0.78rem;color:#666;margin-top:2px;}
 svg{max-width:100%;height:auto;display:block;overflow:visible;}
 @media print{@page{margin:0.5in;} body{margin:0;} svg{width:100% !important;height:auto !important;overflow:visible !important;}}
+.chord-symbol{font-feature-settings:inherit;}
 </style></head><body>
 ${headerHtml}${svg.outerHTML}
 <script>window.onload=function(){window.print();window.close();};<\/script>
