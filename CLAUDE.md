@@ -29,6 +29,7 @@
 - **51 tests passing** (`npm run test:all`) — 4 VexFlow + 47 parser/format fixture tests
 - **Two active app tracks:** `index.html` (7,299-line monolith) + `app.html` React/TypeScript
 - **App.tsx:** 1,145 lines (down from 1,598 after remote merge) — OSMD renderer, export actions, and utilities extracted to hooks/utils
+- **musicXMLtochordpro.ts split** (Sprint 5): mxmlTypes + mxmlXmlParser + mxmlFormatter + orchestrator
 - **0 type errors**
 
 ## Architectural Principles (enforce on every change)
@@ -51,6 +52,10 @@
 | `src/utils/osmdHelpers.ts` | Pure OSMD/SVG/canvas utilities extracted from App.tsx |
 | `src/types/appTypes.ts` | Shared UI types: AppMode, ExportFeedback, ChordProUiState |
 | `src/components/ErrorBoundary.tsx` | ImportErrorBoundary + SlashNotationBoundary class components |
+| `src/converters/mxmlTypes.ts` | All MusicXML converter types, interfaces, constants |
+| `src/converters/mxmlXmlParser.ts` | DOM/Element parsing helpers for MusicXML |
+| `src/converters/mxmlFormatter.ts` | ChordPro text rendering (grid, lyrics-inline, groupBySection) |
+| `src/converters/musicXMLtochordpro.ts` | Pipeline orchestrator; re-exports full public API |
 | `tests/` | Node.js native test runner + tsx loader for TypeScript tests |
 | `OPP_ROADMAP.md` | Full 7-phase optimization roadmap with sprint tracker — update it as work completes |
 
@@ -69,11 +74,17 @@
 | 3.1 | App.tsx decomposition → hooks + views | ✅ DONE — 1,145 lines (was 1,598 after merge); `useOsmdRenderer` + `useExportActions` + `osmdHelpers` + `appTypes` extracted |
 | 3.3 | React error boundaries (ImportErrorBoundary, SlashNotationBoundary) | ✅ DONE |
 
-## Next Immediate Actions (Sprint 5)
+## Sprint 5 — Unification (In Progress)
+| # | Task | Status |
+|---|------|--------|
+| 3.2 | Split musicXMLtochordpro.ts (1,309 lines → 4 modules) | ✅ DONE — mxmlTypes + mxmlXmlParser + mxmlFormatter + orchestrator |
+| 3.4 | Unify ugProPdfImporter (standalone → build artifact) | ⬜ TODO |
+| 2.1D-F | Remaining index.html extractions (renderer, importPipeline, settings) | ⬜ TODO |
+
+## Next Immediate Actions (Sprint 5 continued)
 ```
-1. Split musicXMLtochordpro.ts (1,291 lines → 4 modules): xmlParser, chordExtractor, formatter, pipeline
-2. Unify ugProPdfImporter: standalone page → build artifact using src/ingest/ugProPdfImporter.ts
-3. Remaining index.html extractions (renderer, importPipeline, settings) — items 2.1D-F
+1. Unify ugProPdfImporter: standalone page → build artifact using src/ingest/ugProPdfImporter.ts
+2. Remaining index.html extractions (renderer, importPipeline, settings) — items 2.1D-F
 ```
 
 ---
