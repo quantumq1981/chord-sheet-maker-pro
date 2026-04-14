@@ -512,6 +512,7 @@
     font-size:calc(22px * var(--fb-font-scale));
     line-height:1;
     color:var(--fb-chord-color);
+    font-feature-settings: var(--fb-chord-features, normal);
   }
 
   .chord-root{
@@ -2499,6 +2500,9 @@ function applyFBSettings(){
   root.style.setProperty('--fb-body-font', BODY_FONT_MAP[fbSettings.bodyFont] || BODY_FONT_MAP.helvetica);
   window.__SLASH_FONT_FAMILY = chordPack.slashChordFont;
   window.__SN_NOTATION_FONT_FAMILY = chordPack.notationFont;
+  window.__SLASH_FONT_PACK_ID = fbSettings.chordFontPack;
+  const isAscPack = ['pori', 'norfolk', 'norfolksans'].includes(fbSettings.chordFontPack);
+  root.style.setProperty('--fb-chord-features', isAscPack ? '"ss01" 1' : 'normal');
   // Apply custom colors to the sheet
   const sheetEl = document.querySelector('.sheet');
   if (sheetEl){
@@ -7327,7 +7331,6 @@ body{margin:1cm;font-family:Georgia,serif;background:${_snCfg.bgColor || '#fff'}
 .sn-song-meta{font-size:0.78rem;color:#666;margin-top:2px;}
 svg{max-width:100%;height:auto;display:block;overflow:visible;}
 @media print{@page{margin:0.5in;} body{margin:0;} svg{width:100% !important;height:auto !important;overflow:visible !important;}}
-.chord-symbol{font-feature-settings:inherit;}
 </style></head><body>
 ${headerHtml}${svg.outerHTML}
 <script>window.onload=function(){window.print();window.close();};<\/script>
