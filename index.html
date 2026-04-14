@@ -48,6 +48,7 @@
     --fb-chord-color:#0044cc;
     --fb-headline-font: "Patrick Hand SC", Georgia, cursive;
     --fb-body-font: Helvetica, Arial, "Helvetica Neue", sans-serif;
+    --fb-chord-font: "FreeSerif", "Segoe UI Symbol", "Apple Symbols", "Noto Music", serif;
   }
 
   *{ box-sizing:border-box; }
@@ -506,7 +507,7 @@
   .chord{
     display:inline-flex;
     align-items:baseline;
-    font-family: var(--fb-body-font);
+    font-family: var(--fb-chord-font), var(--fb-body-font);
     font-weight:700;
     font-size:calc(22px * var(--fb-font-scale));
     line-height:1;
@@ -1503,6 +1504,15 @@ body.exporting .sectionBlock{
           <option value="center">Center</option>
         </select>
       </div>
+      <div class="field power-only">
+        <label>Music/Chord Font Pack</label>
+        <select id="setChordFontPack">
+          <option value="default" selected>Default</option>
+          <option value="pori">Pori ASC/ASL</option>
+          <option value="norfolk">Norfolk ASC/ASL</option>
+          <option value="norfolksans">Norfolk Sans ASC/ASL</option>
+        </select>
+      </div>
       <!-- Option: include or hide lyrics comment lines in CSMPN output -->
       <div class="field">
         <label>Lyrics Lines</label>
@@ -2375,6 +2385,7 @@ const fbSettings = {
   lineSpacing: 8,      // 0, 2, 4, 8, 12, 16
   barLines: 'visible', // visible, hidden
   chordAlign: 'left',  // left, center
+  chordFontPack: 'default', // default, pori, norfolk, norfolksans
   maj7Style: 'ma',     // ma, maj, triangle
   minorStyle: 'm',     // m, min, minus
   dimStyle: 'degree',  // degree (°), dim
@@ -2412,6 +2423,32 @@ const BODY_FONT_MAP = {
   freesans: '"FreeSans", Helvetica, Arial, sans-serif',
   freeserif: '"FreeSerif", Georgia, serif',
 };
+const CHORD_FONT_PACK_MAP = {
+  default: {
+    fakeBookChordFont: '"FreeSerif", "Segoe UI Symbol", "Apple Symbols", "Noto Music", serif',
+    slashChordFont: 'Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif',
+    notationFont: 'Georgia, "Times New Roman", serif',
+  },
+  pori: {
+    fakeBookChordFont: '"Pori Chords ASC Std", "Norfolk Chords ASC Std", "FreeSerif", "Noto Music", serif',
+    slashChordFont: 'Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif',
+    notationFont: '"Pori Text ASL Std", "Pori Text ASC Std", Georgia, "Times New Roman", serif',
+  },
+  norfolk: {
+    fakeBookChordFont: '"Norfolk Chords ASC Std", "Pori Chords ASC Std", "FreeSerif", "Noto Music", serif',
+    slashChordFont: 'Norfolk Chords ASC Std, Pori Chords ASC Std, sans-serif',
+    notationFont: '"Norfolk Text ASC Std", "Norfolk Text ASL Std", Georgia, "Times New Roman", serif',
+  },
+  norfolksans: {
+    fakeBookChordFont: '"Norfolk Chords Sans ASC Std", "Norfolk Chords ASC Std", "Pori Chords ASC Std", "FreeSerif", sans-serif',
+    slashChordFont: 'Norfolk Chords Sans ASC Std, Norfolk Chords ASC Std, Pori Chords ASC Std, sans-serif',
+    notationFont: '"Norfolk Text Sans ASC Std", "Norfolk Text ASC Std", "Norfolk Text ASL Std", Arial, sans-serif',
+  },
+};
+
+function getChordFontPackConfig(pack){
+  return CHORD_FONT_PACK_MAP[pack] || CHORD_FONT_PACK_MAP.default;
+}
 
 /* Performance: persist settings to localStorage so users don't reconfigure each visit */
 function saveFBSettings(){
@@ -2432,6 +2469,7 @@ function loadFBSettings(){
       setEl('setLineSpacing', String(fbSettings.lineSpacing));
       setEl('setBarLines', fbSettings.barLines);
       setEl('setChordAlign', fbSettings.chordAlign);
+      setEl('setChordFontPack', fbSettings.chordFontPack);
       setEl('setMaj7Style', fbSettings.maj7Style);
       setEl('setMinorStyle', fbSettings.minorStyle);
       setEl('setDimStyle', fbSettings.dimStyle);
@@ -2454,9 +2492,13 @@ function applyFBSettings(){
   root.style.setProperty('--fb-line-spacing', fbSettings.lineSpacing + 'px');
   root.style.setProperty('--fb-bars-per-row', fbSettings.barsPerRow);
   root.style.setProperty('--fb-chord-color', fbSettings.chordColor || '#0044cc');
+  const chordPack = getChordFontPackConfig(fbSettings.chordFontPack);
+  root.style.setProperty('--fb-chord-font', chordPack.fakeBookChordFont);
   // Apply font families via CSS custom properties
   root.style.setProperty('--fb-headline-font', HEADLINE_FONT_MAP[fbSettings.headlineFont] || HEADLINE_FONT_MAP.patrickhand);
   root.style.setProperty('--fb-body-font', BODY_FONT_MAP[fbSettings.bodyFont] || BODY_FONT_MAP.helvetica);
+  window.__SLASH_FONT_FAMILY = chordPack.slashChordFont;
+  window.__SN_NOTATION_FONT_FAMILY = chordPack.notationFont;
   // Apply custom colors to the sheet
   const sheetEl = document.querySelector('.sheet');
   if (sheetEl){
@@ -2492,6 +2534,9 @@ document.getElementById('setBarLines').addEventListener('change', (e) => {
 });
 document.getElementById('setChordAlign').addEventListener('change', (e) => {
   fbSettings.chordAlign = e.target.value; applyFBSettings();
+});
+document.getElementById('setChordFontPack').addEventListener('change', (e) => {
+  fbSettings.chordFontPack = e.target.value; applyFBSettings();
 });
 document.getElementById('setMaj7Style').addEventListener('change', (e) => {
   fbSettings.maj7Style = e.target.value; applyFBSettings();
@@ -6687,8 +6732,6 @@ window.runCSMPNSelfTests = function(){
   const CLEF_W   = 46;
   const USABLE_W = PAGE_W - MARGIN_H * 2 - CLEF_W; // 642 px
 
-  const DEFAULT_SLASH_CHORD_FONT_FAMILY = "Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif";
-
   // ── Navigation & ending-bracket helpers ───────────────────
   const NAV_RE = /\b(D\.C\.|D\.S\.|FINE|CODA|AL FINE|AL CODA|DAL SEGNO|DA CAPO|TO CODA|SEGNO)\b/i;
   function extractNavText(label){ return (label && NAV_RE.test(label)) ? label : null; }
@@ -6737,7 +6780,7 @@ window.runCSMPNSelfTests = function(){
     let svg = '';
     const x0 = MARGIN_H + 31; // just after the clef character
     for (let i = 0; i < n; i++){
-      svg += `<text x="${x0 + i * 7}" y="${staffY + yOff[i] + 7}" font-size="9" font-weight="bold" fill="${_snCfg.fgColor}" font-family="Georgia,serif">${sym}</text>`;
+      svg += `<text x="${x0 + i * 7}" y="${staffY + yOff[i] + 7}" font-size="9" font-weight="bold" fill="${_snCfg.fgColor}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${sym}</text>`;
     }
     return svg;
   }
@@ -6748,7 +6791,8 @@ window.runCSMPNSelfTests = function(){
     chordFontSize: 11.5, chordAnchor: 'middle',
     showBarlines: true, strumMode: 'none', strumPattern: null,
     showStems: false, palmMute: false, keySig: null,
-    slashChordFontFamily: DEFAULT_SLASH_CHORD_FONT_FAMILY,
+    slashChordFontFamily: 'Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif',
+    notationFontFamily: 'Georgia, "Times New Roman", serif',
   };
 
   function getSnRenderSettings(){
@@ -6764,6 +6808,7 @@ window.runCSMPNSelfTests = function(){
     // Key sig: null=auto (resolved from doc.key), 0=none, ±N=accidentals
     const kv = snKeySigEl ? snKeySigEl.value : 'auto';
     const keySig = (kv === 'auto') ? null : (kv === 'none') ? 0 : (parseInt(kv, 10) || 0);
+    const packCfg = getChordFontPackConfig(fs.chordFontPack);
     _snCfg = {
       bgColor:       fs.bgColor    || '#ffffff',
       fgColor:       fs.fgColor    || '#111111',
@@ -6775,7 +6820,8 @@ window.runCSMPNSelfTests = function(){
       showStems:     snStemsEl    ? snStemsEl.checked    : false,
       palmMute:      snPalmMuteEl ? snPalmMuteEl.checked : false,
       keySig,
-      slashChordFontFamily: (window.__SLASH_FONT_FAMILY || DEFAULT_SLASH_CHORD_FONT_FAMILY),
+      slashChordFontFamily: (window.__SLASH_FONT_FAMILY || packCfg.slashChordFont),
+      notationFontFamily: (window.__SN_NOTATION_FONT_FAMILY || packCfg.notationFont),
     };
   }
 
@@ -6783,11 +6829,12 @@ window.runCSMPNSelfTests = function(){
    * Optional override for angled slash chord fonts.
    * Install licensed ASC/ASL fonts on the device and set:
    *   window.__SLASH_FONT_FAMILY = "Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif";
+   *   window.__SN_NOTATION_FONT_FAMILY = "Pori Text ASL Std, Georgia, serif";
    * Falls back to standard slash rendering automatically when unavailable.
    */
-  if (typeof window.__SLASH_FONT_FAMILY !== 'string' || !window.__SLASH_FONT_FAMILY.trim()){
-    window.__SLASH_FONT_FAMILY = DEFAULT_SLASH_CHORD_FONT_FAMILY;
-  }
+  const _defaultPackCfg = getChordFontPackConfig((typeof fbSettings !== 'undefined' && fbSettings.chordFontPack) ? fbSettings.chordFontPack : 'default');
+  if (typeof window.__SLASH_FONT_FAMILY !== 'string' || !window.__SLASH_FONT_FAMILY.trim()) window.__SLASH_FONT_FAMILY = _defaultPackCfg.slashChordFont;
+  if (typeof window.__SN_NOTATION_FONT_FAMILY !== 'string' || !window.__SN_NOTATION_FONT_FAMILY.trim()) window.__SN_NOTATION_FONT_FAMILY = _defaultPackCfg.notationFont;
 
   function getChordFontFeatures(chordString){
     let displayString = (chordString || '').trim();
@@ -6879,7 +6926,7 @@ window.runCSMPNSelfTests = function(){
   function strumArrow(cx, y, beat){
     const ch = strumChar(beat);
     if (!ch) return '';
-    return `<text x="${cx}" y="${y}" font-size="9" fill="${_snCfg.fgColor}" text-anchor="middle" font-family="sans-serif">${ch}</text>`;
+    return `<text x="${cx}" y="${y}" font-size="9" fill="${_snCfg.fgColor}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${ch}</text>`;
   }
 
   function barlineSvg(x, y, h, type){
@@ -7034,24 +7081,24 @@ window.runCSMPNSelfTests = function(){
       svg += svgLine(bx, bBot, bx, by, fg, 1.2);                                               // left drop
       svg += svgLine(bx, by, bx + totalW + (ending === '1' ? 4 : 0), by, fg, 1.2);             // top line
       if (ending !== '1') svg += svgLine(bx + totalW, by, bx + totalW, bBot, fg, 1.2);         // right drop (closed for 2nd)
-      svg += `<text x="${bx+5}" y="${by+10}" font-size="9" fill="${fg}" font-family="Georgia,serif">${ending}.</text>`;
+      svg += `<text x="${bx+5}" y="${by+10}" font-size="9" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${ending}.</text>`;
     }
 
     // ── Section label ─────────────────────────────────────
     if (sectionLabel){
-      svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="${fg}" font-family="Georgia,'Times New Roman',serif">${escapeHtml(sectionLabel)}</text>`;
+      svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(sectionLabel)}</text>`;
     }
 
     // ── Treble clef ───────────────────────────────────────
     if (showClef){
-      svg += `<text x="${MARGIN_H}" y="${staffY + STAFF_H * 0.82}" font-size="42" fill="${fg}" font-family="'Noto Serif',Georgia,serif" letter-spacing="-1">&#x1D11E;</text>`;
+      svg += `<text x="${MARGIN_H}" y="${staffY + STAFF_H * 0.82}" font-size="42" fill="${fg}" font-family="'Noto Serif',${escapeHtml(_snCfg.notationFontFamily)}" letter-spacing="-1">&#x1D11E;</text>`;
     }
 
     // ── Time signature ────────────────────────────────────
     if (showClef && timeSig){
       const parts = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/);
       if (parts){
-        svg += `<g font-family="Georgia,serif" font-weight="bold" fill="${fg}" font-size="13">`;
+        svg += `<g font-family="${escapeHtml(_snCfg.notationFontFamily)}" font-weight="bold" fill="${fg}" font-size="13">`;
         svg += `<text x="${MARGIN_H+34}" y="${staffY+12}">${escapeHtml(parts[1])}</text>`;
         svg += `<text x="${MARGIN_H+34}" y="${staffY+26}">${escapeHtml(parts[2])}</text>`;
         svg += `</g>`;
@@ -7064,7 +7111,7 @@ window.runCSMPNSelfTests = function(){
     // ── Palm muting (P.M. ------) ─────────────────────────
     if (_snCfg.palmMute){
       const pmY = systemY + (hasLabel ? SECTION_LABEL_H : 0) + 8;
-      svg += `<text x="${staffX+2}" y="${pmY+8}" font-size="8" font-style="italic" fill="${fg}" font-family="Georgia,serif">P.M.</text>`;
+      svg += `<text x="${staffX+2}" y="${pmY+8}" font-size="8" font-style="italic" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">P.M.</text>`;
       svg += `<line x1="${staffX+25}" y1="${pmY+6}" x2="${staffX+totalW-4}" y2="${pmY+6}" stroke="${fg}" stroke-width="0.8" stroke-dasharray="3,2"/>`;
     }
 
@@ -7091,7 +7138,7 @@ window.runCSMPNSelfTests = function(){
       // Chord symbols or simile "%" mark
       if (m.isSimile){
         const cx = mX + measureWidth / 2;
-        svg += `<text x="${cx}" y="${staffY-6}" font-size="15" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">%</text>`;
+        svg += `<text x="${cx}" y="${staffY-6}" font-size="15" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">%</text>`;
       } else {
         const chords = m.chords || [];
         for (let ci = 0; ci < chords.length; ci++){
@@ -7102,7 +7149,7 @@ window.runCSMPNSelfTests = function(){
           // Accent mark (>) above chord symbol
           if (accent){
             const ay = staffY - 8 - _snCfg.chordFontSize - 2;
-            svg += `<text x="${cx}" y="${ay}" font-size="10" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="middle" font-family="Georgia,serif">&gt;</text>`;
+            svg += `<text x="${cx}" y="${ay}" font-size="10" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">&gt;</text>`;
           }
           const featureAttr = chord.fontFeatureSettings ? ` font-feature-settings="${escapeHtml(chord.fontFeatureSettings)}"` : '';
           svg += `<text class="chord-symbol" x="${cx}" y="${staffY-8}" font-size="${_snCfg.chordFontSize}" font-family="${escapeHtml(_snCfg.slashChordFontFamily)}" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}"${featureAttr}>${escapeHtml(txt)}</text>`;
@@ -7117,7 +7164,7 @@ window.runCSMPNSelfTests = function(){
 
     // ── Navigation text (D.C. al Fine, Coda, etc.) ───────
     if (navText){
-      svg += `<text x="${staffX + totalW}" y="${staffY + STAFF_H + 16}" font-size="10" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family="Georgia,'Times New Roman',serif">${escapeHtml(navText)}</text>`;
+      svg += `<text x="${staffX + totalW}" y="${staffY + STAFF_H + 16}" font-size="10" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(navText)}</text>`;
     }
 
     svg += '</g>';
