@@ -136,6 +136,7 @@ All visual settings from the Fake Book Style panel carry through to slash notati
 | **Foreground Color** | Staff lines, barlines, clef, time sig, section labels, strum arrows |
 | **Font Size** (M/S/XS) | Scales chord font: M=11.5px, S=9.8px, XS=8.3px |
 | **Chord Alignment** | Center = `text-anchor="middle"`, Left = `text-anchor="start"` |
+| **Music/Chord Font Pack** | Sets Fake Book chord stack + Slash chord + Slash notation/staff text families together |
 | **Bar Lines** | Hidden = suppress regular single barlines (repeat/double/final always shown) |
 | **Maj7 / Minor / Dim / Half-dim style** | Applied via `parseChordToken()` in `chordsFromToken()` |
 
@@ -188,6 +189,12 @@ Example: `D U D U` for a basic 4/4 strum; `D D U U D U` for a common 6-feel patt
 
 Slash chords (for example `D/F#`) can render with a diagonal slash when compatible ASC/ASL fonts are installed.
 
+- **In-app selector:** `Fake Book Settings → Music/Chord Font Pack` (Power Mode) routes font stacks to:
+  - Fake Book chord rendering (`--fb-chord-font`)
+  - Slash chord symbols (`window.__SLASH_FONT_FAMILY`)
+  - Slash notation/staff labels (`window.__SN_NOTATION_FONT_FAMILY`)
+- **Pack options:** Default, Pori ASC/ASL, Norfolk ASC/ASL, Norfolk Sans ASC/ASL.
+
 - **Default syntax:** Standard `Chord/Bass` (e.g., `Ebm7/F`) enables angled slash features.
 - **Legacy syntax:** `?` can be used as the slash separator (e.g., `Ebm7?F#`) and is normalized to `/` at render time.
 - **Advanced suffixes (legacy mode):**
@@ -195,7 +202,7 @@ Slash chords (for example `D/F#`) can render with a diagonal slash when compatib
   - `` ` `` → small-caps bass rendering (`smcp`)
   - `~` → end-of-chord slash position (`ss03`)
 - **Accent compatibility:** trailing `!` / `^` remains reserved for chord accents in Slash Notation.
-- **Font requirement:** set `window.__SLASH_FONT_FAMILY` (or use default fallback list) and install licensed fonts on the device. If unavailable, output falls back to standard slash rendering.
+- **Font requirement:** install licensed fonts on the device/profile for the selected pack. If unavailable, output falls back to system families automatically.
 
 ---
 
