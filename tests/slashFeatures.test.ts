@@ -221,3 +221,129 @@ test('isCompoundMeter: 5/8 → false', () => {
 test('isCompoundMeter: empty string → false', () => {
   assert.equal(isCompoundMeter(''), false);
 });
+
+// ── formatChordQuality accidental conversion ──────────────────────────────────
+
+/**
+ * Mirrors the accidental-conversion step added at the end of formatChordQuality()
+ * in chordProcessing.js. Only the conversion rule is tested here — the full
+ * quality formatting (maj7Style, minorStyle, etc.) depends on fbSettings globals
+ * that are not available in the test environment.
+ *
+ * Rule: b/# that follows a digit, '(' or ',' and precedes a digit is converted
+ * to the Unicode accidental symbol ♭/♯.
+ */
+function convertTensionAccidentals(q: string): string {
+  return q.replace(/([\d(,])b(?=\d)/g, '$1♭').replace(/([\d(,])#(?=\d)/g, '$1♯');
+}
+
+test('convertTensionAccidentals: 7b9 → 7♭9', () => {
+  assert.equal(convertTensionAccidentals('7b9'), '7♭9');
+});
+
+test('convertTensionAccidentals: 7#9 → 7♯9', () => {
+  assert.equal(convertTensionAccidentals('7#9'), '7♯9');
+});
+
+test('convertTensionAccidentals: maj13(#11) → maj13(♯11)', () => {
+  assert.equal(convertTensionAccidentals('maj13(#11)'), 'maj13(♯11)');
+});
+
+test('convertTensionAccidentals: 7(b9,#11) → 7(♭9,♯11)', () => {
+  assert.equal(convertTensionAccidentals('7(b9,#11)'), '7(♭9,♯11)');
+});
+
+test('convertTensionAccidentals: m7b5 → m7♭5 (half-dim notation)', () => {
+  assert.equal(convertTensionAccidentals('m7b5'), 'm7♭5');
+});
+
+test('convertTensionAccidentals: 9sus4 unchanged (no accidentals)', () => {
+  assert.equal(convertTensionAccidentals('9sus4'), '9sus4');
+});
+
+test('convertTensionAccidentals: dim7 unchanged', () => {
+  assert.equal(convertTensionAccidentals('dim7'), 'dim7');
+});
+
+test('convertTensionAccidentals: empty string → empty string', () => {
+  assert.equal(convertTensionAccidentals(''), '');
+});
+
+// ── chordKind MusicXML mapping ────────────────────────────────────────────────
+
+/**
+ * Mirrors chordKind() from the Slash Notation IIFE in index.html.
+ * Verifies that common chord qualities map to correct MusicXML kind values.
+ */
+function chordKind(quality: string): string {
+  if (!quality) return 'major';
+  const q = quality.toLowerCase();
+  if (q.startsWith('maj7') || q.startsWith('ma7') || q.startsWith('δ7')) return 'major-seventh';
+  if (q.startsWith('maj')) return 'major-seventh';
+  if (q === 'm' || q === 'min' || q === 'mi') return 'minor';
+  if (q.startsWith('m7') || q.startsWith('min7') || q.startsWith('mi7')) return 'minor-seventh';
+  if (q.startsWith('m') && /\d/.test(q)) return 'minor-seventh';
+  if (q.startsWith('°7') || q === 'dim7' || q.startsWith('dim7')) return 'diminished-seventh';
+  if (q.startsWith('°') || q.startsWith('dim')) return 'diminished';
+  if (q === '+' || q.startsWith('aug')) return 'augmented';
+  if (q.startsWith('+7') || q.startsWith('aug7') || q.startsWith('7#5')) return 'augmented-seventh';
+  if (q === '7') return 'dominant';
+  if (/^[79]/.test(q) || q.startsWith('13') || q.startsWith('11')) return 'dominant';
+  if (q.startsWith('ø') || q === 'm7♭5' || q === 'm7b5') return 'half-diminished';
+  if (q.startsWith('sus4') || q === 'sus') return 'suspended-fourth';
+  if (q.startsWith('sus2')) return 'suspended-second';
+  if (q.startsWith('add')) return 'major';
+  return 'major';
+}
+
+test('chordKind: no quality → major', () => {
+  assert.equal(chordKind(''), 'major');
+});
+
+test('chordKind: maj7 → major-seventh', () => {
+  assert.equal(chordKind('maj7'), 'major-seventh');
+});
+
+test('chordKind: m → minor', () => {
+  assert.equal(chordKind('m'), 'minor');
+});
+
+test('chordKind: m7 → minor-seventh', () => {
+  assert.equal(chordKind('m7'), 'minor-seventh');
+});
+
+test('chordKind: 7 → dominant', () => {
+  assert.equal(chordKind('7'), 'dominant');
+});
+
+test('chordKind: 9 → dominant', () => {
+  assert.equal(chordKind('9'), 'dominant');
+});
+
+test('chordKind: dim → diminished', () => {
+  assert.equal(chordKind('dim'), 'diminished');
+});
+
+test('chordKind: dim7 → diminished-seventh', () => {
+  assert.equal(chordKind('dim7'), 'diminished-seventh');
+});
+
+test('chordKind: + → augmented', () => {
+  assert.equal(chordKind('+'), 'augmented');
+});
+
+test('chordKind: ø → half-diminished', () => {
+  assert.equal(chordKind('ø'), 'half-diminished');
+});
+
+test('chordKind: sus4 → suspended-fourth', () => {
+  assert.equal(chordKind('sus4'), 'suspended-fourth');
+});
+
+test('chordKind: sus2 → suspended-second', () => {
+  assert.equal(chordKind('sus2'), 'suspended-second');
+});
+
+test('chordKind: add9 → major', () => {
+  assert.equal(chordKind('add9'), 'major');
+});
