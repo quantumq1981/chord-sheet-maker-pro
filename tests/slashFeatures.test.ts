@@ -90,3 +90,134 @@ test('snChordFeatures: N.C. → empty string', () => {
 test('snChordFeatures: empty string → empty string', () => {
   assert.equal(snChordFeatures(''), '');
 });
+
+// ── formatNavText — Segno/Coda symbol substitution ───────────────────────────
+
+/**
+ * Mirrors formatNavText() from the Slash Notation IIFE.
+ * Verifies that navigation keywords are replaced with their Unicode musical
+ * symbols (𝄋 Segno U+1D10B, 𝄌 Coda U+1D10C) before SVG rendering.
+ */
+function formatNavText(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\bDAL\s+SEGNO\b/gi, 'D.S.\uD834\uDD0B')
+    .replace(/\bDA\s+CAPO\b/gi, 'D.C.')
+    .replace(/\bD\.S\.(?=\s|$)/g, 'D.S.\uD834\uDD0B')
+    .replace(/\bSEGNO\b/gi, '\uD834\uDD0B')
+    .replace(/\bTO\s+CODA\b/gi, 'To \uD834\uDD0C')
+    .replace(/\bAL\s+CODA\b/gi, 'al \uD834\uDD0C')
+    .replace(/\bCODA\b/gi, '\uD834\uDD0C');
+}
+
+test('formatNavText: SEGNO → 𝄋 symbol', () => {
+  assert.equal(formatNavText('SEGNO'), '\uD834\uDD0B');
+});
+
+test('formatNavText: D.S. → D.S.𝄋', () => {
+  assert.equal(formatNavText('D.S. al Fine'), 'D.S.\uD834\uDD0B al Fine');
+});
+
+test('formatNavText: DAL SEGNO → D.S.𝄋', () => {
+  assert.equal(formatNavText('Dal Segno'), 'D.S.\uD834\uDD0B');
+});
+
+test('formatNavText: CODA → 𝄌 symbol', () => {
+  assert.equal(formatNavText('CODA'), '\uD834\uDD0C');
+});
+
+test('formatNavText: TO CODA → To 𝄌', () => {
+  assert.equal(formatNavText('To Coda'), 'To \uD834\uDD0C');
+});
+
+test('formatNavText: AL CODA → al 𝄌', () => {
+  assert.equal(formatNavText('D.S. al Coda'), 'D.S.\uD834\uDD0B al \uD834\uDD0C');
+});
+
+test('formatNavText: DA CAPO → D.C. (no symbol)', () => {
+  assert.equal(formatNavText('Da Capo'), 'D.C.');
+});
+
+test('formatNavText: plain Fine unchanged', () => {
+  assert.equal(formatNavText('D.C. al Fine'), 'D.C. al Fine');
+});
+
+test('formatNavText: empty string → empty string', () => {
+  assert.equal(formatNavText(''), '');
+});
+
+// ── rehearsalMarkLetter — single-letter section detection ─────────────────────
+
+/** Mirrors rehearsalMarkLetter() from the Slash Notation IIFE. */
+function rehearsalMarkLetter(label: string | null): string | null {
+  if (!label) return null;
+  const m = label.trim().match(/^\[?([A-Z])\]?$/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+test('rehearsalMarkLetter: bare letter A → "A"', () => {
+  assert.equal(rehearsalMarkLetter('A'), 'A');
+});
+
+test('rehearsalMarkLetter: bracketed [B] → "B"', () => {
+  assert.equal(rehearsalMarkLetter('[B]'), 'B');
+});
+
+test('rehearsalMarkLetter: lowercase b → "B"', () => {
+  assert.equal(rehearsalMarkLetter('b'), 'B');
+});
+
+test('rehearsalMarkLetter: "Verse" → null (not a single letter)', () => {
+  assert.equal(rehearsalMarkLetter('Verse'), null);
+});
+
+test('rehearsalMarkLetter: "AB" → null (two letters)', () => {
+  assert.equal(rehearsalMarkLetter('AB'), null);
+});
+
+test('rehearsalMarkLetter: null → null', () => {
+  assert.equal(rehearsalMarkLetter(null), null);
+});
+
+// ── isCompoundMeter — dotted-beat time signature detection ────────────────────
+
+/** Mirrors isCompoundMeter() from the Slash Notation IIFE. */
+function isCompoundMeter(ts: string): boolean {
+  if (!ts) return false;
+  const m = ts.match(/^(\d+)\/8$/);
+  if (!m) return false;
+  const n = parseInt(m[1], 10);
+  return n >= 6 && n % 3 === 0;
+}
+
+test('isCompoundMeter: 6/8 → true', () => {
+  assert.equal(isCompoundMeter('6/8'), true);
+});
+
+test('isCompoundMeter: 9/8 → true', () => {
+  assert.equal(isCompoundMeter('9/8'), true);
+});
+
+test('isCompoundMeter: 12/8 → true', () => {
+  assert.equal(isCompoundMeter('12/8'), true);
+});
+
+test('isCompoundMeter: 4/4 → false', () => {
+  assert.equal(isCompoundMeter('4/4'), false);
+});
+
+test('isCompoundMeter: 3/4 → false', () => {
+  assert.equal(isCompoundMeter('3/4'), false);
+});
+
+test('isCompoundMeter: 3/8 → false (not compound — only 3 beats, not divisible by 3 in groups)', () => {
+  assert.equal(isCompoundMeter('3/8'), false);
+});
+
+test('isCompoundMeter: 5/8 → false', () => {
+  assert.equal(isCompoundMeter('5/8'), false);
+});
+
+test('isCompoundMeter: empty string → false', () => {
+  assert.equal(isCompoundMeter(''), false);
+});

@@ -1398,6 +1398,17 @@ body.exporting .sectionBlock{
               <option value="custom">Custom…</option>
             </select>
           </label>
+          <select id="snStrumPresets" title="Load a common strum pattern preset into the custom field">
+            <option value="">Presets…</option>
+            <option value="DUDU">Basic 4/4 ↓↑↓↑</option>
+            <option value="DDDD">Rock Eighths ↓↓↓↓</option>
+            <option value="DDUUDU">Folk Strum ↓↓↑↑↓↑</option>
+            <option value="D-UUDU">Island/Reggae ↓-↑↑↓↑</option>
+            <option value="D-DUDU">Bossa Nova ↓-↓↑↓↑</option>
+            <option value="DDUD">Country ↓↓↑↓</option>
+            <option value="DUD">Waltz 3/4 ↓↑↓</option>
+            <option value="D-D-D-D-">Blues Shuffle ↓-↓-↓-↓-</option>
+          </select>
           <input type="text" id="snStrumPattern" placeholder="D U D U" title="D=down ↓  U=up ↑  X=muted ×  -=rest" style="display:none">
           <label class="sn-stems-label" title="Add rhythmic stems to slash noteheads">
             <input type="checkbox" id="snStems"> Stems
@@ -6740,6 +6751,23 @@ window.runCSMPNSelfTests = function(){
   const NAV_RE = /\b(D\.C\.|D\.S\.|FINE|CODA|AL FINE|AL CODA|DAL SEGNO|DA CAPO|TO CODA|SEGNO)\b/i;
   function extractNavText(label){ return (label && NAV_RE.test(label)) ? label : null; }
 
+  // Replace SEGNO/D.S. and CODA occurrences with their Unicode musical symbols.
+  // Result is then safe to embed directly in SVG text (no further escaping needed
+  // for these chars; call escapeHtml() on the rest of the string before passing in).
+  function formatNavText(text){
+    if (!text) return '';
+    // Substitute before escapeHtml so the symbol chars pass through unescaped.
+    const subst = text
+      .replace(/\bDAL\s+SEGNO\b/gi,        'D.S.\uD834\uDD0B')  // D.S.𝄋
+      .replace(/\bDA\s+CAPO\b/gi,          'D.C.')
+      .replace(/\bD\.S\.(?=\s|$)/g,        'D.S.\uD834\uDD0B')  // D.S.𝄋 (lookahead: followed by whitespace or end)
+      .replace(/\bSEGNO\b/gi,              '\uD834\uDD0B')       // 𝄋
+      .replace(/\bTO\s+CODA\b/gi,          'To \uD834\uDD0C')    // To 𝄌
+      .replace(/\bAL\s+CODA\b/gi,          'al \uD834\uDD0C')    // al 𝄌
+      .replace(/\bCODA\b/gi,               '\uD834\uDD0C');       // 𝄌
+    return escapeHtml(subst);
+  }
+
   // Matches "1.", "2.", "[1]", "[2]", "1st", "2nd" ending labels
   function endingNumber(label){
     if (!label) return null;
@@ -6749,6 +6777,22 @@ window.runCSMPNSelfTests = function(){
     if (/^1\s*st\b/i.test(s)) return '1';
     if (/^2\s*nd\b/i.test(s)) return '2';
     return null;
+  }
+
+  // Single-letter rehearsal mark: "A", "B", "[A]", "[B]", etc.
+  function rehearsalMarkLetter(label){
+    if (!label) return null;
+    const m = label.trim().match(/^\[?([A-Z])\]?$/i);
+    return m ? m[1].toUpperCase() : null;
+  }
+
+  // True for compound meters where slashes get augmentation dots (6/8, 9/8, 12/8).
+  function isCompoundMeter(ts){
+    if (!ts) return false;
+    const m = ts.match(/^(\d+)\/8$/);
+    if (!m) return false;
+    const n = parseInt(m[1], 10);
+    return n >= 6 && n % 3 === 0;
   }
 
   // ── Key signature data ────────────────────────────────────
@@ -6911,6 +6955,11 @@ window.runCSMPNSelfTests = function(){
     return `<line x1="${x}" y1="${cy - 6}" x2="${x}" y2="${cy - 22}" stroke="${_snCfg.fgColor}" stroke-width="1.3"/>`;
   }
 
+  // Augmentation dot for compound-meter slashes (e.g. 6/8 → dotted-quarter slashes)
+  function augDot(cx, cy){
+    return `<circle cx="${cx + 13}" cy="${cy - 2}" r="2.2" fill="${_snCfg.fgColor}"/>`;
+  }
+
   // Returns the strum character for a given beat (null = no arrow)
   function strumChar(beat){
     const mode = _snCfg.strumMode;
@@ -7061,7 +7110,8 @@ window.runCSMPNSelfTests = function(){
 
   // navText: D.C./D.S./Fine/Coda marker rendered below last barline
   // ending:  '1' or '2' bracket rendered above first measure of ending section
-  function renderRow(measures, sectionLabel, systemY, measureWidth, bpm, showClef, timeSig, navText, ending){
+  // showDots: render augmentation dot after each slash (compound meter)
+  function renderRow(measures, sectionLabel, systemY, measureWidth, bpm, showClef, timeSig, navText, ending, showDots){
     const staffX   = MARGIN_H + CLEF_W;
     const hasLabel = !!sectionLabel;
     const staffY   = systemY + (hasLabel ? SECTION_LABEL_H : 0) + CHORD_AREA_H;
@@ -7088,9 +7138,18 @@ window.runCSMPNSelfTests = function(){
       svg += `<text x="${bx+5}" y="${by+10}" font-size="9" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${ending}.</text>`;
     }
 
-    // ── Section label ─────────────────────────────────────
+    // ── Section label / rehearsal mark ───────────────────
     if (sectionLabel){
-      svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(sectionLabel)}</text>`;
+      const rmLetter = rehearsalMarkLetter(sectionLabel);
+      if (rmLetter){
+        // Boxed rehearsal mark (A, B, C…) — standard lead-sheet convention
+        const rmX = MARGIN_H;
+        const rmY = systemY + 2;
+        svg += `<rect x="${rmX}" y="${rmY}" width="15" height="15" fill="none" stroke="${fg}" stroke-width="1.5"/>`;
+        svg += `<text x="${rmX + 7.5}" y="${rmY + 11}" font-size="10" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(rmLetter)}</text>`;
+      } else {
+        svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(sectionLabel)}</text>`;
+      }
     }
 
     // ── Treble clef ───────────────────────────────────────
@@ -7135,6 +7194,7 @@ window.runCSMPNSelfTests = function(){
       for (let beat = 0; beat < bpm; beat++){
         const bx = beatX(mX, beat);
         svg += slashHead(bx, midY);
+        if (showDots)                    svg += augDot(bx, midY);
         if (_snCfg.showStems)            svg += stemSvg(bx, midY);
         if (_snCfg.strumMode !== 'none') svg += strumArrow(bx, arrowY, beat);
       }
@@ -7168,7 +7228,7 @@ window.runCSMPNSelfTests = function(){
 
     // ── Navigation text (D.C. al Fine, Coda, etc.) ───────
     if (navText){
-      svg += `<text x="${staffX + totalW}" y="${staffY + STAFF_H + 16}" font-size="10" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(navText)}</text>`;
+      svg += `<text x="${staffX + totalW}" y="${staffY + STAFF_H + 16}" font-size="10" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family="'Noto Serif',${escapeHtml(_snCfg.notationFontFamily)}">${formatNavText(navText)}</text>`;
     }
 
     svg += '</g>';
@@ -7196,8 +7256,9 @@ window.runCSMPNSelfTests = function(){
     }
 
     // Compound meter support (12/8 → 4 slashes, 6/8 → 2, 9/8 → 3)
-    const bpm     = visualBeats(doc.time);
-    const timeSig = doc.time || `${bpm}/4`;
+    const bpm      = visualBeats(doc.time);
+    const timeSig  = doc.time || `${bpm}/4`;
+    const showDots = isCompoundMeter(timeSig); // augmentation dots for dotted-beat meters
 
     const sections = buildSnSections(doc);
     if (!sections.length){
@@ -7249,16 +7310,21 @@ window.runCSMPNSelfTests = function(){
     for (let ri = 0; ri < rows.length; ri++){
       const row      = rows[ri];
       const showClef = (ri === 0) || !!row.sectionLabel || !!row.ending;
-      svgContent += renderRow(row.measures, row.sectionLabel, curY, row.measureWidth, bpm, showClef, timeSig, row.navText, row.ending);
+      svgContent += renderRow(row.measures, row.sectionLabel, curY, row.measureWidth, bpm, showClef, timeSig, row.navText, row.ending, showDots);
       curY += (row.sectionLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
+    }
+
+    // Tempo mark inside SVG (top-right, above first staff system — conventional position).
+    // Placed after rows so it draws on top; preserved in SVG/PNG exports.
+    if (doc.tempo){
+      svgContent += `<text x="${PAGE_W - MARGIN_H}" y="26" font-size="10" fill="${_snCfg.fgColor}" text-anchor="end" font-family="${escapeHtml(_snCfg.notationFontFamily)}">&#x2669; = ${escapeHtml(doc.tempo)}</text>`;
     }
 
     // Song header — key is already correct (transposed in source text)
     let headerHtml = '';
     if (doc.title || doc.composer){
       const meta = [];
-      if (doc.key)   meta.push(`Key: ${escapeHtml(doc.key)}`);
-      if (doc.tempo) meta.push(`&#x2669;= ${escapeHtml(doc.tempo)}`);
+      if (doc.key) meta.push(`Key: ${escapeHtml(doc.key)}`);
       headerHtml  = `<div class="sn-header-block">`;
       if (doc.title)    headerHtml += `<div class="sn-song-title">${escapeHtml(doc.title)}</div>`;
       if (doc.composer) headerHtml += `<div class="sn-song-artist">${escapeHtml(doc.composer)}</div>`;
@@ -7346,11 +7412,12 @@ ${headerHtml}${svg.outerHTML}
   const overridesEl  = document.getElementById('snSectionOverrides');
   const btnOpen      = document.getElementById('btnSlashNotation');
   const btnClose     = document.getElementById('btnSnClose');
-  const snStrumEl    = document.getElementById('snStrumArrows');
-  const snStrumPatEl = document.getElementById('snStrumPattern');
-  const snStemsEl    = document.getElementById('snStems');
-  const snPalmMuteEl = document.getElementById('snPalmMute');
-  const snKeySigEl   = document.getElementById('snKeySig');
+  const snStrumEl       = document.getElementById('snStrumArrows');
+  const snStrumPatEl    = document.getElementById('snStrumPattern');
+  const snStrumPresEl   = document.getElementById('snStrumPresets');
+  const snStemsEl       = document.getElementById('snStems');
+  const snPalmMuteEl    = document.getElementById('snPalmMute');
+  const snKeySigEl      = document.getElementById('snKeySig');
 
   function refreshSlashNotation(){
     if (!panel.classList.contains('open')) return;
@@ -7382,6 +7449,16 @@ ${headerHtml}${svg.outerHTML}
 
   if (snStrumEl) snStrumEl.addEventListener('change', () => {
     updateStrumPatVis();
+    if (panel.classList.contains('open')) refreshSlashNotation();
+  });
+  // Preset selector: load pattern into custom field and switch to custom mode
+  if (snStrumPresEl) snStrumPresEl.addEventListener('change', () => {
+    const pat = snStrumPresEl.value;
+    if (!pat) return;
+    if (snStrumEl)    snStrumEl.value = 'custom';
+    if (snStrumPatEl) snStrumPatEl.value = pat;
+    updateStrumPatVis();
+    snStrumPresEl.value = '';  // reset dropdown back to "Presets…"
     if (panel.classList.contains('open')) refreshSlashNotation();
   });
   const _debouncedPat = debounce(() => { if (panel.classList.contains('open')) refreshSlashNotation(); }, 300);
