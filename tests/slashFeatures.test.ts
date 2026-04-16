@@ -101,13 +101,13 @@ test('snChordFeatures: empty string → empty string', () => {
 function formatNavText(text: string): string {
   if (!text) return '';
   return text
-    .replace(/\bDAL\s+SEGNO\b/gi,        'D.S.\uD834\uDD0B')
-    .replace(/\bDA\s+CAPO\b/gi,          'D.C.')
-    .replace(/\bD\.S\.(?=\s|$)/g,        'D.S.\uD834\uDD0B')
-    .replace(/\bSEGNO\b/gi,              '\uD834\uDD0B')
-    .replace(/\bTO\s+CODA\b/gi,          'To \uD834\uDD0C')
-    .replace(/\bAL\s+CODA\b/gi,          'al \uD834\uDD0C')
-    .replace(/\bCODA\b/gi,               '\uD834\uDD0C');
+    .replace(/\bDAL\s+SEGNO\b/gi, 'D.S.\uD834\uDD0B')
+    .replace(/\bDA\s+CAPO\b/gi, 'D.C.')
+    .replace(/\bD\.S\.(?=\s|$)/g, 'D.S.\uD834\uDD0B')
+    .replace(/\bSEGNO\b/gi, '\uD834\uDD0B')
+    .replace(/\bTO\s+CODA\b/gi, 'To \uD834\uDD0C')
+    .replace(/\bAL\s+CODA\b/gi, 'al \uD834\uDD0C')
+    .replace(/\bCODA\b/gi, '\uD834\uDD0C');
 }
 
 test('formatNavText: SEGNO → 𝄋 symbol', () => {
