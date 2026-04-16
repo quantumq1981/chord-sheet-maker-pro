@@ -273,26 +273,43 @@ test('convertTensionAccidentals: empty string → empty string', () => {
 
 /**
  * Mirrors chordKind() from the Slash Notation IIFE in index.html.
- * Verifies that common chord qualities map to correct MusicXML kind values.
+ * Handles all dimStyle variants ('°', 'dim', 'o'), minorStyle variants
+ * ('m', 'min', '−'), maj7Style variants ('maj', 'MA', 'Δ'), and corrects
+ * aug vs aug7 ordering so aug7 is not swallowed by the aug catch-all.
  */
 function chordKind(quality: string): string {
   if (!quality) return 'major';
   const q = quality.toLowerCase();
-  if (q.startsWith('maj7') || q.startsWith('ma7') || q.startsWith('δ7')) return 'major-seventh';
-  if (q.startsWith('maj')) return 'major-seventh';
-  if (q === 'm' || q === 'min' || q === 'mi') return 'minor';
-  if (q.startsWith('m7') || q.startsWith('min7') || q.startsWith('mi7')) return 'minor-seventh';
-  if (q.startsWith('m') && /\d/.test(q)) return 'minor-seventh';
-  if (q.startsWith('°7') || q === 'dim7' || q.startsWith('dim7')) return 'diminished-seventh';
-  if (q.startsWith('°') || q.startsWith('dim')) return 'diminished';
+  // Half-diminished first — must precede minor checks
+  if (q.startsWith('ø') || q === 'm7♭5' || q === 'm7b5') return 'half-diminished';
+  // Major-seventh: maj7/MA7/Δ7 and all extended forms (maj9, Δ13, etc.)
+  if (q.startsWith('maj') || q.startsWith('ma') || q.startsWith('δ')) return 'major-seventh';
+  // Diminished-seventh: °7, dim7, o7 (letter o convention)
+  if (q.startsWith('°7') || q.startsWith('dim7') || q === 'o7' || q.startsWith('o7'))
+    return 'diminished-seventh';
+  // Diminished: °, dim, o
+  if (q.startsWith('°') || q.startsWith('dim') || q === 'o' || q.startsWith('o '))
+    return 'diminished';
+  // Augmented-seventh — must precede augmented to prevent aug eating aug7
+  if (q.startsWith('+7') || q.startsWith('aug7') || q.startsWith('7#5') || q.startsWith('7♯5'))
+    return 'augmented-seventh';
+  // Augmented: + or aug (without 7)
   if (q === '+' || q.startsWith('aug')) return 'augmented';
-  if (q.startsWith('+7') || q.startsWith('aug7') || q.startsWith('7#5')) return 'augmented-seventh';
+  // Minor — all style variants: m, min, mi, − (U+2212 minus sign)
+  if (q === 'm' || q === 'min' || q === 'mi' || q === '−') return 'minor';
+  // Minor-seventh and extended minor
+  if (q.startsWith('m7') || q.startsWith('min7') || q.startsWith('mi7') || q.startsWith('−7'))
+    return 'minor-seventh';
+  if (q.startsWith('m') && /\d/.test(q)) return 'minor-seventh'; // m9, m11, m13
+  if (q.startsWith('−') && /\d/.test(q)) return 'minor-seventh'; // −9, −11, −13
+  // Major-sixth
+  if (q === '6' || q.startsWith('6/9')) return 'major-sixth';
+  // Dominant: 7 and extensions (7b9, 9, 11, 13, etc.)
   if (q === '7') return 'dominant';
   if (/^[79]/.test(q) || q.startsWith('13') || q.startsWith('11')) return 'dominant';
-  if (q.startsWith('ø') || q === 'm7♭5' || q === 'm7b5') return 'half-diminished';
+  // Suspended
   if (q.startsWith('sus4') || q === 'sus') return 'suspended-fourth';
   if (q.startsWith('sus2')) return 'suspended-second';
-  if (q.startsWith('add')) return 'major';
   return 'major';
 }
 
@@ -304,12 +321,36 @@ test('chordKind: maj7 → major-seventh', () => {
   assert.equal(chordKind('maj7'), 'major-seventh');
 });
 
+test('chordKind: maj9 → major-seventh (extended major)', () => {
+  assert.equal(chordKind('maj9'), 'major-seventh');
+});
+
+test('chordKind: Δ7 → major-seventh (triangle style)', () => {
+  assert.equal(chordKind('Δ7'), 'major-seventh');
+});
+
+test('chordKind: Δ9 → major-seventh (triangle extended)', () => {
+  assert.equal(chordKind('Δ9'), 'major-seventh');
+});
+
 test('chordKind: m → minor', () => {
   assert.equal(chordKind('m'), 'minor');
 });
 
+test('chordKind: − → minor (minus style)', () => {
+  assert.equal(chordKind('−'), 'minor');
+});
+
 test('chordKind: m7 → minor-seventh', () => {
   assert.equal(chordKind('m7'), 'minor-seventh');
+});
+
+test('chordKind: −7 → minor-seventh (minus style)', () => {
+  assert.equal(chordKind('−7'), 'minor-seventh');
+});
+
+test('chordKind: m9 → minor-seventh (extended minor)', () => {
+  assert.equal(chordKind('m9'), 'minor-seventh');
 });
 
 test('chordKind: 7 → dominant', () => {
@@ -328,12 +369,52 @@ test('chordKind: dim7 → diminished-seventh', () => {
   assert.equal(chordKind('dim7'), 'diminished-seventh');
 });
 
+test('chordKind: ° → diminished (degree symbol style)', () => {
+  assert.equal(chordKind('°'), 'diminished');
+});
+
+test('chordKind: °7 → diminished-seventh (degree symbol style)', () => {
+  assert.equal(chordKind('°7'), 'diminished-seventh');
+});
+
+test('chordKind: o → diminished (letter-o style)', () => {
+  assert.equal(chordKind('o'), 'diminished');
+});
+
+test('chordKind: o7 → diminished-seventh (letter-o style)', () => {
+  assert.equal(chordKind('o7'), 'diminished-seventh');
+});
+
 test('chordKind: + → augmented', () => {
   assert.equal(chordKind('+'), 'augmented');
 });
 
+test('chordKind: aug → augmented', () => {
+  assert.equal(chordKind('aug'), 'augmented');
+});
+
+test('chordKind: aug7 → augmented-seventh (not swallowed by aug)', () => {
+  assert.equal(chordKind('aug7'), 'augmented-seventh');
+});
+
+test('chordKind: +7 → augmented-seventh', () => {
+  assert.equal(chordKind('+7'), 'augmented-seventh');
+});
+
+test('chordKind: 6 → major-sixth', () => {
+  assert.equal(chordKind('6'), 'major-sixth');
+});
+
+test('chordKind: 6/9 → major-sixth', () => {
+  assert.equal(chordKind('6/9'), 'major-sixth');
+});
+
 test('chordKind: ø → half-diminished', () => {
   assert.equal(chordKind('ø'), 'half-diminished');
+});
+
+test('chordKind: m7♭5 → half-diminished', () => {
+  assert.equal(chordKind('m7♭5'), 'half-diminished');
 });
 
 test('chordKind: sus4 → suspended-fourth', () => {

@@ -7406,25 +7406,38 @@ window.runCSMPNSelfTests = function(){
   function getSvgEl(){ return output.querySelector('#snSvgOutput'); }
   function getSongTitle(){ return (output.querySelector('.sn-song-title') || {}).textContent || 'slash-notation'; }
 
-  // MusicXML chord-kind lookup (covers the most common chord qualities)
+  // MusicXML chord-kind lookup (covers the most common chord qualities).
+  // Handles all dimStyle ('dim', '°', 'o'), minorStyle ('m', 'min', '−'),
+  // maj7Style ('maj', 'MA', 'Δ'), and augmented shorthand variants.
   function chordKind(quality){
     if (!quality) return 'major';
     const q = quality.toLowerCase();
-    if (q.startsWith('maj7') || q.startsWith('ma7') || q.startsWith('δ7') || q.startsWith('ma7')) return 'major-seventh';
-    if (q.startsWith('maj')) return 'major-seventh'; // maj9, maj13 → generic major-seventh
-    if (q === 'm' || q === 'min' || q === 'mi') return 'minor';
-    if (q.startsWith('m7') || q.startsWith('min7') || q.startsWith('mi7')) return 'minor-seventh';
-    if (q.startsWith('m') && /\d/.test(q)) return 'minor-seventh'; // m9, m11, m13
-    if (q.startsWith('°7') || q === 'dim7' || q.startsWith('dim7')) return 'diminished-seventh';
-    if (q.startsWith('°') || q.startsWith('dim')) return 'diminished';
+    // Half-diminished first (ø, m7b5, m7♭5) — must precede minor checks
+    if (q.startsWith('ø') || q === 'm7♭5' || q === 'm7b5') return 'half-diminished';
+    // Major-seventh: maj7/MA7/Δ7 and all extended forms (maj9, Δ13, etc.)
+    if (q.startsWith('maj') || q.startsWith('ma') || q.startsWith('δ')) return 'major-seventh';
+    // Diminished-seventh: °7, dim7, o7 (letter o convention)
+    if (q.startsWith('°7') || q.startsWith('dim7') || q === 'o7' || q.startsWith('o7')) return 'diminished-seventh';
+    // Diminished: °, dim, o
+    if (q.startsWith('°') || q.startsWith('dim') || q === 'o' || q.startsWith('o ')) return 'diminished';
+    // Augmented-seventh: must come before augmented to avoid aug eating aug7
+    if (q.startsWith('+7') || q.startsWith('aug7') || q.startsWith('7#5') || q.startsWith('7♯5')) return 'augmented-seventh';
+    // Augmented: + or aug (without 7)
     if (q === '+' || q.startsWith('aug')) return 'augmented';
-    if (q.startsWith('+7') || q.startsWith('aug7') || q.startsWith('7#5')) return 'augmented-seventh';
+    // Minor — all style variants: m, min, mi, − (U+2212 minus sign)
+    if (q === 'm' || q === 'min' || q === 'mi' || q === '−') return 'minor';
+    // Minor-seventh and extended minor
+    if (q.startsWith('m7') || q.startsWith('min7') || q.startsWith('mi7') || q.startsWith('−7')) return 'minor-seventh';
+    if (q.startsWith('m') && /\d/.test(q)) return 'minor-seventh'; // m9, m11, m13
+    if (q.startsWith('−') && /\d/.test(q)) return 'minor-seventh'; // −9, −11, −13
+    // Major-sixth
+    if (q === '6' || q === '6/9' || q.startsWith('6/9')) return 'major-sixth';
+    // Dominant: 7 and extensions (7b9, 9, 11, 13, etc.)
     if (q === '7') return 'dominant';
     if (/^[79]/.test(q) || q.startsWith('13') || q.startsWith('11')) return 'dominant';
-    if (q.startsWith('ø') || q === 'm7♭5' || q === 'm7b5') return 'half-diminished';
+    // Suspended
     if (q.startsWith('sus4') || q === 'sus') return 'suspended-fourth';
     if (q.startsWith('sus2')) return 'suspended-second';
-    if (q.startsWith('add')) return 'major';
     return 'major';
   }
 
@@ -7539,9 +7552,11 @@ window.runCSMPNSelfTests = function(){
     if (_snCfg.keySig === null) _snCfg.keySig = keySigFromKey(doc.key);
     const xml = buildMusicXml();
     if (!xml){ alert('No chord data to export. Import or paste a chart first.'); return; }
-    const blob = new Blob([xml], { type: 'application/vnd.recordare.musicxml+xml;charset=utf-8' });
+    // Use .xml extension + text/xml MIME type so iOS Safari recognises the file
+    // and offers to open it in notation apps (MusicXML inside is standard XML).
+    const blob = new Blob([xml], { type: 'text/xml;charset=utf-8' });
     const url  = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement('a'), { href: url, download: safeFilename(doc.title || 'slash-notation') + '.musicxml' });
+    const a = Object.assign(document.createElement('a'), { href: url, download: safeFilename(doc.title || 'slash-notation') + '.xml' });
     a.click();
     URL.revokeObjectURL(url);
   }
