@@ -460,6 +460,11 @@ function formatChordQuality(quality){
     }
   }
 
+  // Convert accidentals in numeric tension/alteration contexts:
+  //   7b9 → 7♭9, maj13(#11) → maj13(♯11), 7(b9,#11) → 7(♭9,♯11)
+  // Pattern: 'b'/'#' that follows a digit, '(' or ',' and precedes a digit.
+  q = q.replace(/([\d(,])b(?=\d)/g, '$1♭').replace(/([\d(,])#(?=\d)/g, '$1♯');
+
   return q;
 }
 

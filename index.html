@@ -1410,6 +1410,18 @@ body.exporting .sectionBlock{
             <option value="D-D-D-D-">Blues Shuffle ↓-↓-↓-↓-</option>
           </select>
           <input type="text" id="snStrumPattern" placeholder="D U D U" title="D=down ↓  U=up ↑  X=muted ×  -=rest" style="display:none">
+          <label title="Rhythmic feel / style indication rendered above first staff system">Feel
+            <select id="snSwingFeel">
+              <option value="none">None</option>
+              <option value="Swing">Swing</option>
+              <option value="Straight">Straight</option>
+              <option value="Shuffle">Shuffle</option>
+              <option value="Latin">Latin</option>
+              <option value="Bossa Nova">Bossa Nova</option>
+              <option value="Funk">Funk</option>
+              <option value="Ballad">Ballad</option>
+            </select>
+          </label>
           <label class="sn-stems-label" title="Add rhythmic stems to slash noteheads">
             <input type="checkbox" id="snStems"> Stems
           </label>
@@ -1435,9 +1447,24 @@ body.exporting .sectionBlock{
               <option value="-6">G♭ / E♭m (6♭)</option>
             </select>
           </label>
+          <label title="Paper size for print / PDF export">Paper
+            <select id="snPaperSize">
+              <option value="letter">Letter</option>
+              <option value="a4">A4</option>
+              <option value="a3">A3</option>
+            </select>
+          </label>
+          <label title="Print margins">Margins
+            <select id="snPrintMargin">
+              <option value="0.5in">Normal</option>
+              <option value="0.25in">Tight</option>
+              <option value="0.75in">Wide</option>
+            </select>
+          </label>
           <div class="sn-export-btns">
             <button id="btnSnSvg" title="Download as SVG file">&#x2193; SVG</button>
             <button id="btnSnPng" title="Download as PNG image">&#x2193; PNG</button>
+            <button id="btnSnXml" title="Download as MusicXML (for notation software)">&#x2193; MusicXML</button>
             <button id="btnSnPrint" title="Print or save as PDF">&#x2399; Print</button>
           </div>
           <button id="btnSnClose" title="Close slash notation panel">&#x2715;</button>
@@ -6838,7 +6865,7 @@ window.runCSMPNSelfTests = function(){
     bgColor: '#ffffff', fgColor: '#111111', chordColor: '#0044cc',
     chordFontSize: 11.5, chordAnchor: 'middle',
     showBarlines: true, strumMode: 'none', strumPattern: null,
-    showStems: false, palmMute: false, keySig: null,
+    showStems: false, palmMute: false, keySig: null, swingFeel: 'none',
     slashChordFontFamily: 'Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif',
     notationFontFamily: 'Georgia, "Times New Roman", serif',
   };
@@ -6865,9 +6892,10 @@ window.runCSMPNSelfTests = function(){
       chordAnchor:   (fs.chordAlign === 'center') ? 'middle' : 'start',
       showBarlines:  (fs.barLines !== 'hidden'),
       strumMode, strumPattern,
-      showStems:     snStemsEl    ? snStemsEl.checked    : false,
-      palmMute:      snPalmMuteEl ? snPalmMuteEl.checked : false,
+      showStems:     snStemsEl       ? snStemsEl.checked       : false,
+      palmMute:      snPalmMuteEl    ? snPalmMuteEl.checked    : false,
       keySig,
+      swingFeel:     snSwingFeelEl   ? snSwingFeelEl.value     : 'none',
       slashChordFontFamily: (window.__SLASH_FONT_FAMILY || packCfg.slashChordFont),
       notationFontFamily: (window.__SN_NOTATION_FONT_FAMILY || packCfg.notationFont),
     };
@@ -7033,24 +7061,33 @@ window.runCSMPNSelfTests = function(){
 
   // No double-transpose: source text is already transposed.
   // Uses parseChordToken() so maj7/min/dim/halfDim styles apply.
+  // Articulation suffixes (applied to any chord token):
+  //   !  → accent  (>)
+  //   ^  → marcato (^ with bar)
+  //   .  → staccato (filled dot)
+  //   =  → tenuto  (horizontal line)
   function chordsFromToken(token){
     const raw = (token || '').trim();
     if (!raw) return [];
     if (raw === '%' || raw === '%%' || /^%\d+$/.test(raw)) return null; // repeat
     const up = raw.toUpperCase();
-    if (up === 'N.C.' || up === 'NC') return [{ text: 'N.C.', accent: false, fontFeatureSettings: '' }];
+    if (up === 'N.C.' || up === 'NC') return [{ text: 'N.C.', articulation: null, fontFeatureSettings: '' }];
     return raw.split('_').map(s => {
       const t = s.trim();
       if (!t) return null;
-      // Trailing ! or ^ means accent mark (> above slash head)
-      const accent = t.endsWith('!') || t.endsWith('^');
-      const clean  = accent ? t.slice(0, -1) : t;
+      // Detect articulation suffix — order matters (check longer matches first)
+      let articulation = null;
+      let clean = t;
+      if (t.endsWith('!'))  { articulation = 'accent';   clean = t.slice(0, -1); }
+      else if (t.endsWith('^'))  { articulation = 'marcato';  clean = t.slice(0, -1); }
+      else if (t.endsWith('.'))  { articulation = 'staccato'; clean = t.slice(0, -1); }
+      else if (t.endsWith('='))  { articulation = 'tenuto';   clean = t.slice(0, -1); }
       const parsed = (typeof parseChordToken === 'function') ? parseChordToken(clean) : null;
       const text   = parsed
         ? parsed.root + parsed.quality + (parsed.bass ? `/${parsed.bass}` : '')
         : clean;
       const styled = getChordFontFeatures(text);
-      return { text: styled.displayString, accent, fontFeatureSettings: styled.fontFeatureSettings };
+      return { text: styled.displayString, articulation, fontFeatureSettings: styled.fontFeatureSettings };
     }).filter(Boolean);
   }
 
@@ -7199,21 +7236,43 @@ window.runCSMPNSelfTests = function(){
         if (_snCfg.strumMode !== 'none') svg += strumArrow(bx, arrowY, beat);
       }
 
-      // Chord symbols or simile "%" mark
+      // Chord symbols or simile / multi-measure repeat marks
       if (m.isSimile){
-        const cx = mX + measureWidth / 2;
-        svg += `<text x="${cx}" y="${staffY-6}" font-size="15" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">%</text>`;
+        const cx  = mX + measureWidth / 2;
+        const tok = (m.repeatToken || '%').trim();
+        // Multi-measure repeat: %% (2-bar) or %N (N-bar) — Gould standard:
+        // two thick dots flanking a diagonal slash, with count above.
+        const multiMatch = tok === '%%' ? 2 : (tok.match(/^%(\d+)$/) ? parseInt(tok.slice(1), 10) : 0);
+        if (multiMatch > 1){
+          const sy = staffY + LINE_GAP * 2; // middle-line height
+          // Diagonal slash
+          svg += `<line x1="${cx - 10}" y1="${sy + 8}" x2="${cx + 10}" y2="${sy - 8}" stroke="${fg}" stroke-width="1.8"/>`;
+          // Two filled dots (left and right)
+          svg += `<circle cx="${cx - 14}" cy="${sy}" r="2.8" fill="${fg}"/>`;
+          svg += `<circle cx="${cx + 14}" cy="${sy}" r="2.8" fill="${fg}"/>`;
+          // Count above
+          svg += `<text x="${cx}" y="${staffY - 6}" font-size="10" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${multiMatch}</text>`;
+        } else {
+          // Single-bar simile: plain % text
+          svg += `<text x="${cx}" y="${staffY-6}" font-size="15" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">%</text>`;
+        }
       } else {
         const chords = m.chords || [];
         for (let ci = 0; ci < chords.length; ci++){
-          const chord  = chords[ci] || {};
-          const accent = !!chord.accent;
-          const txt    = chord.text || '';
-          const cx     = beatX(mX, Math.floor(ci * bpm / chords.length));
-          // Accent mark (>) above chord symbol
-          if (accent){
-            const ay = staffY - 8 - _snCfg.chordFontSize - 2;
+          const chord = chords[ci] || {};
+          const art   = chord.articulation || null;
+          const txt   = chord.text || '';
+          const cx    = beatX(mX, Math.floor(ci * bpm / chords.length));
+          const ay    = staffY - 8 - _snCfg.chordFontSize - 2; // y above chord symbol
+          // Articulation marks above chord symbol
+          if (art === 'accent'){
             svg += `<text x="${cx}" y="${ay}" font-size="10" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">&gt;</text>`;
+          } else if (art === 'marcato'){
+            svg += `<text x="${cx}" y="${ay}" font-size="9" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">^</text>`;
+          } else if (art === 'staccato'){
+            svg += `<circle cx="${cx}" cy="${ay - 1}" r="2.2" fill="${_snCfg.chordColor}"/>`;
+          } else if (art === 'tenuto'){
+            svg += `<line x1="${cx - 6}" y1="${ay}" x2="${cx + 6}" y2="${ay}" stroke="${_snCfg.chordColor}" stroke-width="1.5"/>`;
           }
           const featureAttr = chord.fontFeatureSettings ? ` font-feature-settings="${escapeHtml(chord.fontFeatureSettings)}"` : '';
           svg += `<text class="chord-symbol" x="${cx}" y="${staffY-8}" font-size="${_snCfg.chordFontSize}" font-family="${escapeHtml(_snCfg.slashChordFontFamily)}" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}"${featureAttr}>${escapeHtml(txt)}</text>`;
@@ -7271,9 +7330,11 @@ window.runCSMPNSelfTests = function(){
       const measures = sec.bars.map(bar => {
         let chords = chordsFromToken(bar.token);
         const isSimile = (chords === null); // % repeat bar — render simile symbol
-        if (chords === null){ chords = []; }  // don't copy — show "%" instead
+        if (chords === null){ chords = []; }  // don't copy — show symbol instead
         else if (chords.length > 0){ lastChords = chords; }
-        return { chords, isSimile, leftBar: bar.leftBar || 'single', rightBar: bar.rightBar || 'single' };
+        // Preserve raw repeat token so renderer can distinguish % vs %% vs %4
+        const repeatToken = isSimile ? (bar.token || '%') : null;
+        return { chords, isSimile, repeatToken, leftBar: bar.leftBar || 'single', rightBar: bar.rightBar || 'single' };
       });
       // Nav text: explicit from block order, or auto-detect if label IS a nav marker
       const navText = sec.navText || extractNavText(sec.label) || null;
@@ -7314,10 +7375,13 @@ window.runCSMPNSelfTests = function(){
       curY += (row.sectionLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
     }
 
-    // Tempo mark inside SVG (top-right, above first staff system — conventional position).
-    // Placed after rows so it draws on top; preserved in SVG/PNG exports.
+    // Tempo mark (top-right) and feel/style label (top-left) inside SVG.
+    // Placed after rows so they draw on top; preserved in SVG/PNG exports.
     if (doc.tempo){
       svgContent += `<text x="${PAGE_W - MARGIN_H}" y="26" font-size="10" fill="${_snCfg.fgColor}" text-anchor="end" font-family="${escapeHtml(_snCfg.notationFontFamily)}">&#x2669; = ${escapeHtml(doc.tempo)}</text>`;
+    }
+    if (_snCfg.swingFeel && _snCfg.swingFeel !== 'none'){
+      svgContent += `<text x="${MARGIN_H}" y="26" font-size="10" font-style="italic" fill="${_snCfg.fgColor}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(_snCfg.swingFeel)}</text>`;
     }
 
     // Song header — key is already correct (transposed in source text)
@@ -7341,6 +7405,146 @@ window.runCSMPNSelfTests = function(){
 
   function getSvgEl(){ return output.querySelector('#snSvgOutput'); }
   function getSongTitle(){ return (output.querySelector('.sn-song-title') || {}).textContent || 'slash-notation'; }
+
+  // MusicXML chord-kind lookup (covers the most common chord qualities)
+  function chordKind(quality){
+    if (!quality) return 'major';
+    const q = quality.toLowerCase();
+    if (q.startsWith('maj7') || q.startsWith('ma7') || q.startsWith('δ7') || q.startsWith('ma7')) return 'major-seventh';
+    if (q.startsWith('maj')) return 'major-seventh'; // maj9, maj13 → generic major-seventh
+    if (q === 'm' || q === 'min' || q === 'mi') return 'minor';
+    if (q.startsWith('m7') || q.startsWith('min7') || q.startsWith('mi7')) return 'minor-seventh';
+    if (q.startsWith('m') && /\d/.test(q)) return 'minor-seventh'; // m9, m11, m13
+    if (q.startsWith('°7') || q === 'dim7' || q.startsWith('dim7')) return 'diminished-seventh';
+    if (q.startsWith('°') || q.startsWith('dim')) return 'diminished';
+    if (q === '+' || q.startsWith('aug')) return 'augmented';
+    if (q.startsWith('+7') || q.startsWith('aug7') || q.startsWith('7#5')) return 'augmented-seventh';
+    if (q === '7') return 'dominant';
+    if (/^[79]/.test(q) || q.startsWith('13') || q.startsWith('11')) return 'dominant';
+    if (q.startsWith('ø') || q === 'm7♭5' || q === 'm7b5') return 'half-diminished';
+    if (q.startsWith('sus4') || q === 'sus') return 'suspended-fourth';
+    if (q.startsWith('sus2')) return 'suspended-second';
+    if (q.startsWith('add')) return 'major';
+    return 'major';
+  }
+
+  // Build a MusicXML document from the current parsed slash notation data.
+  function buildMusicXml(){
+    const original = sourceEl ? sourceEl.value || '' : '';
+    const text = (typeof fbSettings !== 'undefined' && fbSettings.includeLyrics === false)
+      ? filterLyricsLines(original) : original;
+    const doc = parseCSMPN(text);
+    if (!doc.blocks.length) return null;
+
+    const bpm      = visualBeats(doc.time);
+    const timeSig  = doc.time || `${bpm}/4`;
+    const sections = buildSnSections(doc);
+    if (!sections.length) return null;
+
+    const title    = escapeHtml(doc.title    || 'Untitled');
+    const composer = escapeHtml(doc.composer || '');
+    const keySig   = _snCfg.keySig != null ? _snCfg.keySig : keySigFromKey(doc.key);
+    const timeParts = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/) || ['4/4','4','4'];
+    const beats    = timeParts[1];
+    const beatType = timeParts[2];
+    const divisions = 1; // 1 beat = 1 division (quarter-note level)
+
+    // Flatten all bars across sections
+    const allBars = [];
+    for (const sec of sections){
+      for (const bar of sec.bars){
+        const chords = chordsFromToken(bar.token);
+        allBars.push({ chords: chords || [], isSimile: chords === null, token: bar.token });
+      }
+    }
+
+    let measureXml = '';
+    for (let mi = 0; mi < allBars.length; mi++){
+      const bar = allBars[mi];
+      const num = mi + 1;
+      let attrs = '';
+      if (mi === 0){
+        attrs = `
+      <attributes>
+        <divisions>${divisions}</divisions>
+        <key><fifths>${keySig}</fifths><mode>major</mode></key>
+        <time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+        <measure-style><slash type="start" use-stems="no"/></measure-style>
+      </attributes>`;
+        if (doc.tempo){
+          attrs += `
+      <direction placement="above">
+        <direction-type><metronome parentheses="no">
+          <beat-unit>quarter</beat-unit><per-minute>${escapeHtml(doc.tempo)}</per-minute>
+        </metronome></direction-type>
+        <sound tempo="${escapeHtml(doc.tempo)}"/>
+      </direction>`;
+        }
+      }
+
+      // Chord harmony elements
+      let harmonyXml = '';
+      const chords = bar.chords || [];
+      for (let ci = 0; ci < chords.length; ci++){
+        const ch = chords[ci];
+        if (!ch || !ch.text) continue;
+        // Parse root + quality from the display text
+        const chRoot  = ch.text.match(/^([A-G][♭♯]?)/);
+        if (!chRoot) continue;
+        const rootStep = chRoot[1].replace('♭','').replace('♯','');
+        const rootAlter = ch.text.startsWith(chRoot[1]) && chRoot[1].includes('♭') ? -1
+                        : ch.text.startsWith(chRoot[1]) && chRoot[1].includes('♯') ?  1 : 0;
+        const qualRaw  = ch.text.slice(chRoot[1].length).replace(/\/.*$/, '').trim();
+        const bassMatch= ch.text.match(/\/([A-G][♭♯]?)$/);
+        const bassStep = bassMatch ? bassMatch[1].replace(/[♭♯]/g,'') : '';
+        const bassAlter = bassMatch && bassMatch[1].includes('♭') ? -1
+                        : bassMatch && bassMatch[1].includes('♯') ?  1 : 0;
+        const alterTag = rootAlter !== 0 ? `<alter>${rootAlter}</alter>` : '';
+        const bassXml  = bassStep ? `<bass><bass-step>${escapeHtml(bassStep)}</bass-step>${bassAlter !== 0 ? `<bass-alter>${bassAlter}</bass-alter>` : ''}</bass>` : '';
+        const offset   = Math.round((ci / Math.max(chords.length, 1)) * parseInt(beats, 10) * divisions);
+        const offsetTag = offset > 0 ? `<offset>${offset}</offset>` : '';
+        harmonyXml += `
+      <harmony>${offsetTag}<root><root-step>${escapeHtml(rootStep)}</root-step>${alterTag}</root><kind>${chordKind(qualRaw)}</kind>${bassXml}</harmony>`;
+      }
+
+      // One slash note per visual beat (whole-measure rest when 1 chord covers all)
+      let notesXml = '';
+      for (let b = 0; b < bpm; b++){
+        notesXml += `
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divisions}</duration><type>quarter</type><notehead>slash</notehead></note>`;
+      }
+
+      measureXml += `
+    <measure number="${num}">${attrs}${harmonyXml}${notesXml}
+    </measure>`;
+    }
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <movement-title>${title}</movement-title>${composer ? `\n  <identification><creator type="composer">${composer}</creator></identification>` : ''}
+  <part-list>
+    <score-part id="P1"><part-name>Rhythm Guitar</part-name></score-part>
+  </part-list>
+  <part id="P1">${measureXml}
+  </part>
+</score-partwise>`;
+  }
+
+  function downloadMusicXml(){
+    getSnRenderSettings();
+    const text = sourceEl ? sourceEl.value || '' : '';
+    const doc  = parseCSMPN(text);
+    if (_snCfg.keySig === null) _snCfg.keySig = keySigFromKey(doc.key);
+    const xml = buildMusicXml();
+    if (!xml){ alert('No chord data to export. Import or paste a chart first.'); return; }
+    const blob = new Blob([xml], { type: 'application/vnd.recordare.musicxml+xml;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: safeFilename(doc.title || 'slash-notation') + '.musicxml' });
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   function downloadSvg(){
     const svg = getSvgEl();
@@ -7385,6 +7589,10 @@ window.runCSMPNSelfTests = function(){
     if (!svg){ alert('Render slash notation first.'); return; }
     const headerEl   = output.querySelector('.sn-header-block');
     const headerHtml = headerEl ? headerEl.outerHTML : '';
+    // Paper size → CSS @page size keyword
+    const paperSize = snPaperSizeEl ? snPaperSizeEl.value : 'letter';
+    const paperCss  = paperSize === 'a3' ? 'A3' : paperSize === 'a4' ? 'A4' : 'letter';
+    const margin    = snPrintMarginEl ? snPrintMarginEl.value : '0.5in';
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win){ alert('Pop-up blocked. Please allow pop-ups to print.'); return; }
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -7396,7 +7604,7 @@ body{margin:1cm;font-family:Georgia,serif;background:${_snCfg.bgColor || '#fff'}
 .sn-song-artist{font-size:0.9rem;color:#555;font-style:italic;}
 .sn-song-meta{font-size:0.78rem;color:#666;margin-top:2px;}
 svg{max-width:100%;height:auto;display:block;overflow:visible;}
-@media print{@page{margin:0.5in;} body{margin:0;} svg{width:100% !important;height:auto !important;overflow:visible !important;}}
+@media print{@page{size:${paperCss};margin:${margin};} body{margin:0;} svg{width:100% !important;height:auto !important;overflow:visible !important;}}
 </style></head><body>
 ${headerHtml}${svg.outerHTML}
 <script>window.onload=function(){window.print();window.close();};<\/script>
@@ -7418,6 +7626,9 @@ ${headerHtml}${svg.outerHTML}
   const snStemsEl       = document.getElementById('snStems');
   const snPalmMuteEl    = document.getElementById('snPalmMute');
   const snKeySigEl      = document.getElementById('snKeySig');
+  const snSwingFeelEl   = document.getElementById('snSwingFeel');
+  const snPaperSizeEl   = document.getElementById('snPaperSize');
+  const snPrintMarginEl = document.getElementById('snPrintMargin');
 
   function refreshSlashNotation(){
     if (!panel.classList.contains('open')) return;
@@ -7463,13 +7674,15 @@ ${headerHtml}${svg.outerHTML}
   });
   const _debouncedPat = debounce(() => { if (panel.classList.contains('open')) refreshSlashNotation(); }, 300);
   if (snStrumPatEl) snStrumPatEl.addEventListener('input', _debouncedPat);
-  if (snStemsEl)    snStemsEl.addEventListener('change',    () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
-  if (snPalmMuteEl) snPalmMuteEl.addEventListener('change', () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
-  if (snKeySigEl)   snKeySigEl.addEventListener('change',   () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+  if (snStemsEl)      snStemsEl.addEventListener('change',      () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+  if (snPalmMuteEl)   snPalmMuteEl.addEventListener('change',   () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+  if (snKeySigEl)     snKeySigEl.addEventListener('change',     () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
+  if (snSwingFeelEl)  snSwingFeelEl.addEventListener('change',  () => { if (panel.classList.contains('open')) refreshSlashNotation(); });
 
   document.getElementById('btnSnSvg').addEventListener('click',   downloadSvg);
   document.getElementById('btnSnPng').addEventListener('click',   downloadPng);
   document.getElementById('btnSnPrint').addEventListener('click', printSlashNotation);
+  document.getElementById('btnSnXml').addEventListener('click',   downloadMusicXml);
 
 })();
 
