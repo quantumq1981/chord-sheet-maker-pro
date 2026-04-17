@@ -5645,18 +5645,35 @@ function harmonyToChord(h){
   const bassAlter = h.querySelector("bass bass-alter")?.textContent?.trim();
   const bassAcc = bassAlter === '1' ? '#' : (bassAlter === '-1' ? 'b' : '');
 
+  // Prefer the text attribute (display hint) when set; fall back to element content
   let qual = kindText || kind || '';
-  // map a few common MusicXML kinds to chord quality
+  // Full MusicXML 4.0 kind → CSMPN quality reverse mapping
   const map = {
-    'major': '',
-    'minor': 'm',
-    'dominant': '7',
-    'major-seventh': 'maj7',
-    'minor-seventh': 'm7',
-    'diminished': 'dim',
+    'major':              '',
+    'minor':              'm',
+    'dominant':           '7',
+    'major-seventh':      'maj7',
+    'minor-seventh':      'm7',
+    'diminished':         'dim',
     'diminished-seventh': 'dim7',
-    'augmented': 'aug',
-    'half-diminished': 'm7b5'
+    'augmented':          'aug',
+    'augmented-seventh':  'aug7',
+    'half-diminished':    'm7b5',
+    'major-sixth':        '6',
+    'minor-sixth':        'm6',
+    'dominant-ninth':     '9',
+    'major-ninth':        'maj9',
+    'minor-ninth':        'm9',
+    'dominant-11th':      '11',
+    'major-11th':         'maj11',
+    'minor-11th':         'm11',
+    'dominant-13th':      '13',
+    'major-13th':         'maj13',
+    'minor-13th':         'm13',
+    'suspended-second':   'sus2',
+    'suspended-fourth':   'sus4',
+    'power':              '5',
+    'none':               '',
   };
   if (qual in map) qual = map[qual];
 
@@ -6765,9 +6782,9 @@ window.runCSMPNSelfTests = function(){
   const STAFF_LINES     = 5;
   const LINE_GAP        = 8;
   const STAFF_H         = (STAFF_LINES - 1) * LINE_GAP; // 32 px
-  const CHORD_AREA_H    = 30;
+  const CHORD_AREA_H    = 36;
   const SYSTEM_PAD_BOT  = 30;
-  const SYSTEM_ROW_H    = CHORD_AREA_H + STAFF_H + SYSTEM_PAD_BOT; // 92 px
+  const SYSTEM_ROW_H    = CHORD_AREA_H + STAFF_H + SYSTEM_PAD_BOT; // 98 px
   const SECTION_LABEL_H = 20;
   const PAGE_W   = 760;
   const MARGIN_H = 36;
@@ -6863,7 +6880,7 @@ window.runCSMPNSelfTests = function(){
   // ── Render config snapshot (populated by getSnRenderSettings) ────────
   let _snCfg = {
     bgColor: '#ffffff', fgColor: '#111111', chordColor: '#0044cc',
-    chordFontSize: 11.5, chordAnchor: 'middle',
+    chordFontSize: 14, chordAnchor: 'middle',
     showBarlines: true, strumMode: 'none', strumPattern: null,
     showStems: false, palmMute: false, keySig: null, swingFeel: 'none',
     slashChordFontFamily: 'Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif',
@@ -6888,7 +6905,7 @@ window.runCSMPNSelfTests = function(){
       bgColor:       fs.bgColor    || '#ffffff',
       fgColor:       fs.fgColor    || '#111111',
       chordColor:    fs.chordColor || '#0044cc',
-      chordFontSize: Math.round(11.5 * scale * 10) / 10,
+      chordFontSize: Math.round(14 * scale * 10) / 10,
       chordAnchor:   (fs.chordAlign === 'center') ? 'middle' : 'start',
       showBarlines:  (fs.barLines !== 'hidden'),
       strumMode, strumPattern,
@@ -6961,13 +6978,15 @@ window.runCSMPNSelfTests = function(){
   function staffLines(x, y, w){
     let s = '';
     for (let i = 0; i < STAFF_LINES; i++){
-      s += svgLine(x, y + i * LINE_GAP, x + w, y + i * LINE_GAP, _snCfg.fgColor, 0.75);
+      s += svgLine(x, y + i * LINE_GAP, x + w, y + i * LINE_GAP, _snCfg.fgColor, 1.0);
     }
     return s;
   }
 
   function slashHead(cx, cy){
-    const w = 7.5, h = 4.5, lean = 4;
+    // Slightly larger parallelogram for stage readability — matches professional
+    // Real Book / Aboio style with a pronounced rightward lean.
+    const w = 9, h = 5.5, lean = 5;
     const pts = [
       `${cx - w + lean},${cy - h}`,
       `${cx + w + lean},${cy - h}`,
@@ -6979,13 +6998,13 @@ window.runCSMPNSelfTests = function(){
 
   // Rhythmic stem: vertical line above slash head (quarter-note look)
   function stemSvg(cx, cy){
-    const x = cx + 4.5;
-    return `<line x1="${x}" y1="${cy - 6}" x2="${x}" y2="${cy - 22}" stroke="${_snCfg.fgColor}" stroke-width="1.3"/>`;
+    const x = cx + 5.5;
+    return `<line x1="${x}" y1="${cy - 7}" x2="${x}" y2="${cy - 26}" stroke="${_snCfg.fgColor}" stroke-width="1.5"/>`;
   }
 
   // Augmentation dot for compound-meter slashes (e.g. 6/8 → dotted-quarter slashes)
   function augDot(cx, cy){
-    return `<circle cx="${cx + 13}" cy="${cy - 2}" r="2.2" fill="${_snCfg.fgColor}"/>`;
+    return `<circle cx="${cx + 15}" cy="${cy - 2}" r="2.5" fill="${_snCfg.fgColor}"/>`;
   }
 
   // Returns the strum character for a given beat (null = no arrow)
