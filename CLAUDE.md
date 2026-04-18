@@ -25,19 +25,21 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-04-10)
-- **51 tests passing** (`npm run test:all`) — 4 VexFlow + 47 parser/format fixture tests
-- **Two active app tracks:** `index.html` (7,299-line monolith) + `app.html` React/TypeScript
-- **App.tsx:** 1,145 lines (down from 1,598 after remote merge) — OSMD renderer, export actions, and utilities extracted to hooks/utils
+## Current State (2026-04-18)
+- **168 tests passing** (`npm run test:all`) — 4 VexFlow + 164 parser/exporter tests
+- **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
+- **`app.html` + `src/`** — React/TypeScript track (secondary); `src/export/` and `src/parsers/` used for unit tests only
+- **App.tsx:** 1,145 lines — OSMD renderer, export actions, and utilities extracted to hooks/utils
 - **0 type errors**
 
 ## Architectural Principles (enforce on every change)
 1. `src/ingest/ugProPdfImporter.ts` is the **canonical** PDF importer — `ug-pro-importer.html` must not diverge from it
-2. Never add features to both tracks simultaneously — pick canonical location, update one
+2. **`index.html` is the canonical location for all slash notation + MusicXML export work** — the developer uses iOS/iPad only; never add app features to the React track in parallel
 3. All dynamic HTML in `index.html` must pass through `escapeHtml()` — no raw interpolation
 4. Tests before features — every new exported function gets a corresponding test
-5. iOS Safari print-to-PDF is the **primary export path** — optimize for it, not canvas rasterization
+5. iOS Safari is the **primary browser** — always verify `.xml` (not `.musicxml`) download extension and `text/xml` MIME type so iOS opens the file in notation apps
 6. Lazy-load heavy CDN libs (abcjs, VexFlow) — they cost ~180 KB+ on initial iOS parse
+7. **Before every commit run all four:** `npm run lint` · `npm run format:check` · `npm run build` · `npm run test:all` — GitHub Actions is the only CI console (no local terminal on iOS)
 
 ## Quick Reference: Key Files
 | File | Purpose |
@@ -119,6 +121,7 @@ The engine reads the current CSMPN source from `sourceEl.value` (already transpo
 | **Key sig** | `snKeySig` | Auto (from chart key) or manual override (C through G♭) |
 | **↓ SVG** | `btnSnSvg` | Downloads the SVG file |
 | **↓ PNG** | `btnSnPng` | Renders to canvas @ 2× and downloads PNG |
+| **↓ MusicXML** | `btnSnXml` | Exports MusicXML 4.0 (.xml) with chords + section rehearsal marks |
 | **⎙ Print** | `btnSnPrint` | Opens print-ready popup with auto-print |
 
 ---
@@ -134,7 +137,7 @@ All visual settings from the Fake Book Style panel carry through to slash notati
 | **Chord Color** | Fill color for all chord symbols above staff |
 | **Background Color** | SVG `<rect>` fill; also used in PNG/print background |
 | **Foreground Color** | Staff lines, barlines, clef, time sig, section labels, strum arrows |
-| **Font Size** (M/S/XS) | Scales chord font: M=11.5px, S=9.8px, XS=8.3px |
+| **Font Size** (M/S/XS) | Scales chord font: M=14px, S≈11.9px, XS≈10.1px (updated PR #136 for stage readability) |
 | **Chord Alignment** | Center = `text-anchor="middle"`, Left = `text-anchor="start"` |
 | **Music/Chord Font Pack** | Sets Fake Book chord stack + Slash chord + Slash notation/staff text families together |
 | **Bar Lines** | Hidden = suppress regular single barlines (repeat/double/final always shown) |
@@ -292,13 +295,26 @@ Matching is case-insensitive and partial (so `chorus` matches `Chorus 1`, `Pre-C
 
 ## Export
 
-| Format | Implementation |
-|---|---|
-| **SVG** | `XMLSerializer.serializeToString(svg)` → Blob → `<a download>` |
-| **PNG** | Canvas 2× scale, `ctx.drawImage` from SVG Blob URL → `canvas.toDataURL('image/png')` |
-| **Print** | `window.open` popup with `svg.outerHTML` + `window.print()` on load |
+| Format | Function | Implementation |
+|---|---|---|
+| **SVG** | `downloadSvg()` | `XMLSerializer.serializeToString(svg)` → Blob → `<a download>` |
+| **PNG** | `downloadPng()` | Canvas 2× scale, SVG data-URL → `canvas.toDataURL('image/png')` (data-URL avoids iOS canvas taint) |
+| **MusicXML** | `downloadMusicXml()` → `buildMusicXml()` | MusicXML 4.0 Partwise; `.xml` + `text/xml` MIME type (iOS Safari won't open `.musicxml`) |
+| **Print** | `printSlashNotation()` | `window.open` popup with `svg.outerHTML` + `window.print()` on load |
 
 All exports use `_snCfg.bgColor` as the background and `safeFilename(doc.title)` for the file name.
+
+### MusicXML Export Detail (`buildMusicXml()`)
+
+Generates a complete MusicXML 4.0 score from the current CSMPN source:
+
+1. Reads `sourceEl.value` (already transposed), runs `parseCSMPN()` + `buildSnSections()`
+2. First measure: `<attributes>` (key sig via `keySigFromKey()`, time sig, treble clef, slash measure-style) + optional tempo `<direction>`
+3. **Each section's first measure:** `<direction placement="above"><rehearsal enclosure="none">Label</rehearsal></direction>` — preserves song structure in notation software (MuseScore, Dorico, Sibelius)
+4. Each measure: `<harmony>` elements (one per chord, with root/kind/bass) then slash `<note>` elements (one per visual beat)
+5. Navigation labels (D.C., D.S., Fine, Coda) detected via `NAV_RE` — suppressed from rehearsal marks
+6. Chord qualities mapped via `chordKind()` — covers all MusicXML 4.0 kinds including half-diminished, augmented-seventh, suspended, major-sixth, and all minor/major-7th extended forms
+7. Download as `{title}.xml` with `text/xml;charset=utf-8`
 
 ---
 
@@ -321,13 +337,33 @@ All exports use `_snCfg.bgColor` as the background and `safeFilename(doc.title)`
 | Hammer-on / Pull-off slurs | Requires note-pair coordinates — needs richer data model |
 | VexFlow integration | Full renderer rewrite; deferred pending need |
 | Dedicated TXT importer page | `public/ug-txt-importer.html` — separate deliverable |
-| CI/CD pipeline | No `.github/workflows` yet — add GitHub Actions for lint/test/build |
+| ~~CI/CD pipeline~~ | ✅ Done — `.github/workflows/ci.yml` (Sprint 1) |
 | ~~Importer fixture tests~~ | ✅ Done — `tests/sniffFormat.test.ts`, `tests/chordProParser.test.ts`, `tests/csmpnParser.test.ts` (2026-04-09) |
+| ~~MusicXML export~~ | ✅ Done — `btnSnXml` + `buildMusicXml()` in `index.html` IIFE (2026-04-16 PRs #135/#136) |
+| ~~MusicXML section rehearsal marks~~ | ✅ Done — `buildMusicXml()` per-section loop + `<rehearsal>` directions (2026-04-18 PR #137) |
 
 ## SPRINT 4 PROGRESS NOTES
 
-
 **2026-04-10 (CI stabilization update):**
 - Resolved 4 failing CI checks reported on PR #120 (`Lint & Format` + `Type-check & Build` on both push and pull_request).
-- Fixed `react-hooks/exhaustive-deps` warnings in `src/App.tsx` by adding missing `useCallback` dependencies (`setExportFeedback`, `clearExportState`, `clearOsmd`, `resetAutoFit`, `setIsMxl`, `setLoadedXmlText`).
+- Fixed `react-hooks/exhaustive-deps` warnings in `src/App.tsx`.
 - Verified locally: `npm run lint`, `npm run format:check`, `npm run build`, and `npm run test:all` all pass.
+
+## SLASH NOTATION RECENT CHANGES (2026-04-16 to 2026-04-18)
+
+**PR #135 — `fix(musicxml): correct chordKind mapping and export extension for iOS`**
+- Added `chordKind()` function covering full MusicXML 4.0 quality set (letter-o dim, aug7, maj7 variants, minus-style minor, major-sixth, 7♯5)
+- Changed MusicXML download to `.xml` + `text/xml` MIME type — iOS Safari won't open `.musicxml`
+- Added `btnSnXml` (↓ MusicXML) export button to the slash notation panel
+- Added `buildMusicXml()` and `downloadMusicXml()` functions to the slash notation IIFE
+
+**PR #136 — `fix(musicxml): full kind round-trip + stage-ready slash notation visuals`**
+- Extended `harmonyToChord()` with full MusicXML 4.0 → CSMPN reverse quality map (fixes round-trip export)
+- Stage-readability visual upgrades: notehead w→9/h→5.5/lean→5, stem top cy-26, staff lines 1.0px, chord font 14px base, `CHORD_AREA_H` 36px
+
+**PR #137 — `feat: MusicXML export with section rehearsal marks`**
+- `buildMusicXml()` refactored from flat `allBars[]` loop to per-section iteration
+- First measure of each named CSMPN section emits `<direction placement="above"><rehearsal enclosure="none">Label</rehearsal></direction>`
+- Navigation labels (D.C., D.S., Fine, Coda) suppressed from rehearsal marks via `NAV_RE`
+- `src/export/musicXmlExporter.ts` — standalone TypeScript module (test coverage only; not imported by the app)
+- `tests/musicXmlExport.test.ts` — 43 unit tests; total now 168 (4 VexFlow + 164 parser/exporter)
