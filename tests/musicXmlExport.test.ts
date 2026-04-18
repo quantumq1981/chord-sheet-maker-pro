@@ -137,22 +137,22 @@ test('generateMusicXml: includeTempo:false suppresses tempo direction', () => {
 test('generateMusicXml: single section produces one rehearsal mark', () => {
   const doc = parseCsmpn('[Intro]\n| G | C |\n');
   const xml = generateMusicXml(doc);
-  assert.ok(xml.includes('<rehearsal enclosure="none">Intro</rehearsal>'));
+  assert.ok(xml.includes('<rehearsal enclosure="none" default-y="40">Intro</rehearsal>'));
   assert.equal(countOccurrences(xml, '<rehearsal'), 1);
 });
 
 test('generateMusicXml: rehearsal mark on first bar of each section', () => {
   const doc = parseCsmpn('[Intro]\n| G | C |\n[Verse]\n| D | G |\n');
   const xml = generateMusicXml(doc);
-  assert.ok(xml.includes('<rehearsal enclosure="none">Intro</rehearsal>'));
-  assert.ok(xml.includes('<rehearsal enclosure="none">Verse</rehearsal>'));
+  assert.ok(xml.includes('<rehearsal enclosure="none" default-y="40">Intro</rehearsal>'));
+  assert.ok(xml.includes('<rehearsal enclosure="none" default-y="40">Verse</rehearsal>'));
   assert.equal(countOccurrences(xml, '<rehearsal'), 2);
 });
 
 test('generateMusicXml: fakebook-style section headers produce rehearsal marks', () => {
   const doc = parseCsmpn('= Chorus\n| Am | F | C | G |\n');
   const xml = generateMusicXml(doc);
-  assert.ok(xml.includes('<rehearsal enclosure="none">Chorus</rehearsal>'));
+  assert.ok(xml.includes('<rehearsal enclosure="none" default-y="40">Chorus</rehearsal>'));
 });
 
 test('generateMusicXml: rehearsal mark placed after <attributes> in measure 1', () => {
@@ -174,7 +174,7 @@ test('generateMusicXml: rehearsal mark placed before <harmony> in measure 1', ()
 test('generateMusicXml: useBoxedRehearsal emits enclosure="square"', () => {
   const doc = parseCsmpn('[A]\n| G | C |\n');
   const xml = generateMusicXml(doc, { useBoxedRehearsal: true });
-  assert.ok(xml.includes('<rehearsal enclosure="square">A</rehearsal>'));
+  assert.ok(xml.includes('<rehearsal enclosure="square" default-y="40">A</rehearsal>'));
 });
 
 test('generateMusicXml: navigation text (D.C.) does not produce rehearsal mark', () => {

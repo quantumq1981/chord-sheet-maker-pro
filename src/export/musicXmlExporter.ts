@@ -269,7 +269,7 @@ function buildRehearsalDirection(label: string, boxed: boolean): string {
   return `
       <direction placement="above">
         <direction-type>
-          <rehearsal enclosure="${enclosure}">${escapeXml(label)}</rehearsal>
+          <rehearsal enclosure="${enclosure}" default-y="40">${escapeXml(label)}</rehearsal>
         </direction-type>
       </direction>`;
 }
