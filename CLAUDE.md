@@ -25,11 +25,12 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-04-10)
-- **51 tests passing** (`npm run test:all`) — 4 VexFlow + 47 parser/format fixture tests
-- **Two active app tracks:** `index.html` (7,299-line monolith) + `app.html` React/TypeScript
-- **App.tsx:** 1,145 lines (down from 1,598 after remote merge) — OSMD renderer, export actions, and utilities extracted to hooks/utils
+## Current State (2026-04-18)
+- **121 tests passing** (`npm run test:all`) — parser, format, slash-feature, and sniff-format tests
+- **Two active app tracks:** `index.html` (7,725-line monolith) + `app.html` React/TypeScript
+- **App.tsx:** 1,145 lines — OSMD renderer, export actions, and utilities extracted to hooks/utils
 - **0 type errors**
+- **iOS-only usage:** All features must work in Mobile Safari (iPhone/iPad). Primary export path is iOS Safari print-to-PDF.
 
 ## Architectural Principles (enforce on every change)
 1. `src/ingest/ugProPdfImporter.ts` is the **canonical** PDF importer — `ug-pro-importer.html` must not diverge from it
@@ -134,7 +135,7 @@ All visual settings from the Fake Book Style panel carry through to slash notati
 | **Chord Color** | Fill color for all chord symbols above staff |
 | **Background Color** | SVG `<rect>` fill; also used in PNG/print background |
 | **Foreground Color** | Staff lines, barlines, clef, time sig, section labels, strum arrows |
-| **Font Size** (M/S/XS) | Scales chord font: M=11.5px, S=9.8px, XS=8.3px |
+| **Font Size** (M/S/XS) | Scales SN chord font: M=14px, S≈11.9px, XS≈10.1px |
 | **Chord Alignment** | Center = `text-anchor="middle"`, Left = `text-anchor="start"` |
 | **Music/Chord Font Pack** | Sets Fake Book chord stack + Slash chord + Slash notation/staff text families together |
 | **Bar Lines** | Hidden = suppress regular single barlines (repeat/double/final always shown) |
@@ -208,15 +209,15 @@ Slash chords (for example `D/F#`) can render with a diagonal slash when compatib
 
 ### Rhythmic Stems
 
-When **Stems** is checked, a vertical line is drawn above each slash notehead (`cx+4.5, cy-6` to `cy-22`), giving a quarter-note appearance common in professional guitar rhythm charts.
+When **Stems** is checked, a vertical line is drawn above each slash notehead (`cx+5.5, cy-7` to `cy-26`, stroke-width 1.5), giving a quarter-note appearance common in professional guitar rhythm charts.
 
 ---
 
 ### Palm Muting (P.M.)
 
 When **P.M.** is checked, every staff row renders:
-- `P.M.` italic text at the top of the chord area (just below the system top)
-- A dashed line (`stroke-dasharray="3,2"`) extending across the full row width
+- `P.M.` 10px bold italic text at the top of the chord area (just below the system top)
+- A dashed line (`stroke-dasharray="4,2"`, stroke-width 1px) extending across the full row width
 
 This indicates palm muting for the entire chart. For section-specific P.M., mark the section label accordingly in the source and toggle the control manually.
 
@@ -242,7 +243,7 @@ Append `!` or `^` to any chord token in the CSMPN source to mark it as accented.
 
 **Example:** `G! Am! F C` → G and Am get a `>` accent symbol above their chord label.
 
-The accent mark is drawn at `staffY - 8 - chordFontSize - 2` (above the chord symbol, auto-adjusting for font size). The chord symbol itself renders normally with the `!`/`^` stripped.
+The accent mark is drawn at `staffY - 10 - chordFontSize - 2` (above the chord symbol, auto-adjusting for font size). The chord symbol baseline is at `staffY - 10`. The chord symbol itself renders normally with the `!`/`^` stripped.
 
 ---
 
@@ -255,7 +256,7 @@ Navigation text is detected and rendered at the **bottom-right of the last measu
 1. **Section label is a nav marker** (e.g., `= D.C. al Fine` with no following bars) — attached to the previous section's last row
 2. **Section label contains nav text** with its own bars — nav text is extracted and shown at the last row of that section
 
-**Render position:** `text-anchor="end"` at `x = staffX + totalW`, `y = staffY + STAFF_H + 16`
+**Render position:** `text-anchor="end"` at `x = staffX + totalW`, `y = staffY + STAFF_H + 18`, font-size 12px bold italic.
 
 ---
 
@@ -299,6 +300,30 @@ Matching is case-insensitive and partial (so `chorus` matches `Chorus 1`, `Pre-C
 | **Print** | `window.open` popup with `svg.outerHTML` + `window.print()` on load |
 
 All exports use `_snCfg.bgColor` as the background and `safeFilename(doc.title)` for the file name.
+
+---
+
+## Layout Constants (IIFE top — update here when changing geometry)
+
+| Constant | Value | Notes |
+|---|---|---|
+| `STAFF_LINES` | 5 | |
+| `LINE_GAP` | 8px | Space between staff lines |
+| `STAFF_H` | 32px | `(STAFF_LINES-1) * LINE_GAP` |
+| `CHORD_AREA_H` | 36px | Space above staff for chord labels |
+| `SYSTEM_PAD_BOT` | 36px | Space below staff between systems |
+| `SYSTEM_ROW_H` | 104px | `CHORD_AREA_H + STAFF_H + SYSTEM_PAD_BOT` |
+| `SECTION_LABEL_H` | 20px | Extra height when a section label is present |
+| `PAGE_W` | 760px | |
+| `MARGIN_H` | 36px | Left/right margin |
+| `CLEF_W` | 46px | Width reserved for treble clef + key sig |
+| `USABLE_W` | 642px | `PAGE_W - 2*MARGIN_H - CLEF_W` |
+
+**Slash notehead** (`slashHead`): parallelogram w=9, h=5.5, lean=5, filled with `fgColor`.  
+**Stem** (`stemSvg`): x=cx+5.5, y1=cy-7, y2=cy-26, stroke-width=1.5.  
+**Staff lines**: stroke-width=1.0px.  
+**Chord baseline**: `staffY - 10`.  
+**Opening barline**: stroke-width=2.
 
 ---
 
