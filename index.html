@@ -6783,8 +6783,8 @@ window.runCSMPNSelfTests = function(){
   const LINE_GAP        = 8;
   const STAFF_H         = (STAFF_LINES - 1) * LINE_GAP; // 32 px
   const CHORD_AREA_H    = 36;
-  const SYSTEM_PAD_BOT  = 30;
-  const SYSTEM_ROW_H    = CHORD_AREA_H + STAFF_H + SYSTEM_PAD_BOT; // 98 px
+  const SYSTEM_PAD_BOT  = 36;
+  const SYSTEM_ROW_H    = CHORD_AREA_H + STAFF_H + SYSTEM_PAD_BOT; // 104 px
   const SECTION_LABEL_H = 20;
   const PAGE_W   = 760;
   const MARGIN_H = 36;
@@ -7191,20 +7191,20 @@ window.runCSMPNSelfTests = function(){
       svg += svgLine(bx, bBot, bx, by, fg, 1.2);                                               // left drop
       svg += svgLine(bx, by, bx + totalW + (ending === '1' ? 4 : 0), by, fg, 1.2);             // top line
       if (ending !== '1') svg += svgLine(bx + totalW, by, bx + totalW, bBot, fg, 1.2);         // right drop (closed for 2nd)
-      svg += `<text x="${bx+5}" y="${by+10}" font-size="9" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${ending}.</text>`;
+      svg += `<text x="${bx+5}" y="${by+11}" font-size="11" font-weight="bold" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${ending}.</text>`;
     }
 
     // ── Section label / rehearsal mark ───────────────────
     if (sectionLabel){
       const rmLetter = rehearsalMarkLetter(sectionLabel);
       if (rmLetter){
-        // Boxed rehearsal mark (A, B, C…) — standard lead-sheet convention
+        // Boxed rehearsal mark (A, B, C…) — larger box for stage readability
         const rmX = MARGIN_H;
-        const rmY = systemY + 2;
-        svg += `<rect x="${rmX}" y="${rmY}" width="15" height="15" fill="none" stroke="${fg}" stroke-width="1.5"/>`;
-        svg += `<text x="${rmX + 7.5}" y="${rmY + 11}" font-size="10" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(rmLetter)}</text>`;
+        const rmY = systemY + 1;
+        svg += `<rect x="${rmX}" y="${rmY}" width="18" height="18" fill="none" stroke="${fg}" stroke-width="2"/>`;
+        svg += `<text x="${rmX + 9}" y="${rmY + 13}" font-size="12" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(rmLetter)}</text>`;
       } else {
-        svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 4}" font-size="11.5" font-weight="bold" font-style="italic" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(sectionLabel)}</text>`;
+        svg += `<text x="${MARGIN_H}" y="${systemY + SECTION_LABEL_H - 3}" font-size="13" font-weight="bold" font-style="italic" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${escapeHtml(sectionLabel)}</text>`;
       }
     }
 
@@ -7230,13 +7230,13 @@ window.runCSMPNSelfTests = function(){
     // ── Palm muting (P.M. ------) ─────────────────────────
     if (_snCfg.palmMute){
       const pmY = systemY + (hasLabel ? SECTION_LABEL_H : 0) + 8;
-      svg += `<text x="${staffX+2}" y="${pmY+8}" font-size="8" font-style="italic" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">P.M.</text>`;
-      svg += `<line x1="${staffX+25}" y1="${pmY+6}" x2="${staffX+totalW-4}" y2="${pmY+6}" stroke="${fg}" stroke-width="0.8" stroke-dasharray="3,2"/>`;
+      svg += `<text x="${staffX+2}" y="${pmY+9}" font-size="10" font-style="italic" font-weight="bold" fill="${fg}" font-family="${escapeHtml(_snCfg.notationFontFamily)}">P.M.</text>`;
+      svg += `<line x1="${staffX+30}" y1="${pmY+6}" x2="${staffX+totalW-4}" y2="${pmY+6}" stroke="${fg}" stroke-width="1" stroke-dasharray="4,2"/>`;
     }
 
     // ── Staff lines + opening barline ─────────────────────
     svg += staffLines(staffX, staffY, totalW);
-    svg += svgLine(staffX, staffY, staffX, staffY + STAFF_H, fg, 1.5);
+    svg += svgLine(staffX, staffY, staffX, staffY + STAFF_H, fg, 2);
 
     // ── Measures ──────────────────────────────────────────
     for (let mi = 0; mi < measures.length; mi++){
@@ -7273,7 +7273,7 @@ window.runCSMPNSelfTests = function(){
           svg += `<text x="${cx}" y="${staffY - 6}" font-size="10" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${multiMatch}</text>`;
         } else {
           // Single-bar simile: plain % text
-          svg += `<text x="${cx}" y="${staffY-6}" font-size="15" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">%</text>`;
+          svg += `<text x="${cx}" y="${staffY-6}" font-size="18" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">%</text>`;
         }
       } else {
         const chords = m.chords || [];
@@ -7282,7 +7282,7 @@ window.runCSMPNSelfTests = function(){
           const art   = chord.articulation || null;
           const txt   = chord.text || '';
           const cx    = beatX(mX, Math.floor(ci * bpm / chords.length));
-          const ay    = staffY - 8 - _snCfg.chordFontSize - 2; // y above chord symbol
+          const ay    = staffY - 10 - _snCfg.chordFontSize - 2; // y above chord symbol
           // Articulation marks above chord symbol
           if (art === 'accent'){
             svg += `<text x="${cx}" y="${ay}" font-size="10" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">&gt;</text>`;
@@ -7294,7 +7294,7 @@ window.runCSMPNSelfTests = function(){
             svg += `<line x1="${cx - 6}" y1="${ay}" x2="${cx + 6}" y2="${ay}" stroke="${_snCfg.chordColor}" stroke-width="1.5"/>`;
           }
           const featureAttr = chord.fontFeatureSettings ? ` font-feature-settings="${escapeHtml(chord.fontFeatureSettings)}"` : '';
-          svg += `<text class="chord-symbol" x="${cx}" y="${staffY-8}" font-size="${_snCfg.chordFontSize}" font-family="${escapeHtml(_snCfg.slashChordFontFamily)}" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}"${featureAttr}>${escapeHtml(txt)}</text>`;
+          svg += `<text class="chord-symbol" x="${cx}" y="${staffY-10}" font-size="${_snCfg.chordFontSize}" font-family="${escapeHtml(_snCfg.slashChordFontFamily)}" font-weight="bold" fill="${_snCfg.chordColor}" text-anchor="${_snCfg.chordAnchor}"${featureAttr}>${escapeHtml(txt)}</text>`;
         }
       }
 
@@ -7306,7 +7306,7 @@ window.runCSMPNSelfTests = function(){
 
     // ── Navigation text (D.C. al Fine, Coda, etc.) ───────
     if (navText){
-      svg += `<text x="${staffX + totalW}" y="${staffY + STAFF_H + 16}" font-size="10" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family="'Noto Serif',${escapeHtml(_snCfg.notationFontFamily)}">${formatNavText(navText)}</text>`;
+      svg += `<text x="${staffX + totalW}" y="${staffY + STAFF_H + 18}" font-size="12" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family="'Noto Serif',${escapeHtml(_snCfg.notationFontFamily)}">${formatNavText(navText)}</text>`;
     }
 
     svg += '</g>';
