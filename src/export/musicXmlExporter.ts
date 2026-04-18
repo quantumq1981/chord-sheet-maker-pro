@@ -36,20 +36,33 @@ const NAV_RE = /\b(D\.C\.|D\.S\.|FINE|CODA|AL FINE|AL CODA|DAL SEGNO|DA CAPO|TO 
 
 /** Key → fifths offset (positive = sharps, negative = flats). */
 const KEY_SIG_FIFTHS: Record<string, number> = {
-  C: 0, Am: 0,
-  G: 1, Em: 1,
-  D: 2, Bm: 2,
-  A: 3, 'F#m': 3,
-  E: 4, 'C#m': 4,
-  B: 5, 'G#m': 5,
-  'F#': 6, 'D#m': 6,
+  C: 0,
+  Am: 0,
+  G: 1,
+  Em: 1,
+  D: 2,
+  Bm: 2,
+  A: 3,
+  'F#m': 3,
+  E: 4,
+  'C#m': 4,
+  B: 5,
+  'G#m': 5,
+  'F#': 6,
+  'D#m': 6,
   'C#': 7,
-  F: -1, Dm: -1,
-  Bb: -2, Gm: -2,
-  Eb: -3, Cm: -3,
-  Ab: -4, Fm: -4,
-  Db: -5, Bbm: -5,
-  Gb: -6, Ebm: -6,
+  F: -1,
+  Dm: -1,
+  Bb: -2,
+  Gm: -2,
+  Eb: -3,
+  Cm: -3,
+  Ab: -4,
+  Fm: -4,
+  Db: -5,
+  Bbm: -5,
+  Gb: -6,
+  Ebm: -6,
   Cb: -7,
 };
 
@@ -113,12 +126,16 @@ function chordKindFromQuality(quality: string): string {
   const q = quality.toLowerCase();
   if (q.startsWith('ø') || q === 'm7♭5' || q === 'm7b5') return 'half-diminished';
   if (q.startsWith('maj') || q.startsWith('ma') || q.startsWith('δ')) return 'major-seventh';
-  if (q.startsWith('°7') || q.startsWith('dim7') || q === 'o7' || q.startsWith('o7')) return 'diminished-seventh';
-  if (q.startsWith('°') || q.startsWith('dim') || q === 'o' || q.startsWith('o ')) return 'diminished';
-  if (q.startsWith('+7') || q.startsWith('aug7') || q.startsWith('7#5') || q.startsWith('7♯5')) return 'augmented-seventh';
+  if (q.startsWith('°7') || q.startsWith('dim7') || q === 'o7' || q.startsWith('o7'))
+    return 'diminished-seventh';
+  if (q.startsWith('°') || q.startsWith('dim') || q === 'o' || q.startsWith('o '))
+    return 'diminished';
+  if (q.startsWith('+7') || q.startsWith('aug7') || q.startsWith('7#5') || q.startsWith('7♯5'))
+    return 'augmented-seventh';
   if (q === '+' || q.startsWith('aug')) return 'augmented';
   if (q === 'm' || q === 'min' || q === 'mi' || q === '−') return 'minor';
-  if (q.startsWith('m7') || q.startsWith('min7') || q.startsWith('mi7') || q.startsWith('−7')) return 'minor-seventh';
+  if (q.startsWith('m7') || q.startsWith('min7') || q.startsWith('mi7') || q.startsWith('−7'))
+    return 'minor-seventh';
   if (q.startsWith('m') && /\d/.test(q)) return 'minor-seventh';
   if (q.startsWith('−') && /\d/.test(q)) return 'minor-seventh';
   if (q === '6' || q === '6/9' || q.startsWith('6/9')) return 'major-sixth';
@@ -143,7 +160,8 @@ function parseChordForXml(text: string): ParsedChord | null {
 
   const rootStep = rootMatch[1];
   const accStr = rootMatch[2] ?? '';
-  const rootAlter = accStr === '♭' || accStr === 'b' ? -1 : accStr === '♯' || accStr === '#' ? 1 : 0;
+  const rootAlter =
+    accStr === '♭' || accStr === 'b' ? -1 : accStr === '♯' || accStr === '#' ? 1 : 0;
 
   const afterRoot = stripped.slice(rootMatch[0].length);
   // Bass note follows the last '/'
@@ -158,7 +176,12 @@ function parseChordForXml(text: string): ParsedChord | null {
     if (bassMatch) {
       bassStep = bassMatch[1];
       const bassAccStr = bassMatch[2] ?? '';
-      bassAlter = bassAccStr === '♭' || bassAccStr === 'b' ? -1 : bassAccStr === '♯' || bassAccStr === '#' ? 1 : 0;
+      bassAlter =
+        bassAccStr === '♭' || bassAccStr === 'b'
+          ? -1
+          : bassAccStr === '♯' || bassAccStr === '#'
+            ? 1
+            : 0;
     }
   }
 
@@ -218,7 +241,7 @@ function buildFirstMeasureAttributes(
   beats: string,
   beatType: string,
   divisions: number,
-  fifths: number,
+  fifths: number
 ): string {
   return `
       <attributes>
@@ -330,7 +353,7 @@ export function generateMusicXml(doc: ChordChartDocument, options?: MusicXmlOpti
           const parsed = parseChordForXml(clean);
           if (!parsed) continue;
           const offset = Math.round(
-            (ci / Math.max(bar.chords.length, 1)) * parseInt(beats, 10) * divisions,
+            (ci / Math.max(bar.chords.length, 1)) * parseInt(beats, 10) * divisions
           );
           xml += buildHarmonyElement(parsed, offset);
         }
