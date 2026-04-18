@@ -15,7 +15,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,mts,mjs}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,mts,mjs}\"",
     "test": "node --test tests/vexflowNotation.test.mjs",
-    "test:parsers": "node --import tsx/esm --test tests/sniffFormat.test.ts tests/chordProParser.test.ts tests/csmpnParser.test.ts tests/slashFeatures.test.ts",
+    "test:parsers": "node --import tsx/esm --test tests/sniffFormat.test.ts tests/chordProParser.test.ts tests/csmpnParser.test.ts tests/slashFeatures.test.ts tests/musicXmlExport.test.ts",
     "test:all": "npm test && npm run test:parsers"
   },
   "dependencies": {
