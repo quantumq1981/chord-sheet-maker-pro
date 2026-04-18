@@ -7461,6 +7461,8 @@ window.runCSMPNSelfTests = function(){
   }
 
   // Build a MusicXML document from the current parsed slash notation data.
+  // Section markers (= Intro, = Verse, etc.) are emitted as <rehearsal>
+  // direction elements above the first measure of each section.
   function buildMusicXml(){
     const original = sourceEl ? sourceEl.value || '' : '';
     const text = (typeof fbSettings !== 'undefined' && fbSettings.includeLyrics === false)
@@ -7481,22 +7483,23 @@ window.runCSMPNSelfTests = function(){
     const beatType = timeParts[2];
     const divisions = 1; // 1 beat = 1 division (quarter-note level)
 
-    // Flatten all bars across sections
-    const allBars = [];
-    for (const sec of sections){
-      for (const bar of sec.bars){
-        const chords = chordsFromToken(bar.token);
-        allBars.push({ chords: chords || [], isSimile: chords === null, token: bar.token });
-      }
-    }
-
     let measureXml = '';
-    for (let mi = 0; mi < allBars.length; mi++){
-      const bar = allBars[mi];
-      const num = mi + 1;
-      let attrs = '';
-      if (mi === 0){
-        attrs = `
+    let measureIndex = 0;
+
+    for (const sec of sections){
+      const label = sec.label || '';
+      // Navigation markers (D.C., D.S., Fine, Coda) are not rehearsal marks
+      const isNavLabel = NAV_RE.test(label);
+
+      for (let bi = 0; bi < sec.bars.length; bi++){
+        const bar    = sec.bars[bi];
+        const chords = chordsFromToken(bar.token);
+        const num    = ++measureIndex;
+        let attrs = '';
+
+        // ── 1. <attributes> (first measure only) ──────────────────────────
+        if (num === 1){
+          attrs = `
       <attributes>
         <divisions>${divisions}</divisions>
         <key><fifths>${keySig}</fifths><mode>major</mode></key>
@@ -7504,52 +7507,63 @@ window.runCSMPNSelfTests = function(){
         <clef><sign>G</sign><line>2</line></clef>
         <measure-style><slash type="start" use-stems="no"/></measure-style>
       </attributes>`;
-        if (doc.tempo){
-          attrs += `
+          if (doc.tempo){
+            attrs += `
       <direction placement="above">
         <direction-type><metronome parentheses="no">
           <beat-unit>quarter</beat-unit><per-minute>${escapeHtml(doc.tempo)}</per-minute>
         </metronome></direction-type>
         <sound tempo="${escapeHtml(doc.tempo)}"/>
       </direction>`;
+          }
         }
-      }
 
-      // Chord harmony elements
-      let harmonyXml = '';
-      const chords = bar.chords || [];
-      for (let ci = 0; ci < chords.length; ci++){
-        const ch = chords[ci];
-        if (!ch || !ch.text) continue;
-        // Parse root + quality from the display text
-        const chRoot  = ch.text.match(/^([A-G][♭♯]?)/);
-        if (!chRoot) continue;
-        const rootStep = chRoot[1].replace('♭','').replace('♯','');
-        const rootAlter = ch.text.startsWith(chRoot[1]) && chRoot[1].includes('♭') ? -1
-                        : ch.text.startsWith(chRoot[1]) && chRoot[1].includes('♯') ?  1 : 0;
-        const qualRaw  = ch.text.slice(chRoot[1].length).replace(/\/.*$/, '').trim();
-        const bassMatch= ch.text.match(/\/([A-G][♭♯]?)$/);
-        const bassStep = bassMatch ? bassMatch[1].replace(/[♭♯]/g,'') : '';
-        const bassAlter = bassMatch && bassMatch[1].includes('♭') ? -1
-                        : bassMatch && bassMatch[1].includes('♯') ?  1 : 0;
-        const alterTag = rootAlter !== 0 ? `<alter>${rootAlter}</alter>` : '';
-        const bassXml  = bassStep ? `<bass><bass-step>${escapeHtml(bassStep)}</bass-step>${bassAlter !== 0 ? `<bass-alter>${bassAlter}</bass-alter>` : ''}</bass>` : '';
-        const offset   = Math.round((ci / Math.max(chords.length, 1)) * parseInt(beats, 10) * divisions);
-        const offsetTag = offset > 0 ? `<offset>${offset}</offset>` : '';
-        harmonyXml += `
+        // ── 2. <direction> rehearsal mark (first bar of named section) ─────
+        let rehearsalXml = '';
+        if (bi === 0 && label && !isNavLabel){
+          rehearsalXml = `
+      <direction placement="above">
+        <direction-type>
+          <rehearsal enclosure="none">${escapeHtml(label)}</rehearsal>
+        </direction-type>
+      </direction>`;
+        }
+
+        // ── 3. <harmony> chord symbols ─────────────────────────────────────
+        let harmonyXml = '';
+        const chordList = chords || [];
+        for (let ci = 0; ci < chordList.length; ci++){
+          const ch = chordList[ci];
+          if (!ch || !ch.text) continue;
+          const chRoot  = ch.text.match(/^([A-G][♭♯]?)/);
+          if (!chRoot) continue;
+          const rootStep  = chRoot[1].replace('♭','').replace('♯','');
+          const rootAlter = ch.text.startsWith(chRoot[1]) && chRoot[1].includes('♭') ? -1
+                          : ch.text.startsWith(chRoot[1]) && chRoot[1].includes('♯') ?  1 : 0;
+          const qualRaw   = ch.text.slice(chRoot[1].length).replace(/\/.*$/, '').trim();
+          const bassMatch = ch.text.match(/\/([A-G][♭♯]?)$/);
+          const bassStep  = bassMatch ? bassMatch[1].replace(/[♭♯]/g,'') : '';
+          const bassAlter = bassMatch && bassMatch[1].includes('♭') ? -1
+                          : bassMatch && bassMatch[1].includes('♯') ?  1 : 0;
+          const alterTag  = rootAlter !== 0 ? `<alter>${rootAlter}</alter>` : '';
+          const bassXml   = bassStep ? `<bass><bass-step>${escapeHtml(bassStep)}</bass-step>${bassAlter !== 0 ? `<bass-alter>${bassAlter}</bass-alter>` : ''}</bass>` : '';
+          const offset    = Math.round((ci / Math.max(chordList.length, 1)) * parseInt(beats, 10) * divisions);
+          const offsetTag = offset > 0 ? `<offset>${offset}</offset>` : '';
+          harmonyXml += `
       <harmony>${offsetTag}<root><root-step>${escapeHtml(rootStep)}</root-step>${alterTag}</root><kind>${chordKind(qualRaw)}</kind>${bassXml}</harmony>`;
-      }
+        }
 
-      // One slash note per visual beat (whole-measure rest when 1 chord covers all)
-      let notesXml = '';
-      for (let b = 0; b < bpm; b++){
-        notesXml += `
+        // ── 4. <note> slash noteheads (one per visual beat) ────────────────
+        let notesXml = '';
+        for (let b = 0; b < bpm; b++){
+          notesXml += `
       <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divisions}</duration><type>quarter</type><notehead>slash</notehead></note>`;
-      }
+        }
 
-      measureXml += `
-    <measure number="${num}">${attrs}${harmonyXml}${notesXml}
+        measureXml += `
+    <measure number="${num}">${attrs}${rehearsalXml}${harmonyXml}${notesXml}
     </measure>`;
+      }
     }
 
     return `<?xml version="1.0" encoding="UTF-8"?>
