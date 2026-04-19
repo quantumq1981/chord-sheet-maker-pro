@@ -49,6 +49,12 @@
 | `app.html` + `src/` | React app — importers, OSMD notation, chord chart view |
 | `src/ingest/ugProPdfImporter.ts` | Canonical PDF importer (not the standalone HTML) |
 | `src/parsers/` | Zero-dependency TypeScript parsers (chordPro, csmpn, abc, gp, musicXml) |
+| `src/converters/types.ts` | All public types for the MusicXML→ChordPro converter |
+| `src/converters/chordExtractor.ts` | KIND_SUFFIX_MAP + harmony→chord text functions |
+| `src/converters/xmlParser.ts` | MusicXML DOM parsing (metadata, measures, lyrics, key, repeats) |
+| `src/converters/formatter.ts` | ChordPro rendering (grid, lyrics-inline, repeat unroll, section groups) |
+| `src/converters/pipeline.ts` | Orchestrator — `convertMusicXmlToChordPro`, `extractMusicXmlTextFromFile` |
+| `src/converters/musicXMLtochordpro.ts` | Barrel re-export (`export * from './pipeline'`) — preserves import paths |
 | `src/hooks/useOsmdRenderer.ts` | OSMD renderer state + effects extracted from App.tsx |
 | `src/hooks/useExportActions.ts` | All export callbacks + PDF/ChordPro state extracted from App.tsx |
 | `src/utils/osmdHelpers.ts` | Pure OSMD/SVG/canvas utilities extracted from App.tsx |
@@ -72,12 +78,12 @@
 | 3.1 | App.tsx decomposition → hooks + views | ✅ DONE — 1,145 lines (was 1,598 after merge); `useOsmdRenderer` + `useExportActions` + `osmdHelpers` + `appTypes` extracted |
 | 3.3 | React error boundaries (ImportErrorBoundary, SlashNotationBoundary) | ✅ DONE |
 
-## Next Immediate Actions (Sprint 5)
-```
-1. Split musicXMLtochordpro.ts (1,291 lines → 4 modules): xmlParser, chordExtractor, formatter, pipeline
-2. Unify ugProPdfImporter: standalone page → build artifact using src/ingest/ugProPdfImporter.ts
-3. Remaining index.html extractions (renderer, importPipeline, settings) — items 2.1D-F
-```
+## Sprint 5 — Converter Decomposition & Unification (In Progress)
+| # | Task | Status |
+|---|------|--------|
+| 5.1 | Split `musicXMLtochordpro.ts` (1,309 lines → 5 modules) | ✅ DONE — `types` · `chordExtractor` · `xmlParser` · `formatter` · `pipeline`; barrel re-export preserves all importers |
+| 5.2 | Unify `ug-pro-importer.html` → build artifact using `src/ingest/ugProPdfImporter.ts` | ⬜ TODO |
+| 5.3 | Remaining `index.html` extractions (renderer, importPipeline, settings) — items 2.1D–F | ⬜ TODO |
 
 ---
 
