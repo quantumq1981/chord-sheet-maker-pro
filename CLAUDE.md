@@ -25,7 +25,7 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-04-18)
+## Current State (2026-04-19)
 - **168 tests passing** (`npm run test:all`) — 4 VexFlow + 164 parser/exporter tests
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
 - **`app.html` + `src/`** — React/TypeScript track (secondary); `src/export/` and `src/parsers/` used for unit tests only
@@ -140,7 +140,7 @@ All visual settings from the Fake Book Style panel carry through to slash notati
 | **Foreground Color** | Staff lines, barlines, clef, time sig, section labels, strum arrows |
 | **Font Size** (M/S/XS) | Scales SN chord font: M=14px, S≈11.9px, XS≈10.1px (updated for stage readability) |
 | **Chord Alignment** | Center = `text-anchor="middle"`, Left = `text-anchor="start"` |
-| **Music/Chord Font Pack** | Sets Fake Book chord stack + Slash chord + Slash notation/staff text families together |
+| **Music/Chord Font Pack** | Sets Fake Book chord stack + Slash chord + Slash notation/staff text families together. For non-ASC packs, `--fb-chord-font` is wired to the Body/Chord Font selector so free font choices take effect. |
 | **Bar Lines** | Hidden = suppress regular single barlines (repeat/double/final always shown) |
 | **Maj7 / Minor / Dim / Half-dim style** | Applied via `parseChordToken()` in `chordsFromToken()` |
 
@@ -311,7 +311,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 
 1. Reads `sourceEl.value` (already transposed), runs `parseCSMPN()` + `buildSnSections()`
 2. First measure: `<attributes>` (key sig via `keySigFromKey()`, time sig, treble clef, slash measure-style) + optional tempo `<direction>`
-3. **Each section's first measure:** `<direction placement="above"><rehearsal enclosure="none">Label</rehearsal></direction>` — preserves song structure in notation software (MuseScore, Dorico, Sibelius)
+3. **Each section's first measure:** `<rehearsal>` direction — enclosure is `"square"` for `:` and `=` CSMPN markers (boxed rehearsal marks), `"none"` for `-` markers (plain text); `buildSnSections()` stores `markerType` for this purpose
 4. Each measure: `<harmony>` elements (one per chord, with root/kind/bass) then slash `<note>` elements (one per visual beat)
 5. Navigation labels (D.C., D.S., Fine, Coda) detected via `NAV_RE` — suppressed from rehearsal marks
 6. Chord qualities mapped via `chordKind()` — covers all MusicXML 4.0 kinds including half-diminished, augmented-seventh, suspended, major-sixth, and all minor/major-7th extended forms
@@ -366,6 +366,9 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 | ~~Importer fixture tests~~ | ✅ Done — `tests/sniffFormat.test.ts`, `tests/chordProParser.test.ts`, `tests/csmpnParser.test.ts` (2026-04-09) |
 | ~~MusicXML export~~ | ✅ Done — `btnSnXml` + `buildMusicXml()` in `index.html` IIFE (2026-04-16 PRs #135/#136) |
 | ~~MusicXML section rehearsal marks~~ | ✅ Done — `buildMusicXml()` per-section loop + `<rehearsal>` directions (2026-04-18 PR #137) |
+| ~~MusicXML key mode (major/minor)~~ | ✅ Done — `buildMusicXml()` detects minor keys; emits `<mode>minor</mode>` correctly (2026-04-19 PR #143) |
+| ~~MusicXML rehearsal enclosure~~ | ✅ Done — `buildSnSections()` stores `markerType`; `:` / `=` → `enclosure="square"`, `-` → `enclosure="none"` (2026-04-19 PR #143) |
+| ~~Fake Book chord font selector~~ | ✅ Done — `applyFBSettings()` wires `--fb-chord-font` to Body/Chord Font for non-ASC packs; free font options now active (2026-04-19 PR #143) |
 
 ## SPRINT 4 PROGRESS NOTES
 
@@ -374,7 +377,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 - Fixed `react-hooks/exhaustive-deps` warnings in `src/App.tsx`.
 - Verified locally: `npm run lint`, `npm run format:check`, `npm run build`, and `npm run test:all` all pass.
 
-## SLASH NOTATION RECENT CHANGES (2026-04-16 to 2026-04-18)
+## SLASH NOTATION RECENT CHANGES (2026-04-16 to 2026-04-19)
 
 **PR #135 — `fix(musicxml): correct chordKind mapping and export extension for iOS`**
 - Added `chordKind()` function covering full MusicXML 4.0 quality set (letter-o dim, aug7, maj7 variants, minus-style minor, major-sixth, 7♯5)
@@ -392,3 +395,12 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 - Navigation labels (D.C., D.S., Fine, Coda) suppressed from rehearsal marks via `NAV_RE`
 - `src/export/musicXmlExporter.ts` — standalone TypeScript module (test coverage only; not imported by the app)
 - `tests/musicXmlExport.test.ts` — 43 unit tests; total now 168 (4 VexFlow + 164 parser/exporter)
+
+**PR #143 — `fix: MusicXML key mode, rehearsal enclosure, and Fake Book chord font`**
+- `buildMusicXml()`: detects minor keys from `doc.key`; emits `<mode>minor</mode>` (was hardcoded `major`) — fixes Gm/Am/Bbm etc. mapping to wrong key in MuseScore/Dorico/Sibelius
+- `buildMusicXml()`: chord root regex upgraded to handle both unicode (♭/♯) and ASCII (b/#) accidentals — flat/sharp chords now export correctly
+- `buildSnSections()`: stores `markerType` (`-`/`:`/`=`) on each section object
+- `buildMusicXml()`: uses `markerType` to set `enclosure="square"` for `:` and `=` sections, `enclosure="none"` for `-` sections
+- `applyFBSettings()`: `--fb-chord-font` now wired to Body/Chord Font selector for non-ASC packs; free font options reactivated
+- `musicXmlExporter.ts`: added `keyModeStr()` function; `buildFirstMeasureAttributes()` accepts `mode` param
+- `tests/musicXmlExport.test.ts`: 4 new minor-key tests + 2 existing tests updated to assert `<mode>major</mode>`
