@@ -76,12 +76,42 @@ test('generateMusicXml: key signature fifths for G major', () => {
   const doc = parseCsmpn('Key: G\n[A]\n| G | D |\n');
   const xml = generateMusicXml(doc);
   assert.ok(xml.includes('<fifths>1</fifths>'));
+  assert.ok(xml.includes('<mode>major</mode>'));
 });
 
 test('generateMusicXml: key signature fifths for Bb major', () => {
   const doc = parseCsmpn('Key: Bb\n[A]\n| Bb | F |\n');
   const xml = generateMusicXml(doc);
   assert.ok(xml.includes('<fifths>-2</fifths>'));
+  assert.ok(xml.includes('<mode>major</mode>'));
+});
+
+test('generateMusicXml: Gm key emits fifths=-2 with mode=minor', () => {
+  const doc = parseCsmpn('Key: Gm\n[A]\n| Gm | Dm |\n');
+  const xml = generateMusicXml(doc);
+  assert.ok(xml.includes('<fifths>-2</fifths>'));
+  assert.ok(xml.includes('<mode>minor</mode>'));
+});
+
+test('generateMusicXml: Am key emits fifths=0 with mode=minor', () => {
+  const doc = parseCsmpn('Key: Am\n[A]\n| Am | E7 |\n');
+  const xml = generateMusicXml(doc);
+  assert.ok(xml.includes('<fifths>0</fifths>'));
+  assert.ok(xml.includes('<mode>minor</mode>'));
+});
+
+test('generateMusicXml: no key defaults to C major (fifths=0, mode=major)', () => {
+  const doc = parseCsmpn('[A]\n| C | G |\n');
+  const xml = generateMusicXml(doc);
+  assert.ok(xml.includes('<fifths>0</fifths>'));
+  assert.ok(xml.includes('<mode>major</mode>'));
+});
+
+test('generateMusicXml: Bb minor key emits fifths=-5 with mode=minor', () => {
+  const doc = parseCsmpn('Key: Bbm\n[A]\n| Bbm | Fm |\n');
+  const xml = generateMusicXml(doc);
+  assert.ok(xml.includes('<fifths>-5</fifths>'));
+  assert.ok(xml.includes('<mode>minor</mode>'));
 });
 
 test('generateMusicXml: time signature 4/4', () => {
