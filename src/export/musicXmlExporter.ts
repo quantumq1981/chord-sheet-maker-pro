@@ -94,6 +94,22 @@ function keyToFifths(keyStr: string): number {
 }
 
 /**
+ * Return "minor" when the key string is a minor key, "major" otherwise.
+ * Minor keys all end with 'm' after normalisation (e.g. "Am", "F#m", "Bbm").
+ */
+function keyModeStr(keyStr: string): string {
+  if (!keyStr) return 'major';
+  const s = keyStr
+    .trim()
+    .replace(/♭/g, 'b')
+    .replace(/♯/g, '#')
+    .replace(/\s*(major|maj)\s*$/i, '')
+    .replace(/\s*(minor|min)\s*$/i, 'm');
+  const normalised = s[0].toUpperCase() + s.slice(1);
+  return normalised.endsWith('m') && KEY_SIG_FIFTHS[normalised] !== undefined ? 'minor' : 'major';
+}
+
+/**
  * Visual beats per measure following Real Book convention:
  *   12/8 → 4, 9/8 → 3, 6/8 → 2, N/4 → N
  */
@@ -241,12 +257,13 @@ function buildFirstMeasureAttributes(
   beats: string,
   beatType: string,
   divisions: number,
-  fifths: number
+  fifths: number,
+  mode: string
 ): string {
   return `
       <attributes>
         <divisions>${divisions}</divisions>
-        <key><fifths>${fifths}</fifths><mode>major</mode></key>
+        <key><fifths>${fifths}</fifths><mode>${mode}</mode></key>
         <time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>
         <clef><sign>G</sign><line>2</line></clef>
         <measure-style><slash type="start" use-stems="no"/></measure-style>
@@ -315,6 +332,7 @@ export function generateMusicXml(doc: ChordChartDocument, options?: MusicXmlOpti
   const beatType = timeParts[2];
   const divisions = 1;
   const fifths = opts.includeKeySignature ? keyToFifths(doc.key ?? '') : 0;
+  const mode = keyModeStr(doc.key ?? '');
 
   const measureParts: string[] = [];
   let measureIndex = 0;
@@ -333,7 +351,7 @@ export function generateMusicXml(doc: ChordChartDocument, options?: MusicXmlOpti
       // ── 1. <attributes> (first measure only) ────────────────────────────
       let xml = '';
       if (num === 1) {
-        xml += buildFirstMeasureAttributes(beats, beatType, divisions, fifths);
+        xml += buildFirstMeasureAttributes(beats, beatType, divisions, fifths, mode);
         if (opts.includeTempo && doc.tempo) {
           xml += buildTempoDirection(doc.tempo);
         }

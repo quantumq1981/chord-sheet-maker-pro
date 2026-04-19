@@ -2532,14 +2532,18 @@ function applyFBSettings(){
   root.style.setProperty('--fb-bars-per-row', fbSettings.barsPerRow);
   root.style.setProperty('--fb-chord-color', fbSettings.chordColor || '#0044cc');
   const chordPack = getChordFontPackConfig(fbSettings.chordFontPack);
-  root.style.setProperty('--fb-chord-font', chordPack.fakeBookChordFont);
+  const isAscPack = ['pori', 'norfolk', 'norfolksans'].includes(fbSettings.chordFontPack);
   // Apply font families via CSS custom properties
+  const bodyFontStr = BODY_FONT_MAP[fbSettings.bodyFont] || BODY_FONT_MAP.helvetica;
   root.style.setProperty('--fb-headline-font', HEADLINE_FONT_MAP[fbSettings.headlineFont] || HEADLINE_FONT_MAP.patrickhand);
-  root.style.setProperty('--fb-body-font', BODY_FONT_MAP[fbSettings.bodyFont] || BODY_FONT_MAP.helvetica);
+  root.style.setProperty('--fb-body-font', bodyFontStr);
+  // For licensed ASC/ASL packs: use the pack's chord font.
+  // For the default (free) pack: wire --fb-chord-font to the Body/Chord Font selector
+  // so the user's font choice actually affects chord rendering.
+  root.style.setProperty('--fb-chord-font', isAscPack ? chordPack.fakeBookChordFont : bodyFontStr);
   window.__SLASH_FONT_FAMILY = chordPack.slashChordFont;
   window.__SN_NOTATION_FONT_FAMILY = chordPack.notationFont;
   window.__SLASH_FONT_PACK_ID = fbSettings.chordFontPack;
-  const isAscPack = ['pori', 'norfolk', 'norfolksans'].includes(fbSettings.chordFontPack);
   root.style.setProperty('--fb-chord-features', isAscPack ? '"ss01" 1' : 'normal');
   // Apply custom colors to the sheet
   const sheetEl = document.querySelector('.sheet');
@@ -7110,14 +7114,18 @@ window.runCSMPNSelfTests = function(){
     }).filter(Boolean);
   }
 
-  /** Build sections [{label, bars, navText}] from a parsed CSMPN doc. */
+  /** Build sections [{label, bars, navText, markerType}] from a parsed CSMPN doc. */
   function buildSnSections(doc){
     const sections = [];
     let label = null;
+    let markerType = '-';
     let bars  = [];
 
     const flush = () => {
-      if (bars.length > 0){ sections.push({ label, bars, navText: null }); bars = []; label = null; }
+      if (bars.length > 0){
+        sections.push({ label, bars, navText: null, markerType });
+        bars = []; label = null; markerType = '-';
+      }
     };
 
     for (const block of doc.blocks){
@@ -7128,7 +7136,7 @@ window.runCSMPNSelfTests = function(){
           if (extractNavText(text) && !bars.length && sections.length > 0){
             sections[sections.length - 1].navText = text;
           } else {
-            flush(); label = text;
+            flush(); label = text; markerType = block.marker;
           }
         }
       } else if (block.type === 'bars'){
@@ -7478,6 +7486,16 @@ window.runCSMPNSelfTests = function(){
     const title    = escapeHtml(doc.title    || 'Untitled');
     const composer = escapeHtml(doc.composer || '');
     const keySig   = _snCfg.keySig != null ? _snCfg.keySig : keySigFromKey(doc.key);
+    // Detect major vs minor mode from the key string (minor keys end with 'm' in KEY_SIG_DATA)
+    const keyMode  = (() => {
+      const s = (doc.key || '').trim()
+        .replace(/♭/g,'b').replace(/♯/g,'#')
+        .replace(/\s*(major|maj)\s*$/i,'')
+        .replace(/\s*(minor|min)\s*$/i,'m');
+      if (!s) return 'major';
+      const norm = s[0].toUpperCase() + s.slice(1);
+      return (norm.endsWith('m') && KEY_SIG_DATA[norm] !== undefined) ? 'minor' : 'major';
+    })();
     const timeParts = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/) || ['4/4','4','4'];
     const beats    = timeParts[1];
     const beatType = timeParts[2];
@@ -7502,7 +7520,7 @@ window.runCSMPNSelfTests = function(){
           attrs = `
       <attributes>
         <divisions>${divisions}</divisions>
-        <key><fifths>${keySig}</fifths><mode>major</mode></key>
+        <key><fifths>${keySig}</fifths><mode>${keyMode}</mode></key>
         <time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>
         <clef><sign>G</sign><line>2</line></clef>
         <measure-style><slash type="start" use-stems="no"/></measure-style>
@@ -7519,32 +7537,39 @@ window.runCSMPNSelfTests = function(){
         }
 
         // ── 2. <direction> rehearsal mark (first bar of named section) ─────
+        // ':' and '=' CSMPN markers produce boxed (square) rehearsal marks;
+        // '-' produces plain text (none). Navigation marks are suppressed.
         let rehearsalXml = '';
         if (bi === 0 && label && !isNavLabel){
+          const enclosure = (sec.markerType === ':' || sec.markerType === '=') ? 'square' : 'none';
           rehearsalXml = `
       <direction placement="above">
         <direction-type>
-          <rehearsal enclosure="none" default-y="40">${escapeHtml(label)}</rehearsal>
+          <rehearsal enclosure="${enclosure}" default-y="40">${escapeHtml(label)}</rehearsal>
         </direction-type>
       </direction>`;
         }
 
         // ── 3. <harmony> chord symbols ─────────────────────────────────────
+        // Robust root parser: handles both unicode (♭/♯) and ASCII (b/#) accidentals.
         let harmonyXml = '';
         const chordList = chords || [];
         for (let ci = 0; ci < chordList.length; ci++){
           const ch = chordList[ci];
           if (!ch || !ch.text) continue;
-          const chRoot  = ch.text.match(/^([A-G][♭♯]?)/);
+          const chRoot = ch.text.match(/^([A-G])(♭|♯|b|#)?/);
           if (!chRoot) continue;
-          const rootStep  = chRoot[1].replace('♭','').replace('♯','');
-          const rootAlter = ch.text.startsWith(chRoot[1]) && chRoot[1].includes('♭') ? -1
-                          : ch.text.startsWith(chRoot[1]) && chRoot[1].includes('♯') ?  1 : 0;
-          const qualRaw   = ch.text.slice(chRoot[1].length).replace(/\/.*$/, '').trim();
-          const bassMatch = ch.text.match(/\/([A-G][♭♯]?)$/);
-          const bassStep  = bassMatch ? bassMatch[1].replace(/[♭♯]/g,'') : '';
-          const bassAlter = bassMatch && bassMatch[1].includes('♭') ? -1
-                          : bassMatch && bassMatch[1].includes('♯') ?  1 : 0;
+          const rootStep  = chRoot[1];
+          const accStr    = chRoot[2] || '';
+          const rootAlter = (accStr === '♭' || accStr === 'b') ? -1
+                          : (accStr === '♯' || accStr === '#') ?  1 : 0;
+          const afterRoot = ch.text.slice(chRoot[0].length);
+          const qualRaw   = afterRoot.replace(/\/.*$/, '').trim();
+          const bassMatch = afterRoot.match(/\/([A-G])(♭|♯|b|#)?$/);
+          const bassStep  = bassMatch ? bassMatch[1] : '';
+          const bassAcc   = bassMatch ? (bassMatch[2] || '') : '';
+          const bassAlter = (bassAcc === '♭' || bassAcc === 'b') ? -1
+                          : (bassAcc === '♯' || bassAcc === '#') ?  1 : 0;
           const alterTag  = rootAlter !== 0 ? `<alter>${rootAlter}</alter>` : '';
           const bassXml   = bassStep ? `<bass><bass-step>${escapeHtml(bassStep)}</bass-step>${bassAlter !== 0 ? `<bass-alter>${bassAlter}</bass-alter>` : ''}</bass>` : '';
           const offset    = Math.round((ci / Math.max(chordList.length, 1)) * parseInt(beats, 10) * divisions);
