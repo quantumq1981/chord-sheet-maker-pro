@@ -340,6 +340,35 @@ export default function UGProImporterPanel({ onImportCsmpn, initialFile }: Props
             <option value="csmpn-fakebook">Fake-book (- : = prefixes, _ splits)</option>
             <option value="csmpn-barlines">Barline style (‖ | notation)</option>
           </select>
+
+          <label style={styles.configLabel}>
+            Header exclusion ({Math.round(config.headerExclusionRatio * 100)}%)
+          </label>
+          <input
+            type="range"
+            min={0.05}
+            max={0.3}
+            step={0.01}
+            value={config.headerExclusionRatio}
+            onChange={(e) => handleConfigChange('headerExclusionRatio', parseFloat(e.target.value))}
+            style={{ ...styles.configInput, width: '120px', padding: '4px 0' }}
+          />
+
+          <label style={styles.configLabel}>Barline preset</label>
+          <select
+            value={config.barlinePreset}
+            onChange={(e) =>
+              handleConfigChange(
+                'barlinePreset',
+                e.target.value as UGProImporterConfig['barlinePreset']
+              )
+            }
+            style={styles.configInput}
+          >
+            <option value="auto">Auto (density detect)</option>
+            <option value="sparse">Sparse</option>
+            <option value="tab-heavy">Tab-heavy</option>
+          </select>
         </div>
       </details>
 
