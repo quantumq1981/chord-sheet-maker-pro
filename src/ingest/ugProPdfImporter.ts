@@ -58,6 +58,10 @@ export interface UGProImporterConfig {
    *                      no | separators, multi-chord bars joined with _.
    */
   outputMode: 'csmpn-barlines' | 'csmpn-fakebook';
+  /** Fraction of page height from top to exclude as title/header text (default 0.13 = 13%). */
+  headerExclusionRatio: number;
+  /** Barline detection preset. 'auto' selects via stem-density pixel analysis. */
+  barlinePreset: 'auto' | 'sparse' | 'tab-heavy';
 }
 
 export const DEFAULT_CONFIG: UGProImporterConfig = {
@@ -71,6 +75,8 @@ export const DEFAULT_CONFIG: UGProImporterConfig = {
   barlinePeakMinSpacingPx: 18,
   renderScale: 1.8,
   outputMode: 'csmpn-fakebook',
+  headerExclusionRatio: 0.13,
+  barlinePreset: 'auto',
 };
 
 // ─── Intermediate types ───────────────────────────────────────────────────────
@@ -129,6 +135,10 @@ export interface SystemDebug {
   barlinesX: number[];
   measures: MeasureDebug[];
   markers: Marker[];
+  /** Barline preset used ('sparse' or 'tab-heavy'). */
+  preset?: string;
+  /** Stem pixel density (0–1) used for auto preset selection. */
+  stemDensity?: number;
 }
 
 export interface PageRenderData {
@@ -173,6 +183,27 @@ export interface ImportResult {
   pageRenders: PageRenderData[];
 }
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Header keywords — exclude from chord detection. */
+const HEADER_KW_PAT =
+  /\b(Tuning|Capo|Transcribed|Transcription|Difficulty|Author|Arranger|Engraved|Engraver|www\.|http|©|Copyright|Produced)\b/i;
+
+const STEM_DENSITY_THRESHOLD = 0.08;
+const MIN_TOTAL_CHORD_SPANS = 6;
+const MIN_PAGE_CHORD_SPANS = 4;
+
+interface BarlinePresetConfig {
+  stemRunRatio: number;
+  minSpacingPx: number;
+  minHeightRatio: number;
+}
+
+const BARLINE_PRESETS: Record<string, BarlinePresetConfig> = {
+  sparse: { stemRunRatio: 0.65, minSpacingPx: 18, minHeightRatio: 0.55 },
+  'tab-heavy': { stemRunRatio: 0.8, minSpacingPx: 28, minHeightRatio: 0.65 },
+};
+
 // ─── Chord normalisation ──────────────────────────────────────────────────────
 
 /**
@@ -183,6 +214,9 @@ export interface ImportResult {
  */
 export function normalizeChordSymbol(raw: string): string {
   let s = raw.trim();
+
+  // Strip internal whitespace (PDF can split "C maj7" as one span with a space)
+  s = s.replace(/\s+/g, '');
 
   // 1. Unicode accidentals
   s = s.replace(/♭/g, 'b').replace(/♯/g, '#');
@@ -200,9 +234,10 @@ export function normalizeChordSymbol(raw: string): string {
   // Bare diminished: o / ° → dim (but not if already 'dim')
   s = s.replace(/([A-G][b#]?)(°|(?<![a-z])o(?!7|[a-z]))/g, '$1dim');
 
-  // 5. Major seventh: 7M / Δ / Maj7 / MAJ7 / maj7 → maj7
+  // 5. Major seventh: Δ / 7M / M7 / Maj7 / MAJ7 → maj7
   s = s.replace(/Δ7?/g, 'maj7');
   s = s.replace(/7M\b/g, 'maj7');
+  s = s.replace(/M7\b/g, 'maj7');
   s = s.replace(/[Mm][Aa][Jj]7/g, 'maj7');
   // Bare "maj" is optional and should not imply maj7.
   // Example: Cmaj → C
@@ -256,37 +291,6 @@ const DIRECTION_TEXTS = new Set([
   'Post',
 ]);
 
-/**
- * Returns true if `text` looks like a chord symbol.
- * Filters out: pure numbers, single capital letters (rehearsal marks), direction words.
- */
-function isChordCandidate(span: TextSpan): boolean {
-  const t = span.text.trim();
-  if (!t || t.length > 16) return false;
-  if (/^\d+$/.test(t)) return false; // bar numbers
-  if (/^[A-Z]$/.test(t)) return false; // rehearsal letters (A, B, C …)
-  if (DIRECTION_TEXTS.has(t)) return false;
-
-  // Allow common direction marker detection
-  const directionPattern =
-    /^(N\.C\.|Fine|Coda|D\.S|D\.C|To\s|Double|Half-time|Freely|Tacet|Simile|Vamp|Rit|Rail|Accel)/i;
-  if (directionPattern.test(t)) return false;
-
-  // Must start with a note root
-  if (!/^[A-G]/.test(t)) return false;
-
-  // Try normalised form — must still match chord regex after normalisation
-  const normed = normalizeChordSymbol(t);
-  return CHORD_REGEX.test(normed) || CHORD_REGEX.test(t);
-}
-
-/** Returns true if `text` is a rehearsal marker (single or double letter). */
-function isRehearsalMarker(span: TextSpan): boolean {
-  const t = span.text.trim();
-  // Single uppercase letter, or pairs like "A1", "B2"
-  return /^[A-Z][0-9]?$/.test(t) && !CHORD_REGEX.test(t);
-}
-
 /** Classify direction text spans into Marker objects. */
 function classifyDirective(span: TextSpan): Marker | null {
   const t = span.text.trim().replace(/\s+/g, ' ');
@@ -298,6 +302,126 @@ function classifyDirective(span: TextSpan): Marker | null {
   if (/^fine$/i.test(t)) return { type: 'fine', value: 'Fine', x: span.x, y: span.y };
   if (/^coda$/i.test(t)) return { type: 'coda', value: 'Coda', x: span.x, y: span.y };
   return null;
+}
+
+// ─── Span extraction ──────────────────────────────────────────────────────────
+
+/** 2D affine matrix multiply: result = m1 × m2, matrices encoded as [a,b,c,d,e,f]. */
+function mul2d(m1: number[], m2: number[]): number[] {
+  return [
+    m1[0] * m2[0] + m1[2] * m2[1],
+    m1[1] * m2[0] + m1[3] * m2[1],
+    m1[0] * m2[2] + m1[2] * m2[3],
+    m1[1] * m2[2] + m1[3] * m2[3],
+    m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
+    m1[1] * m2[4] + m1[3] * m2[5] + m1[5],
+  ];
+}
+
+/**
+ * Extract text spans from a PDF page using the viewport transform for accurate
+ * coordinates on rotated or non-standard-origin pages.
+ * Stores coordinates in PDF user units (x left-to-right, y bottom-to-top).
+ */
+function extractPageSpans(
+  page: PDFPageProxy,
+  items: TextItem[],
+  pageH: number,
+  pageIndex: number
+): TextSpan[] {
+  const viewport = page.getViewport({ scale: 1 });
+  const vt = viewport.transform as number[];
+  const spans: TextSpan[] = [];
+
+  for (const ti of items) {
+    if (!ti.str.trim()) continue;
+    const t = mul2d(vt, ti.transform as number[]);
+    // t[4] = canvas x (= PDF x for unrotated), t[5] = canvas y from top
+    // Convert canvas y-from-top back to PDF y-from-bottom: y_pdf = pageH - t[5]
+    const x = t[4];
+    const y = pageH - t[5];
+    const fontSize = Math.hypot(t[2] || 0, t[3] || 0) || Math.hypot(t[0] || 0, t[1] || 0) || 12;
+    spans.push({
+      text: ti.str,
+      x,
+      y,
+      width: (ti.width ?? 0) > 0 ? ti.width : fontSize,
+      height: (ti.height ?? 0) > 0 ? ti.height : fontSize,
+      fontSize,
+      pageIndex,
+    });
+  }
+  return spans;
+}
+
+// ─── Span classification ──────────────────────────────────────────────────────
+
+interface ClassifiedSpans {
+  chordSpans: TextSpan[];
+  rehearsalSpans: TextSpan[];
+  directionMarkers: Marker[];
+}
+
+/**
+ * Classify page spans into chord candidates, rehearsal markers, and directions.
+ * Applies header exclusion and median-font-size filtering to suppress title text.
+ * Coordinates assumed in PDF space (y from bottom; top of page = high y).
+ */
+function classifyPageSpans(
+  spans: TextSpan[],
+  pageH: number,
+  headerExclusionRatio: number
+): ClassifiedSpans {
+  const result: ClassifiedSpans = { chordSpans: [], rehearsalSpans: [], directionMarkers: [] };
+
+  // Top N% of page in PDF space: y > pageH * (1 - ratio)
+  const headerThresholdY = pageH * (1 - headerExclusionRatio);
+
+  // Median font size from multi-char spans starting with a note root
+  const sizes = spans
+    .filter((s) => s.text.trim().length > 1 && /^[A-G]/.test(s.text.trim()))
+    .map((s) => s.fontSize)
+    .sort((a, b) => a - b);
+  const medianFontSize = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)] : 12;
+
+  const dirPat =
+    /^(N\.C\.|Fine|Coda|D\.S|D\.C|To\s|Double|Half-time|Freely|Tacet|Simile|Vamp|Rit|Rail|Accel)/i;
+
+  for (const span of spans) {
+    const t = span.text.trim();
+    if (!t || t.length > 20) continue;
+
+    // Exclude header area (top N% of page in PDF space)
+    if (span.y > headerThresholdY) continue;
+
+    // Exclude known header keywords (title, copyright, tuning, etc.)
+    if (HEADER_KW_PAT.test(t)) continue;
+
+    // Exclude very large text (headings — more than 2.5× median font)
+    if (span.fontSize > medianFontSize * 2.5) continue;
+
+    if (DIRECTION_TEXTS.has(t) || dirPat.test(t)) {
+      const dir = classifyDirective(span);
+      if (dir) result.directionMarkers.push(dir);
+      continue;
+    }
+
+    // Rehearsal markers: single uppercase letter (optionally + digit), large or left-margin
+    if (/^[A-Z][0-9]?$/.test(t) && !CHORD_REGEX.test(t)) {
+      result.rehearsalSpans.push(span);
+      continue;
+    }
+
+    // Chord candidates
+    if (/^\d+$/.test(t)) continue;
+    if (!/^[A-G]/.test(t)) continue;
+    const normed = normalizeChordSymbol(t);
+    if (CHORD_REGEX.test(normed) || CHORD_REGEX.test(t)) {
+      result.chordSpans.push(span);
+    }
+  }
+
+  return result;
 }
 
 // ─── System clustering ────────────────────────────────────────────────────────
@@ -342,90 +466,119 @@ function clusterIntoSystems(spans: TextSpan[], thresholdPx: number): SpanGroup[]
   return groups;
 }
 
+/**
+ * For multi-track PDFs, drop system groups whose span count is less than half the
+ * densest group's count, eliminating phantom/background systems.
+ */
+function filterDensestSystems(groups: SpanGroup[]): SpanGroup[] {
+  if (groups.length <= 8) return groups;
+  const maxCount = Math.max(...groups.map((g) => g.spans.length));
+  const threshold = Math.max(2, Math.round(maxCount * 0.5));
+  return groups.filter((g) => g.spans.length >= threshold);
+}
+
 // ─── Barline detection (image-based) ─────────────────────────────────────────
 
-/**
- * Render a PDF page to an HTMLCanvasElement at the given scale.
- */
 async function renderPageToCanvas(page: PDFPageProxy, scale: number): Promise<HTMLCanvasElement> {
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement('canvas');
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
   const ctx = canvas.getContext('2d')!;
   await page.render({ canvas, canvasContext: ctx, viewport }).promise;
   return canvas;
 }
 
 /**
+ * Returns the length of the longest continuous dark-pixel run in a single column.
+ * Rejects false barline peaks caused by dense chord text (text has gaps; barlines do not).
+ */
+function longestDarkRun(
+  data: Uint8ClampedArray,
+  col: number,
+  bandW: number,
+  bandH: number,
+  threshold = 128
+): number {
+  let maxRun = 0;
+  let cur = 0;
+  for (let row = 0; row < bandH; row++) {
+    const i = (row * bandW + col) * 4;
+    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    if (gray < threshold) {
+      cur++;
+      if (cur > maxRun) maxRun = cur;
+    } else {
+      cur = 0;
+    }
+  }
+  return maxRun;
+}
+
+/**
+ * Compute overall dark-pixel density in the band image.
+ * High density → tab-heavy preset; low density → sparse preset.
+ */
+function computeStemDensity(data: Uint8ClampedArray, total: number): number {
+  let dark = 0;
+  for (let i = 0; i < total * 4; i += 4) {
+    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    if (gray < 128) dark++;
+  }
+  return dark / total;
+}
+
+/**
  * Detect barline x-positions within a staff band using vertical projection.
- *
- * Algorithm:
- *   1. Crop the canvas to the system's y-band (with a small margin).
- *   2. Convert pixels to grayscale.
- *   3. For each column x, count the number of dark pixels.
- *   4. Find peaks (local maxima that exceed minHeightRatio * bandHeight).
- *   5. Merge peaks that are too close together.
- *   6. Return barline x positions (in PDF coordinate units).
+ * Uses `longestDarkRun` to reject false peaks from dense chord text.
+ * Returns canvas-column peaks converted to PDF user units.
  */
 function detectBarlinesInBand(
   canvas: HTMLCanvasElement,
-  /** y0, y1 in canvas pixels (top/bottom of system band). */
   bandY0: number,
   bandY1: number,
-  /** x0, x1 in canvas pixels (left/right margin). */
   bandX0: number,
   bandX1: number,
-  config: UGProImporterConfig,
-  /** Conversion: canvas pixels → PDF user units. */
+  preset: BarlinePresetConfig,
   scale: number
 ): number[] {
   const ctx = canvas.getContext('2d')!;
   const bandH = Math.max(1, bandY1 - bandY0);
   const bandW = Math.max(1, bandX1 - bandX0);
-
   if (bandW <= 0 || bandH <= 0) return [];
 
   const imageData = ctx.getImageData(bandX0, bandY0, bandW, bandH);
   const data = imageData.data;
+  const stemRunMin = Math.floor(bandH * preset.stemRunRatio);
 
-  // Build column darkness profile
   const profile = new Float32Array(bandW);
   for (let col = 0; col < bandW; col++) {
     let darkCount = 0;
     for (let row = 0; row < bandH; row++) {
       const idx = (row * bandW + col) * 4;
-      const r = data[idx];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
-      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-      if (gray < 100) darkCount++;
+      const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      if (gray < 128) darkCount++;
     }
     profile[col] = darkCount / bandH;
   }
 
-  // Find peaks above threshold
-  const threshold = config.barlinePeakMinHeightRatio;
-  const minSpacing = config.barlinePeakMinSpacingPx;
   const peaks: number[] = [];
-
   for (let col = 1; col < bandW - 1; col++) {
     if (
-      profile[col] >= threshold &&
-      profile[col] >= profile[col - 1] &&
-      profile[col] >= profile[col + 1]
-    ) {
-      // Check minimum spacing from last accepted peak
-      if (peaks.length === 0 || col - peaks[peaks.length - 1] >= minSpacing) {
-        peaks.push(col);
-      } else if (profile[col] > profile[peaks[peaks.length - 1]]) {
-        // Replace with stronger peak if within spacing window
-        peaks[peaks.length - 1] = col;
-      }
+      profile[col] < preset.minHeightRatio ||
+      profile[col] < profile[col - 1] ||
+      profile[col] < profile[col + 1]
+    )
+      continue;
+    if (longestDarkRun(data, col, bandW, bandH) < stemRunMin) continue;
+
+    if (peaks.length === 0 || col - peaks[peaks.length - 1] >= preset.minSpacingPx) {
+      peaks.push(col);
+    } else if (profile[col] > profile[peaks[peaks.length - 1]]) {
+      peaks[peaks.length - 1] = col;
     }
   }
 
-  // Convert canvas pixel x → PDF user units
   return peaks.map((px) => (bandX0 + px) / scale);
 }
 
@@ -543,8 +696,9 @@ function fakebookSectionPrefix(label: string): string {
 
 /**
  * Build a bar token for one measure.
+ *   - Empty bar with no prior chord → 'N.C.'
+ *   - Empty bar with prior chord + fillPercent → '%'
  *   - Multi-chord bars → joined with _  (e.g. Bb7_A7_D7)
- *   - Empty bar → %
  */
 function barToken(
   m: LinearMeasure,
@@ -552,7 +706,8 @@ function barToken(
   fillPercent: boolean
 ): [token: string, newLastChord: string] {
   if (m.chords.length === 0) {
-    return [fillPercent && lastChord ? '%' : lastChord || '%', lastChord];
+    if (!lastChord) return ['N.C.', ''];
+    return [fillPercent ? '%' : lastChord, lastChord];
   }
   const token = m.chords.join('_');
   return [token, m.chords[m.chords.length - 1]];
@@ -688,69 +843,62 @@ export async function importUGProPdf(
   const pdf = await getDocument({ data: arrayBuffer }).promise;
   const numPages = pdf.numPages;
 
-  // ── Collect all text spans across all pages ──────────────────────────────
+  // ── Collect all text spans + per-page classification ─────────────────────
   const allSpans: TextSpan[] = [];
+  interface PageMeta {
+    page: PDFPageProxy;
+    pageH: number;
+    pageW: number;
+    chordSpans: TextSpan[];
+    rehearsalSpans: TextSpan[];
+    directionMarkers: Marker[];
+  }
+  const pageMetas: PageMeta[] = [];
 
   for (let pNum = 1; pNum <= numPages; pNum++) {
     const page = await pdf.getPage(pNum);
+    const vp1 = page.getViewport({ scale: 1 });
+    const pageH = vp1.height;
+    const pageW = vp1.width;
     const content = await page.getTextContent();
+    const textItems = content.items.filter(
+      (i): i is TextItem => typeof i === 'object' && i !== null && 'str' in i
+    );
+    const pageSpans = extractPageSpans(page, textItems, pageH, pNum - 1);
+    allSpans.push(...pageSpans);
 
-    for (const item of content.items) {
-      if (!('str' in item)) continue;
-      const ti = item as TextItem;
-      if (!ti.str.trim()) continue;
+    const { chordSpans, rehearsalSpans, directionMarkers } = classifyPageSpans(
+      pageSpans,
+      pageH,
+      config.headerExclusionRatio
+    );
+    pageMetas.push({ page, pageH, pageW, chordSpans, rehearsalSpans, directionMarkers });
+  }
 
-      // PDF transform: [scaleX, skewX, skewY, scaleY, tx, ty]
-      const tx = ti.transform[4] as number;
-      const ty = ti.transform[5] as number;
-      // Font size is encoded in scaleY (index 3)
-      const fontSize = Math.abs(ti.transform[3] as number);
-
-      allSpans.push({
-        text: ti.str,
-        x: tx,
-        y: ty,
-        width: ti.width ?? fontSize,
-        height: ti.height ?? fontSize,
-        fontSize,
-        pageIndex: pNum - 1,
-      });
-    }
+  // ── Fail-safe: reject vector-only PDFs ───────────────────────────────────
+  const totalChordSpans = pageMetas.reduce((s, p) => s + p.chordSpans.length, 0);
+  if (totalChordSpans < MIN_TOTAL_CHORD_SPANS) {
+    throw new Error(
+      `Only ${totalChordSpans} chord span(s) found across the entire document. ` +
+        'Chord text is likely encoded as vector graphics — OCR fallback required.'
+    );
   }
 
   // ── Extract metadata from first page ────────────────────────────────────
-  const firstPage = await pdf.getPage(1);
-  const firstViewport = firstPage.getViewport({ scale: 1 });
-  const metadata = extractMetadata(allSpans, firstViewport.height);
+  const metadata = extractMetadata(allSpans, pageMetas[0].pageH);
 
-  // ── Per-page processing ─────────────────────────────────────────────────
+  // ── Per-page barline detection + system building ─────────────────────────
   const pageRenders: PageRenderData[] = [];
   const allSystemsDebug: SystemDebug[] = [];
   let globalMeasureIndex = 0;
 
   for (let pNum = 1; pNum <= numPages; pNum++) {
-    const page = await pdf.getPage(pNum);
-    const viewport1 = page.getViewport({ scale: 1 });
-    const pageH = viewport1.height;
-    const pageW = viewport1.width;
-
-    // Render page to canvas for barline detection
-    const canvas = await renderPageToCanvas(page, config.renderScale);
+    const { page, pageH, pageW, chordSpans, rehearsalSpans, directionMarkers } =
+      pageMetas[pNum - 1];
     const scale = config.renderScale;
+    const canvas = await renderPageToCanvas(page, scale);
 
-    // Filter spans for this page
-    const pageSpans = allSpans.filter((s) => s.pageIndex === pNum - 1);
-
-    // Separate chord candidates from other spans
-    const chordSpans = pageSpans.filter(isChordCandidate);
-    const rehearsalSpans = pageSpans.filter(isRehearsalMarker);
-    const directionSpans = pageSpans
-      .filter((s) => !isChordCandidate(s) && !isRehearsalMarker(s))
-      .map(classifyDirective)
-      .filter((m): m is Marker => m !== null);
-
-    // Skip pages with no chord candidates (e.g., cover page)
-    if (chordSpans.length === 0) {
+    if (chordSpans.length < MIN_PAGE_CHORD_SPANS) {
       pageRenders.push({
         pageIndex: pNum - 1,
         canvas,
@@ -762,79 +910,100 @@ export async function importUGProPdf(
       continue;
     }
 
-    // ── Cluster chord spans into systems by Y ──────────────────────────────
-    const systemGroups = clusterIntoSystems(chordSpans, config.ySystemClusterThresholdPx);
+    // Stable staff envelope: 5%..95% of page width (PDF units)
+    const staffLeft = pageW * 0.05;
+    const staffRight = pageW * 0.95;
+    const canvasBX0 = Math.max(0, Math.round(staffLeft * scale));
+    const canvasBX1 = Math.min(canvas.width, Math.round(staffRight * scale));
+
+    let systemGroups = clusterIntoSystems(chordSpans, config.ySystemClusterThresholdPx);
+    systemGroups = filterDensestSystems(systemGroups);
 
     const pageSystems: SystemDebug[] = [];
+    const forcedPresetName = config.barlinePreset !== 'auto' ? config.barlinePreset : null;
 
     for (let sysIdx = 0; sysIdx < systemGroups.length; sysIdx++) {
       const group = systemGroups[sysIdx];
-      const spans = group.spans;
+      if (group.spans.length === 0) continue;
 
-      if (spans.length === 0) continue;
-
-      // System bounding box in PDF coordinate units
-      const xVals = spans.map((s) => s.x);
-      const yVals = spans.map((s) => s.y);
-      const x0 = Math.min(...xVals) - 10;
-      const x1 = Math.max(...xVals.map((x, i) => x + spans[i].width)) + 10;
+      const chordY = group.yCenter; // PDF-space y from bottom
+      const yVals = group.spans.map((s) => s.y);
       const y0 = Math.min(...yVals) - 15;
       const y1 = Math.max(...yVals) + 15;
 
-      // ── Barline detection on this system's band ──────────────────────────
-      // Convert PDF y (bottom-origin) → canvas y (top-origin)
-      const canvasY0 = Math.max(0, Math.round((pageH - y1) * scale));
-      const canvasY1 = Math.min(canvas.height, Math.round((pageH - y0) * scale));
-      const canvasX0 = Math.max(0, Math.round(x0 * scale));
-      const canvasX1 = Math.min(canvas.width, Math.round(x1 * scale));
+      // Helper: compute canvas band from PDF-space chordY
+      const computeBand = (belowPts: number) => {
+        const by0 = Math.max(
+          0,
+          Math.round((pageH - (chordY + 25)) * scale) // 25 pts above chord in PDF space
+        );
+        const by1 = Math.min(
+          canvas.height,
+          Math.round((pageH - (chordY - belowPts)) * scale) // belowPts below chord
+        );
+        return { by0, by1 };
+      };
 
-      // Expand band vertically to catch staff lines below chord labels
-      const expandedY0 = Math.max(0, canvasY0 - Math.round(20 * scale));
-      const expandedY1 = Math.min(canvas.height, canvasY1 + Math.round(40 * scale));
+      // First pass: compute stem density to auto-select preset
+      const { by0: initBy0, by1: initBy1 } = computeBand(80);
+      const ctx = canvas.getContext('2d')!;
+      const initBW = Math.max(1, canvasBX1 - canvasBX0);
+      const initBH = Math.max(1, initBy1 - initBy0);
+      const initData = ctx.getImageData(canvasBX0, initBy0, initBW, initBH).data;
+      const stemDensity = computeStemDensity(initData, initBW * initBH);
 
-      const barlinesXPdf = detectBarlinesInBand(
+      const usedPresetName =
+        forcedPresetName ?? (stemDensity > STEM_DENSITY_THRESHOLD ? 'tab-heavy' : 'sparse');
+      let presetCfg = BARLINE_PRESETS[usedPresetName];
+
+      let { by0, by1 } = computeBand(80);
+      let barlinesXPdf = detectBarlinesInBand(
         canvas,
-        expandedY0,
-        expandedY1,
-        canvasX0,
-        canvasX1,
-        config,
+        by0,
+        by1,
+        canvasBX0,
+        canvasBX1,
+        presetCfg,
         scale
       );
 
-      // Always add left and right edges as boundary barlines if not present
-      const leftEdge = x0 + 5;
-      const rightEdge = x1 - 5;
-      if (barlinesXPdf.length === 0 || barlinesXPdf[0] > leftEdge + 30) {
-        barlinesXPdf.unshift(leftEdge);
+      // Two-pass: if tab-heavy, expand band 280 pts below chord and re-run
+      if (!forcedPresetName && usedPresetName === 'tab-heavy') {
+        ({ by0, by1 } = computeBand(280));
+        barlinesXPdf = detectBarlinesInBand(
+          canvas,
+          by0,
+          by1,
+          canvasBX0,
+          canvasBX1,
+          BARLINE_PRESETS['tab-heavy'],
+          scale
+        );
       }
-      if (barlinesXPdf[barlinesXPdf.length - 1] < rightEdge - 30) {
-        barlinesXPdf.push(rightEdge);
+
+      // Add boundary barlines at stable staff edges if not already present
+      if (barlinesXPdf.length === 0 || barlinesXPdf[0] > staffLeft + 30) {
+        barlinesXPdf.unshift(staffLeft);
       }
+      if (barlinesXPdf[barlinesXPdf.length - 1] < staffRight - 30) {
+        barlinesXPdf.push(staffRight);
+      }
+      barlinesXPdf.sort((a, b) => a - b);
 
       // ── Map chord spans to measures ──────────────────────────────────────
-      // Sort barlines and spans left-to-right
-      barlinesXPdf.sort((a, b) => a - b);
-      const sortedSpans = [...spans].sort((a, b) => a.x - b.x);
-
+      const sortedSpans = [...group.spans].sort((a, b) => a.x - b.x);
       const numMeasures = Math.max(1, barlinesXPdf.length - 1);
       const measureEvents: ChordEvent[][] = Array.from({ length: numMeasures }, () => []);
 
       for (const span of sortedSpans) {
-        const cx = span.x + span.width / 2;
-        // Find which measure interval contains this chord's x-center
-        let measureSlot = 0;
+        const cx = span.x + (span.width > 0 ? span.width / 2 : 0);
+        let measureSlot = numMeasures - 1;
         for (let m = 0; m < barlinesXPdf.length - 1; m++) {
           if (cx >= barlinesXPdf[m] && cx < barlinesXPdf[m + 1]) {
             measureSlot = m;
             break;
           }
-          // Assign to last measure if beyond all barlines
-          if (cx >= barlinesXPdf[barlinesXPdf.length - 1]) {
-            measureSlot = numMeasures - 1;
-          }
         }
-
         const raw = span.text.trim();
         const norm = normalizeChordSymbol(raw);
         measureEvents[measureSlot].push({
@@ -842,38 +1011,31 @@ export async function importUGProPdf(
           y: span.y,
           raw,
           norm,
-          confidence: CHORD_REGEX.test(norm) ? 1.0 : 0.7,
+          confidence: CHORD_REGEX.test(norm) ? 1.0 : CHORD_REGEX.test(raw) ? 0.85 : 0.7,
         });
       }
 
-      // Sort events within each measure by x
-      for (const events of measureEvents) {
-        events.sort((a, b) => a.x - b.x);
-      }
+      for (const events of measureEvents) events.sort((a, b) => a.x - b.x);
 
-      // Collect rehearsal markers and directives for this system
+      // Collect markers within this system's y range
       const systemMarkers: Marker[] = [];
       for (const rSpan of rehearsalSpans) {
-        if (rSpan.y >= y0 && rSpan.y <= y1) {
+        if (rSpan.y >= y0 && rSpan.y <= y1)
           systemMarkers.push({
             type: 'rehearsal',
             value: rSpan.text.trim(),
             x: rSpan.x,
             y: rSpan.y,
           });
-        }
       }
-      for (const dir of directionSpans) {
-        if (dir.y >= y0 && dir.y <= y1) {
-          systemMarkers.push(dir);
-        }
+      for (const dir of directionMarkers) {
+        if (dir.y >= y0 && dir.y <= y1) systemMarkers.push(dir);
       }
 
-      // Build measure debug objects
       const measuresDebug: MeasureDebug[] = measureEvents.map((events, localIdx) => ({
         measureIndex: localIdx,
         globalIndex: globalMeasureIndex + localIdx,
-        xRange: [barlinesXPdf[localIdx] ?? x0, barlinesXPdf[localIdx + 1] ?? x1],
+        xRange: [barlinesXPdf[localIdx] ?? staffLeft, barlinesXPdf[localIdx + 1] ?? staffRight],
         events,
         directives: [],
       }));
@@ -883,10 +1045,12 @@ export async function importUGProPdf(
       const sysDebug: SystemDebug = {
         systemIndex: sysIdx,
         pageIndex: pNum - 1,
-        bbox: [x0, y0, x1, y1],
+        bbox: [staffLeft, y0, staffRight, y1],
         barlinesX: barlinesXPdf,
         measures: measuresDebug,
         markers: systemMarkers,
+        preset: usedPresetName,
+        stemDensity,
       };
 
       pageSystems.push(sysDebug);
@@ -905,50 +1069,37 @@ export async function importUGProPdf(
 
   // ── Build linear measure list ─────────────────────────────────────────────
   const linearMeasures: DebugJson['linear']['measures'] = [];
-
   for (const sys of allSystemsDebug) {
     for (const meas of sys.measures) {
-      let chords: string[];
-
-      if (meas.events.length === 0) {
-        chords = [];
-      } else if (!config.allowMultiChordBars || config.preferOneChordPerBar) {
-        chords = [meas.events[0].norm];
-      } else {
-        chords = meas.events.map((e) => e.norm);
-      }
-
-      linearMeasures.push({
-        n: meas.globalIndex,
-        chords,
-        directives: meas.directives,
-      });
+      const chords =
+        meas.events.length === 0
+          ? []
+          : !config.allowMultiChordBars || config.preferOneChordPerBar
+            ? [meas.events[0].norm]
+            : meas.events.map((e) => e.norm);
+      linearMeasures.push({ n: meas.globalIndex, chords, directives: meas.directives });
     }
   }
 
-  // ── Section detection ─────────────────────────────────────────────────────
-  // Collect rehearsal markers from all systems, sorted by global measure position
+  // ── Section detection with deduplication ─────────────────────────────────
   interface Section {
     label: string;
     startMeasure: number;
   }
-
   const sections: Section[] = [];
+  const seen = new Set<string>();
   let measOffset = 0;
   for (const sys of allSystemsDebug) {
-    const sysRehearsals = sys.markers.filter((m) => m.type === 'rehearsal');
-    if (sysRehearsals.length > 0) {
-      for (const r of sysRehearsals) {
-        sections.push({ label: r.value, startMeasure: measOffset });
+    for (const mk of sys.markers.filter((m) => m.type === 'rehearsal')) {
+      const key = `${mk.value}@${measOffset}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        sections.push({ label: mk.value, startMeasure: measOffset });
       }
     }
     measOffset += sys.measures.length;
   }
-
-  // If no rehearsal markers found, create a single "Chorus 1" section
-  if (sections.length === 0) {
-    sections.push({ label: 'Chorus 1', startMeasure: 0 });
-  }
+  if (sections.length === 0) sections.push({ label: 'Chords', startMeasure: 0 });
 
   // ── Emit ─────────────────────────────────────────────────────────────────
   const csmpnText =
@@ -956,13 +1107,9 @@ export async function importUGProPdf(
       ? emitFakebook(metadata, sections, linearMeasures, config)
       : emitBarlinesStyle(metadata, sections, linearMeasures, config);
 
-  // ── Build debugJson ──────────────────────────────────────────────────────
   const debugJson: DebugJson = {
     metadata,
-    pages: pageRenders.map((pr) => ({
-      pageIndex: pr.pageIndex,
-      systems: pr.systems,
-    })),
+    pages: pageRenders.map((pr) => ({ pageIndex: pr.pageIndex, systems: pr.systems })),
     linear: { measures: linearMeasures },
   };
 
