@@ -8,7 +8,10 @@ export default defineConfig({
   // (index.html) is preserved as a standalone static file.
   build: {
     rollupOptions: {
-      input: 'app.html',
+      input: {
+        app: 'app.html',
+        ugProImporter: 'ug-pro-importer.html',
+      },
       output: {
         // Split large dependencies into separate chunks so the browser can
         // cache them independently and the initial bundle stays lean.

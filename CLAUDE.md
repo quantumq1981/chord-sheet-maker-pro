@@ -34,7 +34,7 @@
 - **iOS-only usage:** All features must work in Mobile Safari (iPhone/iPad). Primary export path is iOS Safari print-to-PDF.
 
 ## Architectural Principles (enforce on every change)
-1. `src/ingest/ugProPdfImporter.ts` is the **canonical** PDF importer — `ug-pro-importer.html` must not diverge from it
+1. `src/ingest/ugProPdfImporter.ts` is the **canonical** PDF importer — `ug-pro-importer.html` (root) is the Vite shell; `public/ug-pro-importer.html` has been deleted
 2. **`index.html` is the canonical location for all slash notation + MusicXML export work** — the developer uses iOS/iPad only; never add app features to the React track in parallel
 3. All dynamic HTML in `index.html` must pass through `escapeHtml()` — no raw interpolation
 4. Tests before features — every new exported function gets a corresponding test
@@ -47,7 +47,9 @@
 |------|---------|
 | `index.html` | Legacy monolith — fake-book renderer, slash notation IIFE, self-tests |
 | `app.html` + `src/` | React app — importers, OSMD notation, chord chart view |
-| `src/ingest/ugProPdfImporter.ts` | Canonical PDF importer (not the standalone HTML) |
+| `ug-pro-importer.html` | Vite HTML shell for the importer page (multi-page build entry) |
+| `src/pages/ugProImporterPage.tsx` | React bootstrap for the importer page — renders `UGProImporterPanel` |
+| `src/ingest/ugProPdfImporter.ts` | Canonical PDF importer (TypeScript module; drives the Vite build page) |
 | `src/parsers/` | Zero-dependency TypeScript parsers (chordPro, csmpn, abc, gp, musicXml) |
 | `src/converters/types.ts` | All public types for the MusicXML→ChordPro converter |
 | `src/converters/chordExtractor.ts` | KIND_SUFFIX_MAP + harmony→chord text functions |
@@ -83,8 +85,8 @@
 |---|------|--------|
 | 5.1 | Split `musicXMLtochordpro.ts` (1,309 lines → 5 modules) | ✅ DONE — `types` · `chordExtractor` · `xmlParser` · `formatter` · `pipeline`; barrel re-export preserves all importers |
 | 5.2A | Port HTML v1.2 algorithm improvements to `ugProPdfImporter.ts` | ✅ DONE — PR #145 (2026-04-20) |
-| 5.2B | Create Vite build artifact: `ug-pro-importer.html` root shell + `src/pages/ugProImporterPage.ts` entry | ⏳ NEXT |
-| 5.2C | Update `vite.config.ts` multi-page input; remove `public/ug-pro-importer.html` | ⏳ NEXT |
+| 5.2B | Create Vite build artifact: `ug-pro-importer.html` root shell + `src/pages/ugProImporterPage.tsx` entry | ✅ DONE — 2026-04-20 |
+| 5.2C | Update `vite.config.ts` multi-page input; remove `public/ug-pro-importer.html` | ✅ DONE — 2026-04-20 |
 | 5.3 | Remaining `index.html` extractions (renderer, importPipeline, settings) — items 2.1D–F | ⏳ PENDING |
 
 ## ugProPdfImporter.ts v1.3 Changes (2026-04-20, PR #145)
