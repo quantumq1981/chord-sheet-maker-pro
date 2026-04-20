@@ -49,6 +49,12 @@
 | `app.html` + `src/` | React app — importers, OSMD notation, chord chart view |
 | `src/ingest/ugProPdfImporter.ts` | Canonical PDF importer (not the standalone HTML) |
 | `src/parsers/` | Zero-dependency TypeScript parsers (chordPro, csmpn, abc, gp, musicXml) |
+| `src/converters/types.ts` | All public types for the MusicXML→ChordPro converter |
+| `src/converters/chordExtractor.ts` | KIND_SUFFIX_MAP + harmony→chord text functions |
+| `src/converters/xmlParser.ts` | MusicXML DOM parsing (metadata, measures, lyrics, key, repeats) |
+| `src/converters/formatter.ts` | ChordPro rendering (grid, lyrics-inline, repeat unroll, section groups) |
+| `src/converters/pipeline.ts` | Orchestrator — `convertMusicXmlToChordPro`, `extractMusicXmlTextFromFile` |
+| `src/converters/musicXMLtochordpro.ts` | Barrel re-export (`export * from './pipeline'`) — preserves import paths |
 | `src/hooks/useOsmdRenderer.ts` | OSMD renderer state + effects extracted from App.tsx |
 | `src/hooks/useExportActions.ts` | All export callbacks + PDF/ChordPro state extracted from App.tsx |
 | `src/utils/osmdHelpers.ts` | Pure OSMD/SVG/canvas utilities extracted from App.tsx |
@@ -72,16 +78,16 @@
 | 3.1 | App.tsx decomposition → hooks + views | ✅ DONE — 1,145 lines (was 1,598 after merge); `useOsmdRenderer` + `useExportActions` + `osmdHelpers` + `appTypes` extracted |
 | 3.3 | React error boundaries (ImportErrorBoundary, SlashNotationBoundary) | ✅ DONE |
 
-## Sprint 5 — ugProPdfImporter Unification (In Progress)
+## Sprint 5 — Converter Decomposition & Unification (In Progress)
 | # | Task | Status |
 |---|------|--------|
-| 5.2A | Port HTML v1.2 algorithm improvements to `ugProPdfImporter.ts` | ✅ DONE — PR #TBD (2026-04-20) |
+| 5.1 | Split `musicXMLtochordpro.ts` (1,309 lines → 5 modules) | ✅ DONE — `types` · `chordExtractor` · `xmlParser` · `formatter` · `pipeline`; barrel re-export preserves all importers |
+| 5.2A | Port HTML v1.2 algorithm improvements to `ugProPdfImporter.ts` | ✅ DONE — PR #145 (2026-04-20) |
 | 5.2B | Create Vite build artifact: `ug-pro-importer.html` root shell + `src/pages/ugProImporterPage.ts` entry | ⏳ NEXT |
 | 5.2C | Update `vite.config.ts` multi-page input; remove `public/ug-pro-importer.html` | ⏳ NEXT |
-| 5.1 | Split `musicXMLtochordpro.ts` (1,291 lines → 4 modules) | ⏳ PENDING |
-| 2.1D-F | Remaining `index.html` extractions (renderer, importPipeline, settings) | ⏳ PENDING |
+| 5.3 | Remaining `index.html` extractions (renderer, importPipeline, settings) — items 2.1D–F | ⏳ PENDING |
 
-## ugProPdfImporter.ts v1.3 Changes (2026-04-20)
+## ugProPdfImporter.ts v1.3 Changes (2026-04-20, PR #145)
 - **`extractPageSpans()`** — viewport-transform matrix multiply (`mul2d`) for accurate span coords on rotated pages; font-size via `Math.hypot` of transformed matrix columns
 - **`classifyPageSpans()`** — replaces `isChordCandidate`/`isRehearsalMarker`; adds header exclusion (`headerExclusionRatio=0.13`, top N% of page), `HEADER_KW_PAT` keyword filter, median font-size filter (2.5× cap)
 - **`filterDensestSystems()`** — drops span groups with < 50% of densest group's span count (for multi-track PDFs)
@@ -159,7 +165,7 @@ All visual settings from the Fake Book Style panel carry through to slash notati
 | **Foreground Color** | Staff lines, barlines, clef, time sig, section labels, strum arrows |
 | **Font Size** (M/S/XS) | Scales SN chord font: M=14px, S≈11.9px, XS≈10.1px (updated for stage readability) |
 | **Chord Alignment** | Center = `text-anchor="middle"`, Left = `text-anchor="start"` |
-| **Music/Chord Font Pack** | Sets Fake Book chord stack + Slash chord + Slash notation/staff text families together |
+| **Music/Chord Font Pack** | Sets Fake Book chord stack + Slash chord + Slash notation/staff text families together. For non-ASC packs, `--fb-chord-font` is wired to the Body/Chord Font selector so free font choices take effect. |
 | **Bar Lines** | Hidden = suppress regular single barlines (repeat/double/final always shown) |
 | **Maj7 / Minor / Dim / Half-dim style** | Applied via `parseChordToken()` in `chordsFromToken()` |
 
@@ -330,7 +336,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 
 1. Reads `sourceEl.value` (already transposed), runs `parseCSMPN()` + `buildSnSections()`
 2. First measure: `<attributes>` (key sig via `keySigFromKey()`, time sig, treble clef, slash measure-style) + optional tempo `<direction>`
-3. **Each section's first measure:** `<direction placement="above"><rehearsal enclosure="none">Label</rehearsal></direction>` — preserves song structure in notation software (MuseScore, Dorico, Sibelius)
+3. **Each section's first measure:** `<rehearsal>` direction — enclosure is `"square"` for `:` and `=` CSMPN markers (boxed rehearsal marks), `"none"` for `-` markers (plain text); `buildSnSections()` stores `markerType` for this purpose
 4. Each measure: `<harmony>` elements (one per chord, with root/kind/bass) then slash `<note>` elements (one per visual beat)
 5. Navigation labels (D.C., D.S., Fine, Coda) detected via `NAV_RE` — suppressed from rehearsal marks
 6. Chord qualities mapped via `chordKind()` — covers all MusicXML 4.0 kinds including half-diminished, augmented-seventh, suspended, major-sixth, and all minor/major-7th extended forms
@@ -385,6 +391,9 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 | ~~Importer fixture tests~~ | ✅ Done — `tests/sniffFormat.test.ts`, `tests/chordProParser.test.ts`, `tests/csmpnParser.test.ts` (2026-04-09) |
 | ~~MusicXML export~~ | ✅ Done — `btnSnXml` + `buildMusicXml()` in `index.html` IIFE (2026-04-16 PRs #135/#136) |
 | ~~MusicXML section rehearsal marks~~ | ✅ Done — `buildMusicXml()` per-section loop + `<rehearsal>` directions (2026-04-18 PR #137) |
+| ~~MusicXML key mode (major/minor)~~ | ✅ Done — `buildMusicXml()` detects minor keys; emits `<mode>minor</mode>` correctly (2026-04-19 PR #143) |
+| ~~MusicXML rehearsal enclosure~~ | ✅ Done — `buildSnSections()` stores `markerType`; `:` / `=` → `enclosure="square"`, `-` → `enclosure="none"` (2026-04-19 PR #143) |
+| ~~Fake Book chord font selector~~ | ✅ Done — `applyFBSettings()` wires `--fb-chord-font` to Body/Chord Font for non-ASC packs; free font options now active (2026-04-19 PR #143) |
 
 ## SPRINT 4 PROGRESS NOTES
 
@@ -393,7 +402,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 - Fixed `react-hooks/exhaustive-deps` warnings in `src/App.tsx`.
 - Verified locally: `npm run lint`, `npm run format:check`, `npm run build`, and `npm run test:all` all pass.
 
-## SLASH NOTATION RECENT CHANGES (2026-04-16 to 2026-04-18)
+## SLASH NOTATION RECENT CHANGES (2026-04-16 to 2026-04-19)
 
 **PR #135 — `fix(musicxml): correct chordKind mapping and export extension for iOS`**
 - Added `chordKind()` function covering full MusicXML 4.0 quality set (letter-o dim, aug7, maj7 variants, minus-style minor, major-sixth, 7♯5)
@@ -411,3 +420,12 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 - Navigation labels (D.C., D.S., Fine, Coda) suppressed from rehearsal marks via `NAV_RE`
 - `src/export/musicXmlExporter.ts` — standalone TypeScript module (test coverage only; not imported by the app)
 - `tests/musicXmlExport.test.ts` — 43 unit tests; total now 168 (4 VexFlow + 164 parser/exporter)
+
+**PR #143 — `fix: MusicXML key mode, rehearsal enclosure, and Fake Book chord font`**
+- `buildMusicXml()`: detects minor keys from `doc.key`; emits `<mode>minor</mode>` (was hardcoded `major`) — fixes Gm/Am/Bbm etc. mapping to wrong key in MuseScore/Dorico/Sibelius
+- `buildMusicXml()`: chord root regex upgraded to handle both unicode (♭/♯) and ASCII (b/#) accidentals — flat/sharp chords now export correctly
+- `buildSnSections()`: stores `markerType` (`-`/`:`/`=`) on each section object
+- `buildMusicXml()`: uses `markerType` to set `enclosure="square"` for `:` and `=` sections, `enclosure="none"` for `-` sections
+- `applyFBSettings()`: `--fb-chord-font` now wired to Body/Chord Font selector for non-ASC packs; free font options reactivated
+- `musicXmlExporter.ts`: added `keyModeStr()` function; `buildFirstMeasureAttributes()` accepts `mode` param
+- `tests/musicXmlExport.test.ts`: 4 new minor-key tests + 2 existing tests updated to assert `<mode>major</mode>`
