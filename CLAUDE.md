@@ -4,7 +4,7 @@
 ## Project Identity
 - **App:** Chord Sheet Maker Pro — music finishing app (not a primary converter)
 - **Developer:** iOS 16+ (iPhone/iPad) — no local console. GitHub Actions = the CI console.
-- **Branch:** `claude/review-claude-md-1mvan` — all work goes here
+- **Branch:** `claude/update-claude-docs-IKErW` — all work goes here
 - **Optimization persona:** Opp the CoderOptimizer — prioritize clean architecture, performance, correctness
 
 ## Sprint 1 — Foundation Hardening ✅ COMPLETE
@@ -25,7 +25,7 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-04-19)
+## Current State (2026-04-20)
 - **168 tests passing** (`npm run test:all`) — 4 VexFlow + 164 parser/exporter tests
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
 - **`app.html` + `src/`** — React/TypeScript track (secondary); `src/export/` and `src/parsers/` used for unit tests only
@@ -82,8 +82,27 @@
 | # | Task | Status |
 |---|------|--------|
 | 5.1 | Split `musicXMLtochordpro.ts` (1,309 lines → 5 modules) | ✅ DONE — `types` · `chordExtractor` · `xmlParser` · `formatter` · `pipeline`; barrel re-export preserves all importers |
-| 5.2 | Unify `ug-pro-importer.html` → build artifact using `src/ingest/ugProPdfImporter.ts` | ⬜ TODO |
-| 5.3 | Remaining `index.html` extractions (renderer, importPipeline, settings) — items 2.1D–F | ⬜ TODO |
+| 5.2A | Port HTML v1.2 algorithm improvements to `ugProPdfImporter.ts` | ✅ DONE — PR #145 (2026-04-20) |
+| 5.2B | Create Vite build artifact: `ug-pro-importer.html` root shell + `src/pages/ugProImporterPage.ts` entry | ⏳ NEXT |
+| 5.2C | Update `vite.config.ts` multi-page input; remove `public/ug-pro-importer.html` | ⏳ NEXT |
+| 5.3 | Remaining `index.html` extractions (renderer, importPipeline, settings) — items 2.1D–F | ⏳ PENDING |
+
+## ugProPdfImporter.ts v1.3 Changes (2026-04-20, PR #145)
+- **`extractPageSpans()`** — viewport-transform matrix multiply (`mul2d`) for accurate span coords on rotated pages; font-size via `Math.hypot` of transformed matrix columns
+- **`classifyPageSpans()`** — replaces `isChordCandidate`/`isRehearsalMarker`; adds header exclusion (`headerExclusionRatio=0.13`, top N% of page), `HEADER_KW_PAT` keyword filter, median font-size filter (2.5× cap)
+- **`filterDensestSystems()`** — drops span groups with < 50% of densest group's span count (for multi-track PDFs)
+- **`longestDarkRun()`** — continuous dark-pixel run check; rejects false barline peaks from dense chord text
+- **`computeStemDensity()`** — overall dark-pixel density of band; drives auto preset selection
+- **`detectBarlinesInBand()`** — now takes `BarlinePresetConfig` (`stemRunRatio`, `minSpacingPx`, `minHeightRatio`); uses `longestDarkRun` to filter false positives
+- **`BARLINE_PRESETS`** — `sparse` (stemRunRatio=0.65, spacing=18px, heightRatio=0.55) and `tab-heavy` (0.80, 28px, 0.65)
+- **Stable staff envelope** — `staffLeft = pageW * 0.05`, `staffRight = pageW * 0.95` instead of deriving from span extents
+- **Two-pass tab-heavy** — if auto-detected as tab-heavy, expands vertical band from 80 → 280 pts below chord Y and re-runs barline detection
+- **`MIN_TOTAL_CHORD_SPANS = 6`** — hard fail-safe; throws clear error for vector-only PDFs
+- **Section deduplication** — `seen` Set with `label@measOffset` key prevents duplicate section markers
+- **`normalizeChordSymbol`** — adds `M7` → `maj7`, strips internal whitespace (handles PDF-split spans like `"C maj7"`)
+- **`barToken`** — returns `'N.C.'` for empty measures when no prior chord is known (vs. `'%'`)
+- **`UGProImporterConfig`** — new fields: `headerExclusionRatio: number` (default 0.13), `barlinePreset: 'auto'|'sparse'|'tab-heavy'` (default `'auto'`)
+- **`SystemDebug`** — new optional fields: `preset?: string`, `stemDensity?: number`
 
 ---
 
