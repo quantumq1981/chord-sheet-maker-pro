@@ -954,7 +954,7 @@ export async function importUGProPdf(
 
       const usedPresetName =
         forcedPresetName ?? (stemDensity > STEM_DENSITY_THRESHOLD ? 'tab-heavy' : 'sparse');
-      let presetCfg = BARLINE_PRESETS[usedPresetName];
+      const presetCfg = BARLINE_PRESETS[usedPresetName];
 
       let { by0, by1 } = computeBand(80);
       let barlinesXPdf = detectBarlinesInBand(
