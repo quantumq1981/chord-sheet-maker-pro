@@ -30,6 +30,23 @@ function parseTabVoicings(text){
 }
 
 /**
+ * Parse a Roman numeral string (I, II, III, IV…) to an integer.
+ * Returns 0 for unrecognised input.
+ * @param {string} str
+ * @returns {number}
+ */
+function _parseRoman(str){
+  const MAP = {I:1,V:5,X:10,L:50,C:100,D:500,M:1000};
+  let result = 0, prev = 0;
+  for (const ch of (str || '').toUpperCase().split('').reverse()){
+    const v = MAP[ch] || 0;
+    result += v >= prev ? v : -v;
+    prev = v;
+  }
+  return result || 0;
+}
+
+/**
  * Parse a CSMPN source text into a document object.
  *
  * Returns:
@@ -53,10 +70,11 @@ function parseCSMPN(text){
     tempo: '',
     time: '',
     key: '',
+    capo: 0,
     blocks: []
   };
 
-  const metaRE = /^(Title|Composer|Artist|Style|Tempo|Time|Key)\s*:\s*(.*)$/i;
+  const metaRE = /^(Title|Composer|Artist|Style|Tempo|Time|Key|Capo)\s*:\s*(.*)$/i;
 
   // First pass: meta extraction
   const contentLines = [];
@@ -71,6 +89,11 @@ function parseCSMPN(text){
       else if (field === 'tempo') doc.tempo = val;
       else if (field === 'time') doc.time = val;
       else if (field === 'key') doc.key = val;
+      else if (field === 'capo'){
+        // Accept integer ("2") or roman numeral ("II")
+        const n = parseInt(val, 10);
+        doc.capo = !isNaN(n) ? n : _parseRoman(val);
+      }
       continue;
     }
     contentLines.push(line);

@@ -3632,6 +3632,15 @@ window.runCSMPNSelfTests = function(){
   const TAB_GAP     = 10;                                 // px — wider than slash staff for readability
   const TAB_STAFF_H = (TAB_LINES - 1) * TAB_GAP;         // 50 px
   const TAB_SEP     = 14;                                 // gap between slash staff bottom and TAB staff top
+  // Chord diagram layout constants (Sprint 8.7 — rendered above first system when {tab} blocks are present)
+  const DIAG_STRING_GAP = 9;                                         // px between adjacent strings (horizontal)
+  const DIAG_FRET_GAP   = 10;                                        // px between adjacent frets (vertical)
+  const DIAG_STRINGS    = 6;
+  const DIAG_FRETS      = 4;                                         // visible fret rows per diagram
+  const DIAG_W          = (DIAG_STRINGS - 1) * DIAG_STRING_GAP;     // 45 px — grid width
+  const DIAG_H          = DIAG_FRETS * DIAG_FRET_GAP;               // 40 px — grid height
+  const DIAG_OUTER_W    = DIAG_W + 22;                               // 67 px — per-diagram slot width
+  const DIAG_OUTER_H    = DIAG_H + 46;                               // 86 px — per-diagram slot height
   const PAGE_W   = 760;
   const MARGIN_H = 36;
   const CLEF_W   = 46;
@@ -3934,6 +3943,85 @@ window.runCSMPNSelfTests = function(){
     return null;
   }
 
+  // Convert an integer (1–15) to a Roman numeral string for capo markers.
+  function toRoman(n){
+    const pairs = [[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
+    let s = '';
+    for (const [v, r] of pairs){ while (n >= v){ s += r; n -= v; } }
+    return s;
+  }
+
+  // Capo indicator rendered below the T/A/B label on the first TAB row.
+  // capoNum: integer fret position (1-based); tabY: top y of TAB staff.
+  function tabCapoMarker(capoNum, tabY){
+    if (!capoNum || capoNum < 1) return '';
+    const fg  = _snCfg.fgColor;
+    const ff  = escapeHtml(_snCfg.notationFontFamily);
+    const cx  = MARGIN_H + CLEF_W / 2;
+    const mid = TAB_STAFF_H / 2;
+    return `<text x="${cx}" y="${tabY + mid + 27}" font-size="7.5" font-weight="bold" font-style="italic" fill="${fg}" text-anchor="middle" font-family="${ff}">cap.${toRoman(capoNum)}</text>`;
+  }
+
+  // Render one chord fingering diagram box.
+  // name: chord label; voicing: [string1=high-e, …, string6=low-E] array;
+  // ox, oy: top-left of the diagram's bounding slot.
+  function chordDiagramSvg(name, voicing, ox, oy){
+    const fg  = _snCfg.fgColor;
+    const ff  = escapeHtml(_snCfg.notationFontFamily);
+    let s = '';
+
+    // Chord name centred above box
+    s += `<text x="${ox + DIAG_OUTER_W / 2}" y="${oy + 11}" font-size="10" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${ff}">${escapeHtml(name)}</text>`;
+
+    // Display order: low-E on left → high-e on right (standard guitar diagram convention).
+    // Our voicing stores [string1=high-e, …, string6=low-E], so reverse for display.
+    const disp = voicing ? [...voicing].reverse() : Array(DIAG_STRINGS).fill('-');
+
+    // Find lowest positive fret to decide whether to scroll the diagram window
+    let minFret = Infinity;
+    for (const f of disp){ if (typeof f === 'number' && f > 0 && f < minFret) minFret = f; }
+    const atNut    = !isFinite(minFret) || minFret <= 1;
+    const baseFret = atNut ? 0 : minFret - 1;   // diagram window starts at this fret
+
+    const gridX = ox + 10;                       // x of leftmost string line
+    const nutY  = oy + 22;                       // y of nut / top grid line
+
+    // Nut: thick line when open position; thin line with fret label when shifted
+    s += `<line x1="${gridX}" y1="${nutY}" x2="${gridX + DIAG_W}" y2="${nutY}" stroke="${fg}" stroke-width="${atNut ? 3 : 1}"/>`;
+    if (!atNut){
+      s += `<text x="${gridX + DIAG_W + 3}" y="${nutY + 5}" font-size="7" fill="${fg}" font-family="${ff}">${baseFret + 1}fr</text>`;
+    }
+
+    // Vertical string lines
+    for (let i = 0; i < DIAG_STRINGS; i++){
+      const sx = gridX + i * DIAG_STRING_GAP;
+      s += `<line x1="${sx}" y1="${nutY}" x2="${sx}" y2="${nutY + DIAG_H}" stroke="${fg}" stroke-width="0.8"/>`;
+    }
+    // Horizontal fret lines
+    for (let fi = 1; fi <= DIAG_FRETS; fi++){
+      s += `<line x1="${gridX}" y1="${nutY + fi * DIAG_FRET_GAP}" x2="${gridX + DIAG_W}" y2="${nutY + fi * DIAG_FRET_GAP}" stroke="${fg}" stroke-width="0.8"/>`;
+    }
+
+    // String indicators (×/○ above nut) and finger dots inside grid
+    for (let di = 0; di < DIAG_STRINGS; di++){
+      const sx   = gridX + di * DIAG_STRING_GAP;
+      const fret = di < disp.length ? disp[di] : '-';
+      if (fret === 'x'){
+        s += `<text x="${sx}" y="${nutY - 3}" font-size="7" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${ff}">x</text>`;
+      } else if (fret === 0){
+        s += `<circle cx="${sx}" cy="${nutY - 7}" r="3" fill="none" stroke="${fg}" stroke-width="1"/>`;
+      } else if (typeof fret === 'number' && fret > 0){
+        const relFret = fret - baseFret;
+        if (relFret >= 1 && relFret <= DIAG_FRETS){
+          s += `<circle cx="${sx}" cy="${nutY + (relFret - 0.5) * DIAG_FRET_GAP}" r="3.5" fill="${fg}"/>`;
+        }
+      }
+      // '-' (not played / skip) — render nothing
+    }
+
+    return s;
+  }
+
   function barlineSvg(x, y, h, type){
     const fg = _snCfg.fgColor;
     const lg = LINE_GAP;
@@ -4085,7 +4173,7 @@ window.runCSMPNSelfTests = function(){
   // navText: D.C./D.S./Fine/Coda marker rendered below last barline
   // ending:  '1' or '2' bracket rendered above first measure of ending section
   // showDots: render augmentation dot after each slash (compound meter)
-  function renderRow(measures, sectionLabel, systemY, measureWidth, bpm, showClef, timeSig, navText, ending, showDots, tabVoicings){
+  function renderRow(measures, sectionLabel, systemY, measureWidth, bpm, showClef, timeSig, navText, ending, showDots, tabVoicings, capoNum){
     const staffX   = MARGIN_H + CLEF_W;
     const hasLabel = !!sectionLabel;
     const staffY   = systemY + (hasLabel ? SECTION_LABEL_H : 0) + CHORD_AREA_H;
@@ -4229,6 +4317,8 @@ window.runCSMPNSelfTests = function(){
       const tabY = staffY + STAFF_H + TAB_SEP;
       // T/A/B clef label on first row of each section
       if (showClef) svg += tabClefLabel(tabY);
+      // Capo indicator below T/A/B label (first TAB row of chart only — caller controls)
+      if (capoNum > 0) svg += tabCapoMarker(capoNum, tabY);
       // 6-line staff
       svg += tabStaffLines(staffX, tabY, totalW);
       // Per-measure: fret numbers at chord-change beats, slash marks elsewhere
@@ -4349,17 +4439,55 @@ window.runCSMPNSelfTests = function(){
       : SYSTEM_ROW_H;
     const rowTotalH = (row) => (row.sectionLabel ? SECTION_LABEL_H : 0) + rowBodyH(row);
 
-    let svgH = 16;
+    // ── Sprint 8.7: Collect unique voicings for chord diagrams ───────────
+    // Preserve first-appearance order; later occurrences of the same chord name
+    // may carry a different voicing but we keep the first for diagram consistency.
+    const allVoicings = new Map();
+    for (const sec of processedSections){
+      if (sec.tabVoicings){
+        for (const [cname, cv] of Object.entries(sec.tabVoicings)){
+          if (!allVoicings.has(cname)) allVoicings.set(cname, cv);
+        }
+      }
+    }
+    const hasDiagrams = allVoicings.size > 0;
+    // Reserve vertical space for as many diagram rows as needed
+    let diagAreaH = 0;
+    if (hasDiagrams){
+      const maxPerRow = Math.max(1, Math.floor((PAGE_W - 2 * MARGIN_H) / DIAG_OUTER_W));
+      diagAreaH = Math.ceil(allVoicings.size / maxPerRow) * DIAG_OUTER_H + 12;
+    }
+
+    let svgH = 16 + diagAreaH;
     for (const row of rows) svgH += rowTotalH(row);
     svgH += 16;
 
-    // Background rect fills the SVG with bgColor, then render each row
+    // Background rect fills the SVG with bgColor
     let svgContent = `<rect x="0" y="0" width="${PAGE_W}" height="${svgH}" fill="${_snCfg.bgColor}"/>`;
-    let curY = 16;
+
+    // ── Chord diagram area (above first row) ──────────────────────────────
+    if (hasDiagrams){
+      const names     = [...allVoicings.keys()];
+      const maxPerRow = Math.max(1, Math.floor((PAGE_W - 2 * MARGIN_H) / DIAG_OUTER_W));
+      let dx = MARGIN_H, dy = 8;
+      for (let ni = 0; ni < names.length; ni++){
+        if (ni > 0 && ni % maxPerRow === 0){ dx = MARGIN_H; dy += DIAG_OUTER_H; }
+        svgContent += chordDiagramSvg(names[ni], allVoicings.get(names[ni]), dx, dy);
+        dx += DIAG_OUTER_W;
+      }
+    }
+
+    // ── Row rendering ─────────────────────────────────────────────────────
+    let curY = 16 + diagAreaH;
+    // firstTabRowDone ensures capo marker appears exactly once (Sprint 8.6)
+    let firstTabRowDone = false;
     for (let ri = 0; ri < rows.length; ri++){
       const row      = rows[ri];
       const showClef = (ri === 0) || !!row.sectionLabel || !!row.ending;
-      svgContent += renderRow(row.measures, row.sectionLabel, curY, row.measureWidth, bpm, showClef, timeSig, row.navText, row.ending, showDots, row.tabVoicings);
+      // Pass capo number only to the first TAB row; 0 means "no marker"
+      const rowCapo  = (row.tabVoicings && !firstTabRowDone && doc.capo > 0) ? doc.capo : 0;
+      if (row.tabVoicings) firstTabRowDone = true;
+      svgContent += renderRow(row.measures, row.sectionLabel, curY, row.measureWidth, bpm, showClef, timeSig, row.navText, row.ending, showDots, row.tabVoicings, rowCapo);
       curY += rowTotalH(row);
     }
 
@@ -4393,6 +4521,36 @@ window.runCSMPNSelfTests = function(){
 
   function getSvgEl(){ return output.querySelector('#snSvgOutput'); }
   function getSongTitle(){ return (output.querySelector('.sn-song-title') || {}).textContent || 'slash-notation'; }
+
+  // Build a MusicXML <frame> element from a voicing array (Sprint 8.8).
+  // voicing: [string1=high-e, …, string6=low-E] — matches MusicXML string numbering
+  //          (string 1 = highest pitch), so no reversal is needed.
+  // Returns '' when voicing is falsy or produces no playable notes.
+  function buildFrameXml(voicing){
+    if (!voicing || !voicing.length) return '';
+    // Find minimum positive fret for <first-fret> positioning
+    let minFret = Infinity;
+    for (const f of voicing){ if (typeof f === 'number' && f > 0 && f < minFret) minFret = f; }
+    const atNut        = !isFinite(minFret) || minFret <= 1;
+    const firstFretNum = atNut ? 1 : minFret;
+    const firstFretTag = firstFretNum > 1 ? `<first-fret>${firstFretNum}</first-fret>` : '';
+    const notes = [];
+    for (let si = 0; si < voicing.length && si < 6; si++){
+      const fret      = voicing[si];
+      const stringNum = si + 1;  // 1=high-e … 6=low-E (MusicXML convention)
+      if (fret === 'x'){
+        // Muted string: include with fret 0 + fingering -1 per MusicXML convention
+        notes.push(`<frame-note><string>${stringNum}</string><fret>0</fret><fingering>0</fingering></frame-note>`);
+      } else if (fret === 0){
+        notes.push(`<frame-note><string>${stringNum}</string><fret>0</fret></frame-note>`);
+      } else if (typeof fret === 'number' && fret > 0){
+        notes.push(`<frame-note><string>${stringNum}</string><fret>${fret}</fret></frame-note>`);
+      }
+      // '-' (skip / not played) — omit entirely
+    }
+    if (!notes.length) return '';
+    return `<frame><frame-strings>6</frame-strings><frame-frets>4</frame-frets>${firstFretTag}${notes.join('')}</frame>`;
+  }
 
   // MusicXML chord-kind lookup (covers the most common chord qualities).
   // Handles all dimStyle ('dim', '°', 'o'), minorStyle ('m', 'min', '−'),
@@ -4514,7 +4672,9 @@ window.runCSMPNSelfTests = function(){
         // ── 3. <harmony> chord symbols ─────────────────────────────────────
         // Robust root parser: handles both unicode (♭/♯) and ASCII (b/#) accidentals.
         let harmonyXml = '';
-        const chordList = chords || [];
+        const chordList  = chords || [];
+        // Raw token names for TAB voicing lookup (Sprint 8.8)
+        const rawTokens  = (bar.token || '').split('_').map(s => s.trim().replace(/[!^.=]$/, ''));
         for (let ci = 0; ci < chordList.length; ci++){
           const ch = chordList[ci];
           if (!ch || !ch.text) continue;
@@ -4535,8 +4695,12 @@ window.runCSMPNSelfTests = function(){
           const bassXml   = bassStep ? `<bass><bass-step>${escapeHtml(bassStep)}</bass-step>${bassAlter !== 0 ? `<bass-alter>${bassAlter}</bass-alter>` : ''}</bass>` : '';
           const offset    = Math.round((ci / Math.max(chordList.length, 1)) * parseInt(beats, 10) * divisions);
           const offsetTag = offset > 0 ? `<offset>${offset}</offset>` : '';
+          // Sprint 8.8: include <frame> TAB voicing when available
+          const rawChord  = rawTokens[ci] || '';
+          const fVoicing  = sec.tabVoicings ? lookupTabVoicing(sec.tabVoicings, rawChord) : null;
+          const frameXml  = buildFrameXml(fVoicing);
           harmonyXml += `
-      <harmony>${offsetTag}<root><root-step>${escapeHtml(rootStep)}</root-step>${alterTag}</root><kind>${chordKind(qualRaw)}</kind>${bassXml}</harmony>`;
+      <harmony>${offsetTag}<root><root-step>${escapeHtml(rootStep)}</root-step>${alterTag}</root><kind>${chordKind(qualRaw)}</kind>${bassXml}${frameXml}</harmony>`;
         }
 
         // ── 4. <note> slash noteheads (one per visual beat) ────────────────
