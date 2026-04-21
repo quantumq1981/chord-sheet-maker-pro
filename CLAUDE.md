@@ -92,9 +92,9 @@
 | 8.3 | New SVG primitives: `tabStaffLines`, `tabClefLabel`, `tabFretNum`, `tabSlashMark`, `lookupTabVoicing`; TAB layout constants | ✅ DONE — 2026-04-21; TAB_GAP=10px, TAB_STAFF_H=50px, TAB_SEP=14px |
 | 8.4 | `renderRow()`: `tabVoicings` param; `barH` extends barlines through TAB staff; TAB staff renders below slash staff | ✅ DONE — 2026-04-21 |
 | 8.5 | `renderSlashNotationHtml()`: `rawChords` + `tabVoicings` in row objects; variable row heights | ✅ DONE — 2026-04-21 |
-| 8.6 | Capo marker on TAB nut line | ⏳ TODO |
-| 8.7 | Chord diagram grids above first system | ⏳ TODO |
-| 8.8 | MusicXML export extended with TAB frame data | ⏳ TODO |
+| 8.6 | Capo marker on TAB nut line | ✅ DONE — 2026-04-21; `toRoman()` + `tabCapoMarker()` in IIFE; `Capo` meta field parsed in `csmpnParser.js` (int + Roman numeral); `renderRow` 12th param `capoNum`; `renderSlashNotationHtml` tracks `firstTabRowDone` |
+| 8.7 | Chord diagram grids above first system | ✅ DONE — 2026-04-21; `chordDiagramSvg()` renders 6-string fingering boxes (nut/fret-shift, open/muted indicators, finger dots); `allVoicings` Map collects unique voicings; `diagAreaH` computed dynamically; diagrams flow across the top of the SVG |
+| 8.8 | MusicXML export extended with TAB frame data | ✅ DONE — 2026-04-21; `buildFrameXml(voicing)` generates `<frame>` elements (6 strings, 4 frets, `<first-fret>` when not at nut); `buildMusicXml()` extracts `rawTokens` per bar and injects `<frame>` inside each `<harmony>` when a voicing is available |
 
 ### Sprint 8 TAB Syntax
 Add a `{tab}` block directly after (or before) any section's bar content:
@@ -423,9 +423,9 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 | Feature | Notes |
 |---|---|
 | ~~Guitar TAB staff~~ | ✅ Done — `{tab}` voicing blocks + 6-line SVG staff in slash notation engine (2026-04-21, Sprint 8) |
-| Capo marker on TAB nut line | Sprint 8.6 |
-| Chord diagram grids | Sprint 8.7 — render above first system |
-| MusicXML with TAB frames | Sprint 8.8 |
+| ~~Capo marker on TAB nut line~~ | ✅ Done — `tabCapoMarker()` in IIFE; `Capo:` meta field in `csmpnParser.js` (2026-04-21, Sprint 8.6) |
+| ~~Chord diagram grids~~ | ✅ Done — `chordDiagramSvg()` renders above first system when `{tab}` blocks present (2026-04-21, Sprint 8.7) |
+| ~~MusicXML with TAB frames~~ | ✅ Done — `buildFrameXml()` + `<frame>` injection in `buildMusicXml()` (2026-04-21, Sprint 8.8) |
 | Ghost notes / muted noteheads | Needs per-beat token syntax extension in CSMPN parser |
 | Hammer-on / Pull-off slurs | Requires note-pair coordinates — needs richer data model |
 | VexFlow integration | Full renderer rewrite; deferred pending need |
@@ -495,3 +495,22 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 - File size: rejects individual images >10 MB (HTTP 400) using seek/tell rather than reading into memory
 - Path sanitization: `Path(filename).name` strips any directory traversal component
 - CORS: `_add_cors()` after_request hook allows only `127.0.0.1`, `localhost`, and `file://` origins
+
+## SPRINT 8 CHANGES (2026-04-21)
+
+**Sprint 8.6 — Capo marker on first TAB row**
+- `csmpnParser.js`: added `_parseRoman(str)` helper (Roman numeral → integer, supports `Capo: II` format)
+- `csmpnParser.js`: `doc.capo` field + `Capo` in `metaRE`; accepts integer (`Capo: 2`) or Roman numeral (`Capo: II`)
+- `index.html` IIFE: `toRoman(n)` converts integer 1–15 to Roman numeral string
+- `index.html` IIFE: `tabCapoMarker(capoNum, tabY)` renders `cap.II` italic bold text below T/A/B label in the clef area
+- `renderRow()` gains 12th param `capoNum` (integer, 0 = no marker); marker renders inside `if (tabVoicings)` block
+- `renderSlashNotationHtml()`: reads `doc.capo`; `firstTabRowDone` flag ensures capo appears exactly once per chart
+
+**Sprint 8.7 — Chord diagram grids above first system**
+- New layout constants: `DIAG_STRING_GAP=9`, `DIAG_FRET_GAP=10`, `DIAG_STRINGS=6`, `DIAG_FRETS=4`, `DIAG_W=45`, `DIAG_H=40`, `DIAG_OUTER_W=67`, `DIAG_OUTER_H=86`
+- New function `chordDiagramSvg(name, voicing, ox, oy)`: 6-string fingering box with nut/fret-shift detection, ×/○ above-nut indicators, filled finger dots on correct string+fret cells; diagram orientation follows standard guitar convention (low-E left, high-e right)
+- `renderSlashNotationHtml()`: builds `allVoicings` Map (first-appearance order across all sections); computes `diagAreaH` dynamically based on chord count and page width; adds diagram band above first row; `svgH` and `curY` adjusted accordingly
+
+**Sprint 8.8 — MusicXML `<frame>` TAB data**
+- New function `buildFrameXml(voicing)`: generates MusicXML 4.0 `<frame>` element; muted strings use `<fingering>0</fingering>`; `<first-fret>` emitted when diagram window is above fret 1; skips `-` (not-played) strings entirely
+- `buildMusicXml()`: extracts `rawTokens` from each bar token for voicing lookup; calls `lookupTabVoicing(sec.tabVoicings, rawChord)` per chord; injects `${frameXml}` inside `<harmony>` elements when voicing is found
