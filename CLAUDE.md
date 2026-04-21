@@ -84,6 +84,33 @@
 | 3.1 | App.tsx decomposition → hooks + views | ✅ DONE — 1,145 lines (was 1,598 after merge); `useOsmdRenderer` + `useExportActions` + `osmdHelpers` + `appTypes` extracted |
 | 3.3 | React error boundaries (ImportErrorBoundary, SlashNotationBoundary) | ✅ DONE |
 
+## Sprint 8 — Guitar TAB Staff ✅ COMPLETE (tasks 8.1–8.5)
+| # | Task | Status |
+|---|------|--------|
+| 8.1 | `csmpnParser.js`: `parseTabVoicings()` + `{tab}` block parsing (single-line and multi-line) | ✅ DONE — 2026-04-21; emits `{type:'tab', voicings}` blocks |
+| 8.2 | `buildSnSections()`: `pendingTabVoicings` state; `{type:'tab'}` forwarded to section objects | ✅ DONE — 2026-04-21 |
+| 8.3 | New SVG primitives: `tabStaffLines`, `tabClefLabel`, `tabFretNum`, `tabSlashMark`, `lookupTabVoicing`; TAB layout constants | ✅ DONE — 2026-04-21; TAB_GAP=10px, TAB_STAFF_H=50px, TAB_SEP=14px |
+| 8.4 | `renderRow()`: `tabVoicings` param; `barH` extends barlines through TAB staff; TAB staff renders below slash staff | ✅ DONE — 2026-04-21 |
+| 8.5 | `renderSlashNotationHtml()`: `rawChords` + `tabVoicings` in row objects; variable row heights | ✅ DONE — 2026-04-21 |
+| 8.6 | Capo marker on TAB nut line | ⏳ TODO |
+| 8.7 | Chord diagram grids above first system | ⏳ TODO |
+| 8.8 | MusicXML export extended with TAB frame data | ⏳ TODO |
+
+### Sprint 8 TAB Syntax
+Add a `{tab}` block directly after (or before) any section's bar content:
+```
+- Verse
+| G | G | C | D |
+{tab
+  G: 3,2,0,0,0,3
+  C: x,3,2,0,1,0
+  D: x,x,0,2,3,2
+}
+```
+Strings ordered high-e (string 1, top line) → low-E (string 6, bottom line).
+Values: integer fret, `x` (muted), `-` (not played/skip).
+Sections without a `{tab}` block render as normal slash notation.
+
 ## Sprint 6 — Standalone Pages, Repeat Expansion & Security ✅ COMPLETE
 | # | Task | Status |
 |---|------|--------|
@@ -395,7 +422,10 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 
 | Feature | Notes |
 |---|---|
-| Guitar TAB staff | Requires actual fret numbers — not representable in chord-symbol notation alone |
+| ~~Guitar TAB staff~~ | ✅ Done — `{tab}` voicing blocks + 6-line SVG staff in slash notation engine (2026-04-21, Sprint 8) |
+| Capo marker on TAB nut line | Sprint 8.6 |
+| Chord diagram grids | Sprint 8.7 — render above first system |
+| MusicXML with TAB frames | Sprint 8.8 |
 | Ghost notes / muted noteheads | Needs per-beat token syntax extension in CSMPN parser |
 | Hammer-on / Pull-off slurs | Requires note-pair coordinates — needs richer data model |
 | VexFlow integration | Full renderer rewrite; deferred pending need |
