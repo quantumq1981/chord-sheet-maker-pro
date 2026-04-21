@@ -3629,8 +3629,8 @@ window.runCSMPNSelfTests = function(){
   const SECTION_LABEL_H = 20;
   // TAB staff constants (used when a section has {tab} voicing data)
   const TAB_LINES   = 6;
-  const TAB_GAP     = LINE_GAP;                           // 8 px — same as slash staff
-  const TAB_STAFF_H = (TAB_LINES - 1) * TAB_GAP;         // 40 px
+  const TAB_GAP     = 10;                                 // px — wider than slash staff for readability
+  const TAB_STAFF_H = (TAB_LINES - 1) * TAB_GAP;         // 50 px
   const TAB_SEP     = 14;                                 // gap between slash staff bottom and TAB staff top
   const PAGE_W   = 760;
   const MARGIN_H = 36;
@@ -3911,9 +3911,9 @@ window.runCSMPNSelfTests = function(){
       return `<text x="${cx}" y="${lineY + 4}" font-size="9" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${ff}">x</text>`;
     }
     const txt = String(fret);
-    const bgW = txt.length > 1 ? 13 : 9;
+    const bgW = txt.length > 1 ? 16 : 11;
     // Background rect breaks the staff line so the fret number is legible
-    return `<rect x="${cx - bgW / 2}" y="${lineY - 5}" width="${bgW}" height="10" fill="${bg}"/>` +
+    return `<rect x="${cx - bgW / 2}" y="${lineY - 5}" width="${bgW}" height="11" fill="${bg}"/>` +
            `<text x="${cx}" y="${lineY + 4}" font-size="9" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${ff}">${txt}</text>`;
   }
 
