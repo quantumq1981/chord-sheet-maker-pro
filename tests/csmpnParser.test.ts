@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { parseCsmpn } from '../src/parsers/csmpnParser.js';
+import { parseCsmpn, expandCsmpnRepeats } from '../src/parsers/csmpnParser.js';
 import type { ChordToken } from '../src/models/ChordChartModel.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -184,4 +184,49 @@ test('parseCsmpn: ASC small-caps marker "`" is preserved in chord text', () => {
   const chords = sectionChords(doc);
 
   assert.ok(chords.includes('D/F#`'));
+});
+
+// ── expandCsmpnRepeats ───────────────────────────────────────────────────────
+
+test('expandCsmpnRepeats: |: ... :| doubles the chord group', () => {
+  const out = expandCsmpnRepeats('|: C Am F G :|');
+  assert.ok(out.includes('C Am F G C Am F G'), `got: ${out}`);
+});
+
+test('expandCsmpnRepeats: |: ... :| x3 repeats three times', () => {
+  const out = expandCsmpnRepeats('|: Dm7 G7 :| x3');
+  const count = (out.match(/Dm7/g) ?? []).length;
+  assert.equal(count, 3);
+});
+
+test('expandCsmpnRepeats: inner | bar separator is preserved', () => {
+  const out = expandCsmpnRepeats('|: C Am | F G :|');
+  assert.ok(out.includes('C Am | F G C Am | F G'), `got: ${out}`);
+});
+
+test('expandCsmpnRepeats: two repeat groups on one line both expand', () => {
+  const out = expandCsmpnRepeats('|: C G :| |: Am F :| x3');
+  const cCount = (out.match(/\bC\b/g) ?? []).length;
+  const amCount = (out.match(/Am/g) ?? []).length;
+  assert.equal(cCount, 2);
+  assert.equal(amCount, 3);
+});
+
+test('expandCsmpnRepeats: metadata and marker lines pass through unchanged', () => {
+  const input = 'Title: My Song\n- Verse\nC G Am F';
+  assert.equal(expandCsmpnRepeats(input), input);
+});
+
+test('expandCsmpnRepeats: barRepeats:false leaves text unchanged', () => {
+  const input = '|: C Am F G :|';
+  assert.equal(expandCsmpnRepeats(input, { barRepeats: false }), input);
+});
+
+test('expandCsmpnRepeats: empty string returns empty string', () => {
+  assert.equal(expandCsmpnRepeats(''), '');
+});
+
+test('expandCsmpnRepeats: non-repeat chord line passes through unchanged', () => {
+  const input = 'C Am F G';
+  assert.equal(expandCsmpnRepeats(input), input);
 });

@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UG Text Importer — Chord Sheet Maker Pro</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background: #12121e;
+        color: #e8e8f0;
+        font-family: system-ui, -apple-system, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      header {
+        background: #1c1c2e;
+        border-bottom: 1px solid #2e2e46;
+        padding: 14px 20px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #c8b8ff;
+      }
+      header a {
+        color: #8888bb;
+        text-decoration: none;
+        font-size: 0.85rem;
+      }
+      header a:hover {
+        color: #c8b8ff;
+      }
+      main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        padding: 20px;
+        max-width: 860px;
+        width: 100%;
+        margin: 0 auto;
+      }
+      .pane {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      label {
+        font-size: 0.8rem;
+        color: #9999bb;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      textarea {
+        width: 100%;
+        min-height: 220px;
+        background: #1a1a2e;
+        border: 1px solid #2e2e46;
+        border-radius: 8px;
+        color: #e8e8f0;
+        font-family: 'Courier New', monospace;
+        font-size: 0.88rem;
+        padding: 12px;
+        resize: vertical;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      textarea:focus {
+        border-color: #6655cc;
+      }
+      textarea[readonly] {
+        background: #141428;
+        color: #b8b8d8;
+      }
+      .btn-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      button {
+        padding: 9px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s, background 0.15s;
+      }
+      button:active {
+        opacity: 0.75;
+      }
+      #btnConvert {
+        background: #6655cc;
+        color: #fff;
+      }
+      #btnConvert:hover {
+        background: #7766dd;
+      }
+      #btnCopy {
+        background: #2a2a44;
+        color: #c8b8ff;
+        border: 1px solid #4444aa;
+      }
+      #btnCopy:hover {
+        background: #333355;
+      }
+      #btnDownload {
+        background: #2a2a44;
+        color: #c8b8ff;
+        border: 1px solid #4444aa;
+      }
+      #btnDownload:hover {
+        background: #333355;
+      }
+      #status {
+        font-size: 0.82rem;
+        color: #9999bb;
+        min-height: 1.2em;
+      }
+      #status.ok {
+        color: #66cc99;
+      }
+      #status.err {
+        color: #cc6677;
+      }
+      @media (min-width: 600px) {
+        main {
+          padding: 28px 32px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>UG Text Importer</h1>
+      <a href="index.html">← Back to Chord Sheet Maker Pro</a>
+    </header>
+    <main>
+      <div class="pane">
+        <label for="inputText">Paste UG / plain-text chord sheet</label>
+        <textarea
+          id="inputText"
+          spellcheck="false"
+          placeholder="Paste your Ultimate Guitar or plain-text chord sheet here…"
+        ></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button id="btnConvert">Convert to CSMPN</button>
+        <span id="status"></span>
+      </div>
+
+      <div class="pane">
+        <label for="outputText">CSMPN output</label>
+        <textarea id="outputText" readonly spellcheck="false" placeholder="Converted output will appear here…"></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button id="btnCopy">Copy</button>
+        <button id="btnDownload">Download .csmpn</button>
+      </div>
+    </main>
+
+    <!-- Minimal stubs so importPipeline.js works without the full index.html environment -->
+    <script>
+      let importDiagnostics = null;
+      const fbSettings = { barsPerRow: 4, includeLyrics: true };
+    </script>
+
+    <script src="utils.js"></script>
+    <script src="chordProcessing.js"></script>
+    <script src="csmpnParser.js"></script>
+    <script src="settings.js"></script>
+    <script src="importPipeline.js"></script>
+
+    <script>
+      'use strict';
+
+      const inputEl = document.getElementById('inputText');
+      const outputEl = document.getElementById('outputText');
+      const statusEl = document.getElementById('status');
+
+      function setStatus(msg, kind) {
+        statusEl.textContent = msg;
+        statusEl.className = kind || '';
+      }
+
+      document.getElementById('btnConvert').addEventListener('click', () => {
+        const raw = inputEl.value.trim();
+        if (!raw) {
+          setStatus('Paste a chord sheet first.', 'err');
+          return;
+        }
+        try {
+          const result = importUGText(raw);
+          outputEl.value = result || '';
+          if (result) {
+            setStatus('Converted successfully.', 'ok');
+          } else {
+            setStatus('Nothing was produced — check the input format.', 'err');
+          }
+        } catch (err) {
+          setStatus('Error: ' + (err && err.message ? err.message : String(err)), 'err');
+          outputEl.value = '';
+        }
+      });
+
+      document.getElementById('btnCopy').addEventListener('click', async () => {
+        const text = outputEl.value;
+        if (!text) {
+          setStatus('Nothing to copy.', 'err');
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus('Copied to clipboard.', 'ok');
+        } catch {
+          outputEl.select();
+          document.execCommand('copy');
+          setStatus('Copied (fallback).', 'ok');
+        }
+      });
+
+      document.getElementById('btnDownload').addEventListener('click', () => {
+        const text = outputEl.value;
+        if (!text) {
+          setStatus('Nothing to download.', 'err');
+          return;
+        }
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'chart.csmpn';
+        a.click();
+        URL.revokeObjectURL(url);
+        setStatus('Downloaded.', 'ok');
+      });
+    </script>
+  </body>
+</html>
