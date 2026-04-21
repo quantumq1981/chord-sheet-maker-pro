@@ -7,12 +7,41 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
+from collections import defaultdict
 from pathlib import Path
 from typing import List
 
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
+
+# ── Security constants ────────────────────────────────────────────────────────
+MAX_IMAGES_PER_REQUEST = 20
+MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per image
+MAX_REQUESTS_PER_MINUTE = 10
+
+_rate_buckets: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(ip: str) -> bool:
+    now = time.monotonic()
+    window = [t for t in _rate_buckets[ip] if now - t < 60]
+    _rate_buckets[ip] = window
+    if len(window) >= MAX_REQUESTS_PER_MINUTE:
+        return False
+    _rate_buckets[ip].append(now)
+    return True
+
+
+@app.after_request
+def _add_cors(response: 'flask.Response') -> 'flask.Response':
+    origin = request.headers.get('Origin', '')
+    if any(origin.startswith(p) for p in ('http://127.0.0.1', 'http://localhost', 'file://')):
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
 
 
 def _run_command(cmd: List[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -49,9 +78,14 @@ def _mock_musicxml(image_names: List[str]) -> str:
 
 @app.post('/oemer/run')
 def oemer_run():
+    if not _check_rate_limit(request.remote_addr or ''):
+        return jsonify({'code': 'rate-limited', 'message': 'Rate limit exceeded. Try again in a minute.', 'logs': []}), 429
+
     uploads = request.files.getlist('images')
     if not uploads:
         return jsonify({'code': 'no-images', 'message': 'No images uploaded.', 'logs': []}), 400
+    if len(uploads) > MAX_IMAGES_PER_REQUEST:
+        return jsonify({'code': 'too-many-images', 'message': f'Maximum {MAX_IMAGES_PER_REQUEST} images per request.', 'logs': []}), 400
 
     logs: List[str] = []
     with tempfile.TemporaryDirectory(prefix='oemer-bridge-') as tmpdir:
@@ -67,7 +101,13 @@ def oemer_run():
             ext = Path(filename).suffix.lower()
             if ext not in ('.png', '.jpg', '.jpeg'):
                 return jsonify({'code': 'unsupported-format', 'message': f'Unsupported image format: {filename}.', 'logs': logs}), 400
-            target = input_dir / filename
+            upload.seek(0, 2)
+            size = upload.tell()
+            upload.seek(0)
+            if size > MAX_IMAGE_SIZE_BYTES:
+                mb = MAX_IMAGE_SIZE_BYTES // (1024 * 1024)
+                return jsonify({'code': 'file-too-large', 'message': f'Image {filename} exceeds the {mb} MB limit.', 'logs': logs}), 400
+            target = input_dir / Path(filename).name  # strip any path component
             upload.save(target)
             image_paths.append(target)
 

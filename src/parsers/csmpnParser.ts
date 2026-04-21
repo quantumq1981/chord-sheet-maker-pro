@@ -187,3 +187,33 @@ function parseBarLine(line: string): ChartLine {
 
   return { tokens };
 }
+
+// ── Repeat expansion ─────────────────────────────────────────────────────────
+
+/**
+ * Expand |: ... :| repeat barlines in CSMPN text.
+ *
+ * Each |: content :| group is played twice by default.
+ * An optional xN suffix sets the repeat count: `|: C Am :| x3` → three plays.
+ * Inner | bar separators within the repeat are preserved in the expanded output.
+ * Metadata, section markers, and non-bar lines pass through unchanged.
+ *
+ * D.C. / D.S. / Coda section-level navigation is not expanded by this function.
+ */
+export function expandCsmpnRepeats(text: string, opts: { barRepeats?: boolean } = {}): string {
+  if (opts.barRepeats === false || !text) return text ?? '';
+  return text.split('\n').map(expandBarRepeatLine).join('\n');
+}
+
+function expandBarRepeatLine(line: string): string {
+  if (!line.includes('|:') && !line.includes(':|')) return line;
+
+  return line.replace(
+    /\|:\s*((?:[^|]|\|(?!:))*?)\s*:\|(?:\s+x(\d+))?/gi,
+    (_match, content: string, times: string | undefined) => {
+      const n = times ? Math.max(1, Math.min(16, parseInt(times, 10))) : 2;
+      const trimmed = content.trim();
+      return Array.from({ length: n }, () => trimmed).join(' ');
+    }
+  );
+}

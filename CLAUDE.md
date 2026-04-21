@@ -25,8 +25,8 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-04-20)
-- **168 tests passing** (`npm run test:all`) — 4 VexFlow + 164 parser/exporter tests
+## Current State (2026-04-21)
+- **176 tests passing** (`npm run test:all`) — 4 VexFlow + 172 parser/exporter tests
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
 - **`app.html` + `src/`** — React/TypeScript track (secondary); `src/export/` and `src/parsers/` used for unit tests only
 - **App.tsx:** 1,145 lines — OSMD renderer, export actions, and utilities extracted to hooks/utils
@@ -50,7 +50,8 @@
 | `renderer.js` | CSMPN HTML renderer: `renderDoc`, `updatePreview`, VexFlow notation helpers |
 | `importPipeline.js` | All format importers: `SongModel`, `extractHeaderFromText`, `importUGText`, `importChordPro`, `importMusicXML`, `importIRealPro`, `importUGProPDF`, etc. |
 | `app.html` + `src/` | React app — importers, OSMD notation, chord chart view |
-| `ug-pro-importer.html` | Vite HTML shell for the importer page (multi-page build entry) |
+| `ug-pro-importer.html` | Vite HTML shell for the PDF importer page (multi-page build entry) |
+| `ug-txt-importer.html` | Standalone dark-UI page: paste UG text → convert to CSMPN → copy/download |
 | `src/pages/ugProImporterPage.tsx` | React bootstrap for the importer page — renders `UGProImporterPanel` |
 | `src/ingest/ugProPdfImporter.ts` | Canonical PDF importer (TypeScript module; drives the Vite build page) |
 | `src/parsers/` | Zero-dependency TypeScript parsers (chordPro, csmpn, abc, gp, musicXml) |
@@ -82,6 +83,13 @@
 | 2.1C | Extract csmpnParser.js from index.html | ✅ DONE — index.html 7,299 lines (−74) |
 | 3.1 | App.tsx decomposition → hooks + views | ✅ DONE — 1,145 lines (was 1,598 after merge); `useOsmdRenderer` + `useExportActions` + `osmdHelpers` + `appTypes` extracted |
 | 3.3 | React error boundaries (ImportErrorBoundary, SlashNotationBoundary) | ✅ DONE |
+
+## Sprint 6 — Standalone Pages, Repeat Expansion & Security ✅ COMPLETE
+| # | Task | Status |
+|---|------|--------|
+| 6.1 | `ug-txt-importer.html` — standalone UG text → CSMPN converter page | ✅ DONE — 2026-04-21; dark UI, Convert/Copy/Download, loads `utils.js`/`chordProcessing.js`/`importPipeline.js` |
+| 6.2 | D.C./D.S./Coda repeat expansion in `csmpnParser.js` + `src/parsers/csmpnParser.ts` | ✅ DONE — 2026-04-21; `expandCSMPNRepeats` / `expandCsmpnRepeats` + 8 new tests (176 total) |
+| 6.3 | `scripts/oemer_helper.py` security hardening | ✅ DONE — 2026-04-21; rate limiting (10 req/min), image count (max 20), file size (max 10 MB), CORS after_request hook, path sanitization |
 
 ## Sprint 5 — Converter Decomposition & Unification (In Progress)
 | # | Task | Status |
@@ -391,7 +399,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 | Ghost notes / muted noteheads | Needs per-beat token syntax extension in CSMPN parser |
 | Hammer-on / Pull-off slurs | Requires note-pair coordinates — needs richer data model |
 | VexFlow integration | Full renderer rewrite; deferred pending need |
-| Dedicated TXT importer page | `public/ug-txt-importer.html` — separate deliverable |
+| ~~Dedicated TXT importer page~~ | ✅ Done — `ug-txt-importer.html` at repo root (2026-04-21, Sprint 6.1) |
 | ~~CI/CD pipeline~~ | ✅ Done — `.github/workflows/ci.yml` (Sprint 1) |
 | ~~Importer fixture tests~~ | ✅ Done — `tests/sniffFormat.test.ts`, `tests/chordProParser.test.ts`, `tests/csmpnParser.test.ts` (2026-04-09) |
 | ~~MusicXML export~~ | ✅ Done — `btnSnXml` + `buildMusicXml()` in `index.html` IIFE (2026-04-16 PRs #135/#136) |
@@ -434,3 +442,26 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 - `applyFBSettings()`: `--fb-chord-font` now wired to Body/Chord Font selector for non-ASC packs; free font options reactivated
 - `musicXmlExporter.ts`: added `keyModeStr()` function; `buildFirstMeasureAttributes()` accepts `mode` param
 - `tests/musicXmlExport.test.ts`: 4 new minor-key tests + 2 existing tests updated to assert `<mode>major</mode>`
+
+## SPRINT 6 CHANGES (2026-04-21)
+
+**Sprint 6.1 — `ug-txt-importer.html` standalone page**
+- New file at repo root: dark-background UI matching the app aesthetic
+- Input textarea for raw UG/plain-text chord sheets; Convert button calls `importUGText()`
+- Read-only output textarea; Copy (with clipboard API + `execCommand` fallback) and Download `.csmpn` buttons
+- Script load order: `utils.js` → `chordProcessing.js` → `csmpnParser.js` → `settings.js` → `importPipeline.js`
+- Inline stubs: `let importDiagnostics = null;` and `const fbSettings = { barsPerRow: 4, includeLyrics: true };` before the script tags — makes `importPipeline.js` safe outside `index.html`
+- Back link to `index.html`; responsive layout via `max-width: 860px`; status messages styled `.ok`/`.err`
+
+**Sprint 6.2 — CSMPN repeat expansion**
+- `csmpnParser.js`: added `expandCSMPNRepeats(text, opts)` + `_expandBarRepeatLine(line)` — plain-JS versions for `index.html` ecosystem
+- `src/parsers/csmpnParser.ts`: added exported `expandCsmpnRepeats(text, opts)` + private `expandBarRepeatLine(line)` — TypeScript module versions
+- Regex: `\|:\s*((?:[^|]|\|(?!:))*?)\s*:\|(?:\s+x(\d+))?` — preserves inner `|` bar separators; clamps repeat count 1–16; defaults to 2 plays
+- `tests/csmpnParser.test.ts`: 8 new tests for `expandCsmpnRepeats`; total now 176 (was 168)
+
+**Sprint 6.3 — `oemer_helper.py` security hardening**
+- Rate limiting: in-memory sliding-window bucket per IP, 10 req/min, returns HTTP 429
+- Image count: rejects requests with >20 images (HTTP 400)
+- File size: rejects individual images >10 MB (HTTP 400) using seek/tell rather than reading into memory
+- Path sanitization: `Path(filename).name` strips any directory traversal component
+- CORS: `_add_cors()` after_request hook allows only `127.0.0.1`, `localhost`, and `file://` origins

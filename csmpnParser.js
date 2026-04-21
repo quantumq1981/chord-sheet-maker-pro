@@ -92,3 +92,49 @@ function parseCSMPN(text){
 
   return doc;
 }
+
+/**
+ * Expand |: ... :| repeat barlines in CSMPN text.
+ *
+ * Each |: content :| group is played twice by default.
+ * An optional xN suffix sets the repeat count: |: C Am :| x3 → three plays.
+ * Inner | bar separators within the repeat are preserved in the expanded output.
+ * Metadata, section markers, and non-bar lines pass through unchanged.
+ *
+ * D.C. / D.S. / Coda section-level navigation is not expanded by this function.
+ *
+ * @param {string} text - CSMPN source text
+ * @param {{ barRepeats?: boolean }} [opts]
+ * @returns {string}
+ */
+function expandCSMPNRepeats(text, opts) {
+  if ((opts && opts.barRepeats === false) || !text) return text || '';
+
+  return text
+    .split('\n')
+    .map(_expandBarRepeatLine)
+    .join('\n');
+}
+
+/**
+ * Expand any |: ... :| xN pattern within a single chord-row line.
+ * Lines without repeat markers are returned unchanged.
+ * @param {string} line
+ * @returns {string}
+ */
+function _expandBarRepeatLine(line) {
+  if (!line.includes('|:') && !line.includes(':|')) return line;
+
+  // Match |: content :| optionally followed by xN.
+  // Content may contain inner | bar-separator tokens but not |: or :| pairs.
+  return line.replace(
+    /\|:\s*((?:[^|]|\|(?!:))*?)\s*:\|(?:\s+x(\d+))?/gi,
+    function (_match, content, times) {
+      const n = times ? Math.max(1, Math.min(16, parseInt(times, 10))) : 2;
+      const trimmed = content.trim();
+      const parts = [];
+      for (let i = 0; i < n; i++) parts.push(trimmed);
+      return parts.join(' ');
+    }
+  );
+}
