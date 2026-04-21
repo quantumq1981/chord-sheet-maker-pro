@@ -3627,6 +3627,11 @@ window.runCSMPNSelfTests = function(){
   const SYSTEM_PAD_BOT  = 36;
   const SYSTEM_ROW_H    = CHORD_AREA_H + STAFF_H + SYSTEM_PAD_BOT; // 104 px
   const SECTION_LABEL_H = 20;
+  // TAB staff constants (used when a section has {tab} voicing data)
+  const TAB_LINES   = 6;
+  const TAB_GAP     = LINE_GAP;                           // 8 px — same as slash staff
+  const TAB_STAFF_H = (TAB_LINES - 1) * TAB_GAP;         // 40 px
+  const TAB_SEP     = 14;                                 // gap between slash staff bottom and TAB staff top
   const PAGE_W   = 760;
   const MARGIN_H = 36;
   const CLEF_W   = 46;
@@ -3870,6 +3875,65 @@ window.runCSMPNSelfTests = function(){
     return `<text x="${cx}" y="${y}" font-size="9" fill="${_snCfg.fgColor}" text-anchor="middle" font-family="${escapeHtml(_snCfg.notationFontFamily)}">${ch}</text>`;
   }
 
+  // ── Guitar TAB staff helpers ─────────────────────────────
+
+  // 6-line TAB staff (string 1 = high e on top, string 6 = low E on bottom)
+  function tabStaffLines(x, y, w){
+    let s = '';
+    for (let i = 0; i < TAB_LINES; i++){
+      s += svgLine(x, y + i * TAB_GAP, x + w, y + i * TAB_GAP, _snCfg.fgColor, 0.75);
+    }
+    return s;
+  }
+
+  // T / A / B stacked label — occupies the CLEF_W space on the left of the TAB staff
+  function tabClefLabel(tabY){
+    const cx = MARGIN_H + CLEF_W / 2;
+    const fg = _snCfg.fgColor;
+    const ff = escapeHtml(_snCfg.notationFontFamily);
+    const mid = TAB_STAFF_H / 2; // 20 px
+    return [
+      `<text x="${cx}" y="${tabY + mid - 13}" font-size="11" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${ff}">T</text>`,
+      `<text x="${cx}" y="${tabY + mid}"      font-size="11" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${ff}">A</text>`,
+      `<text x="${cx}" y="${tabY + mid + 13}" font-size="11" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${ff}">B</text>`,
+    ].join('');
+  }
+
+  // Fret number on a string line. stringNum 1=high e (top line), 6=low E (bottom line).
+  // fret: integer, 'x' (muted), or '-' / null (not played — render nothing).
+  function tabFretNum(fret, stringNum, cx, tabY){
+    if (fret === '-' || fret === null || fret === undefined) return '';
+    const lineY = tabY + (stringNum - 1) * TAB_GAP;
+    const fg    = _snCfg.fgColor;
+    const bg    = _snCfg.bgColor;
+    const ff    = escapeHtml(_snCfg.notationFontFamily);
+    if (fret === 'x'){
+      return `<text x="${cx}" y="${lineY + 4}" font-size="9" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${ff}">x</text>`;
+    }
+    const txt = String(fret);
+    const bgW = txt.length > 1 ? 13 : 9;
+    // Background rect breaks the staff line so the fret number is legible
+    return `<rect x="${cx - bgW / 2}" y="${lineY - 5}" width="${bgW}" height="10" fill="${bg}"/>` +
+           `<text x="${cx}" y="${lineY + 4}" font-size="9" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="${ff}">${txt}</text>`;
+  }
+
+  // Diagonal slash mark for rhythm beats in the TAB staff (chord continues, no voicing change)
+  function tabSlashMark(cx, tabY){
+    const midY = tabY + TAB_STAFF_H / 2;
+    return `<line x1="${cx - 5}" y1="${midY + 7}" x2="${cx + 5}" y2="${midY - 7}" stroke="${_snCfg.fgColor}" stroke-width="1.5"/>`;
+  }
+
+  // Resolve a raw chord name to its voicing array; case-insensitive fallback.
+  function lookupTabVoicing(voicings, chord){
+    if (!voicings || !chord) return null;
+    if (voicings[chord]) return voicings[chord];
+    const lc = chord.toLowerCase();
+    for (const [k, v] of Object.entries(voicings)){
+      if (k.toLowerCase() === lc) return v;
+    }
+    return null;
+  }
+
   function barlineSvg(x, y, h, type){
     const fg = _snCfg.fgColor;
     const lg = LINE_GAP;
@@ -3957,11 +4021,12 @@ window.runCSMPNSelfTests = function(){
     let label = null;
     let markerType = '-';
     let bars  = [];
+    let pendingTabVoicings = null;
 
     const flush = () => {
       if (bars.length > 0){
-        sections.push({ label, bars, navText: null, markerType });
-        bars = []; label = null; markerType = '-';
+        sections.push({ label, bars, navText: null, markerType, tabVoicings: pendingTabVoicings });
+        bars = []; label = null; markerType = '-'; pendingTabVoicings = null;
       }
     };
 
@@ -3978,6 +4043,14 @@ window.runCSMPNSelfTests = function(){
         }
       } else if (block.type === 'bars'){
         bars.push(...parseBarStructures(block.tokens));
+      } else if (block.type === 'tab'){
+        // {tab} block after bars → attach to this section on flush
+        // {tab} block before bars (or after flush) → attach to most recent section
+        if (bars.length > 0){
+          pendingTabVoicings = block.voicings;
+        } else if (sections.length > 0){
+          sections[sections.length - 1].tabVoicings = block.voicings;
+        }
       }
     }
     flush();
@@ -4012,13 +4085,15 @@ window.runCSMPNSelfTests = function(){
   // navText: D.C./D.S./Fine/Coda marker rendered below last barline
   // ending:  '1' or '2' bracket rendered above first measure of ending section
   // showDots: render augmentation dot after each slash (compound meter)
-  function renderRow(measures, sectionLabel, systemY, measureWidth, bpm, showClef, timeSig, navText, ending, showDots){
+  function renderRow(measures, sectionLabel, systemY, measureWidth, bpm, showClef, timeSig, navText, ending, showDots, tabVoicings){
     const staffX   = MARGIN_H + CLEF_W;
     const hasLabel = !!sectionLabel;
     const staffY   = systemY + (hasLabel ? SECTION_LABEL_H : 0) + CHORD_AREA_H;
     const totalW   = measureWidth * measures.length;
     const arrowY   = staffY + STAFF_H + 12;
     const fg       = _snCfg.fgColor;
+    // When TAB staff is present barlines extend from slash staff top to TAB staff bottom
+    const barH     = tabVoicings ? STAFF_H + TAB_SEP + TAB_STAFF_H : STAFF_H;
 
     const beatX = (mX, beat) => {
       const pad = 10, avail = measureWidth - 2 * pad;
@@ -4081,7 +4156,7 @@ window.runCSMPNSelfTests = function(){
 
     // ── Staff lines + opening barline ─────────────────────
     svg += staffLines(staffX, staffY, totalW);
-    svg += svgLine(staffX, staffY, staffX, staffY + STAFF_H, fg, 2);
+    svg += svgLine(staffX, staffY, staffX, staffY + barH, fg, 2);
 
     // ── Measures ──────────────────────────────────────────
     for (let mi = 0; mi < measures.length; mi++){
@@ -4089,15 +4164,15 @@ window.runCSMPNSelfTests = function(){
       const mX = staffX + mi * measureWidth;
       const rX = mX + measureWidth;
 
-      if (m.leftBar === 'repeat-start') svg += barlineSvg(mX, staffY, STAFF_H, 'repeat-start');
+      if (m.leftBar === 'repeat-start') svg += barlineSvg(mX, staffY, barH, 'repeat-start');
 
       // Slash noteheads — one per visual beat
       for (let beat = 0; beat < bpm; beat++){
         const bx = beatX(mX, beat);
         svg += slashHead(bx, midY);
-        if (showDots)                    svg += augDot(bx, midY);
-        if (_snCfg.showStems)            svg += stemSvg(bx, midY);
-        if (_snCfg.strumMode !== 'none') svg += strumArrow(bx, arrowY, beat);
+        if (showDots)                                  svg += augDot(bx, midY);
+        if (_snCfg.showStems)                          svg += stemSvg(bx, midY);
+        if (_snCfg.strumMode !== 'none' && !tabVoicings) svg += strumArrow(bx, arrowY, beat);
       }
 
       // Chord symbols or simile / multi-measure repeat marks
@@ -4146,12 +4221,52 @@ window.runCSMPNSelfTests = function(){
       const rt = m.rightBar === 'repeat-end' ? 'repeat-end'
                : m.rightBar === 'final'      ? 'final'
                : m.rightBar === 'double'     ? 'double' : 'single';
-      svg += barlineSvg(rX, staffY, STAFF_H, rt);
+      svg += barlineSvg(rX, staffY, barH, rt);
+    }
+
+    // ── Guitar TAB staff ──────────────────────────────────
+    if (tabVoicings){
+      const tabY = staffY + STAFF_H + TAB_SEP;
+      // T/A/B clef label on first row of each section
+      if (showClef) svg += tabClefLabel(tabY);
+      // 6-line staff
+      svg += tabStaffLines(staffX, tabY, totalW);
+      // Per-measure: fret numbers at chord-change beats, slash marks elsewhere
+      for (let mi = 0; mi < measures.length; mi++){
+        const m  = measures[mi];
+        const mX = staffX + mi * measureWidth;
+        const rawChords = m.isSimile ? [] : (m.rawChords || []);
+        const numChords = rawChords.length;
+        for (let beat = 0; beat < bpm; beat++){
+          const bx = beatX(mX, beat);
+          // Determine whether this beat is a chord-change beat
+          let isChange = false;
+          let chordName = rawChords[0] || '';
+          if (numChords > 1){
+            const ci = Math.floor(beat * numChords / bpm);
+            isChange  = (beat === Math.floor(ci * bpm / numChords));
+            chordName = rawChords[ci] || '';
+          } else {
+            isChange = (beat === 0);
+          }
+          const voicing = isChange ? lookupTabVoicing(tabVoicings, chordName) : null;
+          if (voicing){
+            for (let si = 0; si < voicing.length && si < TAB_LINES; si++){
+              svg += tabFretNum(voicing[si], si + 1, bx, tabY);
+            }
+          } else if (!m.isSimile){
+            svg += tabSlashMark(bx, tabY);
+          }
+        }
+      }
     }
 
     // ── Navigation text (D.C. al Fine, Coda, etc.) ───────
     if (navText){
-      svg += `<text x="${staffX + totalW}" y="${staffY + STAFF_H + 18}" font-size="12" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family="'Noto Serif',${escapeHtml(_snCfg.notationFontFamily)}">${formatNavText(navText)}</text>`;
+      const navY = tabVoicings
+        ? staffY + STAFF_H + TAB_SEP + TAB_STAFF_H + 18
+        : staffY + STAFF_H + 18;
+      svg += `<text x="${staffX + totalW}" y="${navY}" font-size="12" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family="'Noto Serif',${escapeHtml(_snCfg.notationFontFamily)}">${formatNavText(navText)}</text>`;
     }
 
     svg += '</g>';
@@ -4198,12 +4313,14 @@ window.runCSMPNSelfTests = function(){
         else if (chords.length > 0){ lastChords = chords; }
         // Preserve raw repeat token so renderer can distinguish % vs %% vs %4
         const repeatToken = isSimile ? (bar.token || '%') : null;
-        return { chords, isSimile, repeatToken, leftBar: bar.leftBar || 'single', rightBar: bar.rightBar || 'single' };
+        // Raw chord names (before formatting) used for TAB voicing lookup
+        const rawChords = isSimile ? [] : (bar.token || '').split('_').map(s => s.trim().replace(/[!^.=]$/, ''));
+        return { chords, rawChords, isSimile, repeatToken, leftBar: bar.leftBar || 'single', rightBar: bar.rightBar || 'single' };
       });
       // Nav text: explicit from block order, or auto-detect if label IS a nav marker
       const navText = sec.navText || extractNavText(sec.label) || null;
       const ending  = endingNumber(sec.label);
-      return { label: sec.label, measures, navText, ending };
+      return { label: sec.label, measures, navText, ending, tabVoicings: sec.tabVoicings || null };
     });
 
     // Per-section measures-per-row
@@ -4219,14 +4336,21 @@ window.runCSMPNSelfTests = function(){
           sectionLabel: (i === 0) ? dispLabel : undefined,
           navText:      isLast ? sec.navText : null,
           ending:       (i === 0) ? sec.ending : null,
+          tabVoicings:  sec.tabVoicings || null,
         });
       }
     }
 
     if (!rows.length) return '<p style="color:#888;text-align:center;padding:20px 0">No measures to display.</p>';
 
+    // Row height: TAB rows are taller by TAB_SEP + TAB_STAFF_H
+    const rowBodyH  = (row) => row.tabVoicings
+      ? CHORD_AREA_H + STAFF_H + TAB_SEP + TAB_STAFF_H + SYSTEM_PAD_BOT
+      : SYSTEM_ROW_H;
+    const rowTotalH = (row) => (row.sectionLabel ? SECTION_LABEL_H : 0) + rowBodyH(row);
+
     let svgH = 16;
-    for (const row of rows) svgH += (row.sectionLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
+    for (const row of rows) svgH += rowTotalH(row);
     svgH += 16;
 
     // Background rect fills the SVG with bgColor, then render each row
@@ -4235,8 +4359,8 @@ window.runCSMPNSelfTests = function(){
     for (let ri = 0; ri < rows.length; ri++){
       const row      = rows[ri];
       const showClef = (ri === 0) || !!row.sectionLabel || !!row.ending;
-      svgContent += renderRow(row.measures, row.sectionLabel, curY, row.measureWidth, bpm, showClef, timeSig, row.navText, row.ending, showDots);
-      curY += (row.sectionLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
+      svgContent += renderRow(row.measures, row.sectionLabel, curY, row.measureWidth, bpm, showClef, timeSig, row.navText, row.ending, showDots, row.tabVoicings);
+      curY += rowTotalH(row);
     }
 
     // Tempo mark (top-right) and feel/style label (top-left) inside SVG.

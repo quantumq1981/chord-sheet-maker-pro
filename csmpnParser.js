@@ -5,6 +5,31 @@
 */
 
 /**
+ * Parse a {tab} block body into a voicing map.
+ * Each entry: "ChordName: fret1,fret2,fret3,fret4,fret5,fret6"
+ * Strings ordered high-e (1) → low-E (6). Fret values: integer, 'x' (muted), '-' (skip).
+ * @param {string} text
+ * @returns {Object.<string, Array>}
+ */
+function parseTabVoicings(text){
+  const voicings = {};
+  for (const entry of text.split(/[\n;]+/)){
+    const m = entry.trim().match(/^([A-G][^:]*?)\s*:\s*(.+)$/);
+    if (!m) continue;
+    const chord = m[1].trim();
+    const frets = m[2].split(',').map(f => {
+      f = f.trim();
+      if (f === 'x' || f === 'X') return 'x';
+      if (f === '-' || f === '') return '-';
+      const n = parseInt(f, 10);
+      return isNaN(n) ? '-' : n;
+    });
+    if (frets.length >= 4) voicings[chord] = frets;
+  }
+  return voicings;
+}
+
+/**
  * Parse a CSMPN source text into a document object.
  *
  * Returns:
@@ -13,6 +38,7 @@
  * Block types:
  *   { type:'pagebreak' }
  *   { type:'notation', content: String }
+ *   { type:'tab',      voicings: Object }
  *   { type:'marker',  marker: Char, text: String }
  *   { type:'bars',    tokens: Array, indent: Number }
  */
@@ -50,8 +76,24 @@ function parseCSMPN(text){
     contentLines.push(line);
   }
 
+  let tabBlockLines = null; // non-null while collecting a multi-line {tab} block
+
   for (const line0 of contentLines){
     const line = line0.trim();
+
+    // Collecting a multi-line {tab} block — consume until closing }
+    if (tabBlockLines !== null){
+      if (line === '}' || line.endsWith('}')){
+        if (line !== '}') tabBlockLines.push(line.slice(0, -1).trim());
+        const voicings = parseTabVoicings(tabBlockLines.join('\n'));
+        if (Object.keys(voicings).length > 0) doc.blocks.push({type:'tab', voicings});
+        tabBlockLines = null;
+      } else {
+        tabBlockLines.push(line);
+      }
+      continue;
+    }
+
     if (!line) continue;
 
     // page break
@@ -67,6 +109,22 @@ function parseCSMPN(text){
         doc.blocks.push({type:'notation', content: vtMatch[1].trim()});
         continue;
       }
+    }
+
+    // Guitar TAB voicing block: {tab ChordName: frets ... }
+    if (line.startsWith('{tab')){
+      if (line.endsWith('}')){
+        // Single-line: {tab G:3,2,0,0,0,3 C:x,3,2,0,1,0}
+        const inner = line.slice(4, -1).trim().replace(/\s+(?=[A-G])/g, '\n');
+        const voicings = parseTabVoicings(inner);
+        if (Object.keys(voicings).length > 0) doc.blocks.push({type:'tab', voicings});
+      } else {
+        // Multi-line block — collect until }
+        tabBlockLines = [];
+        const afterOpen = line.slice(4).trim();
+        if (afterOpen) tabBlockLines.push(afterOpen);
+      }
+      continue;
     }
 
     // marker lines
