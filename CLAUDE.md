@@ -35,7 +35,7 @@
 
 ## Architectural Principles (enforce on every change)
 1. `src/ingest/ugProPdfImporter.ts` is the **canonical** PDF importer — `ug-pro-importer.html` (root) is the Vite shell; `public/ug-pro-importer.html` has been deleted
-2. **`index.html` is the canonical location for all slash notation + MusicXML export work** — the developer uses iOS/iPad only; never add app features to the React track in parallel
+2. **`index.html` is the canonical location for all slash notation + MusicXML export work** — the developer uses iOS/iPad only; never add app features to the React track in parallel. Feature logic lives in `settings.js`, `renderer.js`, or `importPipeline.js` — not inline in `index.html`.
 3. All dynamic HTML in `index.html` must pass through `escapeHtml()` — no raw interpolation
 4. Tests before features — every new exported function gets a corresponding test
 5. iOS Safari is the **primary browser** — always verify `.xml` (not `.musicxml`) download extension and `text/xml` MIME type so iOS opens the file in notation apps
@@ -45,7 +45,10 @@
 ## Quick Reference: Key Files
 | File | Purpose |
 |------|---------|
-| `index.html` | Legacy monolith — fake-book renderer, slash notation IIFE, self-tests |
+| `index.html` | Legacy monolith — fake-book shell, event wiring, slash notation IIFE, self-tests (4,601 lines) |
+| `settings.js` | Fake Book Settings state: `fbSettings`, font maps, `applyFBSettings`, `setStatus`, `filterLyricsLines` |
+| `renderer.js` | CSMPN HTML renderer: `renderDoc`, `updatePreview`, VexFlow notation helpers |
+| `importPipeline.js` | All format importers: `SongModel`, `extractHeaderFromText`, `importUGText`, `importChordPro`, `importMusicXML`, `importIRealPro`, `importUGProPDF`, etc. |
 | `app.html` + `src/` | React app — importers, OSMD notation, chord chart view |
 | `ug-pro-importer.html` | Vite HTML shell for the importer page (multi-page build entry) |
 | `src/pages/ugProImporterPage.tsx` | React bootstrap for the importer page — renders `UGProImporterPanel` |
@@ -87,7 +90,7 @@
 | 5.2A | Port HTML v1.2 algorithm improvements to `ugProPdfImporter.ts` | ✅ DONE — PR #145 (2026-04-20) |
 | 5.2B | Create Vite build artifact: `ug-pro-importer.html` root shell + `src/pages/ugProImporterPage.tsx` entry | ✅ DONE — 2026-04-20 |
 | 5.2C | Update `vite.config.ts` multi-page input; remove `public/ug-pro-importer.html` | ✅ DONE — 2026-04-20 |
-| 5.3 | Remaining `index.html` extractions (renderer, importPipeline, settings) — items 2.1D–F | ⏳ PENDING |
+| 5.3 | Remaining `index.html` extractions (renderer, importPipeline, settings) — items 2.1D–F | ✅ DONE — 2026-04-20; index.html 7,764 → 4,601 lines (−3,163) |
 
 ## ugProPdfImporter.ts v1.3 Changes (2026-04-20, PR #145)
 - **`extractPageSpans()`** — viewport-transform matrix multiply (`mul2d`) for accurate span coords on rotated pages; font-size via `Math.hypot` of transformed matrix columns
