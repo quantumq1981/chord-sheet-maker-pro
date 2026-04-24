@@ -1306,6 +1306,7 @@ body.exporting .sectionBlock{
     background:#fff;
   }
   .hybridCue{ font-size:12px; color:#555; margin-bottom:4px; font-style:italic; }
+  .hybridBarCue{ margin-top:4px; margin-bottom:0; min-height:14px; }
   .hybridBarRow{ display:grid; gap:10px; align-items:start; }
   .hybridBar{
     border-left:1px solid #111;
@@ -1347,6 +1348,11 @@ body.exporting .sectionBlock{
   .hybridTabEvent{ top:0; }
   @media print{
     .slashNotationPanel{ display:none !important; }
+    .hybridSystem{ border-color:#bbb; padding:6px 8px 8px; }
+    .hybridBarRow{ gap:6px; }
+    .hybridBar{ min-height:82px; }
+    .hybridChordLane{ font-size:12px; }
+    .hybridCue{ font-size:10px; }
   }
 </style>
 <style id="dynamicPageStyle">@media print { @page { size: letter portrait; margin: 0.5in; } }</style>

@@ -213,10 +213,17 @@ function hybridBeatToPercent(beat, timeSig){
 function renderHybridBar(bar){
   const events = Array.isArray(bar?.events) ? bar.events : [];
   const tabs = Array.isArray(bar?.tabEvents) ? bar.tabEvents : [];
-  const chordHtml = events
-    .filter((event) => event.chord)
-    .map((event) => `<span class="hybridChord" style="left:${hybridBeatToPercent(event.beat, bar.timeSig)}%">${renderChordToken(event.chord)}</span>`)
-    .join('');
+  const chordEvents = events.filter((event) => event.chord);
+  const rowsByBucket = {};
+  const chordHtml = chordEvents.map((event) => {
+    const left = hybridBeatToPercent(event.beat, bar.timeSig);
+    const bucket = Math.round(left / 8);
+    const row = rowsByBucket[bucket] || 0;
+    rowsByBucket[bucket] = row + 1;
+    const top = row * 14;
+    return `<span class="hybridChord" style="left:${left}%; top:${top}px;">${renderChordToken(event.chord)}</span>`;
+  }).join('');
+  const chordRowCount = Object.values(rowsByBucket).reduce((max, n) => Math.max(max, n), 1);
 
   const glyphForDuration = (dur) => ({ w: '𝅝╱', h: '𝅗𝅥╱', q: '╱', e: '╲╱', s: '╲╱╲╱' }[dur] || '╱');
   const restForDuration = (dur) => ({ w: '𝄻', h: '𝄼', q: '𝄽', e: '𝄾', s: '𝄿' }[dur] || '𝄽');
@@ -238,9 +245,9 @@ function renderHybridBar(bar){
 
   const hasPm = bar?.pm?.bar || (Array.isArray(bar?.pm?.spans) && bar.pm.spans.length > 0);
   const pmHtml = hasPm ? `<div class="hybridPmLine">P.M. - - - -</div>` : '';
-  const cueHtml = bar?.cueText ? `<div class="hybridCue">${escapeHtml(bar.cueText)}</div>` : '';
+  const cueHtml = bar?.cueText ? `<div class="hybridCue hybridBarCue">${escapeHtml(bar.cueText)}</div>` : '';
 
-  return `<div class="hybridBar">${cueHtml}<div class="hybridChordLane">${chordHtml}</div><div class="hybridStaff">${pmHtml}${eventHtml}</div>${tabHtml ? `<div class="hybridTab">${tabHtml}</div>` : ''}</div>`;
+  return `<div class="hybridBar"><div class="hybridChordLane" style="min-height:${Math.max(18, chordRowCount * 14)}px;">${chordHtml}</div><div class="hybridStaff">${pmHtml}${eventHtml}</div>${tabHtml ? `<div class="hybridTab">${tabHtml}</div>` : ''}${cueHtml}</div>`;
 }
 
 function renderHybridDoc(sourceText){

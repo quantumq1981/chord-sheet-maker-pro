@@ -47,3 +47,22 @@ test('returns warnings for invalid beat, duration and malformed tab shape', () =
   assert.ok(out.warnings.some((w) => w.includes('Malformed tab shape')));
   assert.ok(out.warnings.some((w) => w.includes('cue9')));
 });
+
+test('supports shorthand aliases and compact event tokens for mobile typing', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nsc: tight pocket\nb1: 1q(G)! 2e 2&e 3q 4rq\nt2: x,x,5,4,3,x @ 1\nc2: stop-time\n}`);
+
+  assert.equal(out.active, true);
+  assert.equal(out.sections[0].cueText, 'tight pocket');
+  assert.equal(out.sections[0].bars[0].events.length, 5);
+  assert.equal(out.sections[0].bars[1].tabEvents.length, 1);
+  assert.equal(out.sections[0].bars[1].cueText, 'stop-time');
+});
+
+test('falls back cleanly when hybrid block has no valid entries', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nb1: ???\nt1: x,3\n}`);
+
+  assert.equal(out.active, false);
+  assert.ok(out.warnings.length >= 2);
+});

@@ -2551,6 +2551,17 @@ async function importUGProPDF(file){
 }
 
 const HYBRID_DURATION_MAP = { w: 4, h: 2, q: 1, e: 0.5, s: 0.25 };
+const HYBRID_SYNTAX_SPEC = Object.freeze({
+  block: '{hybrid ... }',
+  barLine: 'barN: <event...>  (alias: bN:)',
+  event: '<beat>:<duration>(<chord>)<accent|sustain?>',
+  eventShorthand: '<beat><duration>(<chord>)<accent|sustain?>',
+  rest: 'duration can be r, rw, rh, rq, re, rs',
+  pm: 'pm (bar-level), pm_start, pm_end',
+  tab: 'tabN: <s1,s2,s3,s4,s5,s6> @ <beat>  (alias: tN:)',
+  cue: 'cueN: <text> (alias: cN:)',
+  sectionCue: 'sectionCue: <text> (alias: sc:)'
+});
 
 function parseHybridBeatPosition(rawPos, barTime = '4/4'){
   const m = String(rawPos || '').trim().match(/^(\d+)(?:(&))?$/);
@@ -2611,7 +2622,8 @@ function parseHybridBarLine(raw, barTime, warnings){
       pmOpen = null;
       continue;
     }
-    const m = token.match(/^([^:]+):([A-Za-z]+)(?:\(([^)]+)\))?([!~]?)$/);
+    const m = token.match(/^([^:]+):([A-Za-z]+)(?:\(([^)]+)\))?([!~]?)$/)
+      || token.match(/^(\d+&?)([A-Za-z]+)(?:\(([^)]+)\))?([!~]?)$/);
     if (!m){
       warnings.push(`Unrecognized hybrid token "${token}" in "${line}".`);
       continue;
@@ -2680,7 +2692,7 @@ function parseHybridChartFromCSMPN(text){
         continue;
       }
       for (const entry of activeHybrid){
-        const mBar = entry.match(/^bar(\d+)\s*:\s*(.+)$/i);
+        const mBar = entry.match(/^(?:bar|b)(\d+)\s*:\s*(.+)$/i);
         if (mBar){
           const barIndex = Number(mBar[1]) - 1;
           if (!section.bars[barIndex]){
@@ -2690,7 +2702,7 @@ function parseHybridChartFromCSMPN(text){
           section.bars[barIndex] = parseHybridBarLine(mBar[2], section.bars[barIndex].timeSig || '4/4', warnings);
           continue;
         }
-        const mTab = entry.match(/^tab(\d+)\s*:\s*([^@]+)(?:\s*@\s*([0-9&]+))?$/i);
+        const mTab = entry.match(/^(?:tab|t)(\d+)\s*:\s*([^@]+)(?:\s*@\s*([0-9&]+))?$/i);
         if (mTab){
           const barIndex = Number(mTab[1]) - 1;
           const bar = section.bars[barIndex];
@@ -2711,7 +2723,7 @@ function parseHybridChartFromCSMPN(text){
           bar.tabEvents.push({ type: 'tab_note_or_shape', beat, shape: tabShape });
           continue;
         }
-        const mCue = entry.match(/^cue(\d+)\s*:\s*(.+)$/i);
+        const mCue = entry.match(/^(?:cue|c)(\d+)\s*:\s*(.+)$/i);
         if (mCue){
           const barIndex = Number(mCue[1]) - 1;
           if (!section.bars[barIndex]){
@@ -2721,7 +2733,7 @@ function parseHybridChartFromCSMPN(text){
           section.bars[barIndex].cueText = mCue[2].trim();
           continue;
         }
-        const secCue = entry.match(/^sectionCue\s*:\s*(.+)$/i);
+        const secCue = entry.match(/^(?:sectionCue|sc)\s*:\s*(.+)$/i);
         if (secCue){
           section.cueText = secCue[1].trim();
           continue;
@@ -2743,4 +2755,5 @@ function parseHybridChartFromCSMPN(text){
 
 if (typeof window !== 'undefined'){
   window.parseHybridChartFromCSMPN = parseHybridChartFromCSMPN;
+  window.HYBRID_SYNTAX_SPEC = HYBRID_SYNTAX_SPEC;
 }
