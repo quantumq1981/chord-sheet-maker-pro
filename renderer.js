@@ -205,89 +205,326 @@ function renderMeasure(measureText, alignClass){
   return `<div class="measure${cls}"><div class="beats">${beatHtml}</div></div>`;
 }
 
-function hybridBeatToPercent(beat, timeSig){
-  const top = Number(String(timeSig || '4/4').split('/')[0]) || 4;
-  return Math.max(0, Math.min(100, ((beat - 1) / Math.max(1, top - 0.5)) * 100));
+// ── Hybrid Rhythm Guitar Chart — SVG Renderer ────────────────────────────
+// Pure inline SVG for iOS Safari print-to-PDF stability.
+// No Unicode music glyphs, no CSS gradients — all notation as SVG primitives.
+
+const HR_PAGE_W  = 760;
+const HR_MARGIN  = 20;
+const HR_CLEF_W  = 30;
+const HR_BAR_PAD = 7;
+const HR_CHORD_H = 28;
+const HR_PM_H    = 14;
+const HR_LG      = 8;
+const HR_STAFF_H = 32;
+const HR_MID     = 16;
+const HR_STEM_TY = -14;
+const HR_TAB_SEP = 12;
+const HR_TAB_LG  = 8;
+const HR_TAB_H   = 40;
+const HR_SYS_BOT = 22;
+const HR_SLBL_H  = 20;
+const HR_CUE_H   = 14;
+
+function hrL(x1, y1, x2, y2, col, w) {
+  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${w}"/>`;
 }
 
-function renderHybridBar(bar){
-  const events = Array.isArray(bar?.events) ? bar.events : [];
-  const tabs = Array.isArray(bar?.tabEvents) ? bar.tabEvents : [];
-  const chordEvents = events.filter((event) => event.chord);
-  const rowsByBucket = {};
-  const chordHtml = chordEvents.map((event) => {
-    const left = hybridBeatToPercent(event.beat, bar.timeSig);
-    const bucket = Math.round(left / 8);
-    const row = rowsByBucket[bucket] || 0;
-    rowsByBucket[bucket] = row + 1;
-    const top = row * 14;
-    return `<span class="hybridChord" style="left:${left}%; top:${top}px;">${renderChordToken(event.chord)}</span>`;
-  }).join('');
-  const chordRowCount = Object.values(rowsByBucket).reduce((max, n) => Math.max(max, n), 1);
+function hrHead(cx, cy, dur, col) {
+  const W = 9, H = 5.5, lean = 5;
+  const pts = (dx) =>
+    `${cx-W+lean+dx},${cy-H} ${cx+W+lean+dx},${cy-H} ${cx+W-lean+dx},${cy+H} ${cx-W-lean+dx},${cy+H}`;
+  if (dur === 'w')
+    return `<polygon points="${pts(0)}" fill="none" stroke="${col}" stroke-width="1.3"/>` +
+           `<polygon points="${pts(4)}" fill="none" stroke="${col}" stroke-width="1.3"/>`;
+  if (dur === 'h') return `<polygon points="${pts(0)}" fill="none" stroke="${col}" stroke-width="1.3"/>`;
+  return `<polygon points="${pts(0)}" fill="${col}"/>`;
+}
 
-  const glyphForDuration = (dur) => ({ w: '𝅝╱', h: '𝅗𝅥╱', q: '╱', e: '╲╱', s: '╲╱╲╱' }[dur] || '╱');
-  const restForDuration = (dur) => ({ w: '𝄻', h: '𝄼', q: '𝄽', e: '𝄾', s: '𝄿' }[dur] || '𝄽');
+function hrStem(cx, staffY, col) {
+  return hrL(cx + 6, staffY + HR_MID - 5, cx + 6, staffY + HR_STEM_TY, col, 1.5);
+}
 
-  const eventHtml = events.map((event) => {
-    const left = hybridBeatToPercent(event.beat, bar.timeSig);
-    if (event.type === 'rest'){
-      return `<span class="hybridRest" style="left:${left}%">${escapeHtml(restForDuration(event.duration))}</span>`;
+function hrFlags(cx, stemTopY, n, col) {
+  let s = '';
+  for (let i = 0; i < n; i++) {
+    const y = stemTopY + i * 7;
+    s += `<path d="M${cx+6},${y} Q${cx+17},${y+5} ${cx+10},${y+11}" stroke="${col}" stroke-width="1.5" fill="none" stroke-linecap="round"/>`;
+  }
+  return s;
+}
+
+function hrBeam(x1, x2, y, col) {
+  return `<rect x="${x1+6}" y="${y-2}" width="${x2-x1}" height="3.5" fill="${col}" rx="0.5"/>`;
+}
+
+function hrRest(cx, cy, dur, col) {
+  switch (dur) {
+    case 'w':
+      return `<rect x="${cx-7}" y="${cy-2}" width="14" height="5" fill="${col}"/>` +
+             hrL(cx - 9, cy - 2, cx + 9, cy - 2, col, 0.8);
+    case 'h':
+      return `<rect x="${cx-7}" y="${cy-7}" width="14" height="5" fill="${col}"/>` +
+             hrL(cx - 9, cy - 2, cx + 9, cy - 2, col, 0.8);
+    case 'q':
+      return (
+        `<path d="M${cx-4},${cy-12} L${cx+5},${cy-7} L${cx-3},${cy-1} Q${cx+7},${cy+5} ${cx},${cy+9}" ` +
+        `stroke="${col}" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
+      );
+    default:
+      return (
+        `<circle cx="${cx}" cy="${cy-3}" r="2.2" fill="${col}"/>` +
+        `<path d="M${cx},${cy-1} Q${cx+7},${cy+3} ${cx+2},${cy+9}" stroke="${col}" stroke-width="1.5" fill="none" stroke-linecap="round"/>` +
+        hrL(cx + 2, cy + 9, cx + 2, cy + 13, col, 1.5)
+      );
+  }
+}
+
+function hrStaff(x, y, w, col) {
+  let s = '';
+  for (let i = 0; i < 5; i++) s += hrL(x, y + i * HR_LG, x + w, y + i * HR_LG, col, 0.8);
+  return s;
+}
+
+function hrClef(x, y, col) {
+  const cy = y + HR_STAFF_H / 2;
+  return hrL(x + 8, cy - 11, x + 12, cy + 11, col, 2.5) +
+         hrL(x + 16, cy - 11, x + 20, cy + 11, col, 2.5);
+}
+
+function hrTabStaff(x, y, w, col) {
+  let s = '';
+  for (let i = 0; i < 6; i++) s += hrL(x, y + i * HR_TAB_LG, x + w, y + i * HR_TAB_LG, col, 0.7);
+  return s;
+}
+
+function hrTabLabel(marginX, tabY, col) {
+  const cx = marginX + HR_CLEF_W / 2;
+  const mid = HR_TAB_H / 2;
+  return ['T', 'A', 'B']
+    .map((ch, i) =>
+      `<text x="${cx}" y="${tabY + mid - 12 + i * 12}" font-size="9" font-weight="bold" fill="${col}" text-anchor="middle" font-family="Georgia,serif">${ch}</text>`,
+    )
+    .join('');
+}
+
+function hrFret(fret, str, cx, tabY, col, bg) {
+  if (fret === '-' || fret == null) return '';
+  const ly = tabY + (str - 1) * HR_TAB_LG;
+  if (fret === 'x' || fret === 'X')
+    return `<text x="${cx}" y="${ly+3}" font-size="7" fill="${col}" text-anchor="middle" font-family="sans-serif">x</text>`;
+  const t = String(fret), tw = t.length > 1 ? 12 : 9;
+  return (
+    `<rect x="${cx - tw / 2}" y="${ly - 4}" width="${tw}" height="8" fill="${bg}"/>` +
+    `<text x="${cx}" y="${ly+3}" font-size="7" fill="${col}" text-anchor="middle" font-family="sans-serif">${escapeHtml(t)}</text>`
+  );
+}
+
+function hrBeatX(beat, timeSig, barLeft, barUsableW) {
+  const nb = Number(String(timeSig || '4/4').split('/')[0]) || 4;
+  return barLeft + ((beat - 1) / nb) * barUsableW;
+}
+
+function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
+  const events  = Array.isArray(bar?.events) ? bar.events : [];
+  const tabs    = Array.isArray(bar?.tabEvents) ? bar.tabEvents : [];
+  const timeSig = bar?.timeSig || '4/4';
+  const ul      = barLeft + HR_BAR_PAD;
+  const uw      = barW - HR_BAR_PAD * 2;
+  const cy      = staffY + HR_MID;
+  const stemTopY = staffY + HR_STEM_TY;
+  const tabY    = staffY + HR_STAFF_H + HR_TAB_SEP;
+  let s = '';
+
+  if (!events.length) {
+    if (bar.chordToken) {
+      s += `<text x="${barLeft + barW / 2}" y="${staffY - 10}" font-size="13" fill="${cc}" text-anchor="middle" font-weight="bold" font-family="Georgia,serif">${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;
     }
-    const accent = event.accent ? `<span class="hybridAccent" style="left:${left}%">&gt;</span>` : '';
-    const sustain = event.sustain ? '—' : '';
-    return `${accent}<span class="hybridEvent" style="left:${left}%">${escapeHtml(glyphForDuration(event.duration))}${escapeHtml(sustain)}</span>`;
-  }).join('');
+    const nb = Number(String(timeSig).split('/')[0]) || 4;
+    for (let b = 1; b <= nb; b++) {
+      const ex = hrBeatX(b, timeSig, ul, uw);
+      s += hrHead(ex, cy, 'q', fg);
+      s += hrStem(ex, staffY, fg);
+    }
+    return s;
+  }
 
-  const tabHtml = tabs.map((tabEvent) => {
-    const left = hybridBeatToPercent(tabEvent.beat, bar.timeSig);
-    return `<span class="hybridTabEvent" style="left:${left}%">${escapeHtml(tabEvent.shape)}</span>`;
-  }).join('');
+  const hasPM = bar?.pm?.bar || bar?.pm?.spans?.length > 0;
+  if (hasPM) {
+    const pmY = staffY - 2;
+    s += `<text x="${ul}" y="${pmY - 3}" font-size="8" fill="${fg}" font-family="sans-serif" font-style="italic">P.M.</text>`;
+    s += `<line x1="${ul + 22}" y1="${pmY - 3}" x2="${barLeft + barW - HR_BAR_PAD}" y2="${pmY - 3}" stroke="${fg}" stroke-width="0.8" stroke-dasharray="3,2"/>`;
+  }
 
-  const hasPm = bar?.pm?.bar || (Array.isArray(bar?.pm?.spans) && bar.pm.spans.length > 0);
-  const pmHtml = hasPm ? `<div class="hybridPmLine">P.M. - - - -</div>` : '';
-  const cueHtml = bar?.cueText ? `<div class="hybridCue hybridBarCue">${escapeHtml(bar.cueText)}</div>` : '';
+  const beamOf = new Array(events.length).fill(-1);
+  let gi = 0;
+  for (let i = 0; i < events.length; ) {
+    if (events[i].type !== 'slash' || !['e', 's'].includes(events[i].duration)) { i++; continue; }
+    let j = i + 1;
+    while (j < events.length && events[j].type === 'slash' && ['e', 's'].includes(events[j].duration)) j++;
+    if (j - i >= 2) { for (let k = i; k < j; k++) beamOf[k] = gi; gi++; }
+    i = j;
+  }
+  const xs = events.map((ev) => hrBeatX(ev.beat, timeSig, ul, uw));
 
-  return `<div class="hybridBar"><div class="hybridChordLane" style="min-height:${Math.max(18, chordRowCount * 14)}px;">${chordHtml}</div><div class="hybridStaff">${pmHtml}${eventHtml}</div>${tabHtml ? `<div class="hybridTab">${tabHtml}</div>` : ''}${cueHtml}</div>`;
+  const beamGroups = {};
+  beamOf.forEach((g, i) => { if (g >= 0) (beamGroups[g] = beamGroups[g] || []).push(i); });
+  for (const idxs of Object.values(beamGroups)) {
+    const bx1 = xs[idxs[0]], bx2 = xs[idxs[idxs.length - 1]];
+    s += hrBeam(bx1, bx2, stemTopY, fg);
+    if (events[idxs[0]].duration === 's') s += hrBeam(bx1, bx2, stemTopY + 6, fg);
+  }
+
+  events.forEach((ev, i) => {
+    if (!ev.chord) return;
+    s += `<text x="${xs[i]}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="middle" font-weight="bold" font-family="Georgia,serif">${escapeHtml(String(ev.chord).replace(/[!~]$/, '').trim())}</text>`;
+  });
+
+  events.forEach((ev, i) => {
+    const ex = xs[i];
+    if (ev.type === 'rest') {
+      s += hrRest(ex, cy, ev.duration, fg);
+    } else {
+      s += hrHead(ex, cy, ev.duration, fg);
+      if (ev.duration !== 'w') {
+        s += hrStem(ex, staffY, fg);
+        if (beamOf[i] < 0) {
+          if (ev.duration === 'e') s += hrFlags(ex, stemTopY, 1, fg);
+          if (ev.duration === 's') s += hrFlags(ex, stemTopY, 2, fg);
+        }
+      }
+    }
+    if (ev.accent)
+      s += `<text x="${ex}" y="${staffY - 22}" font-size="10" fill="${fg}" text-anchor="middle" font-weight="bold">&gt;</text>`;
+  });
+
+  tabs.forEach((te) => {
+    const tx = hrBeatX(te.beat, timeSig, ul, uw);
+    String(te.shape || '').split(',').forEach((fret, si) => { s += hrFret(fret.trim(), si + 1, tx, tabY, fg, bg); });
+  });
+
+  return s;
 }
 
-function renderHybridDoc(sourceText){
+function renderHybridDoc(sourceText) {
   const fallbackDoc = parseCSMPN(sourceText || '');
-  const hybrid = (typeof parseHybridChartFromCSMPN === 'function') ? parseHybridChartFromCSMPN(sourceText || '') : null;
+  const hybrid =
+    typeof parseHybridChartFromCSMPN === 'function'
+      ? parseHybridChartFromCSMPN(sourceText || '')
+      : null;
   if (!hybrid || !hybrid.active) return renderDoc(fallbackDoc);
+
   validationWarnings = [];
   rehearsalLetterIndex = 0;
-  let html = '';
-  if (hybrid.warnings?.length){
-    validationWarnings.push(...hybrid.warnings);
-  }
-  if (fallbackDoc.title || fallbackDoc.style || fallbackDoc.key || fallbackDoc.time || fallbackDoc.tempo || fallbackDoc.composer){
-    const metaBits = [];
-    if (fallbackDoc.style) metaBits.push(fallbackDoc.style);
-    if (fallbackDoc.key) metaBits.push(`Key of ${fallbackDoc.key}`);
-    const metaStr = metaBits.length ? metaBits.join(', ') : '';
-    const metaLine = metaStr ? `<div class="headerMeta">(${escapeHtml(metaStr)})</div>` : '';
-    const composerLine = fallbackDoc.composer ? `<div class="headerComposer">${escapeHtml(fallbackDoc.composer)}</div>` : '';
-    const tempoLine = fallbackDoc.tempo ? `<div class="tempoLine">♩=${escapeHtml(fallbackDoc.tempo)}</div>` : '';
-    const timeSig = fallbackDoc.time ? renderTimeSig(fallbackDoc.time) : '';
-    html += `<div class="sheetHeader"><div class="headerInfo">${metaLine}${fallbackDoc.title ? `<div class="songTitle">${escapeHtml(fallbackDoc.title)}</div>` : ''}${composerLine}</div><div class="headerRight">${tempoLine}${timeSig}</div></div>`;
-  }
-  html += `<div class="hybridDoc">`;
-  for (const section of hybrid.sections){
-    html += renderSectionMarker({ marker: '-', text: section.label || 'Section' });
-    if (section.cueText) html += `<div class="hybridCue">${escapeHtml(section.cueText)}</div>`;
-    const bpr = Math.max(1, Number(fbSettings.barsPerRow) || 4);
-    for (let i = 0; i < section.bars.length; i += bpr){
-      const row = section.bars.slice(i, i + bpr);
-      html += `<div class="hybridSystem"><div class="hybridBarRow" style="grid-template-columns:repeat(${row.length}, minmax(0,1fr));">`;
-      html += row.map((bar) => renderHybridBar(bar)).join('');
-      html += `</div></div>`;
+  if (hybrid.warnings?.length) validationWarnings.push(...hybrid.warnings);
+
+  const fg  = fbSettings.fgColor    || '#111111';
+  const bg  = fbSettings.bgColor    || '#ffffff';
+  const cc  = fbSettings.chordColor || '#0044cc';
+  const bpr = Math.max(1, Math.min(8, Number(fbSettings.barsPerRow) || 4));
+  const staffX = HR_MARGIN + HR_CLEF_W;
+  const staffW = HR_PAGE_W - HR_MARGIN * 2 - HR_CLEF_W;
+
+  const systems = [];
+  for (const sec of hybrid.sections) {
+    let firstRow = true;
+    for (let i = 0; i < sec.bars.length; i += bpr) {
+      const rowBars = sec.bars.slice(i, i + bpr);
+      systems.push({
+        sec, rowBars, firstRow,
+        hasTab: rowBars.some((b) => b.tabEvents?.length > 0),
+        hasPM:  rowBars.some((b) => b.pm?.bar || b.pm?.spans?.length > 0),
+        hasCue: rowBars.some((b) => b.cueText),
+        secCue: firstRow ? sec.cueText : '',
+      });
+      firstRow = false;
     }
   }
-  html += `</div>`;
-  if (validationWarnings.length){
-    setStatus(validationWarnings.join('\n'), 'warning');
+
+  const { title, composer, key, time: docTime, tempo, style } = fallbackDoc;
+  let curY = 12;
+  if (title) curY += 30;
+  if (composer || key || docTime || tempo || style) curY += 20;
+  if (title || composer) curY += 4;
+
+  for (const sys of systems) {
+    sys.y = curY;
+    let h = HR_CHORD_H + HR_STAFF_H + HR_SYS_BOT;
+    if (sys.firstRow) h += HR_SLBL_H;
+    if (sys.secCue)   h += HR_CUE_H;
+    if (sys.hasPM)    h += HR_PM_H;
+    if (sys.hasTab)   h += HR_TAB_SEP + HR_TAB_H;
+    if (sys.hasCue)   h += HR_CUE_H;
+    sys.h = h;
+    curY += h;
   }
-  return html;
+
+  const svgH = curY + 10;
+  let svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${HR_PAGE_W}" viewBox="0 0 ${HR_PAGE_W} ${svgH}"` +
+    ` class="hybridSvgOut" style="max-width:100%;display:block;">`;
+  svg += `<rect width="${HR_PAGE_W}" height="${svgH}" fill="${bg}"/>`;
+
+  let hy = 12;
+  if (title) {
+    svg += `<text x="${HR_PAGE_W/2}" y="${hy+22}" font-size="18" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">${escapeHtml(title)}</text>`;
+    hy += 30;
+  }
+  const metaParts = [composer, key && `Key of ${key}`, docTime, tempo && `♪=${tempo}`, style]
+    .filter(Boolean).map(escapeHtml);
+  if (metaParts.length)
+    svg += `<text x="${HR_PAGE_W/2}" y="${hy+14}" font-size="11" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">${metaParts.join('  ·  ')}</text>`;
+
+  for (const sys of systems) {
+    let y = sys.y;
+    const barW = staffW / sys.rowBars.length;
+
+    if (sys.firstRow) {
+      svg += `<text x="${HR_MARGIN}" y="${y+14}" font-size="12" font-weight="bold" font-style="italic" fill="${fg}" font-family="Georgia,serif">${escapeHtml(sys.sec.label || '')}</text>`;
+      y += HR_SLBL_H;
+    }
+    if (sys.secCue) {
+      svg += `<text x="${staffX}" y="${y+11}" font-size="10" font-style="italic" fill="${fg}" font-family="sans-serif">${escapeHtml(sys.secCue)}</text>`;
+      y += HR_CUE_H;
+    }
+
+    const staffY = y + HR_CHORD_H + (sys.hasPM ? HR_PM_H : 0);
+    const tabY   = staffY + HR_STAFF_H + HR_TAB_SEP;
+    const blBot  = sys.hasTab ? tabY + HR_TAB_H : staffY + HR_STAFF_H;
+
+    if (sys.firstRow) svg += hrClef(HR_MARGIN + 2, staffY, fg);
+    svg += hrStaff(staffX, staffY, staffW, fg);
+    svg += hrL(staffX, staffY, staffX, blBot, fg, 2);
+
+    if (sys.hasTab) {
+      svg += hrTabStaff(staffX, tabY, staffW, fg);
+      svg += hrTabLabel(HR_MARGIN, tabY, fg);
+    }
+
+    sys.rowBars.forEach((bar, bi) => {
+      const barLeft    = staffX + bi * barW;
+      const isVeryLast = bi === sys.rowBars.length - 1 && sys === systems[systems.length - 1];
+
+      svg += hrBar(bar, barLeft, staffY, barW, fg, cc, bg);
+
+      const blX = barLeft + barW;
+      if (isVeryLast) {
+        svg += hrL(blX - 4, staffY, blX - 4, blBot, fg, 1);
+        svg += hrL(blX, staffY, blX, blBot, fg, 3.5);
+      } else {
+        svg += hrL(blX, staffY, blX, blBot, fg, 1);
+      }
+
+      if (bar.cueText)
+        svg += `<text x="${barLeft + barW / 2}" y="${blBot + HR_CUE_H - 2}" font-size="9" font-style="italic" fill="${fg}" text-anchor="middle" font-family="sans-serif">${escapeHtml(bar.cueText)}</text>`;
+    });
+  }
+
+  svg += `</svg>`;
+  if (validationWarnings.length) setStatus(validationWarnings.join('\n'), 'warning');
+  return `<div class="hybridSvgWrap">${svg}</div>`;
+}
+
 }
 
 function updatePreview(){

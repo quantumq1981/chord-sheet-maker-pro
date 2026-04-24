@@ -2598,8 +2598,22 @@ function buildDocSectionMap(text){
       continue;
     }
     if (block.type !== 'bars') continue;
-    const n = countBarsInDocBlock(block);
-    for (let i = 0; i < n; i++) current.bars.push({ timeSig: doc.time || '4/4' });
+    const tokens = Array.isArray(block.tokens) ? block.tokens : [];
+    // Extract per-bar chord tokens (for chord-only fallback in hybrid renderer)
+    const barChords = [];
+    let buf = [];
+    for (const t of tokens) {
+      if (isBarlineToken(t)) {
+        if (buf.length) { barChords.push(buf.join(' ')); buf = []; }
+      } else {
+        buf.push(t);
+      }
+    }
+    if (buf.length) barChords.push(buf.join(' '));
+    const n = countBarsInDocBlock(block) || barChords.length;
+    for (let i = 0; i < n; i++) {
+      current.bars.push({ timeSig: doc.time || '4/4', chordToken: barChords[i] || '' });
+    }
   }
   sections.push(current);
   return sections.filter((sec) => sec.bars.length > 0);
@@ -2673,7 +2687,7 @@ function parseHybridChartFromCSMPN(text){
   const docSections = buildDocSectionMap(text);
   const sectionModels = docSections.map((sec, i) => ({
     label: sec.label || `Section ${i + 1}`,
-    bars: sec.bars.map((bar) => ({ ...bar, events: [], tabEvents: [], cueText: '', pm: { bar: false, spans: [] } })),
+    bars: sec.bars.map((bar) => ({ ...bar, events: [], tabEvents: [], cueText: '', pm: { bar: false, spans: [] }, chordToken: bar.chordToken || '' })),
     cueText: ''
   }));
   let activeHybrid = null;
@@ -2699,7 +2713,9 @@ function parseHybridChartFromCSMPN(text){
             warnings.push(`bar${mBar[1]} does not exist in section "${section.label}".`);
             continue;
           }
+          const prevToken = section.bars[barIndex].chordToken;
           section.bars[barIndex] = parseHybridBarLine(mBar[2], section.bars[barIndex].timeSig || '4/4', warnings);
+          section.bars[barIndex].chordToken = prevToken || '';
           continue;
         }
         const mTab = entry.match(/^(?:tab|t)(\d+)\s*:\s*([^@]+)(?:\s*@\s*([0-9&]+))?$/i);

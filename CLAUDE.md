@@ -4,7 +4,7 @@
 ## Project Identity
 - **App:** Chord Sheet Maker Pro — music finishing app (not a primary converter)
 - **Developer:** iOS 16+ (iPhone/iPad) — no local console. GitHub Actions = the CI console.
-- **Branch:** `claude/update-claude-docs-IKErW` — all work goes here
+- **Branch:** `claude/fix-codex-agent-error-hy7VN` — all work goes here
 - **Optimization persona:** Opp the CoderOptimizer — prioritize clean architecture, performance, correctness
 
 ## Sprint 1 — Foundation Hardening ✅ COMPLETE
@@ -527,6 +527,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 | 9.7 | `docs/hybrid-rhythm-v1-spec.md` — syntax spec document | ✅ DONE |
 | 9.8 | `Codex.md` — codex agent session log | ✅ DONE |
 | 9.fix | Prettier format fix on `tests/hybridParser.test.mjs` (CI was red) | ✅ DONE |
+| 9.r | SVG renderer rework: replace HTML/CSS glyphs with inline SVG (iOS print-to-PDF stable) | ✅ DONE |
 
 ## SPRINT 9 CHANGES (2026-04-24)
 
@@ -577,3 +578,41 @@ Event token: `beat:duration(chord)flag` or compact `beatduration(chord)flag`
 - No engraved beaming engine for 16th-note grouping
 - Hybrid parser maps `{hybrid}` blocks to sections in source order; non-linear references need future section IDs
 - MusicXML export parity for hybrid events deferred
+
+### Sprint 9 Refinement — SVG Renderer Rework (2026-04-24)
+
+**Root cause:** The codex-agent v1 rendered hybrid bars as HTML `<div>` trees with CSS `linear-gradient` staff lines, Unicode music glyphs (`𝅗𝅥╱`, `𝄻`), and percentage-positioned `<span>` elements. This approach fails under iOS Safari print-to-PDF: CSS gradients don't print reliably, Unicode glyph fonts aren't guaranteed, and `position:absolute` percentage layout collapses inside flex containers at print scale.
+
+**Fix:** Complete SVG-based renderer replacing all three old functions:
+
+#### `renderer.js` — SVG atom helpers (new)
+- `HR_*` layout constants: `HR_PAGE_W=760`, `HR_MARGIN=20`, `HR_CLEF_W=30`, `HR_BAR_PAD=7`, `HR_CHORD_H=28`, `HR_PM_H=14`, `HR_LG=8` (staff line gap), `HR_STAFF_H=32`, `HR_MID=16`, `HR_STEM_TY=-14`, `HR_TAB_SEP=12`, `HR_TAB_LG=8`, `HR_TAB_H=40`, `HR_SYS_BOT=22`, `HR_SLBL_H=20`, `HR_CUE_H=14`
+- `hrL(x1,y1,x2,y2,col,w)` — SVG `<line>` fragment
+- `hrHead(cx,cy,dur,col)` — slash notehead parallelogram: filled (q/e/s), hollow outline (h), double-hollow (w); pure SVG `<polygon>`/`<path>` — no Unicode
+- `hrStem(cx,cy,col)` — quarter-note stem above notehead
+- `hrFlags(cx,cy,dur,col)` — eighth/sixteenth flags as SVG paths (unused when beamed)
+- `hrBeam(x1,x2,y,col)` — horizontal beam rectangle for beamed e/s groups
+- `hrRest(cx,cy,dur,col)` — SVG-drawn rests (whole=rectangle, half=hat, quarter=zigzag line, eighth=hook); replaces Unicode rest glyphs
+- `hrStaff(x,y,w,fg)` — 5 staff lines via `hrL()`
+- `hrClef(x,y,fg)` — treble clef as italic `𝄞` text element (readable at all sizes)
+- `hrTabStaff(x,y,w,fg)` — 6 TAB staff lines
+- `hrTabLabel(x,y,fg)` — stacked `T A B` text
+- `hrFret(cx,cy,fret,fg)` — fret number label on TAB staff
+- `hrBeatX(beat,timeSig,barLeft,barUsableW)` — exact pixel position for a beat float; replaces CSS `%`
+
+#### `renderer.js` — bar and doc renderer (new)
+- `hrBar(bar,barLeft,staffY,barW,fg,cc,bg)` — renders one bar: chord label at beat 0, beamed e/s groups, per-event noteheads + stems + flags + rests, accent `>` marks, PM dashed line, optional TAB lane, bar cue text; all output is SVG string fragments
+- `renderHybridDoc(sourceText)` — assembles full inline SVG; groups bars into rows by section; title + composer/key/tempo metadata above first row; section labels before each new section; returns `<div class="hybridSvgWrap"><svg …>…</svg></div>`
+
+#### `importPipeline.js` — chordToken propagation (new)
+- `buildDocSectionMap(text)` extracts per-bar chord text by scanning `block.tokens` with `isBarlineToken()`, buffering non-barline tokens per bar slot; stored as `bar.chordToken`
+- `parseHybridChartFromCSMPN` spreads `chordToken` when initialising section bar models and restores it after `parseHybridBarLine` replaces a bar's event structure — ensures unannotated (chord-only) bars still display the source chord name
+
+#### `index.html` — CSS cleanup
+- Removed ~57 lines of HTML-layout hybrid CSS (`.hybridDoc`, `.hybridSystem`, `.hybridBar`, `.hybridBarRow`, `.hybridCue`, `.hybridChordLane`, `.hybridChord`, `.hybridStaff`, `.hybridEvent`, `.hybridRest`, `.hybridAccent`, `.hybridPmLine`, `.hybridTab`, `.hybridTabEvent`) — all layout now handled by SVG geometry
+- Added `.hybridSvgWrap { display:block; overflow:visible; }` + `@media print { break-inside:avoid; page-break-inside:avoid; }`
+
+#### `tests/hybridParser.test.mjs` — extended coverage
+- 2 new tests: `chordToken is captured from CSMPN source for unannotated bars` and `chordToken is preserved on bars that have hybrid events`
+- `package.json`: added `tests/hybridParser.test.mjs` to the `test` script so all 6 hybrid tests run in `npm run test:all`
+- Total tests: 186 (10 `npm test` + 176 `test:parsers`)
