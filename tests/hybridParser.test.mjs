@@ -74,3 +74,31 @@ test('falls back cleanly when hybrid block has no valid entries', () => {
   assert.equal(out.active, false);
   assert.ok(out.warnings.length >= 2);
 });
+
+test('chordToken is captured from CSMPN source for unannotated bars', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  // Only bar1 has hybrid events; bars 2-4 are unannotated chord-only bars
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nb1: 1:q(G) 2:q 3:q 4:q\n}`
+  );
+
+  assert.equal(out.active, true);
+  assert.equal(out.sections[0].bars[0].chordToken, 'G');
+  assert.equal(out.sections[0].bars[1].chordToken, 'D');
+  assert.equal(out.sections[0].bars[2].chordToken, 'Em');
+  assert.equal(out.sections[0].bars[3].chordToken, 'C');
+});
+
+test('chordToken is preserved on bars that have hybrid events', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  // All four bars have explicit hybrid events; chordToken must still reflect source
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nb1: 1:q(G) 2:q 3:q 4:q\nb2: 1:h(D) 3:h\nb3: 1:q 2:q 3:q 4:q\nb4: 1:h 3:h\n}`
+  );
+
+  assert.equal(out.active, true);
+  assert.equal(out.sections[0].bars[0].chordToken, 'G');
+  assert.equal(out.sections[0].bars[1].chordToken, 'D');
+  assert.equal(out.sections[0].bars[2].chordToken, 'Em');
+  assert.equal(out.sections[0].bars[3].chordToken, 'C');
+});
