@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-function loadHybridParser(){
+function loadHybridParser() {
   const src = readFileSync(new URL('../importPipeline.js', import.meta.url), 'utf8');
   const start = src.indexOf('const HYBRID_DURATION_MAP');
   if (start < 0) throw new Error('Hybrid parser block not found in importPipeline.js');
@@ -13,12 +13,12 @@ function loadHybridParser(){
       time: '4/4',
       blocks: [
         { type: 'marker', marker: '-', text: 'Verse' },
-        { type: 'bars', tokens: ['|', 'G', '|', 'D', '|', 'Em', '|', 'C', '|'] }
-      ]
+        { type: 'bars', tokens: ['|', 'G', '|', 'D', '|', 'Em', '|', 'C', '|'] },
+      ],
     }),
-    parseBarStructures: () => ([{}, {}, {}, {}]),
+    parseBarStructures: () => [{}, {}, {}, {}],
     isBarlineToken: (token) => token === '|',
-    window: {}
+    window: {},
   };
   vm.createContext(context);
   vm.runInContext(chunk, context);
@@ -27,7 +27,9 @@ function loadHybridParser(){
 
 test('parses hybrid rhythm block with events, accents, PM and tab', () => {
   const parseHybridChartFromCSMPN = loadHybridParser();
-  const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nbar1: pm 1:q(G)! 2:e 2&:e 3:q 4:rq\nbar2: pm_start 1:h(D) 3:h pm_end\ntab2: x,x,5,4,3,x @ 1\ncue2: tight hits\nsectionCue: Nile-style 16ths\n}`);
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nbar1: pm 1:q(G)! 2:e 2&:e 3:q 4:rq\nbar2: pm_start 1:h(D) 3:h pm_end\ntab2: x,x,5,4,3,x @ 1\ncue2: tight hits\nsectionCue: Nile-style 16ths\n}`
+  );
 
   assert.equal(out.active, true);
   assert.equal(out.sections[0].bars[0].events.length, 5);
@@ -39,7 +41,9 @@ test('parses hybrid rhythm block with events, accents, PM and tab', () => {
 
 test('returns warnings for invalid beat, duration and malformed tab shape', () => {
   const parseHybridChartFromCSMPN = loadHybridParser();
-  const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nbar1: 6:q(G) 2:z\nbar2: 1:q\ntab2: x,3,2\ncue9: no bar\n}`);
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nbar1: 6:q(G) 2:z\nbar2: 1:q\ntab2: x,3,2\ncue9: no bar\n}`
+  );
 
   assert.equal(out.active, true);
   assert.ok(out.warnings.some((w) => w.includes('Invalid beat')));
@@ -50,7 +54,9 @@ test('returns warnings for invalid beat, duration and malformed tab shape', () =
 
 test('supports shorthand aliases and compact event tokens for mobile typing', () => {
   const parseHybridChartFromCSMPN = loadHybridParser();
-  const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nsc: tight pocket\nb1: 1q(G)! 2e 2&e 3q 4rq\nt2: x,x,5,4,3,x @ 1\nc2: stop-time\n}`);
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nsc: tight pocket\nb1: 1q(G)! 2e 2&e 3q 4rq\nt2: x,x,5,4,3,x @ 1\nc2: stop-time\n}`
+  );
 
   assert.equal(out.active, true);
   assert.equal(out.sections[0].cueText, 'tight pocket');
@@ -61,7 +67,9 @@ test('supports shorthand aliases and compact event tokens for mobile typing', ()
 
 test('falls back cleanly when hybrid block has no valid entries', () => {
   const parseHybridChartFromCSMPN = loadHybridParser();
-  const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nb1: ???\nt1: x,3\n}`);
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nb1: ???\nt1: x,3\n}`
+  );
 
   assert.equal(out.active, false);
   assert.ok(out.warnings.length >= 2);
