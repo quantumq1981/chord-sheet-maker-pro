@@ -1,0 +1,13 @@
+Title: Hybrid Guitar Cue Chart
+Time: 4/4
+- Bridge
+| Bm7 | E7 | Amaj7 | F#7 |
+{hybrid
+sectionCue: pickup lick then lock groove
+bar1: 1:q(Bm7) 2:q 3:e 3&:e 4:q
+bar2: 1:h(E7) 3:h
+tab2: x,7,6,7,5,x @ 1
+bar3: 1:q(Amaj7) 2:q 3:q 4:q
+cue3: let ring
+bar4: pm 1:e(F#7)! 1&:e 2:e 2&:e 3:q 4:rq
+}

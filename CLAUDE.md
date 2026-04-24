@@ -25,7 +25,7 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-04-21)
+## Current State (2026-04-24)
 - **176 tests passing** (`npm run test:all`) — 4 VexFlow + 172 parser/exporter tests
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
 - **`app.html` + `src/`** — React/TypeScript track (secondary); `src/export/` and `src/parsers/` used for unit tests only
@@ -514,3 +514,66 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 **Sprint 8.8 — MusicXML `<frame>` TAB data**
 - New function `buildFrameXml(voicing)`: generates MusicXML 4.0 `<frame>` element; muted strings use `<fingering>0</fingering>`; `<first-fret>` emitted when diagram window is above fret 1; skips `-` (not-played) strings entirely
 - `buildMusicXml()`: extracts `rawTokens` from each bar token for voicing lookup; calls `lookupTabVoicing(sec.tabVoicings, rawChord)` per chord; injects `${frameXml}` inside `<harmony>` elements when voicing is found
+
+## Sprint 9 — Hybrid Rhythm Guitar Chart v1 ✅ COMPLETE (2026-04-24, PR #154)
+| # | Task | Status |
+|---|------|--------|
+| 9.1 | `importPipeline.js`: `parseHybridChartFromCSMPN()` + beat/duration helpers | ✅ DONE |
+| 9.2 | `renderer.js`: `renderHybridDoc()` + `renderHybridBar()` mode-gated render path | ✅ DONE |
+| 9.3 | `settings.js` + `index.html`: `hybridRhythmMode` / `hybridPreset` UI + persistence | ✅ DONE |
+| 9.4 | Hybrid CSS in `index.html` (layout, print-safe `break-inside` guards) | ✅ DONE |
+| 9.5 | `tests/hybridParser.test.mjs` — 4 parser unit tests | ✅ DONE |
+| 9.6 | Demo fixtures: `hybrid-pop-strum.csmpn`, `hybrid-muted-funk.csmpn`, `hybrid-guitar-cue.csmpn` | ✅ DONE |
+| 9.7 | `docs/hybrid-rhythm-v1-spec.md` — syntax spec document | ✅ DONE |
+| 9.8 | `Codex.md` — codex agent session log | ✅ DONE |
+| 9.fix | Prettier format fix on `tests/hybridParser.test.mjs` (CI was red) | ✅ DONE |
+
+## SPRINT 9 CHANGES (2026-04-24)
+
+**Hybrid Rhythm Guitar Chart v1 — `{hybrid ...}` block syntax**
+
+Adds a musician-first beat-positioned rendering mode that sits alongside (not replacing) the existing fake-book/slash-notation paths. Hybrid mode activates only when `Hybrid Rhythm Guitar Mode` is ON **and** the source contains at least one valid `{hybrid ...}` block.
+
+### `importPipeline.js` additions
+- `HYBRID_DURATION_MAP` — `{ w:4, h:2, q:1, e:0.5, s:0.25 }` — beat values per duration glyph
+- `parseHybridBeatPosition(rawPos, barTime)` — parses `"3"` or `"3&"` into a float beat value; range-checks against time signature numerator
+- `countBarsInDocBlock(block)` — counts bars in a parsed CSMPN bar block (uses `parseBarStructures` when available)
+- `buildDocSectionMap(text)` — maps sections → bar arrays from the CSMPN parse tree; feeds section ordering to the hybrid parser
+- `parseHybridBarLine(raw, barTime, warnings)` — tokenises a `barN:` line into events; handles `pm`/`pm_start`/`pm_end`, canonical `beat:dur(chord)flag` form, and compact mobile shorthand `beatdur(chord)flag`; emits validation warnings for bad beats, unknown durations, overlapping events
+- `parseHybridChartFromCSMPN(text)` — top-level entry; returns `{ mode, active, sections[], warnings[] }`; `active=false` when no valid hybrid content survives parsing
+- `window.parseHybridChartFromCSMPN` + `window.HYBRID_SYNTAX_SPEC` exposed for `renderer.js`
+
+**Block syntax quick reference:**
+```
+{hybrid
+  sectionCue: / sc:  — section-level cue text
+  barN: / bN:        — rhythmic events for bar N
+  tabN: / tN:        — tab shape for bar N  (shape @ beat)
+  cueN: / cN:        — bar-level cue text
+}
+```
+Event token: `beat:duration(chord)flag` or compact `beatduration(chord)flag`
+- Durations: `w h q e s` (slash) · `r rw rh rq re rs` (rest)
+- Flags: `!` accent · `~` sustain
+
+### `renderer.js` additions
+- `hybridBeatToPercent(beat, timeSig)` — maps a beat float to a 0–100% horizontal position within a bar
+- `renderHybridBar(bar)` — returns HTML string for one hybrid bar: stacked chord lane, 3-line staff with beat-positioned glyphs, optional tab lane, P.M. dashed indicator, bar cue; uses `escapeHtml()` throughout
+- `renderHybridDoc(sourceText)` — builds full hybrid preview HTML; falls back to `renderDoc()` when `active=false`; integrates with `validationWarnings` and `setStatus()`
+- `updatePreview()` — gated branch: `fbSettings.hybridRhythmMode && /\{hybrid\b/i.test(text)` routes to `renderHybridDoc`; otherwise legacy path unchanged
+
+### `settings.js` additions
+- `fbSettings.hybridRhythmMode` (default `false`) — master on/off
+- `fbSettings.hybridPreset` (default `'default'`) — `'v1'` preset auto-enables hybrid mode and caps `barsPerRow` at 4
+- `loadFBSettings()` updated to restore both fields
+
+### `index.html` additions
+- CSS classes: `.hybridDoc`, `.hybridSystem`, `.hybridBar`, `.hybridBarRow`, `.hybridCue`, `.hybridChordLane`, `.hybridChord`, `.hybridStaff`, `.hybridEvent`, `.hybridRest`, `.hybridAccent`, `.hybridPmLine`, `.hybridTab`, `.hybridTabEvent`
+- Print media: `break-inside: avoid` / `page-break-inside: avoid` on `.hybridSystem` and `.hybridBar`; tighter spacing in `@media print`
+- Settings UI: `#setHybridRhythmMode` select + `#setHybridPreset` select in Fake Book Settings panel; `'v1'` preset listener auto-sets `barsPerRow` to 4
+
+### v1 Known Limitations (deferred to future sprints)
+- PM spans parsed but rendered as bar-level dashed indicator only (no per-span start/end marks)
+- No engraved beaming engine for 16th-note grouping
+- Hybrid parser maps `{hybrid}` blocks to sections in source order; non-linear references need future section IDs
+- MusicXML export parity for hybrid events deferred

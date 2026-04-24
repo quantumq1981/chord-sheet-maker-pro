@@ -1,0 +1,11 @@
+Title: Hybrid Pop Strum
+Time: 4/4
+- Verse
+| G | D | Em | C |
+{hybrid
+sectionCue: keep open strum
+bar1: 1:q(G) 2:q 3:e 3&:e 4:q
+bar2: 1:h(D) 3:h
+bar3: 1:q(Em) 2:q 3:q 4:rq
+bar4: 1:q(C) 2:q 3:q 4:q
+}

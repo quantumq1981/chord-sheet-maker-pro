@@ -27,6 +27,8 @@ const fbSettings = {
   // Whether to include lyrics lines (prefixed with ';') in the CSMPN output.
   // True = keep lyrics as comment lines; False = omit lyrics completely.
   includeLyrics: true,
+  hybridRhythmMode: false,
+  hybridPreset: 'default',
 };
 
 const FONT_SCALE_MAP = { M: 1, S: 0.85, XS: 0.72 };
@@ -109,6 +111,8 @@ function loadFBSettings(){
       setEl('setHeadlineFont', fbSettings.headlineFont);
       setEl('setBodyFont', fbSettings.bodyFont);
       setEl('setIncludeLyrics', String(fbSettings.includeLyrics));
+      setEl('setHybridRhythmMode', String(fbSettings.hybridRhythmMode));
+      setEl('setHybridPreset', fbSettings.hybridPreset || 'default');
     }
   } catch(_){}
 }
