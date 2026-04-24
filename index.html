@@ -1296,6 +1296,55 @@ body.exporting .sectionBlock{
     color:#666;
     margin-top:2px;
   }
+  .hybridDoc{ display:flex; flex-direction:column; gap:8px; }
+  .hybridSystem{
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border:1px solid #d9d9d9;
+    border-radius:10px;
+    padding:8px 10px 10px;
+    background:#fff;
+  }
+  .hybridCue{ font-size:12px; color:#555; margin-bottom:4px; font-style:italic; }
+  .hybridBarRow{ display:grid; gap:10px; align-items:start; }
+  .hybridBar{
+    border-left:1px solid #111;
+    border-right:1px solid #111;
+    padding:2px 6px 6px;
+    min-height:86px;
+    position:relative;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .hybridChordLane{ min-height:18px; position:relative; font-weight:700; color:var(--fb-chord-color, #0044cc); font-size:13px; }
+  .hybridChord{ position:absolute; transform:translateX(-50%); white-space:nowrap; }
+  .hybridStaff{
+    position:relative;
+    height:32px;
+    margin-top:4px;
+    background:
+      linear-gradient(to bottom, transparent 5px, #bbb 5px, #bbb 6px, transparent 6px),
+      linear-gradient(to bottom, transparent 12px, #bbb 12px, #bbb 13px, transparent 13px),
+      linear-gradient(to bottom, transparent 19px, #bbb 19px, #bbb 20px, transparent 20px);
+  }
+  .hybridEvent,.hybridAccent,.hybridRest,.hybridTabEvent{ position:absolute; transform:translateX(-50%); white-space:nowrap; }
+  .hybridEvent{ top:8px; font-size:16px; font-weight:700; color:#111; }
+  .hybridRest{ top:8px; font-size:14px; color:#444; }
+  .hybridAccent{ top:-6px; font-size:11px; font-weight:700; color:#111; }
+  .hybridPmLine{
+    position:absolute; left:6px; right:6px; top:1px;
+    border-top:1px dashed #444;
+    font-size:11px; color:#444;
+  }
+  .hybridTab{
+    margin-top:4px;
+    min-height:16px;
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size:11px;
+    color:#333;
+    position:relative;
+  }
+  .hybridTabEvent{ top:0; }
   @media print{
     .slashNotationPanel{ display:none !important; }
   }
@@ -1558,6 +1607,20 @@ body.exporting .sectionBlock{
         <select id="setIncludeLyrics">
           <option value="true" selected>Include</option>
           <option value="false">Hide</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Hybrid Rhythm Guitar Mode</label>
+        <select id="setHybridRhythmMode">
+          <option value="false" selected>Off (default)</option>
+          <option value="true">On</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Hybrid Rhythm Preset</label>
+        <select id="setHybridPreset">
+          <option value="default" selected>Default</option>
+          <option value="v1">Hybrid Rhythm Guitar v1</option>
         </select>
       </div>
       <div class="field">
@@ -2482,6 +2545,26 @@ document.getElementById('setBodyFont').addEventListener('change', (e) => {
 // Lyrics include/hide toggle
 document.getElementById('setIncludeLyrics').addEventListener('change', (e) => {
   fbSettings.includeLyrics = (e.target.value === 'true');
+  saveFBSettings();
+  updatePreview();
+});
+document.getElementById('setHybridRhythmMode').addEventListener('change', (e) => {
+  fbSettings.hybridRhythmMode = (e.target.value === 'true');
+  saveFBSettings();
+  updatePreview();
+});
+document.getElementById('setHybridPreset').addEventListener('change', (e) => {
+  fbSettings.hybridPreset = e.target.value || 'default';
+  if (fbSettings.hybridPreset === 'v1'){
+    fbSettings.hybridRhythmMode = true;
+    const modeEl = document.getElementById('setHybridRhythmMode');
+    if (modeEl) modeEl.value = 'true';
+    if (Number(fbSettings.barsPerRow) > 4){
+      fbSettings.barsPerRow = 4;
+      const barsEl = document.getElementById('setBarsPerRow');
+      if (barsEl) barsEl.value = '4';
+    }
+  }
   saveFBSettings();
   updatePreview();
 });

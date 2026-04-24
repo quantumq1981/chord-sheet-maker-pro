@@ -2549,3 +2549,198 @@ async function importUGProPDF(file){
 
   return out.trim();
 }
+
+const HYBRID_DURATION_MAP = { w: 4, h: 2, q: 1, e: 0.5, s: 0.25 };
+
+function parseHybridBeatPosition(rawPos, barTime = '4/4'){
+  const m = String(rawPos || '').trim().match(/^(\d+)(?:(&))?$/);
+  if (!m) return null;
+  const beat = Number(m[1]);
+  const beatVal = beat + (m[2] ? 0.5 : 0);
+  const top = Number(String(barTime).split('/')[0]) || 4;
+  if (beatVal < 1 || beatVal > top + 0.5) return null;
+  return beatVal;
+}
+
+function countBarsInDocBlock(block){
+  if (!block || block.type !== 'bars') return 0;
+  if (typeof parseBarStructures === 'function'){
+    try {
+      const bars = parseBarStructures(block.tokens || []);
+      return Array.isArray(bars) ? bars.length : 0;
+    } catch (_err){
+      return 0;
+    }
+  }
+  const tokens = Array.isArray(block.tokens) ? block.tokens : [];
+  return Math.max(0, tokens.filter((t) => !isBarlineToken(t)).length);
+}
+
+function buildDocSectionMap(text){
+  const doc = parseCSMPN(text || '');
+  const sections = [];
+  let current = { label: 'Main', bars: [] };
+  for (const block of doc.blocks || []){
+    if (block.type === 'marker' && ['-', ':', '='].includes(block.marker)){
+      if (current.bars.length || sections.length === 0) sections.push(current);
+      current = { label: block.text || 'Section', bars: [] };
+      continue;
+    }
+    if (block.type !== 'bars') continue;
+    const n = countBarsInDocBlock(block);
+    for (let i = 0; i < n; i++) current.bars.push({ timeSig: doc.time || '4/4' });
+  }
+  sections.push(current);
+  return sections.filter((sec) => sec.bars.length > 0);
+}
+
+function parseHybridBarLine(raw, barTime, warnings){
+  const out = { timeSig: barTime || '4/4', events: [], tabEvents: [], cueText: '', pm: { bar: false, spans: [] } };
+  const line = String(raw || '').trim();
+  if (!line) return out;
+  const tokens = line.split(/\s+/).filter(Boolean);
+  let pmOpen = null;
+
+  for (const token of tokens){
+    if (/^pm$/i.test(token)){ out.pm.bar = true; continue; }
+    if (/^pm_start$/i.test(token)){ pmOpen = out.events.length; continue; }
+    if (/^pm_end$/i.test(token)){
+      if (pmOpen !== null){
+        out.pm.spans.push({ startIndex: pmOpen, endIndex: Math.max(pmOpen, out.events.length - 1) });
+      }
+      pmOpen = null;
+      continue;
+    }
+    const m = token.match(/^([^:]+):([A-Za-z]+)(?:\(([^)]+)\))?([!~]?)$/);
+    if (!m){
+      warnings.push(`Unrecognized hybrid token "${token}" in "${line}".`);
+      continue;
+    }
+    const beat = parseHybridBeatPosition(m[1], barTime);
+    if (beat === null){
+      warnings.push(`Invalid beat "${m[1]}" for time ${barTime}.`);
+      continue;
+    }
+    const durRaw = String(m[2] || '').toLowerCase();
+    let type = 'slash';
+    let durationKey = durRaw;
+    if (/^r/.test(durRaw)){
+      type = 'rest';
+      durationKey = durRaw.length > 1 ? durRaw.slice(1) : 'q';
+    }
+    if (!HYBRID_DURATION_MAP[durationKey]){
+      warnings.push(`Unsupported duration "${durRaw}" in token "${token}".`);
+      continue;
+    }
+    out.events.push({
+      type,
+      duration: durationKey,
+      beats: HYBRID_DURATION_MAP[durationKey],
+      beat,
+      chord: (m[3] || '').trim(),
+      accent: m[4] === '!',
+      sustain: m[4] === '~'
+    });
+  }
+  if (pmOpen !== null){
+    out.pm.spans.push({ startIndex: pmOpen, endIndex: Math.max(pmOpen, out.events.length - 1) });
+  }
+  out.events.sort((a, b) => a.beat - b.beat);
+  for (let i = 1; i < out.events.length; i++){
+    if (out.events[i].beat === out.events[i - 1].beat){
+      warnings.push(`Overlapping events at beat ${out.events[i].beat}.`);
+      break;
+    }
+  }
+  return out;
+}
+
+function parseHybridChartFromCSMPN(text){
+  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  const warnings = [];
+  const docSections = buildDocSectionMap(text);
+  const sectionModels = docSections.map((sec, i) => ({
+    label: sec.label || `Section ${i + 1}`,
+    bars: sec.bars.map((bar) => ({ ...bar, events: [], tabEvents: [], cueText: '', pm: { bar: false, spans: [] } })),
+    cueText: ''
+  }));
+  let activeHybrid = null;
+  let targetSection = -1;
+
+  for (const rawLine of lines){
+    const line = String(rawLine || '').trim();
+    if (!line) continue;
+    if (/^\{hybrid\b/i.test(line)){ activeHybrid = []; continue; }
+    if (line === '}' && activeHybrid){
+      targetSection += 1;
+      const section = sectionModels[targetSection];
+      if (!section){
+        warnings.push('Hybrid block references a nonexistent section.');
+        activeHybrid = null;
+        continue;
+      }
+      for (const entry of activeHybrid){
+        const mBar = entry.match(/^bar(\d+)\s*:\s*(.+)$/i);
+        if (mBar){
+          const barIndex = Number(mBar[1]) - 1;
+          if (!section.bars[barIndex]){
+            warnings.push(`bar${mBar[1]} does not exist in section "${section.label}".`);
+            continue;
+          }
+          section.bars[barIndex] = parseHybridBarLine(mBar[2], section.bars[barIndex].timeSig || '4/4', warnings);
+          continue;
+        }
+        const mTab = entry.match(/^tab(\d+)\s*:\s*([^@]+)(?:\s*@\s*([0-9&]+))?$/i);
+        if (mTab){
+          const barIndex = Number(mTab[1]) - 1;
+          const bar = section.bars[barIndex];
+          if (!bar){
+            warnings.push(`tab${mTab[1]} references a missing bar.`);
+            continue;
+          }
+          const tabShape = mTab[2].trim();
+          if (!/^([xX\-]|\d{1,2})(\s*,\s*([xX\-]|\d{1,2})){5}$/.test(tabShape)){
+            warnings.push(`Malformed tab shape "${tabShape}". Expected six comma-separated strings.`);
+            continue;
+          }
+          const beat = parseHybridBeatPosition(mTab[3] || '1', bar.timeSig || '4/4');
+          if (beat === null){
+            warnings.push(`Invalid tab beat "${mTab[3]}".`);
+            continue;
+          }
+          bar.tabEvents.push({ type: 'tab_note_or_shape', beat, shape: tabShape });
+          continue;
+        }
+        const mCue = entry.match(/^cue(\d+)\s*:\s*(.+)$/i);
+        if (mCue){
+          const barIndex = Number(mCue[1]) - 1;
+          if (!section.bars[barIndex]){
+            warnings.push(`cue${mCue[1]} references a missing bar.`);
+            continue;
+          }
+          section.bars[barIndex].cueText = mCue[2].trim();
+          continue;
+        }
+        const secCue = entry.match(/^sectionCue\s*:\s*(.+)$/i);
+        if (secCue){
+          section.cueText = secCue[1].trim();
+          continue;
+        }
+      }
+      activeHybrid = null;
+      continue;
+    }
+    if (activeHybrid) activeHybrid.push(line);
+  }
+  const hasHybridContent = sectionModels.some((sec) => sec.bars.some((bar) => bar.events.length || bar.tabEvents.length || bar.cueText) || sec.cueText);
+  return {
+    mode: 'hybrid-v1',
+    active: hasHybridContent,
+    sections: sectionModels,
+    warnings
+  };
+}
+
+if (typeof window !== 'undefined'){
+  window.parseHybridChartFromCSMPN = parseHybridChartFromCSMPN;
+}

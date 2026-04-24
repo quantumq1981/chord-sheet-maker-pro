@@ -205,6 +205,83 @@ function renderMeasure(measureText, alignClass){
   return `<div class="measure${cls}"><div class="beats">${beatHtml}</div></div>`;
 }
 
+function hybridBeatToPercent(beat, timeSig){
+  const top = Number(String(timeSig || '4/4').split('/')[0]) || 4;
+  return Math.max(0, Math.min(100, ((beat - 1) / Math.max(1, top - 0.5)) * 100));
+}
+
+function renderHybridBar(bar){
+  const events = Array.isArray(bar?.events) ? bar.events : [];
+  const tabs = Array.isArray(bar?.tabEvents) ? bar.tabEvents : [];
+  const chordHtml = events
+    .filter((event) => event.chord)
+    .map((event) => `<span class="hybridChord" style="left:${hybridBeatToPercent(event.beat, bar.timeSig)}%">${renderChordToken(event.chord)}</span>`)
+    .join('');
+
+  const glyphForDuration = (dur) => ({ w: '𝅝╱', h: '𝅗𝅥╱', q: '╱', e: '╲╱', s: '╲╱╲╱' }[dur] || '╱');
+  const restForDuration = (dur) => ({ w: '𝄻', h: '𝄼', q: '𝄽', e: '𝄾', s: '𝄿' }[dur] || '𝄽');
+
+  const eventHtml = events.map((event) => {
+    const left = hybridBeatToPercent(event.beat, bar.timeSig);
+    if (event.type === 'rest'){
+      return `<span class="hybridRest" style="left:${left}%">${escapeHtml(restForDuration(event.duration))}</span>`;
+    }
+    const accent = event.accent ? `<span class="hybridAccent" style="left:${left}%">&gt;</span>` : '';
+    const sustain = event.sustain ? '—' : '';
+    return `${accent}<span class="hybridEvent" style="left:${left}%">${escapeHtml(glyphForDuration(event.duration))}${escapeHtml(sustain)}</span>`;
+  }).join('');
+
+  const tabHtml = tabs.map((tabEvent) => {
+    const left = hybridBeatToPercent(tabEvent.beat, bar.timeSig);
+    return `<span class="hybridTabEvent" style="left:${left}%">${escapeHtml(tabEvent.shape)}</span>`;
+  }).join('');
+
+  const hasPm = bar?.pm?.bar || (Array.isArray(bar?.pm?.spans) && bar.pm.spans.length > 0);
+  const pmHtml = hasPm ? `<div class="hybridPmLine">P.M. - - - -</div>` : '';
+  const cueHtml = bar?.cueText ? `<div class="hybridCue">${escapeHtml(bar.cueText)}</div>` : '';
+
+  return `<div class="hybridBar">${cueHtml}<div class="hybridChordLane">${chordHtml}</div><div class="hybridStaff">${pmHtml}${eventHtml}</div>${tabHtml ? `<div class="hybridTab">${tabHtml}</div>` : ''}</div>`;
+}
+
+function renderHybridDoc(sourceText){
+  const fallbackDoc = parseCSMPN(sourceText || '');
+  const hybrid = (typeof parseHybridChartFromCSMPN === 'function') ? parseHybridChartFromCSMPN(sourceText || '') : null;
+  if (!hybrid || !hybrid.active) return renderDoc(fallbackDoc);
+  validationWarnings = [];
+  rehearsalLetterIndex = 0;
+  let html = '';
+  if (hybrid.warnings?.length){
+    validationWarnings.push(...hybrid.warnings);
+  }
+  if (fallbackDoc.title || fallbackDoc.style || fallbackDoc.key || fallbackDoc.time || fallbackDoc.tempo || fallbackDoc.composer){
+    const metaBits = [];
+    if (fallbackDoc.style) metaBits.push(fallbackDoc.style);
+    if (fallbackDoc.key) metaBits.push(`Key of ${fallbackDoc.key}`);
+    const metaStr = metaBits.length ? metaBits.join(', ') : '';
+    const metaLine = metaStr ? `<div class="headerMeta">(${escapeHtml(metaStr)})</div>` : '';
+    const composerLine = fallbackDoc.composer ? `<div class="headerComposer">${escapeHtml(fallbackDoc.composer)}</div>` : '';
+    const tempoLine = fallbackDoc.tempo ? `<div class="tempoLine">♩=${escapeHtml(fallbackDoc.tempo)}</div>` : '';
+    const timeSig = fallbackDoc.time ? renderTimeSig(fallbackDoc.time) : '';
+    html += `<div class="sheetHeader"><div class="headerInfo">${metaLine}${fallbackDoc.title ? `<div class="songTitle">${escapeHtml(fallbackDoc.title)}</div>` : ''}${composerLine}</div><div class="headerRight">${tempoLine}${timeSig}</div></div>`;
+  }
+  html += `<div class="hybridDoc">`;
+  for (const section of hybrid.sections){
+    html += renderSectionMarker({ marker: '-', text: section.label || 'Section' });
+    if (section.cueText) html += `<div class="hybridCue">${escapeHtml(section.cueText)}</div>`;
+    const bpr = Math.max(1, Number(fbSettings.barsPerRow) || 4);
+    for (let i = 0; i < section.bars.length; i += bpr){
+      const row = section.bars.slice(i, i + bpr);
+      html += `<div class="hybridSystem"><div class="hybridBarRow" style="grid-template-columns:repeat(${row.length}, minmax(0,1fr));">`;
+      html += row.map((bar) => renderHybridBar(bar)).join('');
+      html += `</div></div>`;
+    }
+  }
+  html += `</div>`;
+  if (validationWarnings.length){
+    setStatus(validationWarnings.join('\n'), 'warning');
+  }
+  return html;
+}
 
 function updatePreview(){
   // Determine the text to render. When the user has disabled lyrics via settings,
@@ -216,8 +293,12 @@ function updatePreview(){
   notationPreference = detectNotationPreferenceFromKeyOrText(key, text);
 
   _vtBlockId = 0; // reset notation block counter before render
-  const doc = parseCSMPN(text);
-  previewEl.innerHTML = renderDoc(doc);
+  if (fbSettings.hybridRhythmMode && /\{hybrid\b/i.test(text)){
+    previewEl.innerHTML = renderHybridDoc(text);
+  } else {
+    const doc = parseCSMPN(text);
+    previewEl.innerHTML = renderDoc(doc);
+  }
 
   // Render any {vt ...} notation blocks via VexFlow
   renderAllNotationBlocks();

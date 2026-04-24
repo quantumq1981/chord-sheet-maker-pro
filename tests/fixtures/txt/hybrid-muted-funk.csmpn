@@ -1,0 +1,12 @@
+Title: Hybrid Muted Funk
+Time: 4/4
+- Chorus
+| Em7 | Em7 | A13 | A13 |
+{hybrid
+sectionCue: play tight w/ kick
+bar1: pm 1:e(Em7)! 1&:e 2:e 2&:e 3:e 3&:e 4:e 4&:e
+bar2: pm_start 1:q(Em7)! 2:rq 3:q 4:q pm_end
+bar3: 1:e(A13)! 1&:e 2:re 2&:e 3:e 3&:e 4:e 4&:e
+bar4: 1:h(A13) 3:h
+cue2: stop-time hits
+}
