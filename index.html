@@ -1297,9 +1297,24 @@ body.exporting .sectionBlock{
     margin-top:2px;
   }
   .hybridSvgWrap{ display:block; overflow:visible; }
+  .hybridModeChip{
+    display:inline-block;
+    margin-bottom:6px;
+    padding:2px 10px;
+    border-radius:12px;
+    background:#0044cc;
+    color:#fff;
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:0.03em;
+    font-family:sans-serif;
+    user-select:none;
+  }
   @media print{
     .slashNotationPanel{ display:none !important; }
     .hybridSvgWrap{ break-inside:avoid; page-break-inside:avoid; }
+    .hybridSvgWrap svg{ width:100% !important; height:auto !important; }
+    .hybridModeChip{ display:none !important; }
   }
 </style>
 <style id="dynamicPageStyle">@media print { @page { size: letter portrait; margin: 0.5in; } }</style>
