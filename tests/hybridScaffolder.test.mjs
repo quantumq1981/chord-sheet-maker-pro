@@ -72,6 +72,26 @@ test('swing preset adds accent flags on strong beats', () => {
   assert.ok(out.includes('3:q!'));
 });
 
+test('scaffolds simple bar format (space-separated chords, no pipes)', () => {
+  const { toHybridCSMPN } = loadScaffolder();
+  // Each space-separated token = 1 bar in the simple CSMPN format
+  const csmpn = '- Verse\nF7 C Gm11 B\nA Gm7 A B\n';
+  const out = toHybridCSMPN(csmpn, 'quarter');
+  assert.ok(out.includes('{hybrid'));
+  assert.ok(out.includes('b8: 1:q 2:q 3:q 4:q'));
+  assert.ok(!out.includes('b9:'));
+  assert.equal((out.match(/\{hybrid/g) || []).length, 1);
+});
+
+test('simple format: header lines (Title:, Key:) are not counted as bars', () => {
+  const { toHybridCSMPN } = loadScaffolder();
+  const csmpn = 'Title: My Song\nKey: Bb\nTime: 4/4\n\n- Verse\nF7 C Gm11 B\n';
+  const out = toHybridCSMPN(csmpn, 'quarter');
+  // Only 4 bars from the bar line, not extra from headers
+  assert.ok(out.includes('b4: 1:q 2:q 3:q 4:q'));
+  assert.ok(!out.includes('b5:'));
+});
+
 test('counts bars correctly when double barlines (||) are present', () => {
   const { toHybridCSMPN } = loadScaffolder();
   // || G | D || is 2 bars, not 4

@@ -2852,6 +2852,11 @@ function toHybridCSMPN(text, preset, _opts) {
     if (t.startsWith('{vt'))     { continue; }
     if (t && MARKER_CHARS.has(t[0])) { flush(); continue; }
     if (t.startsWith('|'))       { pendingBars += _hybridBarsInLine(t); lastBarLine = i; }
+    else if (t && !t.includes(':') && /^[A-G]/.test(t)) {
+      // Simple bar format: space-separated chords without pipe delimiters (each token = 1 bar)
+      pendingBars += t.split(/\s+/).filter(Boolean).length;
+      lastBarLine = i;
+    }
   }
   flush();
 
