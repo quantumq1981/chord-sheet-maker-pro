@@ -72,6 +72,26 @@ test('swing preset adds accent flags on strong beats', () => {
   assert.ok(out.includes('3:q!'));
 });
 
+test('counts bars correctly when double barlines (||) are present', () => {
+  const { toHybridCSMPN } = loadScaffolder();
+  // || G | D || is 2 bars, not 4
+  const csmpn = '- Verse\n|| G | D ||\n';
+  const out = toHybridCSMPN(csmpn, 'quarter');
+  assert.ok(out.includes('b2: 1:q 2:q 3:q 4:q'));
+  assert.ok(!out.includes('b3:'));
+});
+
+test('semicolon annotation lines do not split sections or create extra hybrid blocks', () => {
+  const { toHybridCSMPN } = loadScaffolder();
+  // ';' lines are lyrics/annotations within a section — should not trigger flush
+  const csmpn = '- Verse\n; some annotation\n| G | D |\n; another note\n| Em | C |\n';
+  const out = toHybridCSMPN(csmpn, 'quarter');
+  // All 4 bars should appear in a single {hybrid} block
+  assert.ok(out.includes('b4: 1:q 2:q 3:q 4:q'));
+  assert.ok(!out.includes('b5:'));
+  assert.equal((out.match(/\{hybrid/g) || []).length, 1);
+});
+
 test('HYBRID_PRESET_PATTERNS covers all seven presets', () => {
   const { HYBRID_PRESET_PATTERNS } = loadScaffolder();
   const expected = ['quarter', 'eighth', 'swing', 'funk-16', 'bossa', 'waltz', 'slow-blues'];
