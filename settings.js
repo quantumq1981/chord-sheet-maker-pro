@@ -29,6 +29,7 @@ const fbSettings = {
   includeLyrics: true,
   hybridRhythmMode: false,
   hybridPreset: 'default',
+  hybridScaffoldPreset: 'quarter',
 };
 
 const FONT_SCALE_MAP = { M: 1, S: 0.85, XS: 0.72 };
@@ -113,6 +114,7 @@ function loadFBSettings(){
       setEl('setIncludeLyrics', String(fbSettings.includeLyrics));
       setEl('setHybridRhythmMode', String(fbSettings.hybridRhythmMode));
       setEl('setHybridPreset', fbSettings.hybridPreset || 'default');
+      setEl('setHybridScaffoldPreset', fbSettings.hybridScaffoldPreset || 'quarter');
     }
   } catch(_){}
 }

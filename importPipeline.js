@@ -2791,3 +2791,76 @@ if (typeof window !== 'undefined'){
   window.parseHybridChartFromCSMPN = parseHybridChartFromCSMPN;
   window.HYBRID_SYNTAX_SPEC = HYBRID_SYNTAX_SPEC;
 }
+
+// ── Hybrid Scaffolder ──────────────────────────────────────────────────────────
+
+const HYBRID_PRESET_PATTERNS = {
+  quarter:      { '4/4':'1:q 2:q 3:q 4:q',              '3/4':'1:q 2:q 3:q',                 '2/4':'1:q 2:q',       '12/8':'1:q 4:q 7:q 10:q',                                              '6/8':'1:q 4:q',             '9/8':'1:q 4:q 7:q'              },
+  eighth:       { '4/4':'1:q 2:e 2&:e 3:q 4:e 4&:e',    '3/4':'1:q 2:e 2&:e 3:e 3&:e',       '2/4':'1:q 2:e 2&:e', '12/8':'1:q 2:e 3:e 4:q 5:e 6:e 7:q 8:e 9:e 10:q 11:e 12:e',          '6/8':'1:q 2:e 3:e 4:q 5:e 6:e','9/8':'1:q 2:e 3:e 4:q 5:e 6:e 7:q 8:e 9:e' },
+  swing:        { '4/4':'1:q! 2:e 2&:e 3:q! 4:e 4&:e',  '3/4':'1:q! 2:e 2&:e 3:q!',          '2/4':'1:q! 2:e 2&:e','12/8':'1:q! 4:q 7:q! 10:q',                                            '6/8':'1:q! 4:q',            '9/8':'1:q! 4:q 7:q!'            },
+  'funk-16':    { '4/4':'1:q! 2:e 2&:e 3:e 3&:e 4:q',   '3/4':'1:q! 2:e 2&:e 3:e 3&:e',      '2/4':'1:q! 2:e 2&:e','12/8':'1:q! 2:e 3:e 4:q 7:q! 8:e 9:e 10:q',                           '6/8':'1:q! 2:e 3:e 4:q',    '9/8':'1:q! 2:e 3:e 4:q 7:q! 8:e 9:e' },
+  bossa:        { '4/4':'1:q 2&:e 3:q 4&:e',             '3/4':'1:q 2&:e 3:q',                '2/4':'1:q 2&:e',     '12/8':'1:q 3:e 4:q 7:q 9:e 10:q',                                      '6/8':'1:q 3:e 4:q',         '9/8':'1:q 3:e 4:q 7:q 9:e'     },
+  waltz:        { '4/4':'1:q! 2:q 3:q 4:q',              '3/4':'1:q! 2:q 3:q',                '2/4':'1:q! 2:q',     '12/8':'1:q! 4:q 7:q 10:q',                                             '6/8':'1:q! 4:q',            '9/8':'1:q! 4:q 7:q'             },
+  'slow-blues': { '4/4':'1:q 2:e 2&:e 3:q 4:e',         '3/4':'1:q 2:q 3:e',                 '2/4':'1:q 2:e',      '12/8':'1:q 4:q 7:q 10:q',                                              '6/8':'1:q 4:q',             '9/8':'1:q 4:q 7:q'              },
+};
+
+function _hybridBarsInLine(line) {
+  const parts = line.trim().split('|');
+  return Math.max(parts.length - 2, 0);
+}
+
+function toHybridCSMPN(text, preset, _opts) {
+  preset = preset || 'quarter';
+  const timeMatch = text.match(/^(?:time|ti)\s*:\s*(\d+\/\d+)/im);
+  const timeSig = timeMatch ? timeMatch[1] : '4/4';
+  const presetMap = HYBRID_PRESET_PATTERNS[preset] || HYBRID_PRESET_PATTERNS.quarter;
+  const pattern = presetMap[timeSig] || presetMap['4/4'] || '1:q 2:q 3:q 4:q';
+
+  const lines = text.split('\n');
+  const MARKER_CHARS = new Set(['-', ':', '=', ';', '#']);
+  const insertAfter = new Map();
+
+  let hybridSkip = false;
+  let tabSkip = false;
+  let sectionHasHybrid = false;
+  let pendingBars = 0;
+  let lastBarLine = -1;
+
+  const flush = () => {
+    if (pendingBars > 0 && !sectionHasHybrid && lastBarLine >= 0) {
+      insertAfter.set(lastBarLine, pendingBars);
+    }
+    pendingBars = 0;
+    lastBarLine = -1;
+    sectionHasHybrid = false;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (hybridSkip) { if (t === '}') { hybridSkip = false; sectionHasHybrid = true; } continue; }
+    if (tabSkip)    { if (t === '}') tabSkip = false; continue; }
+    if (t.startsWith('{hybrid')) { sectionHasHybrid = true; if (!t.endsWith('}')) hybridSkip = true; continue; }
+    if (t.startsWith('{tab'))    { if (!t.endsWith('}')) tabSkip = true; continue; }
+    if (t.startsWith('{vt'))     { continue; }
+    if (t && MARKER_CHARS.has(t[0])) { flush(); continue; }
+    if (t.startsWith('|'))       { pendingBars += _hybridBarsInLine(t); lastBarLine = i; }
+  }
+  flush();
+
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    out.push(lines[i]);
+    if (insertAfter.has(i)) {
+      const barCount = insertAfter.get(i);
+      out.push('{hybrid');
+      for (let b = 1; b <= barCount; b++) out.push(`b${b}: ${pattern}`);
+      out.push('}');
+    }
+  }
+  return out.join('\n');
+}
+
+if (typeof window !== 'undefined'){
+  window.toHybridCSMPN = toHybridCSMPN;
+  window.HYBRID_PRESET_PATTERNS = HYBRID_PRESET_PATTERNS;
+}
