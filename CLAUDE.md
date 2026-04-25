@@ -528,6 +528,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 | 9.8 | `Codex.md` — codex agent session log | ✅ DONE |
 | 9.fix | Prettier format fix on `tests/hybridParser.test.mjs` (CI was red) | ✅ DONE |
 | 9.r | SVG renderer rework: replace HTML/CSS glyphs with inline SVG (iOS print-to-PDF stable) | ✅ DONE |
+| 9.p3 | Phase 3 parser hardening: true overlap detection, doc metadata, warning context, 10 tests | ✅ DONE |
 
 ## SPRINT 9 CHANGES (2026-04-24)
 
@@ -616,3 +617,21 @@ Event token: `beat:duration(chord)flag` or compact `beatduration(chord)flag`
 - 2 new tests: `chordToken is captured from CSMPN source for unannotated bars` and `chordToken is preserved on bars that have hybrid events`
 - `package.json`: added `tests/hybridParser.test.mjs` to the `test` script so all 6 hybrid tests run in `npm run test:all`
 - Total tests: 186 (10 `npm test` + 176 `test:parsers`)
+
+### Sprint 9 Phase 3 — Parser Hardening (2026-04-25)
+
+#### `importPipeline.js` improvements
+- `buildDocSectionMap(text, _doc)` — accepts pre-parsed doc to avoid redundant `parseCSMPN` call
+- `parseHybridBarLine` — true duration-span overlap detection: checks `event.beat < prev.beat + prev.beats` (not just same-beat equality); overlapping events are dropped with a warning; `pm_end` without a matching `pm_start` now emits a warning instead of silently discarding
+- `parseHybridChartFromCSMPN` — calls `parseCSMPN` once and passes result to `buildDocSectionMap`; prefixes all `parseHybridBarLine` warnings with `[SectionLabel bar N]` context; return value now includes `title`, `key`, `time`, `tempo`, `composer`, `style` from the parsed doc
+
+#### `renderer.js` improvement
+- `renderHybridDoc` — removed redundant second `parseCSMPN` call; metadata now read directly from `hybrid.title/key/time/tempo/composer/style`; fallback path (`!hybrid.active`) still calls `parseCSMPN` for `renderDoc`
+
+#### `tests/hybridParser.test.mjs` — 4 new tests (10 total)
+- `drops overlapping events and emits a duration-span overlap warning`
+- `warns on pm_end without a matching pm_start`
+- `returns doc metadata (title, key, time, composer) in parse result`
+- `prefixes validation warnings with section and bar context`
+- Mock updated to include `title`, `composer`, `key`, `tempo`, `style` fields
+- Total: 190 tests (14 `npm test` + 176 `test:parsers`)

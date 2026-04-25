@@ -10,7 +10,12 @@ function loadHybridParser() {
   const chunk = src.slice(start);
   const context = {
     parseCSMPN: () => ({
+      title: 'Test Song',
+      composer: 'Test Composer',
+      key: 'G',
       time: '4/4',
+      tempo: '120',
+      style: '',
       blocks: [
         { type: 'marker', marker: '-', text: 'Verse' },
         { type: 'bars', tokens: ['|', 'G', '|', 'D', '|', 'Em', '|', 'C', '|'] },
@@ -101,4 +106,46 @@ test('chordToken is preserved on bars that have hybrid events', () => {
   assert.equal(out.sections[0].bars[1].chordToken, 'D');
   assert.equal(out.sections[0].bars[2].chordToken, 'Em');
   assert.equal(out.sections[0].bars[3].chordToken, 'C');
+});
+
+test('drops overlapping events and emits a duration-span overlap warning', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  // whole note (4 beats) at beat 1 + quarter at beat 2 → beat 2 falls inside the whole
+  const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nb1: 1:w(G) 2:q\n}`);
+
+  assert.equal(out.active, true);
+  assert.equal(out.sections[0].bars[0].events.length, 1);
+  assert.equal(out.sections[0].bars[0].events[0].duration, 'w');
+  assert.ok(out.warnings.some((w) => w.includes('overlaps')));
+});
+
+test('warns on pm_end without a matching pm_start', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nb1: 1:q(G) pm_end 2:q 3:q 4:q\n}`
+  );
+
+  assert.equal(out.active, true);
+  assert.ok(out.warnings.some((w) => w.includes('pm_end')));
+  assert.equal(out.sections[0].bars[0].events.length, 4);
+});
+
+test('returns doc metadata (title, key, time, composer) in parse result', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nb1: 1:q(G) 2:q 3:q 4:q\n}`
+  );
+
+  assert.equal(out.title, 'Test Song');
+  assert.equal(out.composer, 'Test Composer');
+  assert.equal(out.key, 'G');
+  assert.equal(out.time, '4/4');
+});
+
+test('prefixes validation warnings with section and bar context', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nb1: 9:q(G)\n}`);
+
+  // Beat 9 is out of range for 4/4; warning must carry "[Verse bar 1]" prefix
+  assert.ok(out.warnings.some((w) => w.startsWith('[Verse bar 1]') && w.includes('Invalid beat')));
 });
