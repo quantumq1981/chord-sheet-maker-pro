@@ -149,3 +149,26 @@ test('prefixes validation warnings with section and bar context', () => {
   // Beat 9 is out of range for 4/4; warning must carry "[Verse bar 1]" prefix
   assert.ok(out.warnings.some((w) => w.startsWith('[Verse bar 1]') && w.includes('Invalid beat')));
 });
+
+test('span-level PM spans store startIndex and endIndex into event array', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  // pm_start before event at index 0, pm_end after event at index 1
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nb1: pm_start 1:q(G) 2:q pm_end 3:q 4:q\n}`
+  );
+
+  assert.equal(out.active, true);
+  const spans = out.sections[0].bars[0].pm.spans;
+  assert.equal(spans.length, 1);
+  assert.equal(spans[0].startIndex, 0);
+  assert.equal(spans[0].endIndex, 1);
+  assert.equal(out.sections[0].bars[0].pm.bar, false);
+});
+
+test('empty bar (no events, no chordToken) is marked active=false for the chart', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  // hybrid block with no valid events → active false
+  const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nb1: ???\n}`);
+
+  assert.equal(out.active, false);
+});

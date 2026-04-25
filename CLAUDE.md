@@ -529,6 +529,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 | 9.fix | Prettier format fix on `tests/hybridParser.test.mjs` (CI was red) | ✅ DONE |
 | 9.r | SVG renderer rework: replace HTML/CSS glyphs with inline SVG (iOS print-to-PDF stable) | ✅ DONE |
 | 9.p3 | Phase 3 parser hardening: true overlap detection, doc metadata, warning context, 10 tests | ✅ DONE |
+| 9.p4 | Phase 4 renderer hardening: chord at beat 1, empty-bar rest, span-level PM, accent offset | ✅ DONE |
 
 ## SPRINT 9 CHANGES (2026-04-24)
 
@@ -635,3 +636,16 @@ Event token: `beat:duration(chord)flag` or compact `beatduration(chord)flag`
 - `prefixes validation warnings with section and bar context`
 - Mock updated to include `title`, `composer`, `key`, `tempo`, `style` fields
 - Total: 190 tests (14 `npm test` + 176 `test:parsers`)
+
+### Sprint 9 Phase 4 — Renderer Hardening (2026-04-25)
+
+#### `renderer.js` — `hrBar()` improvements
+- **Chord-only bars**: chord label now at beat-1 X-position (`text-anchor="start"`) instead of centered; consistent with event-based chord placement
+- **Empty measures** (no events, no chordToken): renders an SVG whole rest centred in the bar instead of plain quarter slashes
+- **Span-level P.M.**: `bar.pm.spans[]` now rendered as individual dashed lines scoped from `xs[span.startIndex]` to `xs[span.endIndex] + duration_width`, with a closing end-tick; previously all PM was forced to bar-width
+- **Accent offset**: `>` glyph moved from `staffY - 22` to `staffY - 28` to clear chord symbol cap-height and avoid visual collision
+
+#### `tests/hybridParser.test.mjs` — 2 new tests (12 total)
+- `span-level PM spans store startIndex and endIndex into event array` — verifies `pm.spans[0].startIndex/endIndex` and `pm.bar === false`
+- `empty bar (no events, no chordToken) is marked active=false for the chart` — confirms graceful fallback
+- Total: 192 tests (16 `npm test` + 176 `test:parsers`)
