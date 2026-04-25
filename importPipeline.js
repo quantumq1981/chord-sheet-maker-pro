@@ -2805,8 +2805,15 @@ const HYBRID_PRESET_PATTERNS = {
 };
 
 function _hybridBarsInLine(line) {
-  const parts = line.trim().split('|');
-  return Math.max(parts.length - 2, 0);
+  // Normalise multi-char barline tokens before splitting so || doesn't double-count
+  const s = line
+    .trim()
+    .replace(/:\|{1,2}/g, '|')
+    .replace(/\|{2}:?/g, '|')
+    .replace(/\|:/g, '|')
+    .replace(/\|]/g, '|');
+  const inner = s.split('|').slice(1, -1);
+  return inner.filter(p => p.trim().length > 0).length;
 }
 
 function toHybridCSMPN(text, preset, _opts) {
@@ -2817,7 +2824,8 @@ function toHybridCSMPN(text, preset, _opts) {
   const pattern = presetMap[timeSig] || presetMap['4/4'] || '1:q 2:q 3:q 4:q';
 
   const lines = text.split('\n');
-  const MARKER_CHARS = new Set(['-', ':', '=', ';', '#']);
+  // Only '-' ':' '=' start new sections in buildDocSectionMap; ';'/'#' are annotations within a section
+  const MARKER_CHARS = new Set(['-', ':', '=']);
   const insertAfter = new Map();
 
   let hybridSkip = false;
