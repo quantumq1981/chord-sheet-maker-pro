@@ -25,8 +25,8 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-04-24)
-- **176 tests passing** (`npm run test:all`) — 4 VexFlow + 172 parser/exporter tests
+## Current State (2026-04-25)
+- **192 tests passing** (`npm run test:all`) — 16 hybrid parser + 176 parser/exporter tests
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
 - **`app.html` + `src/`** — React/TypeScript track (secondary); `src/export/` and `src/parsers/` used for unit tests only
 - **App.tsx:** 1,145 lines — OSMD renderer, export actions, and utilities extracted to hooks/utils
@@ -530,6 +530,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 | 9.r | SVG renderer rework: replace HTML/CSS glyphs with inline SVG (iOS print-to-PDF stable) | ✅ DONE |
 | 9.p3 | Phase 3 parser hardening: true overlap detection, doc metadata, warning context, 10 tests | ✅ DONE |
 | 9.p4 | Phase 4 renderer hardening: chord at beat 1, empty-bar rest, span-level PM, accent offset | ✅ DONE |
+| 9.p6 | Phase 6 print/iOS hardening: safe stroke widths, SVG height attr, hybridModeChip, print CSS | ✅ DONE — 2026-04-25, PR #159 |
 
 ## SPRINT 9 CHANGES (2026-04-24)
 
@@ -649,3 +650,20 @@ Event token: `beat:duration(chord)flag` or compact `beatduration(chord)flag`
 - `span-level PM spans store startIndex and endIndex into event array` — verifies `pm.spans[0].startIndex/endIndex` and `pm.bar === false`
 - `empty bar (no events, no chordToken) is marked active=false for the chart` — confirms graceful fallback
 - Total: 192 tests (16 `npm test` + 176 `test:parsers`)
+
+### Sprint 9 Phase 6 — Print & iOS Safari Hardening + UX Integration (2026-04-25, PR #159)
+
+#### `renderer.js` — stroke-width safety
+- `hrRest` whole/half hat lines: `0.8` → `1` — prevents hairline loss in iOS PDF
+- `hrStaff` 5-line staff: `0.8` → `1`
+- `hrTabStaff` 6-line TAB staff: `0.7` → `0.8`
+- Bar-level P.M. dash: `stroke-width="0.8"` → `"1"`
+- Span-level P.M. dash + end-tick: `0.8` → `1`
+
+#### `renderer.js` — SVG geometry + UX chip
+- SVG element gains explicit `height="${svgH}"` attribute — required for correct iOS Safari pre-print layout
+- `renderHybridDoc` return now wraps the SVG in `<div class="hybridModeChip">Hybrid Rhythm Guitar v1</div>` + SVG; chip is screen-only
+
+#### `index.html` — CSS
+- New `.hybridModeChip` screen style: blue pill badge (`#0044cc`, border-radius 12px, 11px bold sans-serif)
+- `@media print` additions: `.hybridSvgWrap svg { width:100% !important; height:auto !important; }` (letter-size scaling) + `.hybridModeChip { display:none !important; }` (suppressed in print/PDF)
