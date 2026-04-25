@@ -100,9 +100,16 @@ function parseCSMPN(text){
   }
 
   let tabBlockLines = null; // non-null while collecting a multi-line {tab} block
+  let hybridSkipActive = false; // true while skipping a multi-line {hybrid} block
 
   for (const line0 of contentLines){
     const line = line0.trim();
+
+    // Skip {hybrid} block content — parseHybridChartFromCSMPN reads raw text directly
+    if (hybridSkipActive){
+      if (line === '}') hybridSkipActive = false;
+      continue;
+    }
 
     // Collecting a multi-line {tab} block — consume until closing }
     if (tabBlockLines !== null){
@@ -118,6 +125,12 @@ function parseCSMPN(text){
     }
 
     if (!line) continue;
+
+    // Detect {hybrid} block open — skip single-line too (inline hybrid is unsupported)
+    if (line.startsWith('{hybrid')){
+      if (!line.endsWith('}')) hybridSkipActive = true;
+      continue;
+    }
 
     // page break
     if (line.startsWith('+')){

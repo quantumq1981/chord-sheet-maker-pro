@@ -27,6 +27,7 @@
 
 ## Current State (2026-04-25)
 - **194 tests passing** (`npm run test:all`) — 18 hybrid parser + 176 parser/exporter tests
+- **CI now syntax-checks root JS files** (`node --check`) — catches browser SyntaxErrors before GitHub Pages deploy
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
 - **`app.html` + `src/`** — React/TypeScript track (secondary); `src/export/` and `src/parsers/` used for unit tests only
 - **App.tsx:** 1,145 lines — OSMD renderer, export actions, and utilities extracted to hooks/utils
