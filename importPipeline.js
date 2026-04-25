@@ -2587,8 +2587,8 @@ function countBarsInDocBlock(block){
   return Math.max(0, tokens.filter((t) => !isBarlineToken(t)).length);
 }
 
-function buildDocSectionMap(text){
-  const doc = parseCSMPN(text || '');
+function buildDocSectionMap(text, _doc){
+  const doc = _doc || parseCSMPN(text || '');
   const sections = [];
   let current = { label: 'Main', bars: [] };
   for (const block of doc.blocks || []){
@@ -2632,8 +2632,10 @@ function parseHybridBarLine(raw, barTime, warnings){
     if (/^pm_end$/i.test(token)){
       if (pmOpen !== null){
         out.pm.spans.push({ startIndex: pmOpen, endIndex: Math.max(pmOpen, out.events.length - 1) });
+        pmOpen = null;
+      } else {
+        warnings.push('pm_end without a matching pm_start.');
       }
-      pmOpen = null;
       continue;
     }
     const m = token.match(/^([^:]+):([A-Za-z]+)(?:\(([^)]+)\))?([!~]?)$/)
@@ -2672,10 +2674,14 @@ function parseHybridBarLine(raw, barTime, warnings){
     out.pm.spans.push({ startIndex: pmOpen, endIndex: Math.max(pmOpen, out.events.length - 1) });
   }
   out.events.sort((a, b) => a.beat - b.beat);
-  for (let i = 1; i < out.events.length; i++){
-    if (out.events[i].beat === out.events[i - 1].beat){
-      warnings.push(`Overlapping events at beat ${out.events[i].beat}.`);
-      break;
+  for (let i = 1; i < out.events.length; i++) {
+    const prev = out.events[i - 1];
+    if (out.events[i].beat < prev.beat + prev.beats) {
+      warnings.push(
+        `Event at beat ${out.events[i].beat} overlaps with ${prev.duration} at beat ${prev.beat}; dropping later event.`,
+      );
+      out.events.splice(i, 1);
+      i--;
     }
   }
   return out;
@@ -2684,7 +2690,8 @@ function parseHybridBarLine(raw, barTime, warnings){
 function parseHybridChartFromCSMPN(text){
   const lines = String(text || '').replace(/\r/g, '').split('\n');
   const warnings = [];
-  const docSections = buildDocSectionMap(text);
+  const doc = parseCSMPN(text || '');
+  const docSections = buildDocSectionMap(text, doc);
   const sectionModels = docSections.map((sec, i) => ({
     label: sec.label || `Section ${i + 1}`,
     bars: sec.bars.map((bar) => ({ ...bar, events: [], tabEvents: [], cueText: '', pm: { bar: false, spans: [] }, chordToken: bar.chordToken || '' })),
@@ -2710,12 +2717,16 @@ function parseHybridChartFromCSMPN(text){
         if (mBar){
           const barIndex = Number(mBar[1]) - 1;
           if (!section.bars[barIndex]){
-            warnings.push(`bar${mBar[1]} does not exist in section "${section.label}".`);
+            warnings.push(`[${section.label}] bar${mBar[1]} does not exist.`);
             continue;
           }
           const prevToken = section.bars[barIndex].chordToken;
+          const prevWarnLen = warnings.length;
           section.bars[barIndex] = parseHybridBarLine(mBar[2], section.bars[barIndex].timeSig || '4/4', warnings);
           section.bars[barIndex].chordToken = prevToken || '';
+          for (let wi = prevWarnLen; wi < warnings.length; wi++) {
+            warnings[wi] = `[${section.label} bar ${mBar[1]}] ${warnings[wi]}`;
+          }
           continue;
         }
         const mTab = entry.match(/^(?:tab|t)(\d+)\s*:\s*([^@]+)(?:\s*@\s*([0-9&]+))?$/i);
@@ -2723,17 +2734,17 @@ function parseHybridChartFromCSMPN(text){
           const barIndex = Number(mTab[1]) - 1;
           const bar = section.bars[barIndex];
           if (!bar){
-            warnings.push(`tab${mTab[1]} references a missing bar.`);
+            warnings.push(`[${section.label}] tab${mTab[1]} references a missing bar.`);
             continue;
           }
           const tabShape = mTab[2].trim();
           if (!/^([xX\-]|\d{1,2})(\s*,\s*([xX\-]|\d{1,2})){5}$/.test(tabShape)){
-            warnings.push(`Malformed tab shape "${tabShape}". Expected six comma-separated strings.`);
+            warnings.push(`[${section.label} bar ${mTab[1]}] Malformed tab shape "${tabShape}". Expected six comma-separated values.`);
             continue;
           }
           const beat = parseHybridBeatPosition(mTab[3] || '1', bar.timeSig || '4/4');
           if (beat === null){
-            warnings.push(`Invalid tab beat "${mTab[3]}".`);
+            warnings.push(`[${section.label} bar ${mTab[1]}] Invalid tab beat "${mTab[3]}".`);
             continue;
           }
           bar.tabEvents.push({ type: 'tab_note_or_shape', beat, shape: tabShape });
@@ -2743,7 +2754,7 @@ function parseHybridChartFromCSMPN(text){
         if (mCue){
           const barIndex = Number(mCue[1]) - 1;
           if (!section.bars[barIndex]){
-            warnings.push(`cue${mCue[1]} references a missing bar.`);
+            warnings.push(`[${section.label}] cue${mCue[1]} references a missing bar.`);
             continue;
           }
           section.bars[barIndex].cueText = mCue[2].trim();
@@ -2765,7 +2776,13 @@ function parseHybridChartFromCSMPN(text){
     mode: 'hybrid-v1',
     active: hasHybridContent,
     sections: sectionModels,
-    warnings
+    warnings,
+    title: doc.title || '',
+    key: doc.key || '',
+    time: doc.time || '4/4',
+    tempo: doc.tempo || null,
+    composer: doc.composer || '',
+    style: doc.style || '',
   };
 }
 

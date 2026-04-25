@@ -407,12 +407,11 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
 }
 
 function renderHybridDoc(sourceText) {
-  const fallbackDoc = parseCSMPN(sourceText || '');
   const hybrid =
     typeof parseHybridChartFromCSMPN === 'function'
       ? parseHybridChartFromCSMPN(sourceText || '')
       : null;
-  if (!hybrid || !hybrid.active) return renderDoc(fallbackDoc);
+  if (!hybrid || !hybrid.active) return renderDoc(parseCSMPN(sourceText || ''));
 
   validationWarnings = [];
   rehearsalLetterIndex = 0;
@@ -441,7 +440,7 @@ function renderHybridDoc(sourceText) {
     }
   }
 
-  const { title, composer, key, time: docTime, tempo, style } = fallbackDoc;
+  const { title, composer, key, time: docTime, tempo, style } = hybrid;
   let curY = 12;
   if (title) curY += 30;
   if (composer || key || docTime || tempo || style) curY += 20;
