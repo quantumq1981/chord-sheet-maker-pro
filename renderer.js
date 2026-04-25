@@ -262,10 +262,10 @@ function hrRest(cx, cy, dur, col) {
   switch (dur) {
     case 'w':
       return `<rect x="${cx-7}" y="${cy-2}" width="14" height="5" fill="${col}"/>` +
-             hrL(cx - 9, cy - 2, cx + 9, cy - 2, col, 0.8);
+             hrL(cx - 9, cy - 2, cx + 9, cy - 2, col, 1);
     case 'h':
       return `<rect x="${cx-7}" y="${cy-7}" width="14" height="5" fill="${col}"/>` +
-             hrL(cx - 9, cy - 2, cx + 9, cy - 2, col, 0.8);
+             hrL(cx - 9, cy - 2, cx + 9, cy - 2, col, 1);
     case 'q':
       return (
         `<path d="M${cx-4},${cy-12} L${cx+5},${cy-7} L${cx-3},${cy-1} Q${cx+7},${cy+5} ${cx},${cy+9}" ` +
@@ -282,7 +282,7 @@ function hrRest(cx, cy, dur, col) {
 
 function hrStaff(x, y, w, col) {
   let s = '';
-  for (let i = 0; i < 5; i++) s += hrL(x, y + i * HR_LG, x + w, y + i * HR_LG, col, 0.8);
+  for (let i = 0; i < 5; i++) s += hrL(x, y + i * HR_LG, x + w, y + i * HR_LG, col, 1);
   return s;
 }
 
@@ -294,7 +294,7 @@ function hrClef(x, y, col) {
 
 function hrTabStaff(x, y, w, col) {
   let s = '';
-  for (let i = 0; i < 6; i++) s += hrL(x, y + i * HR_TAB_LG, x + w, y + i * HR_TAB_LG, col, 0.7);
+  for (let i = 0; i < 6; i++) s += hrL(x, y + i * HR_TAB_LG, x + w, y + i * HR_TAB_LG, col, 0.8);
   return s;
 }
 
@@ -355,7 +355,7 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
   if (bar?.pm?.bar) {
     const pmY = staffY - 2;
     s += `<text x="${ul}" y="${pmY - 3}" font-size="8" fill="${fg}" font-family="sans-serif" font-style="italic">P.M.</text>`;
-    s += `<line x1="${ul + 22}" y1="${pmY - 3}" x2="${barLeft + barW - HR_BAR_PAD}" y2="${pmY - 3}" stroke="${fg}" stroke-width="0.8" stroke-dasharray="3,2"/>`;
+    s += `<line x1="${ul + 22}" y1="${pmY - 3}" x2="${barLeft + barW - HR_BAR_PAD}" y2="${pmY - 3}" stroke="${fg}" stroke-width="1" stroke-dasharray="3,2"/>`;
   }
 
   const beamOf = new Array(events.length).fill(-1);
@@ -381,8 +381,8 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
       const x1 = xs[si];
       const x2 = Math.min(xs[ei] + events[ei].beats * beatW, barLeft + barW - HR_BAR_PAD);
       s += `<text x="${x1}" y="${pmY - 3}" font-size="8" fill="${fg}" font-family="sans-serif" font-style="italic">P.M.</text>`;
-      s += `<line x1="${x1 + 22}" y1="${pmY - 3}" x2="${x2}" y2="${pmY - 3}" stroke="${fg}" stroke-width="0.8" stroke-dasharray="3,2"/>`;
-      s += hrL(x2, pmY - 6, x2, pmY, fg, 0.8);
+      s += `<line x1="${x1 + 22}" y1="${pmY - 3}" x2="${x2}" y2="${pmY - 3}" stroke="${fg}" stroke-width="1" stroke-dasharray="3,2"/>`;
+      s += hrL(x2, pmY - 6, x2, pmY, fg, 1);
     }
   }
 
@@ -479,7 +479,7 @@ function renderHybridDoc(sourceText) {
 
   const svgH = curY + 10;
   let svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${HR_PAGE_W}" viewBox="0 0 ${HR_PAGE_W} ${svgH}"` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${HR_PAGE_W}" height="${svgH}" viewBox="0 0 ${HR_PAGE_W} ${svgH}"` +
     ` class="hybridSvgOut" style="max-width:100%;display:block;">`;
   svg += `<rect width="${HR_PAGE_W}" height="${svgH}" fill="${bg}"/>`;
 
@@ -540,7 +540,7 @@ function renderHybridDoc(sourceText) {
 
   svg += `</svg>`;
   if (validationWarnings.length) setStatus(validationWarnings.join('\n'), 'warning');
-  return `<div class="hybridSvgWrap">${svg}</div>`;
+  return `<div class="hybridSvgWrap"><div class="hybridModeChip">Hybrid Rhythm Guitar v1</div>${svg}</div>`;
 }
 
 }
