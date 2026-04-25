@@ -2535,6 +2535,10 @@ document.getElementById('setHybridRhythmMode').addEventListener('change', (e) =>
   fbSettings.hybridRhythmMode = (e.target.value === 'true');
   saveFBSettings();
   updatePreview();
+  // Hint when mode is on but source has no {hybrid} blocks yet
+  if (fbSettings.hybridRhythmMode && !/\{hybrid\b/i.test(sourceEl.value || '')) {
+    setStatus('Hybrid mode ON — press "→ Scaffold Hybrid Blocks" to add rhythm patterns, or paste a chart that already has {hybrid} blocks.', 'info');
+  }
 });
 document.getElementById('setHybridPreset').addEventListener('change', (e) => {
   fbSettings.hybridPreset = e.target.value || 'default';
@@ -2560,8 +2564,15 @@ document.getElementById('btnToHybrid').addEventListener('click', () => {
   if (!text.trim()) return;
   const preset = fbSettings.hybridScaffoldPreset || 'quarter';
   sourceEl.value = window.toHybridCSMPN(text, preset);
+  // Auto-enable hybrid mode so the preview switches immediately after scaffolding
+  if (!fbSettings.hybridRhythmMode) {
+    fbSettings.hybridRhythmMode = true;
+    const modeEl = document.getElementById('setHybridRhythmMode');
+    if (modeEl) modeEl.value = 'true';
+    saveFBSettings();
+  }
   updatePreview();
-  setStatus('Hybrid blocks scaffolded (' + preset + ' pattern). Edit bN: lines to customise.');
+  setStatus('Hybrid blocks scaffolded (' + preset + ' pattern). Hybrid mode enabled. Edit bN: lines to customise.');
 });
 
 /* debounce — see utils.js */
