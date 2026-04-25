@@ -1592,6 +1592,21 @@ body.exporting .sectionBlock{
         </select>
       </div>
       <div class="field">
+        <label>Rhythm Pattern</label>
+        <select id="setHybridScaffoldPreset">
+          <option value="quarter" selected>Quarter hits (straight)</option>
+          <option value="eighth">Eighth-note drive</option>
+          <option value="swing">Swing feel</option>
+          <option value="funk-16">Funk 16ths</option>
+          <option value="bossa">Bossa nova</option>
+          <option value="waltz">Waltz / 3-feel</option>
+          <option value="slow-blues">Slow blues</option>
+        </select>
+      </div>
+      <div class="field">
+        <button class="outline" id="btnToHybrid" style="width:100%">&#8594; Scaffold Hybrid Blocks</button>
+      </div>
+      <div class="field">
         <label>Major 7th Style <button class="info-btn" onclick="openFeatureInfo('major7Style')" title="About Major 7th Style">ⓘ</button></label>
         <select id="setMaj7Style">
           <option value="ma" selected>ma7 (default)</option>
@@ -2535,6 +2550,18 @@ document.getElementById('setHybridPreset').addEventListener('change', (e) => {
   }
   saveFBSettings();
   updatePreview();
+});
+document.getElementById('setHybridScaffoldPreset').addEventListener('change', (e) => {
+  fbSettings.hybridScaffoldPreset = e.target.value || 'quarter';
+  saveFBSettings();
+});
+document.getElementById('btnToHybrid').addEventListener('click', () => {
+  const text = sourceEl.value;
+  if (!text.trim()) return;
+  const preset = fbSettings.hybridScaffoldPreset || 'quarter';
+  sourceEl.value = window.toHybridCSMPN(text, preset);
+  updatePreview();
+  setStatus('Hybrid blocks scaffolded (' + preset + ' pattern). Edit bN: lines to customise.');
 });
 
 /* debounce — see utils.js */
