@@ -226,11 +226,25 @@ const HR_SYS_BOT = 22;
 const HR_SLBL_H  = 20;
 const HR_CUE_H   = 14;
 
+const HR_DIAG_STRING_GAP = 9;
+const HR_DIAG_FRET_GAP   = 10;
+const HR_DIAG_STRINGS    = 6;
+const HR_DIAG_FRETS      = 4;
+const HR_DIAG_W          = (HR_DIAG_STRINGS - 1) * HR_DIAG_STRING_GAP;
+const HR_DIAG_H          = HR_DIAG_FRETS * HR_DIAG_FRET_GAP;
+const HR_DIAG_OUTER_W    = HR_DIAG_W + 22;
+const HR_DIAG_OUTER_H    = HR_DIAG_H + 46;
+
 function hrL(x1, y1, x2, y2, col, w) {
   return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${w}"/>`;
 }
 
-function hrHead(cx, cy, dur, col) {
+function hrHead(cx, cy, dur, col, muted) {
+  if (muted) {
+    const r = 4.5;
+    return `<line x1="${cx-r}" y1="${cy-r}" x2="${cx+r}" y2="${cy+r}" stroke="${col}" stroke-width="1.8" stroke-linecap="round"/>` +
+           `<line x1="${cx+r}" y1="${cy-r}" x2="${cx-r}" y2="${cy+r}" stroke="${col}" stroke-width="1.8" stroke-linecap="round"/>`;
+  }
   const W = 9, H = 5.5, lean = 5;
   const pts = (dx) =>
     `${cx-W+lean+dx},${cy-H} ${cx+W+lean+dx},${cy-H} ${cx+W-lean+dx},${cy+H} ${cx-W-lean+dx},${cy+H}`;
@@ -320,6 +334,51 @@ function hrFret(fret, str, cx, tabY, col, bg) {
   );
 }
 
+function hrParseVoicing(shapeStr) {
+  return String(shapeStr || '').split(',').map((s) => {
+    const t = s.trim();
+    if (t === 'x' || t === 'X') return 'x';
+    if (t === '-') return '-';
+    const n = parseInt(t, 10);
+    return isNaN(n) ? '-' : n;
+  });
+}
+
+function hrChordDiagram(name, voicing, ox, oy, fg) {
+  let s = '';
+  s += `<text x="${ox + HR_DIAG_OUTER_W / 2}" y="${oy + 11}" font-size="10" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">${escapeHtml(name)}</text>`;
+  const disp = voicing ? [...voicing].reverse() : Array(HR_DIAG_STRINGS).fill('-');
+  let minFret = Infinity;
+  for (const f of disp) { if (typeof f === 'number' && f > 0 && f < minFret) minFret = f; }
+  const atNut    = !isFinite(minFret) || minFret <= 1;
+  const baseFret = atNut ? 0 : minFret - 1;
+  const gridX = ox + 10;
+  const nutY  = oy + 22;
+  s += `<line x1="${gridX}" y1="${nutY}" x2="${gridX + HR_DIAG_W}" y2="${nutY}" stroke="${fg}" stroke-width="${atNut ? 3 : 1}"/>`;
+  if (!atNut)
+    s += `<text x="${gridX + HR_DIAG_W + 3}" y="${nutY + 5}" font-size="7" fill="${fg}" font-family="Georgia,serif">${baseFret + 1}fr</text>`;
+  for (let i = 0; i < HR_DIAG_STRINGS; i++) {
+    const sx = gridX + i * HR_DIAG_STRING_GAP;
+    s += `<line x1="${sx}" y1="${nutY}" x2="${sx}" y2="${nutY + HR_DIAG_H}" stroke="${fg}" stroke-width="0.8"/>`;
+  }
+  for (let fi = 1; fi <= HR_DIAG_FRETS; fi++)
+    s += `<line x1="${gridX}" y1="${nutY + fi * HR_DIAG_FRET_GAP}" x2="${gridX + HR_DIAG_W}" y2="${nutY + fi * HR_DIAG_FRET_GAP}" stroke="${fg}" stroke-width="0.8"/>`;
+  for (let di = 0; di < HR_DIAG_STRINGS; di++) {
+    const sx   = gridX + di * HR_DIAG_STRING_GAP;
+    const fret = di < disp.length ? disp[di] : '-';
+    if (fret === 'x') {
+      s += `<text x="${sx}" y="${nutY - 3}" font-size="7" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">x</text>`;
+    } else if (fret === 0) {
+      s += `<circle cx="${sx}" cy="${nutY - 7}" r="3" fill="none" stroke="${fg}" stroke-width="1"/>`;
+    } else if (typeof fret === 'number' && fret > 0) {
+      const relFret = fret - baseFret;
+      if (relFret >= 1 && relFret <= HR_DIAG_FRETS)
+        s += `<circle cx="${sx}" cy="${nutY + (relFret - 0.5) * HR_DIAG_FRET_GAP}" r="3.5" fill="${fg}"/>`;
+    }
+  }
+  return s;
+}
+
 function hrBeatX(beat, timeSig, barLeft, barUsableW) {
   const nb = Number(String(timeSig || '4/4').split('/')[0]) || 4;
   return barLeft + ((beat - 1) / nb) * barUsableW;
@@ -404,7 +463,7 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
     if (ev.type === 'rest') {
       s += hrRest(ex, cy, ev.duration, fg);
     } else {
-      s += hrHead(ex, cy, ev.duration, fg);
+      s += hrHead(ex, cy, ev.duration, fg, ev.muted);
       if (ev.duration !== 'w') {
         s += hrStem(ex, staffY, fg);
         if (beamOf[i] < 0) {
@@ -459,8 +518,25 @@ function renderHybridDoc(sourceText) {
     }
   }
 
+  // Collect unique voicings (chord name → voicing array) from all tab events
+  const allVoicings = new Map();
+  for (const sec of hybrid.sections) {
+    for (const bar of sec.bars) {
+      if (bar.tabEvents?.length > 0 && bar.chordToken) {
+        const name = String(bar.chordToken).replace(/[!~x]$/, '').trim();
+        if (name && !allVoicings.has(name))
+          allVoicings.set(name, hrParseVoicing(bar.tabEvents[0].shape));
+      }
+    }
+  }
+  const hasDiagrams = allVoicings.size > 0;
+  const diagMaxPerRow = Math.max(1, Math.floor((HR_PAGE_W - HR_MARGIN * 2) / HR_DIAG_OUTER_W));
+  const diagAreaH = hasDiagrams
+    ? Math.ceil(allVoicings.size / diagMaxPerRow) * HR_DIAG_OUTER_H + 12
+    : 0;
+
   const { title, composer, key, time: docTime, tempo, style } = hybrid;
-  let curY = 12;
+  let curY = 12 + diagAreaH;
   if (title) curY += 30;
   if (composer || key || docTime || tempo || style) curY += 20;
   if (title || composer) curY += 4;
@@ -483,7 +559,17 @@ function renderHybridDoc(sourceText) {
     ` class="hybridSvgOut" style="max-width:100%;display:block;">`;
   svg += `<rect width="${HR_PAGE_W}" height="${svgH}" fill="${bg}"/>`;
 
-  let hy = 12;
+  if (hasDiagrams) {
+    const diagNames = [...allVoicings.keys()];
+    let dx = HR_MARGIN, dy = 10;
+    diagNames.forEach((nm, ni) => {
+      if (ni > 0 && ni % diagMaxPerRow === 0) { dx = HR_MARGIN; dy += HR_DIAG_OUTER_H; }
+      svg += hrChordDiagram(nm, allVoicings.get(nm), dx, dy, fg);
+      dx += HR_DIAG_OUTER_W;
+    });
+  }
+
+  let hy = 12 + diagAreaH;
   if (title) {
     svg += `<text x="${HR_PAGE_W/2}" y="${hy+22}" font-size="18" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">${escapeHtml(title)}</text>`;
     hy += 30;

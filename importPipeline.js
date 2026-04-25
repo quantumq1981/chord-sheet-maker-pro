@@ -2554,8 +2554,8 @@ const HYBRID_DURATION_MAP = { w: 4, h: 2, q: 1, e: 0.5, s: 0.25 };
 const HYBRID_SYNTAX_SPEC = Object.freeze({
   block: '{hybrid ... }',
   barLine: 'barN: <event...>  (alias: bN:)',
-  event: '<beat>:<duration>(<chord>)<accent|sustain?>',
-  eventShorthand: '<beat><duration>(<chord>)<accent|sustain?>',
+  event: '<beat>:<duration>(<chord>)<flags>  flags: ! accent  ~ sustain  x muted',
+  eventShorthand: '<beat><duration>(<chord>)<flags>',
   rest: 'duration can be r, rw, rh, rq, re, rs',
   pm: 'pm (bar-level), pm_start, pm_end',
   tab: 'tabN: <s1,s2,s3,s4,s5,s6> @ <beat>  (alias: tN:)',
@@ -2638,8 +2638,8 @@ function parseHybridBarLine(raw, barTime, warnings){
       }
       continue;
     }
-    const m = token.match(/^([^:]+):([A-Za-z]+)(?:\(([^)]+)\))?([!~]?)$/)
-      || token.match(/^(\d+&?)([A-Za-z]+)(?:\(([^)]+)\))?([!~]?)$/);
+    const m = token.match(/^([^:]+):(r[whqes]?|[whqes])(?:\(([^)]+)\))?([!~x]*)$/)
+      || token.match(/^(\d+&?)(r[whqes]?|[whqes])(?:\(([^)]+)\))?([!~x]*)$/);
     if (!m){
       warnings.push(`Unrecognized hybrid token "${token}" in "${line}".`);
       continue;
@@ -2666,8 +2666,9 @@ function parseHybridBarLine(raw, barTime, warnings){
       beats: HYBRID_DURATION_MAP[durationKey],
       beat,
       chord: (m[3] || '').trim(),
-      accent: m[4] === '!',
-      sustain: m[4] === '~'
+      accent: m[4].includes('!'),
+      sustain: m[4].includes('~'),
+      muted: m[4].includes('x')
     });
   }
   if (pmOpen !== null){

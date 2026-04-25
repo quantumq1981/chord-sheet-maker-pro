@@ -52,7 +52,11 @@ test('returns warnings for invalid beat, duration and malformed tab shape', () =
 
   assert.equal(out.active, true);
   assert.ok(out.warnings.some((w) => w.includes('Invalid beat')));
-  assert.ok(out.warnings.some((w) => w.includes('Unsupported duration')));
+  assert.ok(
+    out.warnings.some(
+      (w) => w.includes('Unrecognized hybrid token') || w.includes('Unsupported duration')
+    )
+  );
   assert.ok(out.warnings.some((w) => w.includes('Malformed tab shape')));
   assert.ok(out.warnings.some((w) => w.includes('cue9')));
 });
@@ -171,4 +175,24 @@ test('empty bar (no events, no chordToken) is marked active=false for the chart'
   const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nb1: ???\n}`);
 
   assert.equal(out.active, false);
+});
+
+test('muted flag (x) sets muted:true on the event', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  const out = parseHybridChartFromCSMPN(`- Verse\n| G | D | Em | C |\n{hybrid\nb1: 1:q(G)x 2:e\n}`);
+
+  assert.equal(out.active, true);
+  assert.equal(out.sections[0].bars[0].events[0].muted, true);
+  assert.equal(out.sections[0].bars[0].events[1].muted, false);
+});
+
+test('compact muted token (1qx) is parsed correctly', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nb1: 1qx 2e 2&e 3q 4rq\n}`
+  );
+
+  assert.equal(out.active, true);
+  assert.equal(out.sections[0].bars[0].events[0].muted, true);
+  assert.equal(out.sections[0].bars[0].events[1].muted, false);
 });
