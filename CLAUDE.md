@@ -26,7 +26,7 @@
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
 ## Current State (2026-04-25)
-- **192 tests passing** (`npm run test:all`) — 16 hybrid parser + 176 parser/exporter tests
+- **194 tests passing** (`npm run test:all`) — 18 hybrid parser + 176 parser/exporter tests
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
 - **`app.html` + `src/`** — React/TypeScript track (secondary); `src/export/` and `src/parsers/` used for unit tests only
 - **App.tsx:** 1,145 lines — OSMD renderer, export actions, and utilities extracted to hooks/utils
@@ -531,6 +531,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 | 9.p3 | Phase 3 parser hardening: true overlap detection, doc metadata, warning context, 10 tests | ✅ DONE |
 | 9.p4 | Phase 4 renderer hardening: chord at beat 1, empty-bar rest, span-level PM, accent offset | ✅ DONE |
 | 9.p6 | Phase 6 print/iOS hardening: safe stroke widths, SVG height attr, hybridModeChip, print CSS | ✅ DONE — 2026-04-25, PR #159 |
+| 9.p7 | Phase 7: muted `x` notehead + chord diagram grids above first system | ✅ DONE — 2026-04-25, PR #160 |
 
 ## SPRINT 9 CHANGES (2026-04-24)
 
@@ -667,3 +668,27 @@ Event token: `beat:duration(chord)flag` or compact `beatduration(chord)flag`
 #### `index.html` — CSS
 - New `.hybridModeChip` screen style: blue pill badge (`#0044cc`, border-radius 12px, 11px bold sans-serif)
 - `@media print` additions: `.hybridSvgWrap svg { width:100% !important; height:auto !important; }` (letter-size scaling) + `.hybridModeChip { display:none !important; }` (suppressed in print/PDF)
+
+### Sprint 9 Phase 7 — Muted Noteheads + Chord Diagram Grids (2026-04-25, PR #160)
+
+Answers "How should I articulate it?" and "Where do I play it?" from the 5 performance questions.
+
+#### `importPipeline.js` — muted `x` flag
+- Event token regex tightened: duration group changed from `([A-Za-z]+)` to `(r[whqes]?|[whqes])` — prevents `x` flag from being absorbed into the duration string
+- Flags group expanded from `([!~]?)` to `([!~x]*)` — supports multiple combined flags
+- `ev.muted` set when flags string includes `'x'`; works in both canonical (`1:q(G)x`) and compact (`1qx`) syntax
+- Combined flags work: `1:q(G)!x` = accented muted strum
+
+#### `renderer.js` — muted X notehead
+- `hrHead(cx, cy, dur, col, muted)` gains `muted` param; when true renders `×` (two SVG lines crossing at 45°, stroke-width 1.8, round caps) instead of slash parallelogram
+
+#### `renderer.js` — chord diagram grids
+- New constants: `HR_DIAG_STRING_GAP=9`, `HR_DIAG_FRET_GAP=10`, `HR_DIAG_W=45`, `HR_DIAG_H=40`, `HR_DIAG_OUTER_W=67`, `HR_DIAG_OUTER_H=86`
+- `hrParseVoicing(shapeStr)` — splits comma-separated tab shape into typed voicing array (`number | 'x' | '-'`)
+- `hrChordDiagram(name, voicing, ox, oy, fg)` — port of slash notation `chordDiagramSvg()`; nut/fret-shift detection, ×/○ open/muted string indicators, filled finger dots
+- `renderHybridDoc()` — collects `allVoicings` Map (chordToken → first tab shape) from all bars; computes `diagAreaH`; offsets `curY`/`hy` by diagram band height; renders grids before title/meta text
+
+#### `tests/hybridParser.test.mjs` — 2 new tests (18 total)
+- `muted flag (x) sets muted:true on the event`
+- `compact muted token (1qx) is parsed correctly`
+- Total: 194 tests (18 `npm test` + 176 `test:parsers`)

@@ -629,8 +629,6 @@ function renderHybridDoc(sourceText) {
   return `<div class="hybridSvgWrap"><div class="hybridModeChip">Hybrid Rhythm Guitar v1</div>${svg}</div>`;
 }
 
-}
-
 function updatePreview(){
   // Determine the text to render. When the user has disabled lyrics via settings,
   // filter out comment lines starting with ';'. Otherwise use the raw source.
