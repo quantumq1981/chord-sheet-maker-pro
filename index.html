@@ -4806,12 +4806,200 @@ window.runCSMPNSelfTests = function(){
 </score-partwise>`;
   }
 
+  function buildHybridMusicXml(){
+    const original = sourceEl ? sourceEl.value || '' : '';
+    const text = (typeof fbSettings !== 'undefined' && fbSettings.includeLyrics === false)
+      ? filterLyricsLines(original) : original;
+    const hybrid = (typeof parseHybridChartFromCSMPN === 'function')
+      ? parseHybridChartFromCSMPN(text) : null;
+    if (!hybrid || !hybrid.active) return buildMusicXml();
+
+    const divisions  = 4; // 1 quarter = 4 divisions (16th-note resolution)
+    const timeSig    = hybrid.time || '4/4';
+    const timeParts  = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/) || ['','4','4'];
+    const tsBeats    = parseInt(timeParts[1] || '4', 10);
+    const tsBeatType = parseInt(timeParts[2] || '4', 10);
+    const totalDivs  = Math.round(tsBeats * 16 / tsBeatType);
+
+    const title    = escapeHtml(hybrid.title    || 'Untitled');
+    const composer = escapeHtml(hybrid.composer || '');
+    const keySig   = _snCfg.keySig != null ? _snCfg.keySig : keySigFromKey(hybrid.key);
+    const keyMode  = (() => {
+      const s = (hybrid.key || '').trim()
+        .replace(/♭/g,'b').replace(/♯/g,'#')
+        .replace(/\s*(major|maj)\s*$/i,'')
+        .replace(/\s*(minor|min)\s*$/i,'m');
+      if (!s) return 'major';
+      const norm = s[0].toUpperCase() + s.slice(1);
+      return (norm.endsWith('m') && KEY_SIG_DATA[norm] !== undefined) ? 'minor' : 'major';
+    })();
+
+    const DUR_DIVS = { w:16, h:8, q:4, e:2, s:1 };
+    const DUR_TYPE = { w:'whole', h:'half', q:'quarter', e:'eighth', s:'16th' };
+
+    function hDurInfo(durCode) {
+      const c = (durCode || 'q').replace(/^r/, '') || 'q';
+      return { divs: DUR_DIVS[c] || 4, type: DUR_TYPE[c] || 'quarter' };
+    }
+
+    function hRestFill(rem) {
+      const vals  = [16, 8, 4, 2, 1];
+      const types = ['whole','half','quarter','eighth','16th'];
+      let xml = '';
+      while (rem > 0) {
+        let i = 0;
+        while (i < vals.length - 1 && vals[i] > rem) i++;
+        xml += `\n      <note><rest/><duration>${vals[i]}</duration><type>${types[i]}</type></note>`;
+        rem -= vals[i];
+      }
+      return xml;
+    }
+
+    function hBeatDiv(beat) { return Math.round((beat - 1) * 16 / tsBeatType); }
+
+    function hHarmony(chordText, offsetDivs) {
+      if (!chordText) return '';
+      const m = chordText.match(/^([A-G])(♭|♯|b|#)?/);
+      if (!m) return '';
+      const rootStep  = m[1];
+      const accStr    = m[2] || '';
+      const rootAlter = (accStr==='♭'||accStr==='b') ? -1 : (accStr==='♯'||accStr==='#') ? 1 : 0;
+      const afterRoot = chordText.slice(m[0].length);
+      const qualRaw   = afterRoot.replace(/\/.*$/, '').trim();
+      const bm        = afterRoot.match(/\/([A-G])(♭|♯|b|#)?$/);
+      const bassStep  = bm ? bm[1] : '';
+      const bassAcc   = bm ? (bm[2] || '') : '';
+      const bassAlter = (bassAcc==='♭'||bassAcc==='b') ? -1 : (bassAcc==='♯'||bassAcc==='#') ? 1 : 0;
+      const alterTag  = rootAlter !== 0 ? `<alter>${rootAlter}</alter>` : '';
+      const bassXml   = bassStep ? `<bass><bass-step>${escapeHtml(bassStep)}</bass-step>${bassAlter!==0?`<bass-alter>${bassAlter}</bass-alter>`:''}</bass>` : '';
+      const offTag    = offsetDivs > 0 ? `<offset>${offsetDivs}</offset>` : '';
+      return `\n      <harmony>${offTag}<root><root-step>${escapeHtml(rootStep)}</root-step>${alterTag}</root><kind>${chordKind(qualRaw)}</kind>${bassXml}</harmony>`;
+    }
+
+    const noteTypeForBeat = tsBeatType===8 ? 'eighth' : tsBeatType===2 ? 'half' : tsBeatType===1 ? 'whole' : 'quarter';
+    const noteDiv         = Math.round(16 / tsBeatType);
+
+    let measureXml   = '';
+    let measureIndex = 0;
+
+    for (const sec of hybrid.sections){
+      const label      = sec.label || '';
+      const isNavLabel = NAV_RE.test(label);
+
+      for (let bi = 0; bi < sec.bars.length; bi++){
+        const bar = sec.bars[bi];
+        const num = ++measureIndex;
+        let attrs = '';
+
+        if (num === 1){
+          attrs = `
+      <attributes>
+        <divisions>${divisions}</divisions>
+        <key><fifths>${keySig}</fifths><mode>${keyMode}</mode></key>
+        <time><beats>${tsBeats}</beats><beat-type>${tsBeatType}</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+        <measure-style><slash type="start" use-stems="yes"/></measure-style>
+      </attributes>`;
+          if (hybrid.tempo){
+            attrs += `
+      <direction placement="above">
+        <direction-type><metronome parentheses="no">
+          <beat-unit>quarter</beat-unit><per-minute>${escapeHtml(String(hybrid.tempo))}</per-minute>
+        </metronome></direction-type>
+        <sound tempo="${escapeHtml(String(hybrid.tempo))}"/>
+      </direction>`;
+          }
+        }
+
+        let rehearsalXml = '';
+        if (bi === 0 && label && !isNavLabel){
+          const enclosure = (sec.markerType === ':' || sec.markerType === '=') ? 'square' : 'none';
+          rehearsalXml = `
+      <direction placement="above">
+        <direction-type>
+          <rehearsal enclosure="${enclosure}" default-y="40">${escapeHtml(label)}</rehearsal>
+        </direction-type>
+      </direction>`;
+        }
+
+        let wordsXml = '';
+        if (bi === 0 && sec.cueText){
+          wordsXml += `
+      <direction placement="above">
+        <direction-type><words font-style="italic">${escapeHtml(sec.cueText)}</words></direction-type>
+      </direction>`;
+        }
+        if (bar.cueText){
+          wordsXml += `
+      <direction placement="below">
+        <direction-type><words font-style="italic" font-size="9">${escapeHtml(bar.cueText)}</words></direction-type>
+      </direction>`;
+        }
+
+        let harmonyXml = '';
+        let notesXml   = '';
+        const evs      = [...(bar.events || [])].sort((a, b) => a.beat - b.beat);
+
+        if (evs.length > 0){
+          let lastChord = null;
+          for (const ev of evs){
+            const chord = ev.chord ? ev.chord.replace(/[!^~x]+$/, '').trim() : null;
+            if (chord && chord !== lastChord){
+              harmonyXml += hHarmony(chord, hBeatDiv(ev.beat));
+              lastChord = chord;
+            }
+          }
+          if (!harmonyXml && bar.chordToken)
+            harmonyXml = hHarmony(bar.chordToken.replace(/[!^~x]+$/, '').trim(), 0);
+
+          let pos = 0;
+          for (const ev of evs){
+            const evDiv  = hBeatDiv(ev.beat);
+            if (evDiv > pos){ notesXml += hRestFill(evDiv - pos); pos = evDiv; }
+            const isRest = (ev.durCode || '').startsWith('r');
+            const { divs, type } = hDurInfo(ev.durCode);
+            if (isRest){
+              notesXml += `\n      <note><rest/><duration>${divs}</duration><type>${type}</type></note>`;
+            } else {
+              const head   = ev.muted ? 'x' : 'slash';
+              const accent = ev.accent ? '<notations><articulations><accent/></articulations></notations>' : '';
+              notesXml += `\n      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divs}</duration><type>${type}</type><notehead>${head}</notehead>${accent}</note>`;
+            }
+            pos = Math.max(pos, evDiv) + divs;
+          }
+          if (pos < totalDivs) notesXml += hRestFill(totalDivs - pos);
+        } else {
+          const ct = (bar.chordToken || '').replace(/[!^~x]+$/, '').trim();
+          if (ct) harmonyXml = hHarmony(ct, 0);
+          for (let b = 0; b < tsBeats; b++)
+            notesXml += `\n      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${noteDiv}</duration><type>${noteTypeForBeat}</type><notehead>slash</notehead></note>`;
+        }
+
+        measureXml += `
+    <measure number="${num}">${attrs}${rehearsalXml}${wordsXml}${harmonyXml}${notesXml}
+    </measure>`;
+      }
+    }
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <movement-title>${title}</movement-title>${composer ? `\n  <identification><creator type="composer">${composer}</creator></identification>` : ''}
+  <part-list>
+    <score-part id="P1"><part-name>Rhythm Guitar</part-name></score-part>
+  </part-list>
+  <part id="P1">${measureXml}
+  </part>
+</score-partwise>`;
+  }
+
   function downloadMusicXml(){
     getSnRenderSettings();
     const text = sourceEl ? sourceEl.value || '' : '';
     const doc  = parseCSMPN(text);
     if (_snCfg.keySig === null) _snCfg.keySig = keySigFromKey(doc.key);
-    const xml = buildMusicXml();
+    const isHybrid = (typeof fbSettings !== 'undefined') && fbSettings.hybridRhythmMode && /\{hybrid\b/i.test(text);
+    const xml = isHybrid ? buildHybridMusicXml() : buildMusicXml();
     if (!xml){ alert('No chord data to export. Import or paste a chart first.'); return; }
     // Use .xml extension + text/xml MIME type so iOS Safari recognises the file
     // and offers to open it in notation apps (MusicXML inside is standard XML).
