@@ -337,20 +337,22 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
   let s = '';
 
   if (!events.length) {
-    if (bar.chordToken) {
-      s += `<text x="${barLeft + barW / 2}" y="${staffY - 10}" font-size="13" fill="${cc}" text-anchor="middle" font-weight="bold" font-family="Georgia,serif">${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;
-    }
     const nb = Number(String(timeSig).split('/')[0]) || 4;
-    for (let b = 1; b <= nb; b++) {
-      const ex = hrBeatX(b, timeSig, ul, uw);
-      s += hrHead(ex, cy, 'q', fg);
-      s += hrStem(ex, staffY, fg);
+    if (bar.chordToken) {
+      const cx1 = hrBeatX(1, timeSig, ul, uw);
+      s += `<text x="${cx1}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family="Georgia,serif">${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;
+      for (let b = 1; b <= nb; b++) {
+        const ex = hrBeatX(b, timeSig, ul, uw);
+        s += hrHead(ex, cy, 'q', fg);
+        s += hrStem(ex, staffY, fg);
+      }
+    } else {
+      s += hrRest(barLeft + barW / 2, cy, 'w', fg);
     }
     return s;
   }
 
-  const hasPM = bar?.pm?.bar || bar?.pm?.spans?.length > 0;
-  if (hasPM) {
+  if (bar?.pm?.bar) {
     const pmY = staffY - 2;
     s += `<text x="${ul}" y="${pmY - 3}" font-size="8" fill="${fg}" font-family="sans-serif" font-style="italic">P.M.</text>`;
     s += `<line x1="${ul + 22}" y1="${pmY - 3}" x2="${barLeft + barW - HR_BAR_PAD}" y2="${pmY - 3}" stroke="${fg}" stroke-width="0.8" stroke-dasharray="3,2"/>`;
@@ -366,6 +368,23 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
     i = j;
   }
   const xs = events.map((ev) => hrBeatX(ev.beat, timeSig, ul, uw));
+
+  // Span-level P.M. — scoped to specific event index range
+  if (bar.pm?.spans?.length > 0) {
+    const nbPM = Number(String(timeSig).split('/')[0]) || 4;
+    const beatW = uw / nbPM;
+    for (const span of bar.pm.spans) {
+      const si = Math.max(0, Math.min(span.startIndex, events.length - 1));
+      const ei = Math.max(si, Math.min(span.endIndex, events.length - 1));
+      if (!events[si] || !events[ei]) continue;
+      const pmY = staffY - 2;
+      const x1 = xs[si];
+      const x2 = Math.min(xs[ei] + events[ei].beats * beatW, barLeft + barW - HR_BAR_PAD);
+      s += `<text x="${x1}" y="${pmY - 3}" font-size="8" fill="${fg}" font-family="sans-serif" font-style="italic">P.M.</text>`;
+      s += `<line x1="${x1 + 22}" y1="${pmY - 3}" x2="${x2}" y2="${pmY - 3}" stroke="${fg}" stroke-width="0.8" stroke-dasharray="3,2"/>`;
+      s += hrL(x2, pmY - 6, x2, pmY, fg, 0.8);
+    }
+  }
 
   const beamGroups = {};
   beamOf.forEach((g, i) => { if (g >= 0) (beamGroups[g] = beamGroups[g] || []).push(i); });
@@ -395,7 +414,7 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
       }
     }
     if (ev.accent)
-      s += `<text x="${ex}" y="${staffY - 22}" font-size="10" fill="${fg}" text-anchor="middle" font-weight="bold">&gt;</text>`;
+      s += `<text x="${ex}" y="${staffY - 28}" font-size="10" fill="${fg}" text-anchor="middle" font-weight="bold">&gt;</text>`;
   });
 
   tabs.forEach((te) => {
