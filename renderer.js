@@ -588,7 +588,7 @@ function renderHybridDoc(sourceText) {
       y += HR_SLBL_H;
     }
     if (sys.secCue) {
-      svg += `<text x="${staffX}" y="${y+11}" font-size="10" font-style="italic" fill="${fg}" font-family="sans-serif">${escapeHtml(sys.secCue)}</text>`;
+      svg += `<text x="${HR_MARGIN}" y="${y+11}" font-size="10" font-style="italic" fill="${fg}" font-family="sans-serif">${escapeHtml(sys.secCue)}</text>`;
       y += HR_CUE_H;
     }
 
