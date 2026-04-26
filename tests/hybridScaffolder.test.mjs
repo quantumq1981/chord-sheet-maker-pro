@@ -4,12 +4,33 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 function loadScaffolder() {
-  const src = readFileSync(new URL('../importPipeline.js', import.meta.url), 'utf8');
-  const start = src.indexOf('const HYBRID_PRESET_PATTERNS');
-  if (start < 0) throw new Error('HYBRID_PRESET_PATTERNS not found in importPipeline.js');
-  const context = { window: {} };
+  const root = new URL('..', import.meta.url);
+  const utilsSrc = readFileSync(new URL('utils.js', root), 'utf8');
+  const chordProcSrc = readFileSync(new URL('chordProcessing.js', root), 'utf8');
+  const csmpnParserSrc = readFileSync(new URL('csmpnParser.js', root), 'utf8');
+  const ipSrc = readFileSync(new URL('importPipeline.js', root), 'utf8');
+
+  const ipStart = ipSrc.indexOf('const HYBRID_DURATION_MAP');
+  if (ipStart < 0) throw new Error('HYBRID_DURATION_MAP not found in importPipeline.js');
+
+  const context = {
+    window: {},
+    document: {
+      createElement() {
+        return { click() {}, setAttribute() {}, style: {} };
+      },
+      body: { appendChild() {} },
+    },
+    fbSettings: {},
+    validationWarnings: [],
+    console,
+  };
   vm.createContext(context);
-  vm.runInContext(src.slice(start), context);
+  vm.runInContext(utilsSrc, context);
+  vm.runInContext(chordProcSrc, context);
+  vm.runInContext(csmpnParserSrc, context);
+  vm.runInContext(ipSrc.slice(ipStart), context);
+
   return {
     toHybridCSMPN: context.window.toHybridCSMPN,
     HYBRID_PRESET_PATTERNS: context.window.HYBRID_PRESET_PATTERNS,
