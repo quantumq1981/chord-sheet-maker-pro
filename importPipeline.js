@@ -2823,6 +2823,10 @@ function toHybridCSMPN(text, preset, _opts) {
   const presetMap = HYBRID_PRESET_PATTERNS[preset] || HYBRID_PRESET_PATTERNS.quarter;
   const pattern = presetMap[timeSig] || presetMap['4/4'] || '1:q 2:q 3:q 4:q';
 
+  // Use the canonical parser for exact bar counts — eliminates all line-scan counting heuristics
+  const docSections = buildDocSectionMap(text);
+  let docSecIdx = 0;
+
   const lines = text.split('\n');
   // Only '-' ':' '=' start new sections in buildDocSectionMap; ';'/'#' are annotations within a section
   const MARKER_CHARS = new Set(['-', ':', '=']);
@@ -2831,14 +2835,17 @@ function toHybridCSMPN(text, preset, _opts) {
   let hybridSkip = false;
   let tabSkip = false;
   let sectionHasHybrid = false;
-  let pendingBars = 0;
   let lastBarLine = -1;
 
   const flush = () => {
-    if (pendingBars > 0 && !sectionHasHybrid && lastBarLine >= 0) {
-      insertAfter.set(lastBarLine, pendingBars);
+    if (sectionHasHybrid) {
+      // Section already has a {hybrid} block — advance index but don't insert
+      docSecIdx++;
+    } else if (lastBarLine >= 0 && docSecIdx < docSections.length) {
+      const barCount = docSections[docSecIdx].bars.length;
+      if (barCount > 0) insertAfter.set(lastBarLine, barCount);
+      docSecIdx++;
     }
-    pendingBars = 0;
     lastBarLine = -1;
     sectionHasHybrid = false;
   };
@@ -2851,10 +2858,8 @@ function toHybridCSMPN(text, preset, _opts) {
     if (t.startsWith('{tab'))    { if (!t.endsWith('}')) tabSkip = true; continue; }
     if (t.startsWith('{vt'))     { continue; }
     if (t && MARKER_CHARS.has(t[0])) { flush(); continue; }
-    if (t.startsWith('|'))       { pendingBars += _hybridBarsInLine(t); lastBarLine = i; }
-    else if (t && !t.includes(':') && /^[A-G]/.test(t)) {
-      // Simple bar format: space-separated chords without pipe delimiters (each token = 1 bar)
-      pendingBars += t.split(/\s+/).filter(Boolean).length;
+    // Track last bar-content line (insertion point); counting is handled by docSections
+    if (t.startsWith('|') || (t && !t.includes(':') && /^[A-G]/.test(t))) {
       lastBarLine = i;
     }
   }
