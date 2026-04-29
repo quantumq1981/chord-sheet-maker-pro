@@ -125,6 +125,8 @@ export interface MeasureDebug {
   xRange: [number, number];
   events: ChordEvent[];
   directives: string[];
+  /** Active time signature for this measure, e.g. '4/4'. Only set when different from the global default. */
+  timeSig?: string;
 }
 
 export interface SystemDebug {
@@ -173,6 +175,8 @@ export interface DebugJson {
       n: number;
       chords: string[];
       directives: string[];
+      /** Active time sig at this measure — present only when it differs from the global header value. */
+      timeSig?: string;
     }>;
   };
 }
@@ -261,6 +265,91 @@ function classifyDirective(span: TextSpan): Marker | null {
 // ─── Span extraction ──────────────────────────────────────────────────────────
 
 /** 2D affine matrix multiply: result = m1 × m2, matrices encoded as [a,b,c,d,e,f]. */
+// ─── Time-signature glyph detection ─────────────────────────────────────────
+
+/**
+ * MuseScore embeds time signature digits as SMuFL private-use characters
+ * (Leland font, U+E080–U+E089).  Two stacked glyphs at the same X form a
+ * fraction: the one with the higher PDF-y is the numerator.
+ */
+const SMUFL_DIGIT: Record<string, string> = {
+  '': '0',
+  '': '1',
+  '': '2',
+  '': '3',
+  '': '4',
+  '': '5',
+  '': '6',
+  '': '7',
+  '': '8',
+  '': '9',
+};
+const SMUFL_COMMON = ''; // common time → 4/4
+const SMUFL_CUT = ''; // cut time    → 2/2
+
+export interface TimeSigRecord {
+  timeSig: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * Scan page spans for SMuFL time-signature glyphs and reconstruct the
+ * time-sig fractions (e.g. 3/4, 12/8).  Returns one record per change point.
+ */
+export function detectTimeSigSpans(spans: TextSpan[]): TimeSigRecord[] {
+  const candidates = spans.filter((s) => {
+    const t = s.text.trim();
+    return (
+      t.length === 1 && (SMUFL_DIGIT[t] !== undefined || t === SMUFL_COMMON || t === SMUFL_CUT)
+    );
+  });
+  if (candidates.length === 0) return [];
+
+  // Group by similar X (±15 pt) — numerator and denominator share an X position
+  const groups: TextSpan[][] = [];
+  for (const span of candidates) {
+    let placed = false;
+    for (const grp of groups) {
+      if (Math.abs(grp[0].x - span.x) < 15) {
+        grp.push(span);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) groups.push([span]);
+  }
+
+  const result: TimeSigRecord[] = [];
+  for (const grp of groups) {
+    const common = grp.find((s) => s.text.trim() === SMUFL_COMMON);
+    if (common) {
+      result.push({ timeSig: '4/4', x: common.x, y: common.y });
+      continue;
+    }
+    const cut = grp.find((s) => s.text.trim() === SMUFL_CUT);
+    if (cut) {
+      result.push({ timeSig: '2/2', x: cut.x, y: cut.y });
+      continue;
+    }
+    if (grp.length < 2) continue;
+
+    // Sort by y descending — higher y in PDF space = top of staff = numerator
+    grp.sort((a, b) => b.y - a.y);
+    const topY = grp[0].y;
+    const numSpans = grp.filter((s) => Math.abs(s.y - topY) < 15).sort((a, b) => a.x - b.x);
+    const denSpans = grp.filter((s) => Math.abs(s.y - topY) >= 15).sort((a, b) => a.x - b.x);
+    if (numSpans.length === 0 || denSpans.length === 0) continue;
+
+    const num = numSpans.map((s) => SMUFL_DIGIT[s.text.trim()] ?? '').join('');
+    const den = denSpans.map((s) => SMUFL_DIGIT[s.text.trim()] ?? '').join('');
+    if (!num || !den) continue;
+
+    result.push({ timeSig: `${num}/${den}`, x: grp[0].x, y: topY });
+  }
+  return result;
+}
+
 function mul2d(m1: number[], m2: number[]): number[] {
   return [
     m1[0] * m2[0] + m1[2] * m2[1],
@@ -697,6 +786,7 @@ function emitFakebook(
   const mpl = config.measuresPerLine;
   const total = linearMeasures.length;
   let lastChord = '';
+  let currentTimeSig = metadata.time;
 
   for (let secIdx = 0; secIdx < sections.length; secIdx++) {
     const sec = sections[secIdx];
@@ -707,18 +797,27 @@ function emitFakebook(
     const prefix = fakebookSectionPrefix(sec.label);
     out.push(`${prefix} ${sec.label}`);
 
-    // Build bar tokens
-    const tokens: string[] = [];
-    for (const m of secMeasures) {
-      const [tok, next] = barToken(m, lastChord, config.fillEmptyMeasuresWithPercent);
-      tokens.push(tok);
-      lastChord = next;
-    }
+    // Emit bars, flushing each row and inserting '; Time: N/M' at meter changes
+    const row: string[] = [];
+    const flushRow = () => {
+      if (row.length > 0) {
+        out.push(row.join(' '));
+        row.length = 0;
+      }
+    };
 
-    // Emit rows of mpl bars each
-    for (let i = 0; i < tokens.length; i += mpl) {
-      out.push(tokens.slice(i, i + mpl).join(' '));
+    for (const m of secMeasures) {
+      if (m.timeSig && m.timeSig !== currentTimeSig) {
+        flushRow();
+        out.push(`; Time: ${m.timeSig}`);
+        currentTimeSig = m.timeSig;
+      }
+      const [tok, next] = barToken(m, lastChord, config.fillEmptyMeasuresWithPercent);
+      row.push(tok);
+      lastChord = next;
+      if (row.length >= mpl) flushRow();
     }
+    flushRow();
 
     out.push('');
   }
@@ -748,6 +847,7 @@ function emitBarlinesStyle(
   const mpl = config.measuresPerLine;
   const total = linearMeasures.length;
   let lastChord = '';
+  let currentTimeSig = metadata.time;
 
   for (let secIdx = 0; secIdx < sections.length; secIdx++) {
     const sec = sections[secIdx];
@@ -757,32 +857,46 @@ function emitBarlinesStyle(
 
     out.push(`[${sec.label}]`);
 
-    // Build bar tokens (spaces for multi-chord bars in barline mode)
-    const tokens: string[] = secMeasures.map((m) => {
-      if (m.chords.length === 0) {
-        const tok = config.fillEmptyMeasuresWithPercent && lastChord ? '%' : lastChord || '%';
-        return tok;
-      }
-      const tok = m.chords.join(' ');
-      lastChord = m.chords[m.chords.length - 1];
-      return tok;
-    });
+    // Accumulate tokens for the current row; flush at mpl or a time-sig change
+    const row: Array<{ tok: string; isFirstInSec: boolean }> = [];
+    let secTokenStart = 0; // how many tokens have been emitted from this section
 
-    // Format into lines of mpl measures with ‖ / | barlines
-    for (let i = 0; i < tokens.length; i += mpl) {
-      const lineTokens = tokens.slice(i, i + mpl);
-      const isFirst = i === 0;
-      const isLast = i + mpl >= tokens.length;
+    const flushRow = () => {
+      if (row.length === 0) return;
+      const toks = row.map((r) => r.tok);
+      const isFirst = secTokenStart === 0;
+      secTokenStart += row.length;
+      const isLast = secTokenStart >= secMeasures.length;
       let line: string;
       if (isFirst) {
-        line = '‖ ' + lineTokens.join(' | ') + (isLast ? ' ‖' : ' |');
+        line = '‖ ' + toks.join(' | ') + (isLast ? ' ‖' : ' |');
       } else if (isLast) {
-        line = '| ' + lineTokens.join(' | ') + ' ‖';
+        line = '| ' + toks.join(' | ') + ' ‖';
       } else {
-        line = '| ' + lineTokens.join(' | ') + ' |';
+        line = '| ' + toks.join(' | ') + ' |';
       }
       out.push(line);
+      row.length = 0;
+    };
+
+    for (const m of secMeasures) {
+      if (m.timeSig && m.timeSig !== currentTimeSig) {
+        flushRow();
+        out.push(`; Time: ${m.timeSig}`);
+        currentTimeSig = m.timeSig;
+      }
+
+      let tok: string;
+      if (m.chords.length === 0) {
+        tok = config.fillEmptyMeasuresWithPercent && lastChord ? '%' : lastChord || '%';
+      } else {
+        tok = m.chords.join(' ');
+        lastChord = m.chords[m.chords.length - 1];
+      }
+      row.push({ tok, isFirstInSec: false });
+      if (row.length >= mpl) flushRow();
     }
+    flushRow();
 
     out.push('');
   }
@@ -809,6 +923,7 @@ export async function importUGProPdf(
     chordSpans: TextSpan[];
     rehearsalSpans: TextSpan[];
     directionMarkers: Marker[];
+    timeSigRecords: TimeSigRecord[];
   }
   const pageMetas: PageMeta[] = [];
 
@@ -829,7 +944,16 @@ export async function importUGProPdf(
       pageH,
       config.headerExclusionRatio
     );
-    pageMetas.push({ page, pageH, pageW, chordSpans, rehearsalSpans, directionMarkers });
+    const timeSigRecords = detectTimeSigSpans(pageSpans);
+    pageMetas.push({
+      page,
+      pageH,
+      pageW,
+      chordSpans,
+      rehearsalSpans,
+      directionMarkers,
+      timeSigRecords,
+    });
   }
 
   // ── Fail-safe: reject vector-only PDFs ───────────────────────────────────
@@ -1013,6 +1137,20 @@ export async function importUGProPdf(
         directives: [],
       }));
 
+      // Assign time-signature changes detected via SMuFL glyph positions.
+      // The time-sig glyph appears just after the barline that opens the new measure.
+      // Find last barline ≤ ts.x (+5 pt tolerance) → that barline opens the target measure.
+      const bandTimeSigs = pageMetas[pNum - 1].timeSigRecords.filter(
+        (ts) => ts.y >= y0 - 30 && ts.y <= y1 + 30
+      );
+      for (const ts of bandTimeSigs) {
+        let mIdx = 0;
+        for (let mi = 0; mi < barlinesXPdf.length - 1; mi++) {
+          if (barlinesXPdf[mi] <= ts.x + 5) mIdx = mi;
+        }
+        measuresDebug[mIdx].timeSig = ts.timeSig;
+      }
+
       globalMeasureIndex += numMeasures;
 
       const sysDebug: SystemDebug = {
@@ -1050,7 +1188,12 @@ export async function importUGProPdf(
           : !config.allowMultiChordBars || config.preferOneChordPerBar
             ? [meas.events[0].norm]
             : meas.events.map((e) => e.norm);
-      linearMeasures.push({ n: meas.globalIndex, chords, directives: meas.directives });
+      linearMeasures.push({
+        n: meas.globalIndex,
+        chords,
+        directives: meas.directives,
+        timeSig: meas.timeSig,
+      });
     }
   }
 
