@@ -25,8 +25,8 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-04-25)
-- **194 tests passing** (`npm run test:all`) — 18 hybrid parser + 176 parser/exporter tests
+## Current State (2026-04-29)
+- **264 tests passing** (`npm run test:all`) — 18 hybrid parser + 246 parser/exporter/utils tests
 - **CI now syntax-checks root JS files** (`node --check`) — catches browser SyntaxErrors before GitHub Pages deploy
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
 - **`app.html` + `src/`** — React/TypeScript track (secondary); `src/export/` and `src/parsers/` used for unit tests only
@@ -55,6 +55,7 @@
 | `ug-txt-importer.html` | Standalone dark-UI page: paste UG text → convert to CSMPN → copy/download |
 | `src/pages/ugProImporterPage.tsx` | React bootstrap for the importer page — renders `UGProImporterPanel` |
 | `src/ingest/ugProPdfImporter.ts` | Canonical PDF importer (TypeScript module; drives the Vite build page) |
+| `src/ingest/ugProPdfUtils.ts` | Pure span utilities (no pdfjs-dist): TextSpan, SMuFL constants, `detectTimeSigSpans`, `detectKeySig`, `mergeFragmentSpans` — safe to import in Node.js tests |
 | `src/parsers/` | Zero-dependency TypeScript parsers (chordPro, csmpn, abc, gp, musicXml) |
 | `src/converters/types.ts` | All public types for the MusicXML→ChordPro converter |
 | `src/converters/chordExtractor.ts` | KIND_SUFFIX_MAP + harmony→chord text functions |
@@ -693,3 +694,34 @@ Answers "How should I articulate it?" and "Where do I play it?" from the 5 perfo
 - `muted flag (x) sets muted:true on the event`
 - `compact muted token (1qx) is parsed correctly`
 - Total: 194 tests (18 `npm test` + 176 `test:parsers`)
+
+## Sprint 10 — PDF Importer Hardening ✅ COMPLETE (2026-04-29, PRs #180, #182, #183)
+| # | Task | Status |
+|---|------|--------|
+| 10.1 | `mergeFragmentSpans()` — reconstruct chord names split across PDF text runs | ✅ DONE — PR #180 |
+| 10.2 | Normalizer: `sus2/4`→`sus2`, `7dim`→`7`, `N.C` (no period) direction detection | ✅ DONE — PR #180 |
+| 10.3 | SMuFL time-sig backfill into `metadata.time` when header text has none | ✅ DONE — PR #180 |
+| 10.4 | `detectKeySig()` — count SMuFL flat/sharp glyphs → major key name | ✅ DONE — PR #182 |
+| 10.5 | `metadata.key` backfill from SMuFL key-sig detection | ✅ DONE — PR #182 |
+| 10.6 | Repeat barline emission — SMuFL U+E044/E045/E046 → `\|:` / `:\|` in CSMPN | ✅ DONE — PR #182 |
+| 10.7 | Extract `ugProPdfUtils.ts` — zero-dep module for pure span utilities | ✅ DONE — PR #183 |
+| 10.8 | `tests/ugProPdfUtils.test.ts` — 33 unit tests for `detectTimeSigSpans`, `detectKeySig`, `mergeFragmentSpans` | ✅ DONE — PR #183 |
+
+## SPRINT 10 CHANGES (2026-04-29)
+
+**PR #180 — `feat(importer): merge split chord fragments + fix N.C/sus2-4/7dim edge cases`**
+- `mergeFragmentSpans()` — new pre-classification pass; reconstructs chord symbols split across multiple PDF text runs. Greedy left-to-right: merges consecutive same-Y spans when right span does not start with `[A-G]` and combined text passes `CHORD_REGEX` after normalisation. Fixes "I Ain't Got Nothin' But The Blues" PDF where `D9/F`, `Bb7/A`, `Edim7`, `Gm11` were dropped.
+- `normalizeChordSymbol`: `sus2/4`→`sus2` (combined sus notation); `(\d)dim`→`\1` strips non-standard dim suffix after digit (`E7dim`→`E7`); `N.C` (without trailing period) added to `DIRECTION_TEXTS`.
+- `metadata.time` backfill from first SMuFL `detectTimeSigSpans` result when header text has no time sig.
+
+**PR #182 — `feat(importer): key-sig from SMuFL + repeat barline emission`**
+- `detectKeySig(spans, pageW)` — counts SMuFL flat (U+E260) and sharp (U+E262) glyphs in the left 25% of the page; maps count to major key name via `KEY_FROM_SHARPS`/`KEY_FROM_FLATS` tables; returns `KeySigRecord | null`.
+- `metadata.key` backfill from SMuFL detection when header text has no key.
+- Repeat barlines: `SMUFL_REPEAT_START` (U+E044), `SMUFL_REPEAT_END` (U+E045), `SMUFL_REPEAT_BOTH` (U+E046) detected in text layer → `repeat-start`/`repeat-end` `Marker` objects → `repeatStart`/`repeatEnd` on `MeasureDebug` → `\|: … :\|` emitted in CSMPN on clean line breaks in both fakebook and barlines-style modes.
+- `MeasureDebug` and `DebugJson.linear` gain optional `repeatStart?`/`repeatEnd?` fields.
+
+**PR #183 — `feat(importer): extract ugProPdfUtils + SMuFL detector tests`**
+- New `src/ingest/ugProPdfUtils.ts` — zero-dependency module exporting `TextSpan`, `TimeSigRecord`, `KeySigRecord`, all `SMUFL_*` constants, `detectTimeSigSpans`, `detectKeySig`, `mergeFragmentSpans`.
+- `ugProPdfImporter.ts` now imports from `ugProPdfUtils.js` (no duplication); re-exports for backward compat.
+- `tests/ugProPdfUtils.test.ts` — 33 tests: 9 `detectTimeSigSpans` + 12 `detectKeySig` + 12 `mergeFragmentSpans`.
+- Total: **264 tests** (18 `npm test` + 246 `test:parsers`)
