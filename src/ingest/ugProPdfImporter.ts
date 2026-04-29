@@ -226,6 +226,7 @@ export { normalizeChordSymbol } from './chordNormalizer.js';
 /** Direction / structural text that must NOT be classified as chords. */
 const DIRECTION_TEXTS = new Set([
   'N.C.',
+  'N.C',
   'NC',
   'Fine',
   'Coda',
@@ -262,7 +263,7 @@ const DIRECTION_TEXTS = new Set([
 function classifyDirective(span: TextSpan): Marker | null {
   const t = span.text.trim().replace(/\s+/g, ' ');
   const upper = t.toUpperCase();
-  if (upper === 'N.C.' || upper === 'NC')
+  if (upper === 'N.C.' || upper === 'N.C' || upper === 'NC')
     return { type: 'nc', value: 'N.C.', x: span.x, y: span.y };
   if (/^(D\.S\.|DS)/i.test(t)) return { type: 'ds', value: t, x: span.x, y: span.y };
   if (/^(D\.C\.|DC)/i.test(t)) return { type: 'dc', value: t, x: span.x, y: span.y };
@@ -406,6 +407,96 @@ function extractPageSpans(
   return spans;
 }
 
+// ─── Fragment span merging ────────────────────────────────────────────────────
+
+/**
+ * MuseScore sometimes renders a single chord symbol across two or more separate
+ * PDF text runs — typically when a font shift occurs at the slash separator or
+ * at the start of a quality suffix.  Examples seen in real UG Pro PDFs:
+ *   "D9" + "/F"   → "D9/F"   (slash chord split at /)
+ *   "B♭" + "7/A"  → "Bb7/A"  (quality + slash bass separated)
+ *   "E"  + "dim7" → "Edim7"  (root and quality in two runs)
+ *   "G"  + "m11"  → "Gm11"
+ *
+ * Algorithm:
+ *   1. Group spans by page and Y-band (±5 pt).
+ *   2. Within each band, sort left-to-right and greedily merge consecutive spans
+ *      when (a) the right span does NOT start with a note letter [A-G] (i.e. it
+ *      cannot be an independent chord root) and (b) the concatenated text passes
+ *      CHORD_REGEX after normalisation and (c) the horizontal gap is narrow
+ *      (< 3× the current font size).
+ */
+function mergeFragmentSpans(pageSpans: TextSpan[]): TextSpan[] {
+  // Sort: page index, then Y descending, then X ascending
+  const sorted = [...pageSpans].sort((a, b) =>
+    a.pageIndex !== b.pageIndex
+      ? a.pageIndex - b.pageIndex
+      : Math.abs(a.y - b.y) > 5
+        ? b.y - a.y
+        : a.x - b.x
+  );
+
+  // Build Y-bands: same page + Y within ±5 pt
+  const bands: TextSpan[][] = [];
+  for (const span of sorted) {
+    let placed = false;
+    for (const band of bands) {
+      const rep = band[0];
+      if (rep.pageIndex === span.pageIndex && Math.abs(rep.y - span.y) <= 5) {
+        band.push(span);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) bands.push([span]);
+  }
+
+  const result: TextSpan[] = [];
+  for (const band of bands) {
+    band.sort((a, b) => a.x - b.x);
+
+    let i = 0;
+    while (i < band.length) {
+      // Work on a mutable copy so we can extend in the inner loop
+      let cur: TextSpan = band[i];
+      let curText = cur.text.trim();
+
+      // Greedily absorb subsequent fragment spans
+      while (i + 1 < band.length) {
+        const next = band[i + 1];
+        const nextText = next.text.trim();
+
+        // Estimated right edge of current span (width is often 0 in some PDFs)
+        const estimatedW = cur.width > 0 ? cur.width : cur.fontSize * curText.length * 0.55;
+        const gap = next.x - (cur.x + estimatedW);
+
+        // Stop if: different page, gap too large, or right span is an independent chord root
+        if (next.pageIndex !== cur.pageIndex || gap >= cur.fontSize * 3 || /^[A-G]/.test(nextText))
+          break;
+
+        const combined = curText + nextText;
+        const normedCombined = normalizeChordSymbol(combined);
+        if (CHORD_REGEX.test(normedCombined) || CHORD_REGEX.test(combined)) {
+          const nextRight = next.x + (next.width > 0 ? next.width : next.fontSize);
+          cur = {
+            ...cur,
+            text: combined,
+            width: Math.max(0, nextRight - cur.x),
+          };
+          curText = combined;
+          i++; // consume next
+        } else {
+          break; // combined still invalid — stop
+        }
+      }
+
+      result.push(cur);
+      i++;
+    }
+  }
+  return result;
+}
+
 // ─── Span classification ──────────────────────────────────────────────────────
 
 interface ClassifiedSpans {
@@ -437,7 +528,7 @@ function classifyPageSpans(
   const medianFontSize = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)] : 12;
 
   const dirPat =
-    /^(N\.C\.|Fine|Coda|D\.S|D\.C|To\s|Double|Half-time|Freely|Tacet|Simile|Vamp|Rit|Rail|Accel)/i;
+    /^(N\.C\.?|Fine|Coda|D\.S|D\.C|To\s|Double|Half-time|Freely|Tacet|Simile|Vamp|Rit|Rail|Accel)/i;
 
   for (const span of spans) {
     const t = span.text.trim();
@@ -958,14 +1049,19 @@ export async function importUGProPdf(
       (i): i is TextItem => typeof i === 'object' && i !== null && 'str' in i
     );
     const pageSpans = extractPageSpans(page, textItems, pageH, pNum - 1);
-    allSpans.push(...pageSpans);
+    allSpans.push(...pageSpans); // originals for metadata extraction
+
+    // Merge split chord fragments (e.g. "D9" + "/F" → "D9/F") before classifying.
+    // Use the merged set for chord/direction detection; SMuFL time-sig glyphs are
+    // single-char spans that are unaffected by the merge pass.
+    const mergedSpans = mergeFragmentSpans(pageSpans);
 
     const { chordSpans, rehearsalSpans, directionMarkers } = classifyPageSpans(
-      pageSpans,
+      mergedSpans,
       pageH,
       config.headerExclusionRatio
     );
-    const timeSigRecords = detectTimeSigSpans(pageSpans);
+    const timeSigRecords = detectTimeSigSpans(mergedSpans);
     pageMetas.push({
       page,
       pageH,
@@ -988,6 +1084,17 @@ export async function importUGProPdf(
 
   // ── Extract metadata from first page ────────────────────────────────────
   const metadata = extractMetadata(allSpans, pageMetas[0].pageH);
+
+  // Backfill time signature from SMuFL glyph detection when the header text
+  // didn't carry an explicit time-sig (common in MuseScore UG Pro PDFs).
+  if (!metadata.time) {
+    for (const pm of pageMetas) {
+      if (pm.timeSigRecords.length > 0) {
+        metadata.time = pm.timeSigRecords[0].timeSig;
+        break;
+      }
+    }
+  }
 
   // ── Per-page barline detection + system building ─────────────────────────
   const pageRenders: PageRenderData[] = [];

@@ -172,6 +172,26 @@ describe('normalizeChordSymbol', () => {
     assert.equal(normalizeChordSymbol('Edim +b7'), 'Edim7');
   });
 
+  // ── Non-standard dim-after-digit (span-merge artifact) ───────────────────
+  it('strips dim suffix after digit (E7dim → E7)', () => {
+    assert.equal(normalizeChordSymbol('E7dim'), 'E7');
+  });
+  it('strips dim suffix after digit (A7dim → A7)', () => {
+    assert.equal(normalizeChordSymbol('A7dim'), 'A7');
+  });
+  it('does not affect Edim7 (no digit before dim)', () => {
+    assert.equal(normalizeChordSymbol('Edim7'), 'Edim7');
+  });
+
+  // ── Combined sus notation (Fsus2/4) ──────────────────────────────────────
+  it('normalises Fsus2/4 to Fsus2', () => {
+    assert.equal(normalizeChordSymbol('Fsus2/4'), 'Fsus2');
+    assert.ok(CHORD_REGEX.test(normalizeChordSymbol('Fsus2/4')));
+  });
+  it('normalises Asus4/2 to Asus4', () => {
+    assert.equal(normalizeChordSymbol('Asus4/2'), 'Asus4');
+  });
+
   // ── CHORD_REGEX: plain major chords must match ────────────────────────────
   it('CHORD_REGEX matches plain major chord G', () => {
     assert.ok(CHORD_REGEX.test('G'));
