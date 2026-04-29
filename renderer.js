@@ -453,6 +453,13 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
     if (events[idxs[0]].duration === 's') s += hrBeam(bx1, bx2, stemTopY + 6, fg);
   }
 
+  // Render bar-level chord token at beat-1 when no per-event chord is set
+  const anyEvChord = events.some((ev) => ev.chord);
+  if (!anyEvChord && bar.chordToken) {
+    const cx1 = hrBeatX(1, timeSig, ul, uw);
+    s += `<text x="${cx1}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family="Georgia,serif">${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;
+  }
+
   events.forEach((ev, i) => {
     if (!ev.chord) return;
     s += `<text x="${xs[i]}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="middle" font-weight="bold" font-family="Georgia,serif">${escapeHtml(String(ev.chord).replace(/[!~]$/, '').trim())}</text>`;
