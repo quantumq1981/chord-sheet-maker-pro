@@ -22,6 +22,7 @@
 
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import type { PDFPageProxy, TextItem } from 'pdfjs-dist/types/src/display/api';
+import { normalizeChordSymbol, splitMultiChordSpan, CHORD_REGEX } from './chordNormalizer.js';
 
 // ─── Worker setup ─────────────────────────────────────────────────────────────
 
@@ -204,57 +205,10 @@ const BARLINE_PRESETS: Record<string, BarlinePresetConfig> = {
   'tab-heavy': { stemRunRatio: 0.8, minSpacingPx: 28, minHeightRatio: 0.65 },
 };
 
-// ─── Chord normalisation ──────────────────────────────────────────────────────
+// normalizeChordSymbol, splitMultiChordSpan, CHORD_REGEX — imported from ./chordNormalizer.js
 
-/**
- * normalizeChordSymbol
- *
- * Central normalisation function. Used by all parsing stages.
- * Converts various unicode and informal chord notations to canonical CSMPN form.
- */
-export function normalizeChordSymbol(raw: string): string {
-  let s = raw.trim();
-
-  // Strip internal whitespace (PDF can split "C maj7" as one span with a space)
-  s = s.replace(/\s+/g, '');
-
-  // 1. Unicode accidentals
-  s = s.replace(/♭/g, 'b').replace(/♯/g, '#');
-
-  // 2. Root note: uppercase first letter
-  if (s.length === 0) return s;
-  s = s[0].toUpperCase() + s.slice(1);
-
-  // 3. Half-diminished: Ø / ø → m7b5
-  //    Must handle: EØ, Eø, EØ7, Eø7 → Em7b5
-  s = s.replace(/([A-G][b#]?)([Øø])7?/g, '$1m7b5');
-
-  // 4. Diminished with 7: o7 / °7 → dim7
-  s = s.replace(/([A-G][b#]?)(o7|°7)/g, '$1dim7');
-  // Bare diminished: o / ° → dim (but not if already 'dim')
-  s = s.replace(/([A-G][b#]?)(°|(?<![a-z])o(?!7|[a-z]))/g, '$1dim');
-
-  // 5. Major seventh: Δ / 7M / M7 / Maj7 / MAJ7 → maj7
-  s = s.replace(/Δ7?/g, 'maj7');
-  s = s.replace(/7M\b/g, 'maj7');
-  s = s.replace(/M7\b/g, 'maj7');
-  s = s.replace(/[Mm][Aa][Jj]7/g, 'maj7');
-  // Bare "maj" is optional and should not imply maj7.
-  // Example: Cmaj → C
-  s = s.replace(/([A-G][b#]?)maj\b/g, '$1');
-
-  // 6. Minor: "min" → "m" (but not "diminished")
-  s = s.replace(/min(?!or)/g, 'm');
-
-  // 7. Preserve slash chords, alterations — nothing else to change.
-  return s;
-}
-
-// ─── Chord classification ─────────────────────────────────────────────────────
-
-/** Regex to match a plausible chord symbol rooted on a note name. */
-const CHORD_REGEX =
-  /^[A-G][b#]?(?:maj7|maj|m7b5|m7|m6|m9|m11|m13|mM7|m|dim7|dim|aug7|aug|sus4|sus2|sus|add9|add11|add13|add|7M|[Øø]7?|°7?|Δ7?|M7?|[0-9]+(?:[b#][0-9]+)*)(?:\/[A-G][b#]?)?$/;
+// Re-export normalizeChordSymbol for callers that imported it directly from this module
+export { normalizeChordSymbol } from './chordNormalizer.js';
 
 /** Direction / structural text that must NOT be classified as chords. */
 const DIRECTION_TEXTS = new Set([
@@ -417,6 +371,9 @@ function classifyPageSpans(
     if (!/^[A-G]/.test(t)) continue;
     const normed = normalizeChordSymbol(t);
     if (CHORD_REGEX.test(normed) || CHORD_REGEX.test(t)) {
+      result.chordSpans.push(span);
+    } else if (splitMultiChordSpan(t)) {
+      // Multi-chord span (e.g. "Gm7 C7" as one MuseScore text element)
       result.chordSpans.push(span);
     }
   }
@@ -1005,14 +962,30 @@ export async function importUGProPdf(
           }
         }
         const raw = span.text.trim();
-        const norm = normalizeChordSymbol(raw);
-        measureEvents[measureSlot].push({
-          x: span.x,
-          y: span.y,
-          raw,
-          norm,
-          confidence: CHORD_REGEX.test(norm) ? 1.0 : CHORD_REGEX.test(raw) ? 0.85 : 0.7,
-        });
+        const multiParts = splitMultiChordSpan(raw);
+        if (multiParts) {
+          // Distribute evenly across the span's width so X ordering is preserved
+          const partW = (span.width || span.fontSize * multiParts.length) / multiParts.length;
+          multiParts.forEach((part, idx) => {
+            const norm = normalizeChordSymbol(part);
+            measureEvents[measureSlot].push({
+              x: span.x + idx * partW,
+              y: span.y,
+              raw: part,
+              norm,
+              confidence: CHORD_REGEX.test(norm) ? 1.0 : 0.85,
+            });
+          });
+        } else {
+          const norm = normalizeChordSymbol(raw);
+          measureEvents[measureSlot].push({
+            x: span.x,
+            y: span.y,
+            raw,
+            norm,
+            confidence: CHORD_REGEX.test(norm) ? 1.0 : CHORD_REGEX.test(raw) ? 0.85 : 0.7,
+          });
+        }
       }
 
       for (const events of measureEvents) events.sort((a, b) => a.x - b.x);
