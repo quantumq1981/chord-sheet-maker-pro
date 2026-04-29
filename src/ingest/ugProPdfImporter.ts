@@ -194,6 +194,15 @@ export interface ImportResult {
 const HEADER_KW_PAT =
   /\b(Tuning|Capo|Transcribed|Transcription|Difficulty|Author|Arranger|Engraved|Engraver|www\.|http|©|Copyright|Produced)\b/i;
 
+/**
+ * Section-label vocabulary: text spans matching this are treated as section
+ * markers (→ rehearsalSpans) rather than chord candidates or direction text.
+ * Matches "Chorus", "Guitar Solo 1", "Pre-Chorus 2", "Verse", etc.
+ * Trailing colon or digit is optional.
+ */
+const SECTION_LABEL_RE =
+  /^(intro|verse|pre[-\s]?chorus|chorus|refrain|bridge|solo|guitar\s+solo|outro|interlude|tag|turnaround|hook)\s*[0-9]*[:\s]*$/i;
+
 const STEM_DENSITY_THRESHOLD = 0.08;
 const MIN_TOTAL_CHORD_SPANS = 6;
 const MIN_PAGE_CHORD_SPANS = 4;
@@ -443,14 +452,26 @@ function classifyPageSpans(
     // Exclude very large text (headings — more than 2.5× median font)
     if (span.fontSize > medianFontSize * 2.5) continue;
 
+    // Section labels (Chorus, Guitar Solo 1, Verse, etc.) → rehearsal span.
+    // Checked BEFORE DIRECTION_TEXTS so single-word names like "Chorus" are
+    // captured as section markers instead of being silently discarded.
+    if (SECTION_LABEL_RE.test(t)) {
+      result.rehearsalSpans.push(span);
+      continue;
+    }
+
     if (DIRECTION_TEXTS.has(t) || dirPat.test(t)) {
       const dir = classifyDirective(span);
       if (dir) result.directionMarkers.push(dir);
       continue;
     }
 
-    // Rehearsal markers: single uppercase letter (optionally + digit), large or left-margin
-    if (/^[A-Z][0-9]?$/.test(t) && !CHORD_REGEX.test(t)) {
+    // Single-letter rehearsal markers (A, B, C, …) — distinguished from plain
+    // major chord symbols by font size: rehearsal marks in MuseScore PDFs are
+    // rendered ~1.3× larger than chord symbols.  The old CHORD_REGEX trick no
+    // longer works now that the quality group is optional (CHORD_REGEX matches
+    // bare 'A', 'G', etc.).
+    if (/^[A-Z][0-9]?$/.test(t) && span.fontSize > medianFontSize * 1.3) {
       result.rehearsalSpans.push(span);
       continue;
     }
@@ -1198,22 +1219,44 @@ export async function importUGProPdf(
   }
 
   // ── Section detection with deduplication ─────────────────────────────────
+  //
+  // Two dedup problems to solve:
+  //   1. The same section label can appear on multiple systems (repeat brackets,
+  //      page turns) — keep only the first occurrence per (label, offset) pair.
+  //   2. MuseScore sometimes emits BOTH a boxed rehearsal letter ("A") AND a
+  //      descriptive text label ("Chorus") at the same measure boundary (Robben
+  //      Ford Revelation style).  Group by measure offset and pick the most
+  //      descriptive label (multi-word name wins over single letter).
   interface Section {
     label: string;
     startMeasure: number;
   }
-  const sections: Section[] = [];
-  const seen = new Set<string>();
+
+  // Collect all rehearsal markers grouped by their measure offset.
+  const markersByOffset = new Map<number, Set<string>>();
   let measOffset = 0;
   for (const sys of allSystemsDebug) {
     for (const mk of sys.markers.filter((m) => m.type === 'rehearsal')) {
-      const key = `${mk.value}@${measOffset}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        sections.push({ label: mk.value, startMeasure: measOffset });
+      let bag = markersByOffset.get(measOffset);
+      if (!bag) {
+        bag = new Set<string>();
+        markersByOffset.set(measOffset, bag);
       }
+      bag.add(mk.value);
     }
     measOffset += sys.measures.length;
+  }
+
+  // For each offset pick the best label: multi-word section names beat single
+  // letters; longer strings beat shorter ones within the same tier.
+  const sections: Section[] = [];
+  for (const [offset, labels] of [...markersByOffset.entries()].sort((a, b) => a[0] - b[0])) {
+    const best = [...labels].sort((a, b) => {
+      const aDesc = a.length > 2 ? 1 : 0;
+      const bDesc = b.length > 2 ? 1 : 0;
+      return bDesc - aDesc || b.length - a.length;
+    })[0];
+    sections.push({ label: best, startMeasure: offset });
   }
   if (sections.length === 0) sections.push({ label: 'Chords', startMeasure: 0 });
 
