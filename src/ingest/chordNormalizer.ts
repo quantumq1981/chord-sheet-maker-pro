@@ -62,6 +62,10 @@ export function normalizeChordSymbol(raw: string): string {
   s = s.replace(/([A-G][b#]?)(°|(?<![a-z])o(?!7|[a-z]))/g, '$1dim');
   // dim+b7 → dim7 (MuseScore "Bdim +b7" after space-strip becomes "Bdim+b7")
   s = s.replace(/dim\+b7\b/g, 'dim7');
+  // Non-standard: digit followed by "dim" suffix (e.g. E7dim → E7).
+  // Appears when MuseScore splits chord runs across text spans and they get
+  // reconstructed; strip the trailing dim qualifier rather than discard the chord.
+  s = s.replace(/(\d)dim\b/g, '$1');
 
   // 5. Major seventh/ninth/etc: Δ / 7M / M7 / Maj7 / MajN → maj7 / majN
   s = s.replace(/Δ7?/g, 'maj7');
@@ -83,6 +87,9 @@ export function normalizeChordSymbol(raw: string): string {
   s = s.replace(/\(add(\w+)\)/g, 'add$1');
   // Bare "no5" / "no3" without parens (e.g. "G6no5" after space-strip)
   s = s.replace(/no\d+/g, '');
+
+  // 7b. Combined sus notation: sus2/4 or sus4/2 (e.g. Fsus2/4) → keep first variant.
+  s = s.replace(/sus([24])\/[24]/g, 'sus$1');
 
   // 8. Pseudo-slash: strip qualifiers that follow a slash but are NOT a real bass note.
   //    Real slash chords like G/B have a note letter (A-G) after the slash.
