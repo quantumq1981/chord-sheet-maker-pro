@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeChordSymbol } from '../src/ingest/chordNormalizer.js';
+import {
+  normalizeChordSymbol,
+  splitMultiChordSpan,
+  CHORD_REGEX,
+} from '../src/ingest/chordNormalizer.js';
 
 describe('normalizeChordSymbol', () => {
   // ── Unicode accidentals ───────────────────────────────────────────────────
@@ -105,5 +109,88 @@ describe('normalizeChordSymbol', () => {
   it('strips internal spaces from split PDF spans (C maj7 → Cmaj7 → C)', () => {
     // normalizeChordSymbol strips spaces first, then "maj" alone → stripped
     assert.equal(normalizeChordSymbol('C maj7'), 'Cmaj7');
+  });
+
+  // ── MajN suffixes (Steely Dan – Kid Charlemagne) ─────────────────────────
+  it('maps CMaj9 to Cmaj9', () => {
+    assert.equal(normalizeChordSymbol('CMaj9'), 'Cmaj9');
+  });
+  it('maps CMaj7 to Cmaj7 (already covered by existing Maj7 rule)', () => {
+    assert.equal(normalizeChordSymbol('CMaj7'), 'Cmaj7');
+  });
+  it('maps FMaj7 to Fmaj7', () => {
+    assert.equal(normalizeChordSymbol('FMaj7'), 'Fmaj7');
+  });
+
+  // ── 7sus4 / 9sus4 (Doobie Brothers, Carlton, Robben Ford) ────────────────
+  it('passes A7sus4 through (dominant sus4)', () => {
+    assert.equal(normalizeChordSymbol('A7sus4'), 'A7sus4');
+    assert.ok(CHORD_REGEX.test('A7sus4'));
+  });
+  it('passes C7sus4 through', () => {
+    assert.equal(normalizeChordSymbol('C7sus4'), 'C7sus4');
+    assert.ok(CHORD_REGEX.test('C7sus4'));
+  });
+  it('passes G7sus4 through', () => {
+    assert.equal(normalizeChordSymbol('G7sus4'), 'G7sus4');
+    assert.ok(CHORD_REGEX.test('G7sus4'));
+  });
+
+  // ── European flat-suffix on extensions (Charlie Parker – Now's The Time) ──
+  it('converts D79- (D7 flat-9 European notation) to D7b9', () => {
+    assert.equal(normalizeChordSymbol('D79-'), 'D7b9');
+  });
+  it('converts F9- (F dominant flat-9, 7 implied) to F7b9', () => {
+    assert.equal(normalizeChordSymbol('F9-'), 'F7b9');
+  });
+  it('converts G9- to G7b9', () => {
+    assert.equal(normalizeChordSymbol('G9-'), 'G7b9');
+  });
+  it('strips /5+ pseudo-slash augmented-fifth (F7/5+ → F7)', () => {
+    assert.equal(normalizeChordSymbol('F7/5+'), 'F7');
+  });
+  it('strips /add13 pseudo-slash annotation (Bb7/add13 → Bb7)', () => {
+    assert.equal(normalizeChordSymbol('Bb7/add13'), 'Bb7');
+  });
+
+  // ── Bare "no5" without parentheses (Steely Dan – Kid Charlemagne) ─────────
+  it('strips bare no5 from G6 no5', () => {
+    assert.equal(normalizeChordSymbol('G6 no5'), 'G6');
+  });
+  it('strips bare no5 from D6 no5', () => {
+    assert.equal(normalizeChordSymbol('D6 no5'), 'D6');
+  });
+  it('strips bare no5 from A6 no5', () => {
+    assert.equal(normalizeChordSymbol('A6 no5'), 'A6');
+  });
+
+  // ── dim+b7 annotation (Steely Dan – Kid Charlemagne) ─────────────────────
+  it('normalises Bdim +b7 to Bdim7', () => {
+    assert.equal(normalizeChordSymbol('Bdim +b7'), 'Bdim7');
+  });
+  it('normalises Edim +b7 to Edim7', () => {
+    assert.equal(normalizeChordSymbol('Edim +b7'), 'Edim7');
+  });
+
+  // ── CHORD_REGEX: plain major chords must match ────────────────────────────
+  it('CHORD_REGEX matches plain major chord G', () => {
+    assert.ok(CHORD_REGEX.test('G'));
+  });
+  it('CHORD_REGEX matches plain major chord D', () => {
+    assert.ok(CHORD_REGEX.test('D'));
+  });
+  it('CHORD_REGEX matches real slash chord G/B', () => {
+    assert.ok(CHORD_REGEX.test('G/B'));
+  });
+  it('CHORD_REGEX matches maj9 after MajN normalisation (Cmaj9)', () => {
+    assert.ok(CHORD_REGEX.test(normalizeChordSymbol('CMaj9')));
+  });
+
+  // ── splitMultiChordSpan: no5 tokens filtered before validation ────────────
+  it('splitMultiChordSpan filters no5 token (Dm7 G6 no5 → [Dm7, G6])', () => {
+    assert.deepEqual(splitMultiChordSpan('Dm7 G6 no5'), ['Dm7', 'G6']);
+  });
+  it('splitMultiChordSpan returns null for single chord with no5 (G6 no5)', () => {
+    assert.equal(splitMultiChordSpan('G6 no5'), null);
   });
 });
