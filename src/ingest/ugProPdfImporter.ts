@@ -127,6 +127,10 @@ export interface MeasureDebug {
   directives: string[];
   /** Active time signature for this measure, e.g. '4/4'. Only set when different from the global default. */
   timeSig?: string;
+  /** True when a repeat-start barline (|:) precedes this measure. */
+  repeatStart?: boolean;
+  /** True when a repeat-end barline (:|) follows this measure. */
+  repeatEnd?: boolean;
 }
 
 export interface SystemDebug {
@@ -177,6 +181,8 @@ export interface DebugJson {
       directives: string[];
       /** Active time sig at this measure — present only when it differs from the global header value. */
       timeSig?: string;
+      repeatStart?: boolean;
+      repeatEnd?: boolean;
     }>;
   };
 }
@@ -297,6 +303,15 @@ const SMUFL_DIGIT: Record<string, string> = {
 const SMUFL_COMMON = ''; // common time → 4/4
 const SMUFL_CUT = ''; // cut time    → 2/2
 
+// Key-signature accidentals (standard SMuFL / Leland font)
+const SMUFL_FLAT_KS = ''; // accidentalFlat
+const SMUFL_SHARP_KS = ''; // accidentalSharp
+
+// Repeat barline type glyphs (standard SMuFL / Leland font)
+const SMUFL_REPEAT_START = ''; // barlineStartRepeat
+const SMUFL_REPEAT_END = ''; // barlineEndRepeat
+const SMUFL_REPEAT_BOTH = ''; // barlineEndStartRepeat
+
 export interface TimeSigRecord {
   timeSig: string;
   x: number;
@@ -358,6 +373,47 @@ export function detectTimeSigSpans(spans: TextSpan[]): TimeSigRecord[] {
     result.push({ timeSig: `${num}/${den}`, x: grp[0].x, y: topY });
   }
   return result;
+}
+
+// ─── Key-signature glyph detection ───────────────────────────────────────────
+
+/** Maps sharp count → major key name (index = number of sharps). */
+const KEY_FROM_SHARPS = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
+/** Maps flat count → major key name (index = number of flats). */
+const KEY_FROM_FLATS = ['C', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'Cb'];
+
+export interface KeySigRecord {
+  /** Key name, e.g. 'G', 'Bb', 'F#', or 'C' when no accidentals detected. */
+  key: string;
+  numAccidentals: number;
+  accidentalType: 'sharp' | 'flat' | 'none';
+}
+
+/**
+ * Detect the initial key signature from SMuFL accidental glyphs (Leland font
+ * U+E260 = flat, U+E262 = sharp) that appear in the left-most zone of the page.
+ * Key-sig accidentals live between the clef and the time sig — always well inside
+ * the left 25% of the page width.  Returns null only when no SMuFL accidentals
+ * are found in that zone (caller can leave metadata.key as-is).
+ */
+export function detectKeySig(spans: TextSpan[], pageW: number): KeySigRecord | null {
+  const leftZone = pageW * 0.25;
+
+  const sharpCount = spans.filter((s) => s.text.trim() === SMUFL_SHARP_KS && s.x < leftZone).length;
+
+  const flatCount = spans.filter((s) => s.text.trim() === SMUFL_FLAT_KS && s.x < leftZone).length;
+
+  if (sharpCount >= 1 && sharpCount <= 7) {
+    return {
+      key: KEY_FROM_SHARPS[sharpCount],
+      numAccidentals: sharpCount,
+      accidentalType: 'sharp',
+    };
+  }
+  if (flatCount >= 1 && flatCount <= 7) {
+    return { key: KEY_FROM_FLATS[flatCount], numAccidentals: flatCount, accidentalType: 'flat' };
+  }
+  return null;
 }
 
 function mul2d(m1: number[], m2: number[]): number[] {
@@ -548,6 +604,27 @@ function classifyPageSpans(
     // captured as section markers instead of being silently discarded.
     if (SECTION_LABEL_RE.test(t)) {
       result.rehearsalSpans.push(span);
+      continue;
+    }
+
+    // SMuFL repeat barline glyphs — detected before the general direction check
+    if (t === SMUFL_REPEAT_START || t === SMUFL_REPEAT_END || t === SMUFL_REPEAT_BOTH) {
+      if (t === SMUFL_REPEAT_START || t === SMUFL_REPEAT_BOTH) {
+        result.directionMarkers.push({
+          type: 'repeat-start',
+          value: '|:',
+          x: span.x,
+          y: span.y,
+        });
+      }
+      if (t === SMUFL_REPEAT_END || t === SMUFL_REPEAT_BOTH) {
+        result.directionMarkers.push({
+          type: 'repeat-end',
+          value: ':|',
+          x: span.x,
+          y: span.y,
+        });
+      }
       continue;
     }
 
@@ -924,10 +1001,17 @@ function emitFakebook(
         out.push(`; Time: ${m.timeSig}`);
         currentTimeSig = m.timeSig;
       }
-      const [tok, next] = barToken(m, lastChord, config.fillEmptyMeasuresWithPercent);
+      // Repeat-start: flush current row and prefix this bar token
+      if (m.repeatStart) flushRow();
+      const [rawTok, next] = barToken(m, lastChord, config.fillEmptyMeasuresWithPercent);
+      let tok = rawTok;
+      if (m.repeatStart) tok = `|: ${tok}`;
+      if (m.repeatEnd) tok = `${tok} :|`;
       row.push(tok);
       lastChord = next;
-      if (row.length >= mpl) flushRow();
+      // Repeat-end: flush immediately so the :| is the last item on its line
+      if (m.repeatEnd) flushRow();
+      else if (row.length >= mpl) flushRow();
     }
     flushRow();
 
@@ -998,6 +1082,8 @@ function emitBarlinesStyle(
         currentTimeSig = m.timeSig;
       }
 
+      if (m.repeatStart) flushRow();
+
       let tok: string;
       if (m.chords.length === 0) {
         tok = config.fillEmptyMeasuresWithPercent && lastChord ? '%' : lastChord || '%';
@@ -1005,8 +1091,11 @@ function emitBarlinesStyle(
         tok = m.chords.join(' ');
         lastChord = m.chords[m.chords.length - 1];
       }
+      if (m.repeatStart) tok = `|: ${tok}`;
+      if (m.repeatEnd) tok = `${tok} :|`;
       row.push({ tok, isFirstInSec: false });
-      if (row.length >= mpl) flushRow();
+      if (m.repeatEnd) flushRow();
+      else if (row.length >= mpl) flushRow();
     }
     flushRow();
 
@@ -1094,6 +1183,14 @@ export async function importUGProPdf(
         break;
       }
     }
+  }
+
+  // Backfill key signature from SMuFL accidental glyphs on the first page when
+  // the header text didn't carry an explicit key (most MuseScore UG Pro PDFs).
+  if (!metadata.key) {
+    const firstPageSpans = allSpans.filter((s) => s.pageIndex === 0);
+    const keySig = detectKeySig(firstPageSpans, pageMetas[0].pageW);
+    if (keySig) metadata.key = keySig.key;
   }
 
   // ── Per-page barline detection + system building ─────────────────────────
@@ -1279,6 +1376,41 @@ export async function importUGProPdf(
         measuresDebug[mIdx].timeSig = ts.timeSig;
       }
 
+      // Assign repeat barline markers detected via SMuFL glyphs.
+      //   repeat-start |:  → precedes a measure; find the measure whose left
+      //                     barline is closest to mk.x
+      //   repeat-end   :|  → follows a measure; find the measure whose right
+      //                     barline is closest to mk.x
+      const systemRepeatMarkers = systemMarkers.filter(
+        (m) => m.type === 'repeat-start' || m.type === 'repeat-end'
+      );
+      for (const mk of systemRepeatMarkers) {
+        if (mk.type === 'repeat-start') {
+          let mIdx = 0;
+          let bestDist = Infinity;
+          for (let mi = 0; mi < barlinesXPdf.length - 1; mi++) {
+            const d = Math.abs(barlinesXPdf[mi] - mk.x);
+            if (d < bestDist) {
+              bestDist = d;
+              mIdx = mi;
+            }
+          }
+          measuresDebug[mIdx].repeatStart = true;
+        } else {
+          // repeat-end: match to the right barline of a measure
+          let mIdx = measuresDebug.length - 1;
+          let bestDist = Infinity;
+          for (let mi = 0; mi < barlinesXPdf.length - 1; mi++) {
+            const d = Math.abs(barlinesXPdf[mi + 1] - mk.x);
+            if (d < bestDist) {
+              bestDist = d;
+              mIdx = mi;
+            }
+          }
+          if (mIdx >= 0) measuresDebug[mIdx].repeatEnd = true;
+        }
+      }
+
       globalMeasureIndex += numMeasures;
 
       const sysDebug: SystemDebug = {
@@ -1321,6 +1453,8 @@ export async function importUGProPdf(
         chords,
         directives: meas.directives,
         timeSig: meas.timeSig,
+        repeatStart: meas.repeatStart,
+        repeatEnd: meas.repeatEnd,
       });
     }
   }
