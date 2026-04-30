@@ -2601,15 +2601,23 @@ function buildDocSectionMap(text, _doc){
     const tokens = Array.isArray(block.tokens) ? block.tokens : [];
     // Extract per-bar chord tokens (for chord-only fallback in hybrid renderer)
     const barChords = [];
-    let buf = [];
-    for (const t of tokens) {
-      if (isBarlineToken(t)) {
-        if (buf.length) { barChords.push(buf.join(' ')); buf = []; }
-      } else {
-        buf.push(t);
+    const hasBarlines = tokens.some((t) => isBarlineToken(t));
+    if (hasBarlines) {
+      let buf = [];
+      for (const t of tokens) {
+        if (isBarlineToken(t)) {
+          if (buf.length) { barChords.push(buf.join(' ')); buf = []; }
+        } else {
+          buf.push(t);
+        }
+      }
+      if (buf.length) barChords.push(buf.join(' '));
+    } else {
+      // No barlines — each space-separated token is its own bar (standard CSMPN row)
+      for (const t of tokens) {
+        if (t && t.trim()) barChords.push(t);
       }
     }
-    if (buf.length) barChords.push(buf.join(' '));
     const n = countBarsInDocBlock(block) || barChords.length;
     for (let i = 0; i < n; i++) {
       current.bars.push({ timeSig: doc.time || '4/4', chordToken: barChords[i] || '' });
