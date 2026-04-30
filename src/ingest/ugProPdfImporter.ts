@@ -205,7 +205,7 @@ const HEADER_KW_PAT =
  * Trailing colon or digit is optional.
  */
 const SECTION_LABEL_RE =
-  /^(intro|verse|pre[-\s]?chorus|chorus|refrain|bridge|solo|guitar\s+solo|outro|interlude|tag|turnaround|hook)\s*[0-9]*[:\s]*$/i;
+  /^(intro|verse|pre[-\s]?chorus|chorus|refrain|bridge|solo|guitar\s+solo|outro|interlude|tag|turnaround|hook|main|groove|vamp|break|section|part|theme|pickup|instrumental|melody|riff|head|shout|stop|ending|fade|buildup|breakdown)\s*[0-9a-z]*[:\s]*$/i;
 
 const STEM_DENSITY_THRESHOLD = 0.08;
 const MIN_TOTAL_CHORD_SPANS = 6;
@@ -345,7 +345,8 @@ interface ClassifiedSpans {
 function classifyPageSpans(
   spans: TextSpan[],
   pageH: number,
-  headerExclusionRatio: number
+  headerExclusionRatio: number,
+  pageW = 612
 ): ClassifiedSpans {
   const result: ClassifiedSpans = { chordSpans: [], rehearsalSpans: [], directionMarkers: [] };
 
@@ -423,6 +424,11 @@ function classifyPageSpans(
     // Chord candidates
     if (/^\d+$/.test(t)) continue;
     if (!/^[A-G]/.test(t)) continue;
+
+    // Single-letter spans in the left margin (x < 4% of page) are guitar string
+    // name labels from tab staves (E A D G B E), not chord symbols — skip them.
+    if (/^[A-G]$/.test(t) && span.x < pageW * 0.04) continue;
+
     const normed = normalizeChordSymbol(t);
     if (CHORD_REGEX.test(normed) || CHORD_REGEX.test(t)) {
       result.chordSpans.push(span);
@@ -924,7 +930,8 @@ export async function importUGProPdf(
     const { chordSpans, rehearsalSpans, directionMarkers } = classifyPageSpans(
       mergedSpans,
       pageH,
-      config.headerExclusionRatio
+      config.headerExclusionRatio,
+      pageW
     );
     const timeSigRecords = detectTimeSigSpans(mergedSpans);
     pageMetas.push({
