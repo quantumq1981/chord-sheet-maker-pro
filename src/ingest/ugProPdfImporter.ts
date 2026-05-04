@@ -1045,6 +1045,25 @@ export async function importUGProPdf(
         forcedPresetName ?? (stemDensity > STEM_DENSITY_THRESHOLD ? 'tab-heavy' : 'sparse');
       const presetCfg = BARLINE_PRESETS[usedPresetName];
 
+      // Adaptive barline thresholds based on the actual chord font size.
+      // In letter-size PDFs (612×792 pt) the staff is short relative to the
+      // detection band; large-scale PDFs fill most of the band naturally.
+      // UG Pro staves (5-line standard + 6-line TAB) span ~5.5× the chord font.
+      const spanFontSizes = group.spans.map((s) => s.fontSize).sort((a, b) => a - b);
+      const medChordFont =
+        spanFontSizes.length > 0 ? spanFontSizes[Math.floor(spanFontSizes.length / 2)] : 12;
+      const estimatedStaffPt = Math.min(medChordFont * 5.5, 150);
+
+      const makeAdaptedPreset = (
+        base: BarlinePresetConfig,
+        abovePts: number,
+        belowPts: number
+      ): BarlinePresetConfig => {
+        const bandPx = (abovePts + belowPts) * scale;
+        const adaptedDensity = Math.max(0.12, Math.min(0.85, (estimatedStaffPt * scale) / bandPx));
+        return { ...base, stemRunRatio: adaptedDensity, minHeightRatio: adaptedDensity };
+      };
+
       let { by0, by1 } = computeBand(80);
       let barlinesXPdf = detectBarlinesInBand(
         canvas,
@@ -1052,7 +1071,7 @@ export async function importUGProPdf(
         by1,
         canvasBX0,
         canvasBX1,
-        presetCfg,
+        makeAdaptedPreset(presetCfg, 25, 80),
         scale
       );
 
@@ -1065,7 +1084,7 @@ export async function importUGProPdf(
           by1,
           canvasBX0,
           canvasBX1,
-          BARLINE_PRESETS['tab-heavy'],
+          makeAdaptedPreset(BARLINE_PRESETS['tab-heavy'], 25, 280),
           scale
         );
       }
@@ -1078,6 +1097,37 @@ export async function importUGProPdf(
         barlinesXPdf.push(staffRight);
       }
       barlinesXPdf.sort((a, b) => a - b);
+
+      // Measure-number fallback: if image analysis found no internal barlines (only
+      // the two boundary markers remain), use bar-number span x-positions instead.
+      // Bar numbers share a single y-row per system and appear just below the chord
+      // symbols; TAB fret numbers span multiple string-line y values and are
+      // excluded by the tight y-cluster test (±3 pt tolerance).
+      if (barlinesXPdf.length <= 2) {
+        const allDigitOnPage = allSpans.filter(
+          (s) =>
+            s.pageIndex === pNum - 1 &&
+            /^\d+$/.test(s.text.trim()) &&
+            s.y < chordY &&
+            s.y > chordY - estimatedStaffPt * 1.3 &&
+            s.x >= staffLeft - 5 &&
+            s.x <= staffRight + 5
+        );
+        if (allDigitOnPage.length >= 2) {
+          const yVals = allDigitOnPage.map((s) => s.y).sort((a, b) => a - b);
+          const medY = yVals[Math.floor(yVals.length / 2)];
+          const measNums = allDigitOnPage.filter((s) => Math.abs(s.y - medY) <= 3);
+          if (measNums.length >= 2) {
+            const numbersX = measNums
+              .map((s) => s.x)
+              .filter((x) => x > staffLeft + 5 && x < staffRight - 5)
+              .sort((a, b) => a - b);
+            if (numbersX.length >= 1) {
+              barlinesXPdf = [staffLeft, ...numbersX, staffRight];
+            }
+          }
+        }
+      }
 
       // ── Map chord spans to measures ──────────────────────────────────────
       const sortedSpans = [...group.spans].sort((a, b) => a.x - b.x);

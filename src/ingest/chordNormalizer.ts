@@ -10,7 +10,7 @@
  * `[0-9]+sus[24]?` precedes bare `[0-9]+` so "7sus4" resolves correctly.
  */
 export const CHORD_REGEX =
-  /^[A-G][b#]?(?:maj[0-9]*|m7b5|m7|m6|m9|m11|m13|mM7|m|dim7|dim|aug7|aug|sus4|sus2|sus|add9|add11|add13|add|7M|[Øø]7?|°7?|Δ7?|M7?|[0-9]+sus[24]?(?:[b#][0-9]+)*|[0-9]+(?:[b#][0-9]+)*)?(?:\/[A-G][b#]?)?$/;
+  /^[A-G][b#]?(?:maj[0-9]*|m7b5|m7|m6|m9|m11|m13|mM7|m|dim7|dim|aug7|aug|sus[24](?:add\d+)?|sus|add9|add11|add13|add|7M|[Øø]7?|°7?|Δ7?|M7?|[0-9]+sus[24]?(?:[b#][0-9]+)*|[0-9]+(?:[b#][0-9]+)*)?(?:\/[A-G][b#]?)?$/;
 
 /**
  * Central normalisation function for chord symbols extracted from UG Pro PDFs.
@@ -96,6 +96,10 @@ export function normalizeChordSymbol(raw: string): string {
   s = s.replace(/\/[b#]\d+/g, ''); // /b5, /#5, /b9
   s = s.replace(/\/\d+[+\-]/g, ''); // /5+, /5-  (European augmented/flat on interval)
   s = s.replace(/\/add\w+/g, ''); // /add13, /add9
+
+  // 9. Strip parenthesised tension/voicing decorators that appear in some UG Pro
+  //    exports (e.g. Bm7/5+(7) → Bm7 after pseudo-slash removal; C7M(8) → Cmaj7).
+  s = s.replace(/\(\d+\)/g, '');
 
   return s;
 }
