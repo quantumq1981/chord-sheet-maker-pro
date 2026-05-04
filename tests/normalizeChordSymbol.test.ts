@@ -213,4 +213,28 @@ describe('normalizeChordSymbol', () => {
   it('splitMultiChordSpan returns null for single chord with no5 (G6 no5)', () => {
     assert.equal(splitMultiChordSpan('G6 no5'), null);
   });
+
+  // ── Parenthesised tension/voicing decorators (UG Pro edge cases) ──────────
+  it('strips parenthesised number suffix: C7M(8) → Cmaj7', () => {
+    assert.equal(normalizeChordSymbol('C7M(8)'), 'Cmaj7');
+    assert.ok(CHORD_REGEX.test(normalizeChordSymbol('C7M(8)')));
+  });
+  it('strips (7) after pseudo-slash removal: Bm7/5+(7) → Bm7', () => {
+    assert.equal(normalizeChordSymbol('Bm7/5+(7)'), 'Bm7');
+    assert.ok(CHORD_REGEX.test(normalizeChordSymbol('Bm7/5+(7)')));
+  });
+  it('strips bare (7) suffix on a plain chord: G(7) → G', () => {
+    assert.equal(normalizeChordSymbol('G(7)'), 'G');
+  });
+
+  // ── sus4add9 / sus2add9 compound quality ─────────────────────────────────
+  it('CHORD_REGEX matches Dsus4add9 via sus[24](?:add\\d+)?', () => {
+    assert.ok(CHORD_REGEX.test('Dsus4add9'));
+  });
+  it('CHORD_REGEX matches Csus2add11', () => {
+    assert.ok(CHORD_REGEX.test('Csus2add11'));
+  });
+  it('normalizeChordSymbol leaves Dsus4add9 unchanged (already canonical)', () => {
+    assert.equal(normalizeChordSymbol('Dsus4add9'), 'Dsus4add9');
+  });
 });
