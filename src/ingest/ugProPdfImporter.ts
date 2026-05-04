@@ -353,12 +353,14 @@ function classifyPageSpans(
   // Top N% of page in PDF space: y > pageH * (1 - ratio)
   const headerThresholdY = pageH * (1 - headerExclusionRatio);
 
-  // Median font size from multi-char spans starting with a note root
+  // Median font size from multi-char spans starting with a note root.
+  // Require ≥3 samples for a stable median; fall back to 7 (typical chord
+  // symbol size in MuseScore PDFs) when the page has too few chord-like spans.
   const sizes = spans
     .filter((s) => s.text.trim().length > 1 && /^[A-G]/.test(s.text.trim()))
     .map((s) => s.fontSize)
     .sort((a, b) => a - b);
-  const medianFontSize = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)] : 12;
+  const medianFontSize = sizes.length >= 3 ? sizes[Math.floor(sizes.length / 2)] : 7;
 
   const dirPat =
     /^(N\.C\.?|Fine|Coda|D\.S|D\.C|To\s|Double|Half-time|Freely|Tacet|Simile|Vamp|Rit|Rail|Accel)/i;
@@ -899,6 +901,9 @@ export async function importUGProPdf(
 
   // ── Collect all text spans + per-page classification ─────────────────────
   const allSpans: TextSpan[] = [];
+  // Carry the last merged span across page turns so chord fragments split at a
+  // page boundary (e.g. "D9" on page N, "/F" on page N+1) can be stitched.
+  let crossPageCarry: TextSpan | null = null;
   interface PageMeta {
     page: PDFPageProxy;
     pageH: number;
@@ -925,12 +930,36 @@ export async function importUGProPdf(
     // Merge split chord fragments (e.g. "D9" + "/F" → "D9/F") before classifying.
     // Use the merged set for chord/direction detection; SMuFL time-sig glyphs are
     // single-char spans that are unaffected by the merge pass.
-    const mergedSpans = mergeFragmentSpans(pageSpans);
+    let mergedSpans = mergeFragmentSpans(pageSpans);
 
+    // Cross-page fragment stitching: if the last chord span on the previous
+    // page looks like a fragment root and the first span of this page is a
+    // suffix (e.g. "/F", "m7"), combine them to reconstruct the full chord.
+    if (crossPageCarry && mergedSpans.length > 0) {
+      const firstSpan = mergedSpans[0];
+      const firstText = firstSpan.text.trim();
+      if (!/^[A-G]/.test(firstText)) {
+        const combined = crossPageCarry.text.trim() + firstText;
+        const normed = normalizeChordSymbol(combined);
+        if (CHORD_REGEX.test(normed) || CHORD_REGEX.test(combined)) {
+          mergedSpans = [
+            { ...crossPageCarry, text: combined, pageIndex: firstSpan.pageIndex },
+            ...mergedSpans.slice(1),
+          ];
+        }
+      }
+    }
+    // Update carry-in for the next page (last span on this page)
+    crossPageCarry = mergedSpans.length > 0 ? mergedSpans[mergedSpans.length - 1] : null;
+
+    // Use a reduced header exclusion on pages 2+: continuation pages start
+    // their first musical system near the very top with no title/header area,
+    // so the standard 13% exclusion would clip the first system's chord row.
+    const pageHeaderRatio = pNum === 1 ? config.headerExclusionRatio : 0.02;
     const { chordSpans, rehearsalSpans, directionMarkers } = classifyPageSpans(
       mergedSpans,
       pageH,
-      config.headerExclusionRatio,
+      pageHeaderRatio,
       pageW
     );
     const timeSigRecords = detectTimeSigSpans(mergedSpans);

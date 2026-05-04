@@ -40,26 +40,56 @@ import { sectionTypeFromLabel, normalizeLineEndings } from '../utils/sectionUtil
 
 // ─── Key signature helpers ────────────────────────────────────────────────────
 
-/** Map common ABC mode keywords to display suffixes. */
-const MODE_TO_SUFFIX: Array<[RegExp, string]> = [
-  [/^maj(or)?$/i, ''], // major
-  [/^m(in(or)?)?$/i, 'm'], // minor
-  [/^mix(olydian)?$/i, ' Mix'],
-  [/^dor(ian)?$/i, ' Dor'],
-  [/^phr(ygian)?$/i, ' Phr'],
-  [/^lyd(ian)?$/i, ' Lyd'],
-  [/^loc(rian)?$/i, ' Loc'],
-  [/^aeo(lian)?$/i, 'm'], // same as minor
-  [/^ion(ian)?$/i, ''], // same as major
-];
+/** Semitone value for each root note (sharps and flats both mapped). */
+const ROOT_TO_SEMI: Record<string, number> = {
+  C: 0,
+  'C#': 1,
+  Db: 1,
+  D: 2,
+  'D#': 3,
+  Eb: 3,
+  E: 4,
+  F: 5,
+  'F#': 6,
+  Gb: 6,
+  G: 7,
+  'G#': 8,
+  Ab: 8,
+  A: 9,
+  'A#': 10,
+  Bb: 10,
+  B: 11,
+  Cb: 11,
+};
+
+/** Preferred note name for each semitone 0–11 (flat-preferred for ambiguous). */
+const SEMI_TO_NOTE = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
 /**
- * Convert an ABC K: value to a readable key string.
- *   "G"   → "G"
- *   "Am"  → "Am"
- *   "Bb"  → "Bb"
- *   "Dmix"→ "D Mix"
- *   "Hp"  → undefined (Highland pipes — no key)
+ * Semitones to subtract from the modal root to obtain the relative major root.
+ * E.g. D Dorian (offset 2) → D−2 = C major.
+ */
+const MODE_TO_REL_MAJOR_OFFSET: Record<string, number> = {
+  dor: 2, // Dorian = 2nd degree
+  phr: 4, // Phrygian = 3rd degree
+  lyd: 5, // Lydian = 4th degree
+  mix: 7, // Mixolydian = 5th degree
+  loc: 11, // Locrian = 7th degree
+};
+
+/**
+ * Convert an ABC K: value to a CSMPN-compatible key string.
+ *
+ * Major and minor keys are preserved as-is ("G", "Am", "Bb").
+ * Modal keys (Dorian, Phrygian, Lydian, Mixolydian, Locrian) are converted
+ * to their relative major — the key signature players actually read — so the
+ * CSMPN key field is always a standard major or minor key name.
+ *
+ *   "G"    → "G"
+ *   "Am"   → "Am"
+ *   "Dmix" → "G"   (D Mixolydian = G major key signature)
+ *   "DDor" → "C"   (D Dorian = C major key signature)
+ *   "Hp"   → undefined (Highland pipes — no key)
  */
 function parseAbcKey(raw: string): string | undefined {
   const v = raw.trim();
@@ -69,14 +99,27 @@ function parseAbcKey(raw: string): string | undefined {
   const m = v.match(/^([A-G][#b]?)\s*(.*)$/i);
   if (!m) return v;
 
-  const root = m[1];
+  // Normalise root capitalisation (ABC allows lowercase, e.g. "am")
+  const root = m[1].charAt(0).toUpperCase() + m[1].slice(1);
   const modePart = (m[2] ?? '').trim();
 
   if (!modePart) return root; // plain major
 
-  // Try known mode keywords
-  for (const [re, suffix] of MODE_TO_SUFFIX) {
-    if (re.test(modePart)) return `${root}${suffix}`.trim();
+  // Minor and Ionian (= major) — express normally
+  if (/^m(in(or)?)?$/i.test(modePart)) return `${root}m`;
+  if (/^maj(or)?$/i.test(modePart) || /^ion(ian)?$/i.test(modePart)) return root;
+  // Aeolian = relative minor, e.g. A Aeolian → "Am"
+  if (/^aeo(lian)?$/i.test(modePart)) return `${root}m`;
+
+  // Modal keys: compute relative major key signature
+  const modeKey = modePart.slice(0, 3).toLowerCase();
+  const offset = MODE_TO_REL_MAJOR_OFFSET[modeKey];
+  if (offset !== undefined) {
+    const rootSemi = ROOT_TO_SEMI[root];
+    if (rootSemi !== undefined) {
+      const relMajorSemi = (rootSemi - offset + 12) % 12;
+      return SEMI_TO_NOTE[relMajorSemi];
+    }
   }
 
   // Unknown mode — append as-is (e.g. K:Gsus)
@@ -144,6 +187,68 @@ function parseLyricLine(line: string): string[] {
 /** ABC fingering / annotation prefixes that are NOT chord symbols. */
 const FINGERING_RE = /^[\^_!0-5(]/;
 
+/**
+ * When the ABC body uses `[V:N]` inline voice markers (common in multi-voice
+ * scores exported from MuseScore or Sibelius), return only the body text for
+ * the voice that contains the most chord symbols.  This prevents duplicate
+ * bars that arise when both a melody voice and a comping voice are concatenated.
+ *
+ * Falls back to the full body text if no `[V:` markers are present.
+ */
+function extractRichestVoice(bodyText: string): string {
+  if (!bodyText.includes('[V:')) return bodyText;
+
+  const voiceText: Map<string, string> = new Map();
+  let currentVoice = '__root__';
+  let pos = 0;
+
+  while (pos < bodyText.length) {
+    const vStart = bodyText.indexOf('[V:', pos);
+    if (vStart === -1) {
+      // Append remainder to current voice
+      voiceText.set(currentVoice, (voiceText.get(currentVoice) ?? '') + bodyText.slice(pos));
+      break;
+    }
+    // Append text before this marker
+    if (vStart > pos) {
+      voiceText.set(
+        currentVoice,
+        (voiceText.get(currentVoice) ?? '') + bodyText.slice(pos, vStart)
+      );
+    }
+    const vEnd = bodyText.indexOf(']', vStart);
+    if (vEnd === -1) break;
+    currentVoice = bodyText.slice(vStart + 3, vEnd).trim();
+    pos = vEnd + 1;
+  }
+
+  // Score each voice by the count of non-fingering chord symbols
+  let bestVoice = '';
+  let bestCount = 0;
+  for (const [voice, text] of voiceText) {
+    let count = 0;
+    let i = 0;
+    while (i < text.length) {
+      if (text[i] === '"') {
+        const end = text.indexOf('"', i + 1);
+        if (end !== -1) {
+          const inner = text.slice(i + 1, end).trim();
+          if (inner && !FINGERING_RE.test(inner)) count++;
+          i = end + 1;
+          continue;
+        }
+      }
+      i++;
+    }
+    if (count > bestCount) {
+      bestCount = count;
+      bestVoice = voice;
+    }
+  }
+
+  return bestVoice ? (voiceText.get(bestVoice) ?? bodyText) : bodyText;
+}
+
 /** Clean an ABC chord string: strip ornaments, convert % → / for slash chords. */
 function cleanChord(raw: string): string {
   // "G%D" → "G/D" (ABC slash-chord convention)
@@ -155,20 +260,24 @@ function cleanChord(raw: string): string {
  *
  * Bar separators:  |  ||  |:  :|  :||  [|  |]  (:  :)
  * We treat every `|` character (not inside a chord string) as a bar boundary.
+ *
+ * When the body contains `[V:N]` voice markers (multi-voice score), only the
+ * harmonically richest voice is processed to avoid doubled bars.
  */
 function extractBarChords(bodyText: string): string[][] {
+  const effectiveBody = extractRichestVoice(bodyText);
   const bars: string[][] = [];
   let currentChords: string[] = [];
 
   let i = 0;
-  while (i < bodyText.length) {
-    const ch = bodyText[i];
+  while (i < effectiveBody.length) {
+    const ch = effectiveBody[i];
 
     if (ch === '"') {
       // Chord symbol: read until the closing quote
-      const end = bodyText.indexOf('"', i + 1);
+      const end = effectiveBody.indexOf('"', i + 1);
       if (end !== -1) {
-        const raw = bodyText.slice(i + 1, end).trim();
+        const raw = effectiveBody.slice(i + 1, end).trim();
         // Skip fingering annotations and empty strings
         if (raw && !FINGERING_RE.test(raw)) {
           const chord = cleanChord(raw);
@@ -187,8 +296,8 @@ function extractBarChords(bodyText: string): string[][] {
 
     if (ch === '%') {
       // Comment to end of line — advance past it and the newline in one step
-      while (i < bodyText.length && bodyText[i] !== '\n') i++;
-      if (i < bodyText.length) i++; // step past the '\n' itself
+      while (i < effectiveBody.length && effectiveBody[i] !== '\n') i++;
+      if (i < effectiveBody.length) i++; // step past the '\n' itself
       continue;
     }
 

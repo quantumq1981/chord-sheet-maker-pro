@@ -25,8 +25,9 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-04-29)
-- **264 tests passing** (`npm run test:all`) — 18 hybrid parser + 246 parser/exporter/utils tests
+## Current State (2026-05-04)
+- **291 tests passing** (`npm run test:all`) — 18 hybrid parser + 273 parser/exporter/utils tests
+- `tests/abcParser.test.ts` added — 21 new tests for modal key conversion + multi-voice extraction
 - **CI now syntax-checks root JS files** (`node --check`) — catches browser SyntaxErrors before GitHub Pages deploy
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
 - **`app.html` + `src/`** — React/TypeScript track (secondary); `src/export/` and `src/parsers/` used for unit tests only
@@ -725,3 +726,36 @@ Answers "How should I articulate it?" and "Where do I play it?" from the 5 perfo
 - `ugProPdfImporter.ts` now imports from `ugProPdfUtils.js` (no duplication); re-exports for backward compat.
 - `tests/ugProPdfUtils.test.ts` — 33 tests: 9 `detectTimeSigSpans` + 12 `detectKeySig` + 12 `mergeFragmentSpans`.
 - Total: **264 tests** (18 `npm test` + 246 `test:parsers`)
+
+## Sprint 11 — Parser Quality Hardening ✅ COMPLETE (2026-05-04)
+| # | Task | Status |
+|---|------|--------|
+| 11.1 (T2.7) | Per-page adaptive header exclusion: 0.02 for pages 2+ in `ugProPdfImporter.ts` | ✅ DONE |
+| 11.2 (T4.5) | Sparse-page median font-size fallback: use 7pt when `sizes.length < 3` | ✅ DONE |
+| 11.3 (T1.2) | Cross-page chord fragment stitching: carry last span across page turns | ✅ DONE |
+| 11.4 (T3.3) | GP chord-track selection: density-score all tracks (+2 chord, +1 multi-note) | ✅ DONE |
+| 11.5 (T2.3) | ABC modal key → relative major: Dor/Phr/Lyd/Mix/Loc → correct key sig | ✅ DONE |
+| 11.6 (T3.5) | ABC multi-voice: `[V:N]` voice-priority extraction (richest chord voice wins) | ✅ DONE |
+| 11.7 | `tests/abcParser.test.ts` — 21 new tests; total now 291 | ✅ DONE |
+
+## SPRINT 11 CHANGES (2026-05-04)
+
+**`src/ingest/ugProPdfImporter.ts`**
+- **T2.7 Per-page header exclusion**: pages 2+ use `headerRatio=0.02` (vs 0.13 for page 1). Prevents the first chord row from being clipped on continuation pages where there is no title/header area.
+- **T4.5 Sparse median guard**: `medianFontSize` falls back to `7` when fewer than 3 `[A-G]`-starting multi-char spans exist (was `12`). Keeps font-size filtering correct on sparse pages.
+- **T1.2 Cross-page fragment stitching**: `crossPageCarry` variable threads the last merged span across page turns. If the first span of page N+1 doesn't start with `[A-G]` and combining with the carry produces a valid chord, a synthetic merged span replaces the first span, reconstructing chords split at a physical page boundary.
+
+**`src/parsers/gpParser.ts`**
+- **T3.3 Chord-track selection**: new `findChordTrack(tracks)` function replaces the old `tracks.find((t) => !t.isPercussion)` call. Scores every non-percussion track by harmonic content (+2 per explicit `beat.chord.name`, +1 per beat with ≥3 sounding notes) and picks the highest-scoring track. Falls back to the old heuristic if no track scores > 0.
+
+**`src/parsers/abcParser.ts`**
+- **T2.3 Modal key → relative major**: `parseAbcKey()` now computes the relative major key for modal ABC keys instead of appending display suffixes like " Dor", " Mix". Adds `ROOT_TO_SEMI`, `SEMI_TO_NOTE`, and `MODE_TO_REL_MAJOR_OFFSET` lookup tables. Examples: `K:DDor → C`, `K:GMix → C`, `K:FLyd → C`, `K:AMix → D`, `K:BbDor → Ab`. Aeolian/Ionian handled as minor/major respectively (unchanged semantics, cleaner code path).
+- **T3.5 Multi-voice chord extraction**: new `extractRichestVoice(bodyText)` function. When body contains `[V:N]` inline voice markers, segments the body by voice, scores each by chord count, and returns the richest voice's text. `extractBarChords` calls this before processing, preventing doubled bar counts from interleaved melody+comping voices.
+
+**`tests/abcParser.test.ts`** (new file, 21 tests)
+- Modal key tests: D/E/F/G/B Dorian-through-Locrian → correct relative major
+- Multi-voice tests: richest-voice selection, single-voice fallback, tie-breaking
+- Metadata: title, composer, time signature, M:C/M:C| conversion
+- Chord extraction: slash chord `%` → `/`, fingering annotation filtering
+
+Total: **291 tests** (18 `npm test` + 273 `test:parsers`)

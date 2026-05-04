@@ -143,6 +143,38 @@ function chordNameFromBeat(beat: any, openMidiNotes: number[]): string | null {
 }
 
 /**
+ * Find the track with the richest harmonic content by scoring:
+ *   +2 per beat with an explicit chord annotation (beat.chord.name)
+ *   +1 per beat with ≥3 sounding (non-muted, non-dead) notes
+ * Falls back to the first non-percussion track when no track scores above 0.
+ */
+function findChordTrack(tracks: any[]): any {
+  let bestTrack: any = null;
+  let bestScore = -1;
+
+  for (const track of tracks) {
+    if (track.isPercussion) continue;
+    let score = 0;
+    for (const bar of barsFromTrack(track)) {
+      for (const beat of beatsFromBar(bar)) {
+        if (beat?.chord?.name) score += 2;
+        const notes: any[] = beat?.notes ? Array.from(beat.notes) : [];
+        const sounding = notes.filter(
+          (n: any) => !n.isMute && !n.isDead && typeof n.fret === 'number'
+        );
+        if (sounding.length >= 3) score += 1;
+      }
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestTrack = track;
+    }
+  }
+
+  return bestTrack ?? tracks.find((t: any) => !t.isPercussion) ?? tracks[0];
+}
+
+/**
  * Find the track whose beats carry the most lyric text.
  * Falls back to the chord track if nothing has lyrics.
  */
@@ -349,7 +381,7 @@ export async function parseGuitarPro(bytes: Uint8Array): Promise<ChordChartDocum
   if (tracks.length === 0 || masterBars.length === 0) return doc;
 
   // ── 4. Track selection ──
-  const chordTrack = tracks.find((t: any) => !t.isPercussion) ?? tracks[0];
+  const chordTrack = findChordTrack(tracks);
   const lyricTrack = findLyricTrack(tracks, chordTrack);
 
   const openMidi = staffTuning(chordTrack);
