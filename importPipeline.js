@@ -2370,27 +2370,42 @@ async function importUGProPDF(file){
     statusEl.textContent = `Parsing PDF… page ${p}/${pdf.numPages}`;
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent();
-    const items = tc.items
+    // Pre-filter metadata spans so they don't pollute chord detection.
+    // "Tuning : E A D G B E" in UG Pro PDFs matches isChordToken for each
+    // string-name letter (E, A, D, G, B, E), producing 6 garbage bars.
+    const PDF_META_SKIP_RE = /^\s*(Tuning|Capo|Difficulty|Transcribed|Transcription|Author|Arranger|Engraved?r?)\s*[:\s]/i;
+    const allPageItems = tc.items
       .map(it => ({
         str: (it.str ?? "").toString(),
         x: it.transform[4] ?? 0,
         y: it.transform[5] ?? 0
       }))
       .filter(it => it.str && it.str.trim());
-    totalTextItems += items.length;
+    totalTextItems += allPageItems.length;
     pageBoundaries.push({ page: p, startLine: extractedTextLines.length });
 
-    // Cluster by y into "visual lines"
-    const buckets = new Map();
-    for (const it of items){
-      const yk = Math.round(it.y * 2) / 2; // 0.5pt buckets
-      if (!buckets.has(yk)) buckets.set(yk, []);
-      buckets.get(yk).push(it);
+    // Strip metadata spans before clustering (tuning lines, capo lines, etc.)
+    const items = allPageItems.filter(it => !PDF_META_SKIP_RE.test(it.str));
+
+    // Threshold-based y-clustering replaces the old 0.5pt fixed-bucket approach.
+    // MuseScore chord symbols in the same staff system can sit at slightly
+    // different heights (up to ~15 pt due to collision avoidance), causing
+    // 0.5pt buckets to produce separate lines with wrong chord ordering.
+    // Group all spans within 20 pt of the first span in each group, then sort
+    // each group by x (left-to-right) for correct reading order.
+    const CHORD_Y_THRESHOLD = 20;
+    items.sort((a, b) => b.y - a.y); // descending: top of page first
+    const lineGroups = [];
+    for (const it of items) {
+      const last = lineGroups.length ? lineGroups[lineGroups.length - 1] : null;
+      if (!last || (last.refY - it.y) > CHORD_Y_THRESHOLD) {
+        lineGroups.push({ refY: it.y, items: [] });
+      }
+      lineGroups[lineGroups.length - 1].items.push(it);
     }
 
-    const yKeys = Array.from(buckets.keys()).sort((a,b) => b-a); // top-to-bottom
-    for (const yk of yKeys){
-      const lineItems = buckets.get(yk).sort((a,b) => a.x-b.x);
+    for (const lg of lineGroups) {
+      const lineItems = lg.items.slice().sort((a, b) => a.x - b.x);
       // Join while preserving short gaps; PDF.js tends to split pipes and chords
       const rawLine = lineItems.map(it => it.str).join(" ");
       const line = normLine(rawLine);
