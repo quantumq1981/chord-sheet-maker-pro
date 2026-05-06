@@ -203,12 +203,20 @@ function _gpKeyToStr(keySig, keyType) {
 /**
  * AlphaTab Duration enum numeric values:
  *   Whole=1, Half=2, Quarter=4, Eighth=8, Sixteenth=16, ThirtySecond=32, SixtyFourth=64
- * Quarter-note count: 4 / durValue
+ * Quarter-note count: 4 / durValue, adjusted for dots and optional tuplet ratio.
+ * @param {number} durVal        AlphaTab duration integer
+ * @param {number} dots          Dot count (0, 1, or 2)
+ * @param {number} [tupletNum]   Tuplet numerator (e.g. 3 for triplet); omit or 1 = no tuplet
+ * @param {number} [tupletDen]   Tuplet denominator (e.g. 2 for triplet)
  */
-function _gpDurToQuarters(durVal, dots) {
+function _gpDurToQuarters(durVal, dots, tupletNum, tupletDen) {
   var base = 4 / (durVal > 0 ? durVal : 4);
-  if (dots === 1) return base * 1.5;
-  if (dots === 2) return base * 1.75;
+  if (dots === 1) base *= 1.5;
+  else if (dots === 2) base *= 1.75;
+  if (typeof tupletNum === 'number' && tupletNum > 1 &&
+      typeof tupletDen === 'number' && tupletDen > 0) {
+    base *= (tupletDen / tupletNum);
+  }
   return base;
 }
 
@@ -401,7 +409,11 @@ function _buildCsmpnFromScore(score, opts) {
       var chord = _extractChord(beat, openMidi);
       var durVal = (beat && beat.duration) || 4;
       var dots = (beat && beat.dots) || 0;
-      var quarters = _gpDurToQuarters(durVal, dots);
+      // AlphaTab tupletNumerator/tupletDenominator default to -1 when not a tuplet.
+      // > 0 check safely handles both -1 (no tuplet) and 0 (invalid) cases.
+      var tupletNum = (beat && beat.tupletNumerator > 0) ? beat.tupletNumerator : 1;
+      var tupletDen = (beat && beat.tupletDenominator > 0) ? beat.tupletDenominator : 1;
+      var quarters = _gpDurToQuarters(durVal, dots, tupletNum, tupletDen);
       var isRest = !!(beat && beat.isRest);
 
       // Collect voicing
@@ -454,6 +466,10 @@ function _buildCsmpnFromScore(score, opts) {
       hybridLine: hybridParts.length > 0 ? hybridParts.join(' ') : '',
       sectionText: sectionText,
       timeSigNum: timeSigNum,
+      repeatStart: !!(mb && mb.isRepeatStart),
+      repeatEnd: !!(mb && mb.isRepeatEnd),
+      // alternateEndings bitmask: bit 0 = 1st volta, bit 1 = 2nd volta, etc.
+      alternateEndings: (mb && mb.alternateEndings) || 0,
     });
   }
 
@@ -512,12 +528,40 @@ function _buildCsmpnFromScore(score, opts) {
     var sec = sections[secIdx];
     lines.push(': ' + sec.label);
 
-    // Bar content rows
+    // ── Repeat-aware bar-content rows ──────────────────────────────────────
+    // Rows break at barsPerRow, at repeat-start boundaries, and after repeat-end
+    // bars so that |: and :| never share a line ambiguously.
     var secMeasures = sec.measures;
-    for (var row = 0; row < secMeasures.length; row += barsPerRow) {
-      var rowSlice = secMeasures.slice(row, row + barsPerRow);
-      var barLine = '| ' + rowSlice.map(function (m) { return m.barContent; }).join(' | ') + ' |';
-      lines.push(barLine);
+    var rowGroups = [];
+    var curRowGrp = [];
+    for (var rmi = 0; rmi < secMeasures.length; rmi++) {
+      var rm = secMeasures[rmi];
+      if (rm.repeatStart && curRowGrp.length > 0) {
+        rowGroups.push(curRowGrp);
+        curRowGrp = [];
+      }
+      curRowGrp.push(rm);
+      if (rm.repeatEnd || curRowGrp.length >= barsPerRow) {
+        rowGroups.push(curRowGrp);
+        curRowGrp = [];
+      }
+    }
+    if (curRowGrp.length > 0) rowGroups.push(curRowGrp);
+
+    for (var rgi = 0; rgi < rowGroups.length; rgi++) {
+      var rg = rowGroups[rgi];
+      var rowParts = [];
+      for (var rpi = 0; rpi < rg.length; rpi++) {
+        var rm2 = rg[rpi];
+        var leftBar = rm2.repeatStart ? '|:' : '|';
+        // Volta ending prefix: "1. " or "2. " (CSMPN token before the chord)
+        var voltaPfx = (rm2.alternateEndings & 1) ? '1. ' :
+                       (rm2.alternateEndings & 2) ? '2. ' : '';
+        rowParts.push(leftBar + ' ' + voltaPfx + rm2.barContent);
+      }
+      var lastRM = rg[rg.length - 1];
+      var trailingBar = lastRM.repeatEnd ? ' :|' : ' |';
+      lines.push(rowParts.join(' ') + trailingBar);
     }
 
     // {tab} voicing block — collect unique chords used in this section
