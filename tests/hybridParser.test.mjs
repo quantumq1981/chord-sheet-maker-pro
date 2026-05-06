@@ -214,3 +214,33 @@ test('chord names with nested parentheses parse without warnings', () => {
   // No warnings for these tokens
   assert.equal(out.warnings.filter((w) => w.includes('Unrecognized')).length, 0);
 });
+
+test('tN flag on events sets ev.tuplet to the tuplet group size', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nb1: 1:q(G)t3 1&:qt3 2:qt3 3:q 4:q\n}`
+  );
+
+  assert.equal(out.active, true);
+  // First three events are triplet-flagged
+  assert.equal(out.sections[0].bars[0].events[0].tuplet, 3);
+  assert.equal(out.sections[0].bars[0].events[1].tuplet, 3);
+  assert.equal(out.sections[0].bars[0].events[2].tuplet, 3);
+  // Last two events have no tuplet flag → tuplet should be 0
+  assert.equal(out.sections[0].bars[0].events[3].tuplet, 0);
+  assert.equal(out.sections[0].bars[0].events[4].tuplet, 0);
+});
+
+test('tN flag combines correctly with accent and muted flags', () => {
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| G | D | Em | C |\n{hybrid\nb1: 1:q(G)!t3 2:qxt3 3:q\n}`
+  );
+
+  assert.equal(out.active, true);
+  assert.equal(out.sections[0].bars[0].events[0].accent, true);
+  assert.equal(out.sections[0].bars[0].events[0].tuplet, 3);
+  assert.equal(out.sections[0].bars[0].events[1].muted, true);
+  assert.equal(out.sections[0].bars[0].events[1].tuplet, 3);
+  assert.equal(out.sections[0].bars[0].events[2].tuplet, 0);
+});

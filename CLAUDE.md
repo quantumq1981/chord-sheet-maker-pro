@@ -807,7 +807,7 @@ Total: **333 tests** (103 `npm test` + 196 `test:parsers`; +42 vs Sprint 11 base
 | # | Task | Status |
 |---|------|--------|
 | 13.P1 | Tuplet-aware cumQ, repeat barlines, volta brackets + 3 new tests | ✅ DONE — 2026-05-06, PR #211 |
-| 13.P2 | Hybrid renderer visual quality (oval noteheads, beams, triplet brackets) | pending |
+| 13.P2 | Hybrid renderer visual quality (beat-boundary beaming, tuplet brackets, tN flag) | ✅ DONE — 2026-05-06, PR #213 |
 | 13.P3 | Chord recognition quality improvements | pending |
 | 13.P4 | Fake book polish (slash notation from GP output) | pending |
 | 13.P5 | Round-trip export (GP→CSMPN→MusicXML) | pending |
@@ -828,4 +828,32 @@ Total: **333 tests** (103 `npm test` + 196 `test:parsers`; +42 vs Sprint 11 base
 - `_buildCsmpnFromScore: emits 1. and 2. volta prefixes for alternate endings`
 - `_buildCsmpnFromScore: six quarter-note triplets fill one bar without beat overflow`
 
-Total: **363 tests** (103 `npm test` + 260 `test:parsers`; +30 vs Sprint 12 baseline)
+Total: **657 tests** (294 `npm test` + 363 `test:parsers`)
+
+## SPRINT 13 CHANGES — Phase 2 (2026-05-06, PR #213)
+
+**Phase 2 — Tuplet brackets, beat-boundary beaming, tN flag**
+
+**`importGuitarPro.js`**
+- Hybrid event tokens carry `tN` suffix (e.g. `t3`) when `beat.tupletNumerator > 1`, passing tuplet group membership through the CSMPN text format to the renderer.
+
+**`importPipeline.js`**
+- Flags regex expanded from `([!~x]*)` to `([!~xt0-9]*)` — captures `tN` annotations alongside `!` accent, `~` sustain, `x` muted.
+- `ev.tuplet` field added to every parsed hybrid event (0 = no tuplet, N = member of N-tuplet group).
+- Overlap check now bypasses same-tuplet consecutive events — prevents valid triplet/quintuplet sub-beat positions from being incorrectly dropped.
+
+**`renderer.js`**
+- `HR_TUPLET_H = 14` — extra vertical space allocated per row when any bar has tuplet events; `renderHybridDoc` extends `staffY` and row `h` accordingly.
+- `hrTupletBracket(x1, x2, topY, n, col)` — renders `⌐ N ¬` bracket (number + horizontal bar + left/right drops) above each tuplet sub-group at `staffY - 38`.
+- Beam grouping is **beat-boundary-aware**: consecutive 8th/16th notes beam within the same integer beat; separate beams for each beat pair (1-1&, 2-2&, etc.). Tuplet 8th/16th notes beam across beat boundaries within their own tuplet group.
+- `hrBar` groups consecutive same-tuplet events into sets of N and renders a bracket above each set.
+
+**`tests/hybridParser.test.mjs`** — 2 new tests
+- `tN flag on events sets ev.tuplet to the tuplet group size`
+- `tN flag combines correctly with accent and muted flags`
+
+**`tests/gpCsmpnConverter.test.mjs`** — 2 new tests
+- `_buildCsmpnFromScore: triplet beats emit t3 annotation in hybrid events`
+- `_buildCsmpnFromScore: non-tuplet beats do not emit tN annotation`
+
+Total: **657 tests** (294 `npm test` + 363 `test:parsers`)

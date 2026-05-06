@@ -222,9 +222,10 @@ const HR_STEM_TY = -14;
 const HR_TAB_SEP = 12;
 const HR_TAB_LG  = 8;
 const HR_TAB_H   = 40;
-const HR_SYS_BOT = 22;
-const HR_SLBL_H  = 20;
-const HR_CUE_H   = 14;
+const HR_SYS_BOT   = 22;
+const HR_SLBL_H    = 20;
+const HR_CUE_H     = 14;
+const HR_TUPLET_H  = 14;
 
 const HR_DIAG_STRING_GAP = 9;
 const HR_DIAG_FRET_GAP   = 10;
@@ -270,6 +271,16 @@ function hrFlags(cx, stemTopY, n, col) {
 
 function hrBeam(x1, x2, y, col) {
   return `<rect x="${x1+6}" y="${y-2}" width="${x2-x1}" height="3.5" fill="${col}" rx="0.5"/>`;
+}
+
+function hrTupletBracket(x1, x2, topY, n, col) {
+  const mid = (x1 + x2) / 2;
+  return (
+    `<text x="${mid}" y="${topY + 3}" font-size="8" fill="${col}" text-anchor="middle" font-family="Georgia,serif">${n}</text>` +
+    hrL(x1, topY + 5, x2, topY + 5, col, 1) +
+    hrL(x1, topY + 5, x1, topY + 10, col, 1) +
+    hrL(x2, topY + 5, x2, topY + 10, col, 1)
+  );
 }
 
 function hrRest(cx, cy, dur, col) {
@@ -417,12 +428,24 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
     s += `<line x1="${ul + 22}" y1="${pmY - 3}" x2="${barLeft + barW - HR_BAR_PAD}" y2="${pmY - 3}" stroke="${fg}" stroke-width="1" stroke-dasharray="3,2"/>`;
   }
 
+  // Beam grouping: consecutive e/s events within the same integer beat are beamed together.
+  // Tuplet events (ev.tuplet > 0) beam across beat boundaries within their tuplet group.
   const beamOf = new Array(events.length).fill(-1);
   let gi = 0;
   for (let i = 0; i < events.length; ) {
     if (events[i].type !== 'slash' || !['e', 's'].includes(events[i].duration)) { i++; continue; }
+    const isTuplet = events[i].tuplet > 0;
+    const tupletN  = events[i].tuplet;
+    const beatGrp  = Math.floor(events[i].beat);
     let j = i + 1;
-    while (j < events.length && events[j].type === 'slash' && ['e', 's'].includes(events[j].duration)) j++;
+    while (j < events.length && events[j].type === 'slash' && ['e', 's'].includes(events[j].duration)) {
+      if (isTuplet) {
+        if (events[j].tuplet !== tupletN) break;
+      } else {
+        if (events[j].tuplet > 0 || Math.floor(events[j].beat) !== beatGrp) break;
+      }
+      j++;
+    }
     if (j - i >= 2) { for (let k = i; k < j; k++) beamOf[k] = gi; gi++; }
     i = j;
   }
@@ -451,6 +474,24 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
     const bx1 = xs[idxs[0]], bx2 = xs[idxs[idxs.length - 1]];
     s += hrBeam(bx1, bx2, stemTopY, fg);
     if (events[idxs[0]].duration === 's') s += hrBeam(bx1, bx2, stemTopY + 6, fg);
+  }
+
+  // Tuplet brackets: ⌐ N ¬ above groups of notes sharing the same tuplet value
+  if (events.some((ev) => ev.tuplet > 0)) {
+    const bracketY = staffY - 38;
+    for (let ti = 0; ti < events.length; ) {
+      const n = events[ti].tuplet || 0;
+      if (!n) { ti++; continue; }
+      let tj = ti + 1;
+      while (tj < events.length && events[tj].tuplet === n) tj++;
+      // Split into sub-groups of n events each and render a bracket per sub-group
+      for (let tk = ti; tk < tj; tk += n) {
+        const grpEnd = Math.min(tk + n - 1, tj - 1);
+        if (grpEnd > tk)
+          s += hrTupletBracket(xs[tk], xs[grpEnd] + 9, bracketY, n, fg);
+      }
+      ti = tj;
+    }
   }
 
   // Render bar-level chord token at beat-1 when no per-event chord is set
@@ -516,9 +557,10 @@ function renderHybridDoc(sourceText) {
       const rowBars = sec.bars.slice(i, i + bpr);
       systems.push({
         sec, rowBars, firstRow,
-        hasTab: rowBars.some((b) => b.tabEvents?.length > 0),
-        hasPM:  rowBars.some((b) => b.pm?.bar || b.pm?.spans?.length > 0),
-        hasCue: rowBars.some((b) => b.cueText),
+        hasTab:    rowBars.some((b) => b.tabEvents?.length > 0),
+        hasPM:     rowBars.some((b) => b.pm?.bar || b.pm?.spans?.length > 0),
+        hasCue:    rowBars.some((b) => b.cueText),
+        hasTuplet: rowBars.some((b) => b.events?.some((e) => e.tuplet > 0)),
         secCue: firstRow ? sec.cueText : '',
       });
       firstRow = false;
@@ -551,11 +593,12 @@ function renderHybridDoc(sourceText) {
   for (const sys of systems) {
     sys.y = curY;
     let h = HR_CHORD_H + HR_STAFF_H + HR_SYS_BOT;
-    if (sys.firstRow) h += HR_SLBL_H;
-    if (sys.secCue)   h += HR_CUE_H;
-    if (sys.hasPM)    h += HR_PM_H;
-    if (sys.hasTab)   h += HR_TAB_SEP + HR_TAB_H;
-    if (sys.hasCue)   h += HR_CUE_H;
+    if (sys.firstRow)  h += HR_SLBL_H;
+    if (sys.secCue)    h += HR_CUE_H;
+    if (sys.hasPM)     h += HR_PM_H;
+    if (sys.hasTab)    h += HR_TAB_SEP + HR_TAB_H;
+    if (sys.hasCue)    h += HR_CUE_H;
+    if (sys.hasTuplet) h += HR_TUPLET_H;
     sys.h = h;
     curY += h;
   }
@@ -599,7 +642,7 @@ function renderHybridDoc(sourceText) {
       y += HR_CUE_H;
     }
 
-    const staffY = y + HR_CHORD_H + (sys.hasPM ? HR_PM_H : 0);
+    const staffY = y + HR_CHORD_H + (sys.hasPM ? HR_PM_H : 0) + (sys.hasTuplet ? HR_TUPLET_H : 0);
     const tabY   = staffY + HR_STAFF_H + HR_TAB_SEP;
     const blBot  = sys.hasTab ? tabY + HR_TAB_H : staffY + HR_STAFF_H;
 

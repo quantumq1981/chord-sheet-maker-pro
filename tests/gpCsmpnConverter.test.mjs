@@ -816,3 +816,61 @@ test('_buildCsmpnFromScore: six quarter-note triplets fill one bar without beat 
   assert.ok(csmpn.includes('{hybrid'), 'Hybrid block should be present: ' + csmpn);
   assert.ok(csmpn.includes('1:'), 'First triplet emitted at beat 1: ' + csmpn);
 });
+
+// ── Tuplet annotation in hybrid events ───────────────────────────────────────
+
+test('_buildCsmpnFromScore: triplet beats emit t3 annotation in hybrid events', () => {
+  const tripletBeat = {
+    chord: { name: 'G' },
+    duration: 4,
+    dots: 0,
+    isRest: false,
+    tupletNumerator: 3,
+    tupletDenominator: 2,
+    notes: [],
+  };
+  const score = makeScore({
+    tracks: [
+      {
+        isPercussion: false,
+        staves: [
+          {
+            tuning: [64, 59, 55, 50, 45, 40],
+            bars: [
+              makeMockBar([
+                tripletBeat,
+                tripletBeat,
+                tripletBeat,
+                tripletBeat,
+                tripletBeat,
+                tripletBeat,
+              ]),
+              makeMockBar([
+                { chord: { name: 'Am' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+              makeMockBar([
+                { chord: { name: 'F' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+              makeMockBar([
+                { chord: { name: 'C' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const csmpn = _buildCsmpnFromScore(score, { includeTab: false, includeHybrid: true });
+  assert.ok(csmpn.includes('t3'), 'Triplet beats should carry t3 annotation: ' + csmpn);
+  // The bar1 hybrid line (may be indented) must contain t3
+  const bar1Line = csmpn.split('\n').find((l) => /bar1:|b1:/.test(l)) || '';
+  assert.ok(bar1Line.includes('t3'), 'bar1 hybrid events should all carry t3: ' + bar1Line);
+});
+
+test('_buildCsmpnFromScore: non-tuplet beats do not emit tN annotation', () => {
+  const score = makeScore({});
+  const csmpn = _buildCsmpnFromScore(score, { includeTab: false, includeHybrid: true });
+  // Default score has no tuplets — no tN flags should appear
+  assert.ok(!csmpn.includes('t3'), 'Non-tuplet score must not contain t3: ' + csmpn);
+  assert.ok(!/t\d/.test(csmpn), 'Non-tuplet score must not contain any tN flag: ' + csmpn);
+});
