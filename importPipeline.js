@@ -2379,7 +2379,8 @@ async function importUGProPDF(file){
         str: (it.str ?? "").toString(),
         x: it.transform[4] ?? 0,
         y: it.transform[5] ?? 0,
-        w: Math.abs(it.width ?? 0)
+        w: Math.abs(it.width ?? 0),
+        fontSize: Math.hypot(it.transform[0], it.transform[1]) || 12
       }))
       .filter(it => it.str && it.str.trim());
     totalTextItems += allPageItems.length;
@@ -2411,13 +2412,30 @@ async function importUGProPDF(file){
         if (sorted[i + 4] - sorted[i] <= 30) { _tabLabelXSet.add(xk); break; }
       }
     }
-    const items = _tabLabelXSet.size > 0
+    let items = _tabLabelXSet.size > 0
       ? metaFiltered.filter(it => {
           const s = it.str.trim();
           if (s.length !== 1 || !/^[A-Ga-g]$/.test(s)) return true;
           return !_tabLabelXSet.has(Math.round(it.x / 10) * 10);
         })
       : metaFiltered;
+
+    // Font-size floor: chord symbols are in a noticeably larger font than
+    // measure numbers, fret numbers, and small annotations (fingerings, bowing
+    // marks, etc.). Use 65% of the median 1-3-char chord-root span size as the
+    // floor and discard everything below it.
+    {
+      const _rootSamples = items.filter(it => {
+        const s = it.str.trim();
+        return /^[A-Ga-g]/.test(s) && s.length <= 3;
+      });
+      if (_rootSamples.length >= 3) {
+        const _sizes = _rootSamples.map(it => it.fontSize).sort((a, b) => a - b);
+        const _median = _sizes[Math.floor(_sizes.length / 2)];
+        const _floor = _median * 0.65;
+        items = items.filter(it => it.fontSize >= _floor);
+      }
+    }
 
     // Threshold-based y-clustering replaces the old 0.5pt fixed-bucket approach.
     // MuseScore chord symbols in the same staff system can sit at slightly
@@ -2439,32 +2457,57 @@ async function importUGProPDF(file){
     for (const lg of lineGroups) {
       const lineItems = lg.items.slice().sort((a, b) => a.x - b.x);
 
-      // Merge chord-quality fragments split across PDF text runs.
-      // UG Pro PDFs often encode "Em7" as two spans: "E" then "m7" (different
-      // font weights). Without merging, only "E" is captured as a chord and
-      // the quality suffix is lost. Merge consecutive spans when: (a) x-gap
-      // is ≤ 30 pt (fragment, not a separate chord), (b) the suffix span is
-      // not a valid standalone chord by itself, and (c) the combined text
-      // is a valid chord token.
-      const FRAG_GAP = 30;
-      const mergedSpans = [];
+      // Two-phase chord-fragment reconstruction:
+      //
+      // Phase 1 — tight clustering (≤ 5 pt gap): group spans that are
+      // physically adjacent into raw clusters. This captures all the pieces
+      // of a single chord symbol even when individual pieces happen to be
+      // standalone valid chords (e.g. "G"+"a"+"d"+"d"+"9" for Gadd9, or
+      // "E"+"b"+"7M" for Eb7M where "b" alone would be "B minor").
+      //
+      // Phase 2 — cluster validation: if the cluster's combined text is a
+      // valid chord token, emit it as one token. If not (two genuinely
+      // separate chords happened to land within 5pt), fall back to a greedy
+      // left-to-right merge of the cluster's individual parts using the
+      // original suffix-only rule (don't merge if the suffix is itself a
+      // valid standalone chord at > 5pt gap).
+      const INTRA_GAP = 5;
+      const rawClusters = [];
       for (const it of lineItems) {
         const s = it.str.trim();
         if (!s) continue;
-        const prev = mergedSpans[mergedSpans.length - 1];
-        const gap = prev != null ? it.x - (prev.x + prev.w) : Infinity;
-        const combined = prev ? prev.str + s : '';
-        if (
-          prev != null &&
-          gap < FRAG_GAP &&
-          !isChordLikeTokenPDF(s) &&
-          !/^\|/.test(s) &&
-          isChordLikeTokenPDF(combined)
-        ) {
-          prev.str = combined;
-          prev.w = Math.max(prev.w, it.x + it.w - prev.x);
+        const prev = rawClusters[rawClusters.length - 1];
+        const gap = prev ? it.x - (prev.x + prev.w) : Infinity;
+        if (prev && gap < INTRA_GAP) {
+          prev.str += s;
+          prev.w = it.x + it.w - prev.x;
+          prev.parts.push(s);
         } else {
-          mergedSpans.push({ str: s, x: it.x, w: it.w });
+          rawClusters.push({ str: s, x: it.x, w: it.w, parts: [s] });
+        }
+      }
+
+      const mergedSpans = [];
+      for (const cl of rawClusters) {
+        if (cl.parts.length === 1 || isChordLikeTokenPDF(cl.str)) {
+          mergedSpans.push({ str: cl.str });
+        } else {
+          // Cluster as a whole is not a valid chord — greedy sub-merge
+          let acc = null;
+          for (const part of cl.parts) {
+            if (acc === null) {
+              acc = part;
+            } else {
+              const combined = acc + part;
+              if (!isChordLikeTokenPDF(part) && isChordLikeTokenPDF(combined)) {
+                acc = combined;
+              } else {
+                mergedSpans.push({ str: acc });
+                acc = part;
+              }
+            }
+          }
+          if (acc !== null) mergedSpans.push({ str: acc });
         }
       }
 
