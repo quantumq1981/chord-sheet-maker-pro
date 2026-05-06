@@ -2378,14 +2378,46 @@ async function importUGProPDF(file){
       .map(it => ({
         str: (it.str ?? "").toString(),
         x: it.transform[4] ?? 0,
-        y: it.transform[5] ?? 0
+        y: it.transform[5] ?? 0,
+        w: Math.abs(it.width ?? 0)
       }))
       .filter(it => it.str && it.str.trim());
     totalTextItems += allPageItems.length;
     pageBoundaries.push({ page: p, startLine: extractedTextLines.length });
 
     // Strip metadata spans before clustering (tuning lines, capo lines, etc.)
-    const items = allPageItems.filter(it => !PDF_META_SKIP_RE.test(it.str));
+    const metaFiltered = allPageItems.filter(it => !PDF_META_SKIP_RE.test(it.str));
+
+    // Detect and remove guitar tab string-label columns.
+    // In tab PDFs the string names (e B G D A E) appear as a vertical column
+    // of single [A-G] letters at the same x-position — each passes isChordToken
+    // as a single-letter chord, inflating bar counts by ~6 per system.
+    // Heuristic: if 5+ single [A-G] letters share an x-bucket (±10 pt) and
+    // any 5 consecutive ones (by y) span ≤ 30 pt, treat that x as a string-
+    // label column and remove its single-letter items.
+    const _xBuckets = new Map();
+    for (const it of metaFiltered) {
+      const s = it.str.trim();
+      if (s.length === 1 && /^[A-Ga-g]$/.test(s)) {
+        const xk = Math.round(it.x / 10) * 10;
+        if (!_xBuckets.has(xk)) _xBuckets.set(xk, []);
+        _xBuckets.get(xk).push(it.y);
+      }
+    }
+    const _tabLabelXSet = new Set();
+    for (const [xk, ys] of _xBuckets) {
+      const sorted = ys.slice().sort((a, b) => a - b);
+      for (let i = 0; i <= sorted.length - 5; i++) {
+        if (sorted[i + 4] - sorted[i] <= 30) { _tabLabelXSet.add(xk); break; }
+      }
+    }
+    const items = _tabLabelXSet.size > 0
+      ? metaFiltered.filter(it => {
+          const s = it.str.trim();
+          if (s.length !== 1 || !/^[A-Ga-g]$/.test(s)) return true;
+          return !_tabLabelXSet.has(Math.round(it.x / 10) * 10);
+        })
+      : metaFiltered;
 
     // Threshold-based y-clustering replaces the old 0.5pt fixed-bucket approach.
     // MuseScore chord symbols in the same staff system can sit at slightly
@@ -2406,8 +2438,37 @@ async function importUGProPDF(file){
 
     for (const lg of lineGroups) {
       const lineItems = lg.items.slice().sort((a, b) => a.x - b.x);
-      // Join while preserving short gaps; PDF.js tends to split pipes and chords
-      const rawLine = lineItems.map(it => it.str).join(" ");
+
+      // Merge chord-quality fragments split across PDF text runs.
+      // UG Pro PDFs often encode "Em7" as two spans: "E" then "m7" (different
+      // font weights). Without merging, only "E" is captured as a chord and
+      // the quality suffix is lost. Merge consecutive spans when: (a) x-gap
+      // is ≤ 30 pt (fragment, not a separate chord), (b) the suffix span is
+      // not a valid standalone chord by itself, and (c) the combined text
+      // is a valid chord token.
+      const FRAG_GAP = 30;
+      const mergedSpans = [];
+      for (const it of lineItems) {
+        const s = it.str.trim();
+        if (!s) continue;
+        const prev = mergedSpans[mergedSpans.length - 1];
+        const gap = prev != null ? it.x - (prev.x + prev.w) : Infinity;
+        const combined = prev ? prev.str + s : '';
+        if (
+          prev != null &&
+          gap < FRAG_GAP &&
+          !isChordLikeTokenPDF(s) &&
+          !/^\|/.test(s) &&
+          isChordLikeTokenPDF(combined)
+        ) {
+          prev.str = combined;
+          prev.w = Math.max(prev.w, it.x + it.w - prev.x);
+        } else {
+          mergedSpans.push({ str: s, x: it.x, w: it.w });
+        }
+      }
+
+      const rawLine = mergedSpans.map(sp => sp.str).join(' ');
       const line = normLine(rawLine);
       if (!line) continue;
       extractedTextLines.push(line);
