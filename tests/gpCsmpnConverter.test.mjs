@@ -574,8 +574,12 @@ test('_buildCsmpnFromScore: normalized chord names appear in bar lines without o
               makeMockBar([
                 { chord: { name: 'C7M(8)' }, duration: 4, dots: 0, isRest: false, notes: [] },
               ]),
-              makeMockBar([{ chord: { name: 'Dm' }, duration: 4, dots: 0, isRest: false, notes: [] }]),
-              makeMockBar([{ chord: { name: 'Bb' }, duration: 4, dots: 0, isRest: false, notes: [] }]),
+              makeMockBar([
+                { chord: { name: 'Dm' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+              makeMockBar([
+                { chord: { name: 'Bb' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
             ],
           },
         ],
@@ -588,10 +592,16 @@ test('_buildCsmpnFromScore: normalized chord names appear in bar lines without o
     .split('\n')
     .filter((l) => l.startsWith('|'))
     .join('\n');
-  assert.ok(!barLines.includes('(Gm7)'), 'Bar lines must not contain outer-paren chord: ' + barLines);
+  assert.ok(
+    !barLines.includes('(Gm7)'),
+    'Bar lines must not contain outer-paren chord: ' + barLines
+  );
   assert.ok(barLines.includes('Gm7'), 'Normalized chord should appear in bar lines: ' + barLines);
   // "C7M(8)" → "C7M8": numeric-extension parens collapsed in bar lines
-  assert.ok(!barLines.includes('C7M(8)'), 'Numeric-extension paren should be collapsed in bar lines');
+  assert.ok(
+    !barLines.includes('C7M(8)'),
+    'Numeric-extension paren should be collapsed in bar lines'
+  );
   assert.ok(barLines.includes('C7M8'), 'Collapsed chord should appear in bar lines: ' + barLines);
   // Hybrid events must NOT have double parens: "1:q((Gm7))" is the broken form
   assert.ok(!csmpn.includes('((Gm7))'), 'Hybrid events must not have double parens');
