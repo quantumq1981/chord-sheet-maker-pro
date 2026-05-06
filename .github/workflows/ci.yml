@@ -65,7 +65,7 @@ jobs:
         run: npm run format:check
 
       - name: Syntax-check root JS files
-        run: node --check renderer.js importPipeline.js settings.js utils.js chordProcessing.js csmpnParser.js
+        run: node --check renderer.js importPipeline.js settings.js utils.js chordProcessing.js csmpnParser.js importGuitarPro.js
 
   # ── Deploy to GitHub Pages ───────────────────────────────────────────────────
   deploy:
@@ -97,7 +97,7 @@ jobs:
       - name: Copy static root files into dist
         run: |
           cp index.html settings.js renderer.js importPipeline.js \
-             utils.js chordProcessing.js csmpnParser.js \
+             utils.js chordProcessing.js csmpnParser.js importGuitarPro.js \
              ug-txt-importer.html dist/
 
       - name: Setup Pages
