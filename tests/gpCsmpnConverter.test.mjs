@@ -36,6 +36,7 @@ const {
   _cumQToHybridPos,
   _gpDurToQuarters,
   _gpDurToLetter,
+  _normalizeGpChordName,
 } = gp;
 
 // ── Key-signature mapping ─────────────────────────────────────────────────────
@@ -480,6 +481,122 @@ test('_buildCsmpnFromScore: handles empty score gracefully', () => {
   const score = { title: '', artist: '', tempo: 0, masterBars: [], tracks: [] };
   const csmpn = _buildCsmpnFromScore(score, {});
   assert.equal(csmpn, '');
+});
+
+// ── _normalizeGpChordName ─────────────────────────────────────────────────────
+
+test('_normalizeGpChordName: strips outer parentheses', () => {
+  assert.equal(_normalizeGpChordName('(Gm7)'), 'Gm7');
+});
+
+test('_normalizeGpChordName: collapses parenthesized numeric extensions', () => {
+  assert.equal(_normalizeGpChordName('C7M(8)'), 'C7M8');
+});
+
+test('_normalizeGpChordName: strips numeric extension inside slash chord', () => {
+  assert.equal(_normalizeGpChordName('Bm7/5+(7)'), 'Bm7/5+7');
+});
+
+test('_normalizeGpChordName: leaves normal chord names unchanged', () => {
+  assert.equal(_normalizeGpChordName('Gm7'), 'Gm7');
+  assert.equal(_normalizeGpChordName('Cmaj7'), 'Cmaj7');
+  assert.equal(_normalizeGpChordName('D/F#'), 'D/F#');
+});
+
+test('_normalizeGpChordName: handles null/empty gracefully', () => {
+  assert.equal(_normalizeGpChordName(null), null);
+  assert.equal(_normalizeGpChordName(''), '');
+});
+
+// ── Position deduplication (16th-note overlap fix) ────────────────────────────
+
+test('_buildCsmpnFromScore: deduplicates hybrid positions for 16th-note bars', () => {
+  // Four 16th notes per bar: cumQ 0, 0.25, 0.5, 0.75 → positions "1", "1", "1&", "1&"
+  // After dedup: only "1" and "1&" should appear once each
+  const score = makeScore({
+    tracks: [
+      {
+        isPercussion: false,
+        staves: [
+          {
+            tuning: [64, 59, 55, 50, 45, 40],
+            bars: [
+              makeMockBar([
+                { chord: { name: 'G' }, duration: 16, dots: 0, isRest: false, notes: [] },
+                { chord: { name: 'G' }, duration: 16, dots: 0, isRest: false, notes: [] },
+                { chord: { name: 'G' }, duration: 16, dots: 0, isRest: false, notes: [] },
+                { chord: { name: 'G' }, duration: 16, dots: 0, isRest: false, notes: [] },
+                { chord: { name: 'G' }, duration: 16, dots: 0, isRest: false, notes: [] },
+                { chord: { name: 'G' }, duration: 16, dots: 0, isRest: false, notes: [] },
+                { chord: { name: 'G' }, duration: 16, dots: 0, isRest: false, notes: [] },
+                { chord: { name: 'G' }, duration: 16, dots: 0, isRest: false, notes: [] },
+              ]),
+              makeMockBar([
+                { chord: { name: 'C' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+              makeMockBar([
+                { chord: { name: 'D' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+              makeMockBar([
+                { chord: { name: 'Em' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const csmpn = _buildCsmpnFromScore(score, { includeTab: false, includeHybrid: true });
+  // Extract the hybrid block
+  const hybridMatch = csmpn.match(/\{hybrid([\s\S]*?)\}/);
+  assert.ok(hybridMatch, 'Should contain a {hybrid} block');
+  const bar1Line = hybridMatch[1].split('\n').find((l) => l.trim().startsWith('bar1:'));
+  assert.ok(bar1Line, 'Should have a bar1: line');
+  // Count occurrences of "1:" and "1&:" — should be exactly one each
+  const pos1Count = (bar1Line.match(/\b1:/g) || []).length;
+  const pos1andCount = (bar1Line.match(/\b1&:/g) || []).length;
+  assert.equal(pos1Count, 1, 'Position "1" should appear exactly once: ' + bar1Line);
+  assert.equal(pos1andCount, 1, 'Position "1&" should appear exactly once: ' + bar1Line);
+});
+
+test('_buildCsmpnFromScore: normalized chord names appear in bar lines without outer parens', () => {
+  const score = makeScore({
+    tracks: [
+      {
+        isPercussion: false,
+        staves: [
+          {
+            tuning: [64, 59, 55, 50, 45, 40],
+            bars: [
+              makeMockBar([
+                { chord: { name: '(Gm7)' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+              makeMockBar([
+                { chord: { name: 'C7M(8)' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+              makeMockBar([{ chord: { name: 'Dm' }, duration: 4, dots: 0, isRest: false, notes: [] }]),
+              makeMockBar([{ chord: { name: 'Bb' }, duration: 4, dots: 0, isRest: false, notes: [] }]),
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const csmpn = _buildCsmpnFromScore(score, { includeTab: false, includeHybrid: true });
+  // Bar lines must not contain outer-paren chord names (CSMPN repeat-group false positive)
+  const barLines = csmpn
+    .split('\n')
+    .filter((l) => l.startsWith('|'))
+    .join('\n');
+  assert.ok(!barLines.includes('(Gm7)'), 'Bar lines must not contain outer-paren chord: ' + barLines);
+  assert.ok(barLines.includes('Gm7'), 'Normalized chord should appear in bar lines: ' + barLines);
+  // "C7M(8)" → "C7M8": numeric-extension parens collapsed in bar lines
+  assert.ok(!barLines.includes('C7M(8)'), 'Numeric-extension paren should be collapsed in bar lines');
+  assert.ok(barLines.includes('C7M8'), 'Collapsed chord should appear in bar lines: ' + barLines);
+  // Hybrid events must NOT have double parens: "1:q((Gm7))" is the broken form
+  assert.ok(!csmpn.includes('((Gm7))'), 'Hybrid events must not have double parens');
+  // Hybrid events DO have single parens around the normalized chord name
+  assert.ok(csmpn.includes('(Gm7)'), 'Hybrid event should have chord in single parens');
 });
 
 test('_buildCsmpnFromScore: respects barsPerRow option', () => {

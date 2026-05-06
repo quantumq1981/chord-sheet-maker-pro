@@ -163,6 +163,25 @@ function _fretsToChordName(openMidi, notes) {
   return null;
 }
 
+// ── Chord name normalization ──────────────────────────────────────────────────
+
+/**
+ * Normalize AlphaTab chord names to CSMPN-safe strings.
+ * 1. Strips outer parentheses: "(Gm7)" → "Gm7"
+ *    (prevents CSMPN repeat-group false-positive when the name appears in bar lines)
+ * 2. Collapses parenthesized numeric-only extensions: "C7M(8)" → "C7M8"
+ *    (prevents the hybrid token regex from failing on nested parens)
+ */
+function _normalizeGpChordName(name) {
+  if (!name) return name;
+  name = name.trim();
+  // Strip outer parens: "(Gm7)" → "Gm7"
+  name = name.replace(/^\(([^)]+)\)$/, '$1');
+  // Collapse parenthesized numeric extensions: "C7M(8)" → "C7M8"
+  name = name.replace(/\((\d+)\)/g, '$1');
+  return name.trim();
+}
+
 // ── Key-signature mapping ─────────────────────────────────────────────────────
 
 /** Maps AlphaTab keySignature integer (−7…+7) and keySignatureType (0=Maj,1=Min) to a key string. */
@@ -273,7 +292,7 @@ function _findChordTrack(tracks) {
  */
 function _extractChord(beat, openMidi) {
   var explicit = beat && beat.chord && beat.chord.name;
-  if (explicit) return explicit.trim() || null;
+  if (explicit) return _normalizeGpChordName(explicit) || null;
 
   var notes = beat && beat.notes ? (Array.from ? Array.from(beat.notes) : [].slice.call(beat.notes)) : [];
   var sounding = notes
@@ -372,6 +391,10 @@ function _buildCsmpnFromScore(score, opts) {
     var hybridParts = [];
     var cumQ = 0;
     var hybridChordActive = null;
+    // Track emitted half-beat positions so 16th notes don't generate duplicates.
+    // The hybrid system has 8th-note (half-beat) resolution; finer durations
+    // from GP files collapse onto the same slot and must be deduplicated.
+    var seenHybridPos = Object.create(null);
 
     for (var bi = 0; bi < beats.length; bi++) {
       var beat = beats[bi];
@@ -397,17 +420,19 @@ function _buildCsmpnFromScore(score, opts) {
       var pos = _cumQToHybridPos(cumQ);
       var durLetter = _gpDurToLetter(durVal);
 
-      if (isRest) {
-        hybridParts.push(pos + ':r' + durLetter);
-      } else {
-        var chordChanged = chord && chord !== hybridChordActive;
-        if (chordChanged) {
-          hybridParts.push(pos + ':' + durLetter + '(' + chord + ')');
-          hybridChordActive = chord;
+      if (!seenHybridPos[pos]) {
+        if (isRest) {
+          hybridParts.push(pos + ':r' + durLetter);
+          seenHybridPos[pos] = true;
         } else {
-          // Only emit non-rest beat if it actually contributes a chord or note
-          if (chord) {
+          var chordChanged = chord && chord !== hybridChordActive;
+          if (chordChanged) {
+            hybridParts.push(pos + ':' + durLetter + '(' + chord + ')');
+            hybridChordActive = chord;
+            seenHybridPos[pos] = true;
+          } else if (chord) {
             hybridParts.push(pos + ':' + durLetter);
+            seenHybridPos[pos] = true;
           }
         }
       }
@@ -572,4 +597,5 @@ var _GP_TEST_EXPORTS = {
   _cumQToHybridPos: _cumQToHybridPos,
   _gpDurToQuarters: _gpDurToQuarters,
   _gpDurToLetter: _gpDurToLetter,
+  _normalizeGpChordName: _normalizeGpChordName,
 };

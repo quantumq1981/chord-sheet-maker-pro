@@ -196,3 +196,21 @@ test('compact muted token (1qx) is parsed correctly', () => {
   assert.equal(out.sections[0].bars[0].events[0].muted, true);
   assert.equal(out.sections[0].bars[0].events[1].muted, false);
 });
+
+test('chord names with nested parentheses parse without warnings', () => {
+  // AlphaTab can produce chord names like "C7M(8)", "Bm7/5+(7)", "(Gm7)"
+  // After normalization these become "C7M8", "Bm7/5+7", "Gm7" — but even
+  // with the original names the regex fix must handle them without dropping events.
+  const parseHybridChartFromCSMPN = loadHybridParser();
+  const out = parseHybridChartFromCSMPN(
+    `- Verse\n| C7M8 | Bm7 | Gm7 | C |\n{hybrid\nbar1: 1:q(C7M8) 2&:e(Bm7b5) 3:h(Dm6)\nbar2: 1:h(Gm7) 3:h\n}`
+  );
+
+  assert.equal(out.active, true);
+  // bar1 should have 3 events successfully parsed
+  assert.equal(out.sections[0].bars[0].events.length, 3, 'All 3 events should parse');
+  assert.equal(out.sections[0].bars[0].events[0].chord, 'C7M8');
+  assert.equal(out.sections[0].bars[0].events[1].chord, 'Bm7b5');
+  // No warnings for these tokens
+  assert.equal(out.warnings.filter((w) => w.includes('Unrecognized')).length, 0);
+});
