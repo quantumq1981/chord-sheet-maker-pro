@@ -156,6 +156,19 @@ test('_gpDurToQuarters: dotted quarter = 1.5', () => {
   assert.equal(_gpDurToQuarters(4, 1), 1.5);
 });
 
+test('_gpDurToQuarters: quarter-note triplet (3:2) ≈ 0.667', () => {
+  assert.ok(Math.abs(_gpDurToQuarters(4, 0, 3, 2) - 2 / 3) < 0.0001);
+});
+
+test('_gpDurToQuarters: 8th-note triplet (3:2) ≈ 0.333', () => {
+  assert.ok(Math.abs(_gpDurToQuarters(8, 0, 3, 2) - 1 / 3) < 0.0001);
+});
+
+test('_gpDurToQuarters: dotted-quarter triplet combines both factors', () => {
+  // dotted quarter = 1.5; tuplet 3:2 → 1.5 * (2/3) = 1.0
+  assert.ok(Math.abs(_gpDurToQuarters(4, 1, 3, 2) - 1.0) < 0.0001);
+});
+
 test('_gpDurToLetter: quarter → q', () => {
   assert.equal(_gpDurToLetter(4), 'q');
 });
@@ -646,4 +659,160 @@ test('_buildCsmpnFromScore: respects barsPerRow option', () => {
     const pipes = (row.match(/\|/g) || []).length;
     assert.equal(pipes, 3, 'Row should have 3 pipes (2 bars): ' + row);
   });
+});
+
+// ── Repeat barline emission ───────────────────────────────────────────────────
+
+test('_buildCsmpnFromScore: emits |: for repeat-start bar and :| for repeat-end bar', () => {
+  const score = makeScore({
+    masterBars: [
+      {
+        keySignature: 0,
+        keySignatureType: 0,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+        section: null,
+        isRepeatStart: true,
+        isRepeatEnd: false,
+        alternateEndings: 0,
+      },
+      {
+        keySignature: 0,
+        keySignatureType: 0,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+        section: null,
+        isRepeatStart: false,
+        isRepeatEnd: false,
+        alternateEndings: 0,
+      },
+      {
+        keySignature: 0,
+        keySignatureType: 0,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+        section: null,
+        isRepeatStart: false,
+        isRepeatEnd: false,
+        alternateEndings: 0,
+      },
+      {
+        keySignature: 0,
+        keySignatureType: 0,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+        section: null,
+        isRepeatStart: false,
+        isRepeatEnd: true,
+        alternateEndings: 0,
+      },
+    ],
+  });
+  const csmpn = _buildCsmpnFromScore(score, { includeTab: false, includeHybrid: false });
+  assert.ok(csmpn.includes('|:'), 'Should contain repeat-start barline: ' + csmpn);
+  assert.ok(csmpn.includes(':|'), 'Should contain repeat-end barline: ' + csmpn);
+});
+
+// ── Volta bracket emission ────────────────────────────────────────────────────
+
+test('_buildCsmpnFromScore: emits 1. and 2. volta prefixes for alternate endings', () => {
+  const score = makeScore({
+    masterBars: [
+      {
+        keySignature: 0,
+        keySignatureType: 0,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+        section: null,
+        isRepeatStart: false,
+        isRepeatEnd: false,
+        alternateEndings: 0,
+      },
+      {
+        keySignature: 0,
+        keySignatureType: 0,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+        section: null,
+        isRepeatStart: false,
+        isRepeatEnd: false,
+        alternateEndings: 0,
+      },
+      {
+        keySignature: 0,
+        keySignatureType: 0,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+        section: null,
+        isRepeatStart: false,
+        isRepeatEnd: true,
+        alternateEndings: 1,
+      },
+      {
+        keySignature: 0,
+        keySignatureType: 0,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+        section: null,
+        isRepeatStart: false,
+        isRepeatEnd: true,
+        alternateEndings: 2,
+      },
+    ],
+  });
+  const csmpn = _buildCsmpnFromScore(score, { includeTab: false, includeHybrid: false });
+  assert.ok(csmpn.includes('1. '), 'Should contain first-volta prefix: ' + csmpn);
+  assert.ok(csmpn.includes('2. '), 'Should contain second-volta prefix: ' + csmpn);
+});
+
+// ── Tuplet cumQ accuracy (no bar overflow) ────────────────────────────────────
+
+test('_buildCsmpnFromScore: six quarter-note triplets fill one bar without beat overflow', () => {
+  const tripletBeat = {
+    chord: { name: 'G' },
+    duration: 4,
+    dots: 0,
+    isRest: false,
+    tupletNumerator: 3,
+    tupletDenominator: 2,
+    notes: [],
+  };
+  const score = makeScore({
+    tracks: [
+      {
+        isPercussion: false,
+        staves: [
+          {
+            tuning: [64, 59, 55, 50, 45, 40],
+            bars: [
+              makeMockBar([
+                tripletBeat,
+                tripletBeat,
+                tripletBeat,
+                tripletBeat,
+                tripletBeat,
+                tripletBeat,
+              ]),
+              makeMockBar([
+                { chord: { name: 'Am' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+              makeMockBar([
+                { chord: { name: 'F' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+              makeMockBar([
+                { chord: { name: 'C' }, duration: 4, dots: 0, isRest: false, notes: [] },
+              ]),
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const csmpn = _buildCsmpnFromScore(score, { includeTab: false, includeHybrid: true });
+  // Six quarter-note triplets = 6 × (2/3) = 4.0 quarter-beats — exactly one 4/4 bar.
+  // Hybrid positions must stay ≤ beat 4; beat 5 would indicate cumQ overflow.
+  assert.ok(!csmpn.includes('5:'), 'No beat-5 events (overflow check): ' + csmpn);
+  assert.ok(!csmpn.includes('5&:'), 'No beat-5& events (overflow check): ' + csmpn);
+  assert.ok(csmpn.includes('{hybrid'), 'Hybrid block should be present: ' + csmpn);
+  assert.ok(csmpn.includes('1:'), 'First triplet emitted at beat 1: ' + csmpn);
 });
