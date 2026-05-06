@@ -4,7 +4,7 @@
 ## Project Identity
 - **App:** Chord Sheet Maker Pro — music finishing app (not a primary converter)
 - **Developer:** iOS 16+ (iPhone/iPad) — no local console. GitHub Actions = the CI console.
-- **Branch:** `claude/fix-codex-agent-error-hy7VN` — all work goes here
+- **Branch:** `claude/guitar-pro-format-support-fLBZa` — all work goes here
 - **Optimization persona:** Opp the CoderOptimizer — prioritize clean architecture, performance, correctness
 
 ## Sprint 1 — Foundation Hardening ✅ COMPLETE
@@ -25,8 +25,9 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-05-04)
-- **291 tests passing** (`npm run test:all`) — 18 hybrid parser + 273 parser/exporter/utils tests
+## Current State (2026-05-06)
+- **333 tests passing** (`npm run test:all`) — 103 npm-test + 196 parser/exporter/utils + 42 new GP converter tests (added Sprint 12)
+- `tests/gpCsmpnConverter.test.mjs` added — 42 new tests for GP→CSMPN pure helpers
 - `tests/abcParser.test.ts` added — 21 new tests for modal key conversion + multi-voice extraction
 - **CI now syntax-checks root JS files** (`node --check`) — catches browser SyntaxErrors before GitHub Pages deploy
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
@@ -69,6 +70,7 @@
 | `src/utils/osmdHelpers.ts` | Pure OSMD/SVG/canvas utilities extracted from App.tsx |
 | `src/types/appTypes.ts` | Shared UI types: AppMode, ExportFeedback, ChordProUiState |
 | `src/components/ErrorBoundary.tsx` | ImportErrorBoundary + SlashNotationBoundary class components |
+| `importGuitarPro.js` | Guitar Pro binary importer (browser module): lazy AlphaTab CDN load, GP→CSMPN with {tab} + {hybrid} blocks |
 | `tests/` | Node.js native test runner + tsx loader for TypeScript tests |
 | `OPP_ROADMAP.md` | Full 7-phase optimization roadmap with sprint tracker — update it as work completes |
 
@@ -429,6 +431,7 @@ Generates a complete MusicXML 4.0 score from the current CSMPN source:
 | ~~Capo marker on TAB nut line~~ | ✅ Done — `tabCapoMarker()` in IIFE; `Capo:` meta field in `csmpnParser.js` (2026-04-21, Sprint 8.6) |
 | ~~Chord diagram grids~~ | ✅ Done — `chordDiagramSvg()` renders above first system when `{tab}` blocks present (2026-04-21, Sprint 8.7) |
 | ~~MusicXML with TAB frames~~ | ✅ Done — `buildFrameXml()` + `<frame>` injection in `buildMusicXml()` (2026-04-21, Sprint 8.8) |
+| ~~Guitar Pro import (.gp/.gp3/.gp4/.gp5/.gpx)~~ | ✅ Done — `importGuitarPro.js` lazy-loads AlphaTab CDN; emits CSMPN + `{tab}` + `{hybrid}` blocks for all three render modes (2026-05-06, Sprint 12, PR #204) |
 | Ghost notes / muted noteheads | Needs per-beat token syntax extension in CSMPN parser |
 | Hammer-on / Pull-off slurs | Requires note-pair coordinates — needs richer data model |
 | VexFlow integration | Full renderer rewrite; deferred pending need |
@@ -759,3 +762,43 @@ Answers "How should I articulate it?" and "Where do I play it?" from the 5 perfo
 - Chord extraction: slash chord `%` → `/`, fingering annotation filtering
 
 Total: **291 tests** (18 `npm test` + 273 `test:parsers`)
+
+## Sprint 12 — Guitar Pro Format Support ✅ COMPLETE (2026-05-06, PR #204)
+| # | Task | Status |
+|---|------|--------|
+| 12.1 | `importGuitarPro.js` — lazy AlphaTab CDN load + GP→CSMPN conversion | ✅ DONE |
+| 12.2 | `{tab}` voicing blocks from `beat.chord.strings` fingering frames | ✅ DONE |
+| 12.3 | `{hybrid}` blocks with beat-level duration + chord events (all positions) | ✅ DONE |
+| 12.4 | `index.html` wiring — button, file input, handler, auto-detect in main importer | ✅ DONE |
+| 12.5 | `tests/gpCsmpnConverter.test.mjs` — 42 new pure-function tests via vm.runInContext | ✅ DONE |
+
+## SPRINT 12 CHANGES (2026-05-06)
+
+**`importGuitarPro.js`** (new file, browser module)
+- Lazy CDN load: `https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.1/dist/alphaTab.min.js` — 0 cost until first GP file opened. Defensive API probe supports both CDN UMD (`window.alphaTab.Settings` / `window.alphaTab.importer.ScoreLoader`) and variant builds.
+- `_findChordTrack(tracks)` — scores all non-percussion tracks (+2 per `beat.chord.name`, +1 per beat with ≥3 sounding notes); identical algorithm to `src/parsers/gpParser.ts` T3.3 update.
+- `_extractChord(beat, openMidi)` — explicit annotation → fret-to-chord fallback. Fret-to-chord uses the same `_CHORD_PATTERNS` table as `src/utils/fretToChord.ts`, inlined for browser-global compatibility.
+- `_extractVoicing(beat, nStrings)` — reads `beat.chord.strings[]` for fingering frames; negative/null entries → `'x'`; returns `null` when all strings muted.
+- `_buildCsmpnFromScore(score, opts)` — emits `Title:/Composer:/Key:/Time:/Tempo:` header + section markers from `masterBar.section.text`, bar lines (`| chord1 | chord2 | … |`), optional `{tab}` voicing block per section (unique chords only, first-seen voicing wins), optional `{hybrid}` block per section with beat-level events at correct beat positions (`1`, `1&`, `2`, …) using `_cumQToHybridPos(cumQ)`.
+- `_gpKeyToStr(keySig, keyType)` — maps AlphaTab keySignature (−7…+7) + keySignatureType (0=Major, 1=Minor) to CSMPN key string (Eb, F#m, etc.).
+- `window.importGuitarProToCSMPN(bytes, opts)` — public async entry; calls `_loadAlphaTab()` then `_buildCsmpnFromScore()`.
+- `_GP_TEST_EXPORTS` object exposes all pure helpers to `vm.runInContext` tests.
+
+**`index.html` changes**
+- `<script defer src="importGuitarPro.js">` after VexFlow CDN script
+- `<input id="fileInputGuitarPro" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx" style="display:none">`
+- "Import Guitar Pro" button (`power-only`) in the button row after iReal Pro button
+- GP extension detection (`['.gp','.gp3','.gp4','.gp5','.gpx'].some(ext => name.endsWith(ext))`) inserted before PDF check in the main `fileInput` change handler — reads `arrayBuffer()`, calls `importGuitarProToCSMPN(buf, {barsPerRow})`, pipes through `parseCSMPN` for diagnostics, sets `sourceEl.value`, calls `updatePreview()`
+- Dedicated `fileInputGuitarPro.change` handler mirrors the main handler with explicit error messaging
+- General `fileInput` accept extended to include GP extensions
+
+**`tests/gpCsmpnConverter.test.mjs`** (new, 42 tests)
+- 8 key-signature mapping tests (major/minor, sharps/flats)
+- 5 fret-to-chord recognition tests (E, Am, G major; edge cases)
+- 4 duration-to-quarters tests (w/h/q/dotted-q)
+- 4 duration-to-letter tests
+- 5 hybrid beat-position tests (0→"1", 0.5→"1&", 2.5→"3&", etc.)
+- 5 voicing-extraction tests (null guards, negative-fret→x, all-muted→null)
+- 11 full CSMPN generation tests (header content, section labels, {tab}, {hybrid}, %, percussion skip, empty score, barsPerRow)
+
+Total: **333 tests** (103 `npm test` + 196 `test:parsers`; +42 vs Sprint 11 baseline)
