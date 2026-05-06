@@ -31,6 +31,9 @@
 <!-- VexFlow for {vt ...} notation blocks — defer: render-time only, null-checked at call site -->
 <script defer src="https://cdn.jsdelivr.net/npm/vexflow@3.0.9/releases/vexflow-min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
+<!-- Guitar Pro importer — loads AlphaTab CDN lazily on first GP file import -->
+<script defer src="importGuitarPro.js"></script>
+
 <style>
   :root{
     --bg:#f5f5f5;
@@ -1357,6 +1360,7 @@ body.exporting .sectionBlock{
       <button class="accent power-only" id="btnImportOpenSong">Import OpenSong XML</button>
       <button class="accent power-only" id="btnImportOpenLyrics">Import OpenLyrics XML</button>
       <button class="accent power-only" id="btnImportIRealPro">Import iReal Pro</button>
+      <button class="accent power-only" id="btnImportGuitarPro">Import Guitar Pro</button>
 
       <button class="secondary" id="btnTransposeDown">-1</button>
       <button class="secondary" id="btnTransposeUp">+1</button>
@@ -1500,7 +1504,7 @@ body.exporting .sectionBlock{
       </div>
     </div>
 
-    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.irealb" style="display:none" />
+    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx" style="display:none" />
     <!-- Dedicated hidden file inputs for each format -->
     <input id="fileInputMusicXML" type="file" accept=".musicxml,.xml,.mxl" style="display:none" />
     <input id="fileInputChordPro" type="file" accept=".pro,.chordpro,.cho,.chopro,.txt" style="display:none" />
@@ -1510,6 +1514,7 @@ body.exporting .sectionBlock{
     <input id="fileInputOpenSong" type="file" accept=".opensong,.xml,.txt" style="display:none" />
     <input id="fileInputOpenLyrics" type="file" accept=".xml,.lyrics" style="display:none" />
     <input id="fileInputIRealPro" type="file" accept=".irealb,.txt" style="display:none" />
+    <input id="fileInputGuitarPro" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx" style="display:none" />
   </div>
 
   <!-- Fake Book Settings Panel -->
@@ -2305,6 +2310,48 @@ fileInputIRealPro.addEventListener('change', async () => {
   }
 });
 
+// Guitar Pro import
+const fileInputGuitarPro = document.getElementById('fileInputGuitarPro');
+document.getElementById('btnImportGuitarPro').addEventListener('click', () => {
+  fileInputGuitarPro.value = '';
+  fileInputGuitarPro.click();
+});
+fileInputGuitarPro.addEventListener('change', async () => {
+  const file = fileInputGuitarPro.files && fileInputGuitarPro.files[0];
+  if (!file) return;
+  try {
+    resetDiagnostics();
+    const importStart = performance.now();
+    setStatus(`Importing ${file.name}...`);
+    if (typeof importGuitarProToCSMPN !== 'function') {
+      setStatus('Guitar Pro importer not loaded — try refreshing.', 'error');
+      return;
+    }
+    importDiagnostics.miner = 'Guitar Pro';
+    importDiagnostics.sourceFlavor = 'guitarpro';
+    importDiagnostics.confidence = 'high';
+    const gpBuf = await file.arrayBuffer();
+    const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
+    const gpDoc = parseCSMPN(csmpn);
+    const gpMarkers = gpDoc.blocks.filter(b => b.type === 'marker');
+    importDiagnostics.sections = gpMarkers.length || 1;
+    importDiagnostics.bars = gpDoc.blocks
+      .filter(b => b.type === 'bars')
+      .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
+    importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+    const finalCsmpn = filterLyricsLines(csmpn);
+    sourceEl.value = finalCsmpn;
+    extractHeaderFromText(finalCsmpn);
+    updatePreview();
+    setStatus(`Imported Guitar Pro (${importDiagnostics.sections} sections, ${importDiagnostics.bars} bars).`);
+    updateDiagnosticsPanel();
+  } catch(err) {
+    console.error(err);
+    setStatus(`Guitar Pro import failed: ${err?.message || err}`, 'error');
+    updateDiagnosticsPanel();
+  }
+});
+
 document.addEventListener('keydown', function(e){
   if (e.key === 'Escape'){
     closeFeatureInfo();
@@ -2735,6 +2782,33 @@ fileInput.addEventListener('change', async () => {
     setStatus(`Importing ${file.name}...`);
     const name = file.name.toLowerCase();
     const type = (file.type || '').toLowerCase();
+
+    // Guitar Pro: detect by extension before text-based format detection
+    if (['.gp','.gp3','.gp4','.gp5','.gpx'].some(ext => name.endsWith(ext))){
+      importDiagnostics.miner = 'Guitar Pro';
+      importDiagnostics.sourceFlavor = 'guitarpro';
+      importDiagnostics.confidence = 'high';
+      if (typeof importGuitarProToCSMPN !== 'function') {
+        setStatus('Guitar Pro importer not loaded — try refreshing.', 'error');
+        return;
+      }
+      const gpBuf = await file.arrayBuffer();
+      const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
+      const gpDoc = parseCSMPN(csmpn);
+      const gpMarkers = gpDoc.blocks.filter(b => b.type === 'marker');
+      importDiagnostics.sections = gpMarkers.length || 1;
+      importDiagnostics.bars = gpDoc.blocks
+        .filter(b => b.type === 'bars')
+        .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      const finalGpCsmpn = filterLyricsLines(csmpn);
+      sourceEl.value = finalGpCsmpn;
+      extractHeaderFromText(finalGpCsmpn);
+      updatePreview();
+      setStatus(`Imported Guitar Pro (${importDiagnostics.sections} sections, ${importDiagnostics.bars} bars).`);
+      updateDiagnosticsPanel();
+      return;
+    }
 
     if (name.endsWith('.pdf')){
       importDiagnostics.miner = 'PDF';
