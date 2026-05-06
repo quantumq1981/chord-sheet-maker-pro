@@ -26,8 +26,8 @@
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
 ## Current State (2026-05-06)
-- **333 tests passing** (`npm run test:all`) — 103 npm-test + 196 parser/exporter/utils + 42 new GP converter tests (added Sprint 12)
-- `tests/gpCsmpnConverter.test.mjs` added — 42 new tests for GP→CSMPN pure helpers
+- **363 tests passing** (`npm run test:all`) — 103 npm-test + 196 parser/exporter/utils + 45 GP converter tests (Sprint 12 + Sprint 13 Phase 1) + 19 hybrid parser tests
+- `tests/gpCsmpnConverter.test.mjs` — 45 tests for GP→CSMPN pure helpers (including tuplet, repeat, and volta tests added Sprint 13 Phase 1)
 - `tests/abcParser.test.ts` added — 21 new tests for modal key conversion + multi-voice extraction
 - **CI now syntax-checks root JS files** (`node --check`) — catches browser SyntaxErrors before GitHub Pages deploy
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
@@ -802,3 +802,30 @@ Total: **291 tests** (18 `npm test` + 273 `test:parsers`)
 - 11 full CSMPN generation tests (header content, section labels, {tab}, {hybrid}, %, percussion skip, empty score, barsPerRow)
 
 Total: **333 tests** (103 `npm test` + 196 `test:parsers`; +42 vs Sprint 11 baseline)
+
+## Sprint 13 — GP Format Optimization (In Progress)
+| # | Task | Status |
+|---|------|--------|
+| 13.P1 | Tuplet-aware cumQ, repeat barlines, volta brackets + 3 new tests | ✅ DONE — 2026-05-06, PR #211 |
+| 13.P2 | Hybrid renderer visual quality (oval noteheads, beams, triplet brackets) | pending |
+| 13.P3 | Chord recognition quality improvements | pending |
+| 13.P4 | Fake book polish (slash notation from GP output) | pending |
+| 13.P5 | Round-trip export (GP→CSMPN→MusicXML) | pending |
+
+## SPRINT 13 CHANGES (2026-05-06, PR #211)
+
+**Phase 1 — Tuplet cumQ, repeat barlines, volta brackets**
+
+**`importGuitarPro.js`**
+- `_gpDurToQuarters(durVal, dots, tupletNum, tupletDen)` — new optional `tupletNum`/`tupletDen` params; applies `× (tupletDen / tupletNum)` factor. Quarter-note triplets (3:2) produce 0.667 beats instead of 1.0; six of them fill exactly one 4/4 bar (cumQ=4.0), eliminating hybrid beat-overflow on shuffle/triplet-feel GP files.
+- Beat loop: reads `beat.tupletNumerator`/`beat.tupletDenominator` from AlphaTab model; `> 0` guard safely handles AlphaTab's -1 default (no tuplet) and 0 (invalid).
+- `measures.push` — now records `repeatStart: !!(mb && mb.isRepeatStart)`, `repeatEnd: !!(mb && mb.isRepeatEnd)`, `alternateEndings: (mb && mb.alternateEndings) || 0` from each `MasterBar`.
+- **Repeat-aware row generation** — replaced simple `barsPerRow` loop with a two-pass grouping strategy: rows break at `repeatStart` boundaries (avoids `:|:` which CSMPN doesn't support) and close after `repeatEnd` bars; left barline `|:` / right barline `:|` emitted accordingly.
+- **Volta prefixes** — `alternateEndings` bitmask: bit 0 → `1. ` prefix, bit 1 → `2. ` prefix, placed before chord content token.
+
+**`tests/gpCsmpnConverter.test.mjs`** — 3 new tests (45 total)
+- `_buildCsmpnFromScore: emits |: for repeat-start bar and :| for repeat-end bar`
+- `_buildCsmpnFromScore: emits 1. and 2. volta prefixes for alternate endings`
+- `_buildCsmpnFromScore: six quarter-note triplets fill one bar without beat overflow`
+
+Total: **363 tests** (103 `npm test` + 260 `test:parsers`; +30 vs Sprint 12 baseline)
