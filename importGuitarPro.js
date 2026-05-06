@@ -431,19 +431,21 @@ function _buildCsmpnFromScore(score, opts) {
       // Hybrid event generation
       var pos = _cumQToHybridPos(cumQ);
       var durLetter = _gpDurToLetter(durVal);
+      // Append tN flag so the renderer can draw tuplet brackets (e.g. t3 for triplet).
+      var tupletFlag = (tupletNum > 1) ? 't' + tupletNum : '';
 
       if (!seenHybridPos[pos]) {
         if (isRest) {
-          hybridParts.push(pos + ':r' + durLetter);
+          hybridParts.push(pos + ':r' + durLetter + tupletFlag);
           seenHybridPos[pos] = true;
         } else {
           var chordChanged = chord && chord !== hybridChordActive;
           if (chordChanged) {
-            hybridParts.push(pos + ':' + durLetter + '(' + chord + ')');
+            hybridParts.push(pos + ':' + durLetter + '(' + chord + ')' + tupletFlag);
             hybridChordActive = chord;
             seenHybridPos[pos] = true;
           } else if (chord) {
-            hybridParts.push(pos + ':' + durLetter);
+            hybridParts.push(pos + ':' + durLetter + tupletFlag);
             seenHybridPos[pos] = true;
           }
         }

@@ -2673,7 +2673,7 @@ const HYBRID_DURATION_MAP = { w: 4, h: 2, q: 1, e: 0.5, s: 0.25 };
 const HYBRID_SYNTAX_SPEC = Object.freeze({
   block: '{hybrid ... }',
   barLine: 'barN: <event...>  (alias: bN:)',
-  event: '<beat>:<duration>(<chord>)<flags>  flags: ! accent  ~ sustain  x muted',
+  event: '<beat>:<duration>(<chord>)<flags>  flags: ! accent  ~ sustain  x muted  tN tuplet-group',
   eventShorthand: '<beat><duration>(<chord>)<flags>',
   rest: 'duration can be r, rw, rh, rq, re, rs',
   pm: 'pm (bar-level), pm_start, pm_end',
@@ -2765,8 +2765,8 @@ function parseHybridBarLine(raw, barTime, warnings){
       }
       continue;
     }
-    const m = token.match(/^([^:]+):(r[whqes]?|[whqes])(?:\((.+)\))?([!~x]*)$/)
-      || token.match(/^(\d+&?)(r[whqes]?|[whqes])(?:\((.+)\))?([!~x]*)$/);
+    const m = token.match(/^([^:]+):(r[whqes]?|[whqes])(?:\((.+)\))?([!~xt0-9]*)$/)
+      || token.match(/^(\d+&?)(r[whqes]?|[whqes])(?:\((.+)\))?([!~xt0-9]*)$/);
     if (!m){
       warnings.push(`Unrecognized hybrid token "${token}" in "${line}".`);
       continue;
@@ -2787,6 +2787,7 @@ function parseHybridBarLine(raw, barTime, warnings){
       warnings.push(`Unsupported duration "${durRaw}" in token "${token}".`);
       continue;
     }
+    const tupletMatch = (m[4] || '').match(/t(\d+)/);
     out.events.push({
       type,
       duration: durationKey,
@@ -2795,7 +2796,8 @@ function parseHybridBarLine(raw, barTime, warnings){
       chord: (m[3] || '').trim(),
       accent: m[4].includes('!'),
       sustain: m[4].includes('~'),
-      muted: m[4].includes('x')
+      muted: m[4].includes('x'),
+      tuplet: tupletMatch ? parseInt(tupletMatch[1], 10) : 0,
     });
   }
   if (pmOpen !== null){
@@ -2804,6 +2806,9 @@ function parseHybridBarLine(raw, barTime, warnings){
   out.events.sort((a, b) => a.beat - b.beat);
   for (let i = 1; i < out.events.length; i++) {
     const prev = out.events[i - 1];
+    // Tuplet notes within the same tuplet group legitimately occupy sub-beat positions;
+    // skip duration-span overlap check so they are not incorrectly dropped.
+    if (prev.tuplet > 0 && out.events[i].tuplet === prev.tuplet) continue;
     if (out.events[i].beat < prev.beat + prev.beats) {
       warnings.push(
         `Event at beat ${out.events[i].beat} overlaps with ${prev.duration} at beat ${prev.beat}; dropping later event.`,
