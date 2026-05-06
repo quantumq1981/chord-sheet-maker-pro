@@ -2765,8 +2765,8 @@ function parseHybridBarLine(raw, barTime, warnings){
       }
       continue;
     }
-    const m = token.match(/^([^:]+):(r[whqes]?|[whqes])(?:\(([^)]+)\))?([!~x]*)$/)
-      || token.match(/^(\d+&?)(r[whqes]?|[whqes])(?:\(([^)]+)\))?([!~x]*)$/);
+    const m = token.match(/^([^:]+):(r[whqes]?|[whqes])(?:\((.+)\))?([!~x]*)$/)
+      || token.match(/^(\d+&?)(r[whqes]?|[whqes])(?:\((.+)\))?([!~x]*)$/);
     if (!m){
       warnings.push(`Unrecognized hybrid token "${token}" in "${line}".`);
       continue;
