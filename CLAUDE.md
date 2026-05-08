@@ -25,9 +25,9 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-05-06)
-- **363 tests passing** (`npm run test:all`) — 103 npm-test + 196 parser/exporter/utils + 45 GP converter tests (Sprint 12 + Sprint 13 Phase 1) + 19 hybrid parser tests
-- `tests/gpCsmpnConverter.test.mjs` — 45 tests for GP→CSMPN pure helpers (including tuplet, repeat, and volta tests added Sprint 13 Phase 1)
+## Current State (2026-05-08)
+- **665 tests passing** (`npm run test:all`) — 302 npm-test + 363 parser/exporter/utils; includes Sprint 13 Phase 3 chord recognition tests
+- `tests/gpCsmpnConverter.test.mjs` — 53 tests for GP→CSMPN pure helpers (flat names, new patterns, slash chords, tuplets, repeats, voltas)
 - `tests/abcParser.test.ts` added — 21 new tests for modal key conversion + multi-voice extraction
 - **CI now syntax-checks root JS files** (`node --check`) — catches browser SyntaxErrors before GitHub Pages deploy
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
@@ -808,7 +808,7 @@ Total: **333 tests** (103 `npm test` + 196 `test:parsers`; +42 vs Sprint 11 base
 |---|------|--------|
 | 13.P1 | Tuplet-aware cumQ, repeat barlines, volta brackets + 3 new tests | ✅ DONE — 2026-05-06, PR #211 |
 | 13.P2 | Hybrid renderer visual quality (beat-boundary beaming, tuplet brackets, tN flag) | ✅ DONE — 2026-05-06, PR #213 |
-| 13.P3 | Chord recognition quality improvements | pending |
+| 13.P3 | Chord recognition quality improvements | ✅ DONE — 2026-05-08, PR #215 |
 | 13.P4 | Fake book polish (slash notation from GP output) | pending |
 | 13.P5 | Round-trip export (GP→CSMPN→MusicXML) | pending |
 
@@ -857,3 +857,24 @@ Total: **657 tests** (294 `npm test` + 363 `test:parsers`)
 - `_buildCsmpnFromScore: non-tuplet beats do not emit tN annotation`
 
 Total: **657 tests** (294 `npm test` + 363 `test:parsers`)
+
+## SPRINT 13 CHANGES — Phase 3 (2026-05-08, PR #215)
+
+**Phase 3 — Chord recognition quality improvements**
+
+**`importGuitarPro.js`** and **`src/utils/fretToChord.ts`** (synced changes in both files)
+- **Flat note names**: `_NOTE_NAMES` / `NOTE_NAMES` updated — index 3: `D#`→`Eb`, index 8: `G#`→`Ab`, index 10: `A#`→`Bb`. Guitar musicians read Bb/Eb/Ab; sharps only for C#/F#/G# which are common in guitar keys.
+- **9 new chord patterns** appended to `_CHORD_PATTERNS` / `CHORD_PATTERNS`:
+  - `7sus4` [0,5,7,10], `aug7` [0,4,8,10], `7b5` [0,4,6,10]
+  - `7#9` [0,3,4,7,10] (Hendrix chord), `7b9` [0,1,4,7,10]
+  - `maj9` [0,2,4,7,11], `m9` [0,2,3,7,10], `9sus4` [0,2,5,7,10], `6add9` [0,2,4,7,9]
+  - Note: `6add9` not `6/9` — avoids CSMPN slash-chord parse ambiguity
+- **Slash chord detection**: `_fretsToChordName` / `fretsToChordName` tracks `lowestMidi`/`lowestPc` while building the pitch-class set. After match: if `lowestPc !== root`, appends `'/' + NOTE_NAMES[lowestPc]` (e.g. `D/F#`, `G/B`). Root = bass → unchanged output.
+
+**`tests/gpCsmpnConverter.test.mjs`** — 8 new tests (53 total in that file)
+- Flat names: `Bb`, `Eb`, `Ab` — verify correct enharmonic output
+- New patterns: `G7sus4`, `Caug7`
+- Slash chords: `D/F#`, `G/B`
+- No-slash baseline: `C` (root in bass)
+
+Total: **665 tests** (302 `npm test` + 363 `test:parsers`)
