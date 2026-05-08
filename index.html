@@ -1504,7 +1504,7 @@ body.exporting .sectionBlock{
       </div>
     </div>
 
-    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx" style="display:none" />
+    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx" style="display:none" />
     <!-- Dedicated hidden file inputs for each format -->
     <input id="fileInputMusicXML" type="file" accept=".musicxml,.xml,.mxl" style="display:none" />
     <input id="fileInputChordPro" type="file" accept=".pro,.chordpro,.cho,.chopro,.txt" style="display:none" />
@@ -2997,6 +2997,36 @@ fileInput.addEventListener('change', async () => {
         extractHeaderFromText(finalCsmpn);
         updatePreview();
         setStatus('Imported MusicXML.');
+      }
+      updateDiagnosticsPanel();
+      return;
+    }
+
+    // ChordPro: route by extension so files without {directive:} lines still use
+    // importChordPro() rather than falling through to the UG-text importer.
+    if (['.chordpro', '.chopro', '.cho', '.pro'].some(ext => name.endsWith(ext))) {
+      importDiagnostics.miner = 'ChordPro';
+      importDiagnostics.sourceFlavor = 'chordpro';
+      importDiagnostics.confidence = 'high';
+      try {
+        const cpCsmpn = importChordPro(text);
+        if (cpCsmpn) {
+          const cpDoc = parseCSMPN(cpCsmpn);
+          importDiagnostics.sections = cpDoc.blocks.filter(b => b.type === 'marker').length || 1;
+          importDiagnostics.bars = cpDoc.blocks.filter(b => b.type === 'bars')
+            .reduce((s, b) => s + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
+          importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+          const finalCsmpn = filterLyricsLines(cpCsmpn);
+          sourceEl.value = finalCsmpn;
+          extractHeaderFromText(finalCsmpn);
+          updatePreview();
+          setStatus('Imported ChordPro.');
+        } else {
+          setStatus('ChordPro import failed.', 'error');
+        }
+      } catch(cpErr) {
+        importDiagnostics.warnings.push('ChordPro import error: ' + (cpErr?.message || cpErr));
+        setStatus(`ChordPro import failed: ${cpErr?.message || cpErr}`, 'error');
       }
       updateDiagnosticsPanel();
       return;
