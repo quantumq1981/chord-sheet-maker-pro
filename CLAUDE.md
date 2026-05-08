@@ -26,8 +26,9 @@
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
 ## Current State (2026-05-08)
-- **669 tests passing** (`npm run test:all`) — 306 npm-test + 363 parser/exporter/utils; includes Sprint 13 Phase 3+4
+- **677 tests passing** (`npm run test:all`) — 306 npm-test + 371 parser/exporter/utils; includes Sprint 13 Phase 3+4+5
 - `tests/gpCsmpnConverter.test.mjs` — 53 tests for GP→CSMPN pure helpers (flat names, new patterns, slash chords, tuplets, repeats, voltas)
+- `tests/musicXmlExport.test.ts` — 8 new repeat/volta tests (51 total); `musicXmlExporter.ts` now emits repeat barlines + ending brackets
 - `tests/chordProcessingUtils.test.mjs` — 4 new `parseBarStructures` volta tests
 - `tests/abcParser.test.ts` added — 21 new tests for modal key conversion + multi-voice extraction
 - **CI now syntax-checks root JS files** (`node --check`) — catches browser SyntaxErrors before GitHub Pages deploy
@@ -811,7 +812,7 @@ Total: **333 tests** (103 `npm test` + 196 `test:parsers`; +42 vs Sprint 11 base
 | 13.P2 | Hybrid renderer visual quality (beat-boundary beaming, tuplet brackets, tN flag) | ✅ DONE — 2026-05-06, PR #213 |
 | 13.P3 | Chord recognition quality improvements | ✅ DONE — 2026-05-08, PR #215 |
 | 13.P4 | Fake book polish (slash notation from GP output) | ✅ DONE — 2026-05-08, PR #216 |
-| 13.P5 | Round-trip export (GP→CSMPN→MusicXML) | pending |
+| 13.P5 | Round-trip export (GP→CSMPN→MusicXML) | ✅ DONE — 2026-05-08, PR #219 |
 
 ## SPRINT 13 CHANGES (2026-05-06, PR #211)
 
@@ -897,3 +898,32 @@ Total: **665 tests** (302 `npm test` + 363 `test:parsers`)
 - `volta prefix with repeat barlines preserves leftBar/rightBar`
 
 Total: **669 tests** (306 `npm test` + 363 `test:parsers`)
+
+## SPRINT 13 CHANGES — Phase 5 (2026-05-08, PR #219)
+
+**Phase 5 — Round-trip export: GP→CSMPN→MusicXML repeat barlines and volta brackets**
+
+**`index.html`** (`buildMusicXml()`)
+- **Step 5** added to measure loop: `prevBarEndingLabel` state tracker threads volta state across bars
+- `<barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>` emitted when `bar.leftBar === 'repeat-start'` (`|:` barlines from GP importer output)
+- `<barline location="right"><bar-style>light-heavy</bar-style><repeat direction="backward"/></barline>` emitted when `bar.rightBar === 'repeat-end'` (`:|`)
+- `<ending number="N" type="start"/>` on the left barline when a new volta label begins; `<ending number="N" type="stop"/>` on the right barline when the volta label group ends — same detection logic as slash notation renderer's ending-group-splitting (Phase 4)
+- Combined repeat-end + volta-stop merges `<bar-style>`, `<ending type="stop">`, and `<repeat direction="backward">` into a single `<barline location="right">` element
+
+**`src/export/musicXmlExporter.ts`**
+- `Bar` interface extended: `leftBar: string`, `rightBar: string`, `endingLabel: string | null`
+- New helpers: `endingNumber()`, `rightBarKind()`, `nextLeftBarKind()`, `ENDING_LABEL_RE`
+- `extractBars()` refactored: `pendingLeftBar` tracks the left barline type for the next bar; updated in the main loop (not inside `closeBar`) so the very first `|:` barline correctly sets `leftBar='repeat-start'` on bar 1; lyric tokens matching `ENDING_LABEL_RE` (`1.`, `2.`, `1st`, `2nd`, `[1]`, `[2]`) become `endingLabel`
+- `generateMusicXml()`: `prevBarEndingLabel` tracker + step-5 repeat/volta block mirrors `buildMusicXml()` exactly
+
+**`tests/musicXmlExport.test.ts`** — 8 new tests (51 total)
+- `|:` emits `<repeat direction="forward"/>` on left barline
+- `:|` emits `<repeat direction="backward"/>` on right barline
+- Both repeat barlines together in one chart
+- Plain `|` separators produce no `<barline>` elements
+- `1.` prefix emits `<ending number="1" type="start"/>` and `type="stop"`
+- `2.` prefix emits ending-2 brackets
+- Full 4-measure repeat+volta round-trip (`|: 1. C | Am :| 2. F | G |`)
+- Consecutive same-label bars emit exactly one `type="start"/>` bracket
+
+Total: **677 tests** (306 `npm test` + 371 `test:parsers`)
