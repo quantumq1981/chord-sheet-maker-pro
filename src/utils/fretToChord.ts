@@ -46,11 +46,20 @@ const CHORD_PATTERNS: ReadonlyArray<{ suffix: string; intervals: readonly number
   { suffix: '6', intervals: [0, 4, 7, 9] }, // major 6
   { suffix: 'm6', intervals: [0, 3, 7, 9] }, // minor 6
   { suffix: '9', intervals: [0, 2, 4, 7, 10] }, // dominant 9
+  { suffix: '7sus4', intervals: [0, 5, 7, 10] }, // dominant 7 suspended 4
+  { suffix: 'aug7', intervals: [0, 4, 8, 10] }, // augmented 7
+  { suffix: '7b5', intervals: [0, 4, 6, 10] }, // dominant 7 flat 5
+  { suffix: '7#9', intervals: [0, 3, 4, 7, 10] }, // dominant 7 sharp 9 (Hendrix)
+  { suffix: '7b9', intervals: [0, 1, 4, 7, 10] }, // dominant 7 flat 9
+  { suffix: 'maj9', intervals: [0, 2, 4, 7, 11] }, // major 9
+  { suffix: 'm9', intervals: [0, 2, 3, 7, 10] }, // minor 9
+  { suffix: '9sus4', intervals: [0, 2, 5, 7, 10] }, // dominant 9 suspended 4
+  { suffix: '6add9', intervals: [0, 2, 4, 7, 9] }, // major 6 add 9
 ];
 
 // ─── Note names (sharps) ──────────────────────────────────────────────────────
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
+const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -86,12 +95,20 @@ export interface FretNote {
 export function fretsToChordName(openMidiNotes: number[], notes: FretNote[]): string | null {
   if (notes.length < 2) return null;
 
-  // Build unique pitch-class set
+  // Build unique pitch-class set; track lowest sounding MIDI note for slash chords
   const pitchClasses = new Set<number>();
+  let lowestMidi = Infinity;
+  let lowestPc = 0;
   for (const { stringIndex, fret } of notes) {
     const open = openMidiNotes[stringIndex];
     if (open !== undefined) {
-      pitchClasses.add((open + fret) % 12);
+      const midi = open + fret;
+      const pc = midi % 12;
+      pitchClasses.add(pc);
+      if (midi < lowestMidi) {
+        lowestMidi = midi;
+        lowestPc = pc;
+      }
     }
   }
 
@@ -103,7 +120,8 @@ export function fretsToChordName(openMidiNotes: number[], notes: FretNote[]): st
     const intervals = pcs.map((pc) => (pc - root + 12) % 12);
     for (const pattern of CHORD_PATTERNS) {
       if (setsEqual(intervals, pattern.intervals)) {
-        return `${NOTE_NAMES[root]}${pattern.suffix}`;
+        const name = `${NOTE_NAMES[root]}${pattern.suffix}`;
+        return lowestPc !== root ? `${name}/${NOTE_NAMES[lowestPc]}` : name;
       }
     }
   }

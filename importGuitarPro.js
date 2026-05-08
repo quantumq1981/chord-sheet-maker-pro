@@ -116,9 +116,18 @@ var _CHORD_PATTERNS = [
   { suffix: '6', intervals: [0, 4, 7, 9] },
   { suffix: 'm6', intervals: [0, 3, 7, 9] },
   { suffix: '9', intervals: [0, 2, 4, 7, 10] },
+  { suffix: '7sus4', intervals: [0, 5, 7, 10] },
+  { suffix: 'aug7', intervals: [0, 4, 8, 10] },
+  { suffix: '7b5', intervals: [0, 4, 6, 10] },
+  { suffix: '7#9', intervals: [0, 3, 4, 7, 10] },
+  { suffix: '7b9', intervals: [0, 1, 4, 7, 10] },
+  { suffix: 'maj9', intervals: [0, 2, 4, 7, 11] },
+  { suffix: 'm9', intervals: [0, 2, 3, 7, 10] },
+  { suffix: '9sus4', intervals: [0, 2, 5, 7, 10] },
+  { suffix: '6add9', intervals: [0, 2, 4, 7, 9] },
 ];
 
-var _NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+var _NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
 /**
  * Attempt to identify a chord name from fret/string positions.
@@ -129,9 +138,19 @@ var _NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', '
 function _fretsToChordName(openMidi, notes) {
   if (!notes || notes.length < 2) return null;
   var pcsSet = Object.create(null);
+  var lowestMidi = Infinity;
+  var lowestPc = 0;
   for (var i = 0; i < notes.length; i++) {
     var open = openMidi[notes[i].stringIndex];
-    if (open !== undefined) pcsSet[(open + notes[i].fret) % 12] = true;
+    if (open !== undefined) {
+      var midi = open + notes[i].fret;
+      var pc = midi % 12;
+      pcsSet[pc] = true;
+      if (midi < lowestMidi) {
+        lowestMidi = midi;
+        lowestPc = pc;
+      }
+    }
   }
   var pcs = Object.keys(pcsSet).map(Number);
   if (pcs.length < 2) return null;
@@ -156,7 +175,9 @@ function _fretsToChordName(openMidi, notes) {
           return v === ps[idx];
         })
       ) {
-        return _NOTE_NAMES[root] + pat.suffix;
+        var name = _NOTE_NAMES[root] + pat.suffix;
+        if (lowestPc !== root) name += '/' + _NOTE_NAMES[lowestPc];
+        return name;
       }
     }
   }

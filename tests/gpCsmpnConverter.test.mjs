@@ -874,3 +874,98 @@ test('_buildCsmpnFromScore: non-tuplet beats do not emit tN annotation', () => {
   assert.ok(!csmpn.includes('t3'), 'Non-tuplet score must not contain t3: ' + csmpn);
   assert.ok(!/t\d/.test(csmpn), 'Non-tuplet score must not contain any tN flag: ' + csmpn);
 });
+
+// ── Phase 3: flat note names ──────────────────────────────────────────────────
+
+test('_fretsToChordName: returns Bb (not A#) for Bb major voicing', () => {
+  // Bb(10) in bass, D(2), F(5) → pcs {2, 5, 10} → root Bb → 'Bb'
+  const notes = [
+    { stringIndex: 4, fret: 1 }, // A+1=46 → pc 10 (Bb) — lowest, bass
+    { stringIndex: 3, fret: 3 }, // D+3=53 → pc 5 (F)
+    { stringIndex: 2, fret: 3 }, // G+3=58 → pc 10 (Bb)
+    { stringIndex: 1, fret: 3 }, // B+3=62 → pc 2 (D)
+  ];
+  assert.equal(_fretsToChordName(STD, notes), 'Bb');
+});
+
+test('_fretsToChordName: returns Eb (not D#) for Eb major voicing', () => {
+  // Eb(3) in bass → pcs {3, 7, 10} → root Eb → 'Eb'
+  const notes = [
+    { stringIndex: 4, fret: 6 }, // A+6=51 → pc 3 (Eb) — lowest, bass
+    { stringIndex: 3, fret: 8 }, // D+8=58 → pc 10 (Bb)
+    { stringIndex: 2, fret: 8 }, // G+8=63 → pc 3 (Eb)
+    { stringIndex: 1, fret: 8 }, // B+8=67 → pc 7 (G)
+  ];
+  assert.equal(_fretsToChordName(STD, notes), 'Eb');
+});
+
+test('_fretsToChordName: returns Ab (not G#) for Ab major voicing', () => {
+  // Ab(8) in bass → pcs {0, 3, 8} → root Ab → 'Ab'
+  const notes = [
+    { stringIndex: 5, fret: 4 }, // E+4=44 → pc 8 (Ab) — lowest, bass
+    { stringIndex: 4, fret: 3 }, // A+3=48 → pc 0 (C)
+    { stringIndex: 3, fret: 1 }, // D+1=51 → pc 3 (Eb)
+    { stringIndex: 2, fret: 1 }, // G+1=56 → pc 8 (Ab)
+  ];
+  assert.equal(_fretsToChordName(STD, notes), 'Ab');
+});
+
+// ── Phase 3: new chord patterns ───────────────────────────────────────────────
+
+test('_fretsToChordName: recognises G7sus4', () => {
+  // G(7), C(0), D(2), F(5) with G in bass → 'G7sus4'
+  const notes = [
+    { stringIndex: 5, fret: 3 }, // E+3=43 → pc 7 (G) — lowest, bass
+    { stringIndex: 4, fret: 5 }, // A+5=50 → pc 2 (D)
+    { stringIndex: 3, fret: 10 }, // D+10=60 → pc 0 (C)
+    { stringIndex: 2, fret: 10 }, // G+10=65 → pc 5 (F)
+  ];
+  assert.equal(_fretsToChordName(STD, notes), 'G7sus4');
+});
+
+test('_fretsToChordName: recognises Caug7 (C augmented 7)', () => {
+  // C(0), E(4), Ab(8), Bb(10) with C in bass → 'Caug7'
+  const notes = [
+    { stringIndex: 5, fret: 8 }, // E+8=48 → pc 0 (C) — lowest, bass
+    { stringIndex: 4, fret: 7 }, // A+7=52 → pc 4 (E)
+    { stringIndex: 3, fret: 6 }, // D+6=56 → pc 8 (Ab)
+    { stringIndex: 2, fret: 3 }, // G+3=58 → pc 10 (Bb)
+  ];
+  assert.equal(_fretsToChordName(STD, notes), 'Caug7');
+});
+
+// ── Phase 3: slash chord detection ───────────────────────────────────────────
+
+test('_fretsToChordName: returns D/F# when F# is lowest note', () => {
+  // D major (D=2, F#=6, A=9) with F# in bass
+  const notes = [
+    { stringIndex: 5, fret: 2 }, // E+2=42 → pc 6 (F#) — lowest, bass
+    { stringIndex: 4, fret: 0 }, // A+0=45 → pc 9 (A)
+    { stringIndex: 3, fret: 0 }, // D+0=50 → pc 2 (D)
+    { stringIndex: 1, fret: 3 }, // B+3=62 → pc 2 (D)
+    { stringIndex: 0, fret: 2 }, // e+2=66 → pc 6 (F#)
+  ];
+  assert.equal(_fretsToChordName(STD, notes), 'D/F#');
+});
+
+test('_fretsToChordName: returns G/B when B is lowest note', () => {
+  // G major (G=7, B=11, D=2) with B in bass
+  const notes = [
+    { stringIndex: 5, fret: 7 }, // E+7=47 → pc 11 (B) — lowest, bass
+    { stringIndex: 3, fret: 0 }, // D+0=50 → pc 2 (D)
+    { stringIndex: 2, fret: 0 }, // G+0=55 → pc 7 (G)
+    { stringIndex: 1, fret: 0 }, // B+0=59 → pc 11 (B)
+  ];
+  assert.equal(_fretsToChordName(STD, notes), 'G/B');
+});
+
+test('_fretsToChordName: no slash when root is the lowest note (C major)', () => {
+  // C major with C in bass → 'C' (no slash)
+  const notes = [
+    { stringIndex: 5, fret: 8 }, // E+8=48 → pc 0 (C) — lowest, bass
+    { stringIndex: 4, fret: 7 }, // A+7=52 → pc 4 (E)
+    { stringIndex: 3, fret: 5 }, // D+5=55 → pc 7 (G)
+    { stringIndex: 2, fret: 5 }, // G+5=60 → pc 0 (C)
+  ];
+  assert.equal(_fretsToChordName(STD, notes), 'C');
+});
