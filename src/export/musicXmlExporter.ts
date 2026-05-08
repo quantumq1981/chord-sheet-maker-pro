@@ -11,7 +11,7 @@
  *   const xml = generateMusicXml(doc, { useBoxedRehearsal: true });
  */
 
-import type { ChordChartDocument, ChartSection, ChartToken } from '../models/ChordChartModel';
+import type { ChordChartDocument, ChartSection } from '../models/ChordChartModel';
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -211,41 +211,90 @@ interface Bar {
   chords: string[];
   /** True when the bar is a simile/repeat marker (no harmony emitted). */
   isSimile: boolean;
+  /** Left barline type: 'single' | 'repeat-start' | 'double' */
+  leftBar: string;
+  /** Right barline type: 'single' | 'repeat-end' | 'double' */
+  rightBar: string;
+  /** Volta ending label from a preceding lyric token, e.g. '1.' or '2.' */
+  endingLabel: string | null;
 }
+
+/** Extract the integer from a volta label ('1.' → 1, '2nd' → 2). */
+function endingNumber(label: string | null): number | null {
+  if (!label) return null;
+  const m = label.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/** Right barline kind from a barline token text. */
+function rightBarKind(text: string): string {
+  if (text === ':|') return 'repeat-end';
+  if (text === '||') return 'double';
+  return 'single';
+}
+
+/** Left barline kind for the bar that follows a given barline token. */
+function nextLeftBarKind(text: string): string {
+  if (text === '|:') return 'repeat-start';
+  if (text === '||') return 'double';
+  return 'single';
+}
+
+/** Regex to detect volta label lyric tokens emitted by the CSMPN parser. */
+const ENDING_LABEL_RE = /^(\d+\.?|1st|2nd|\[1\]|\[2\]|\(1\)|\(2\))$/i;
 
 /**
  * Walk the token stream of a section and group chord tokens into measures
  * separated by barlines.  Each closing barline produces one Bar entry.
+ * Barline types ('|:', ':|') and volta labels ('1.', '2.') are captured.
  */
 function extractBars(section: ChartSection): Bar[] {
   const bars: Bar[] = [];
-  let current: string[] = [];
+  let currentChords: string[] = [];
+  let currentEndingLabel: string | null = null;
+  let pendingLeftBar = 'single';
   let open = false;
 
-  const closeBar = (closing: ChartToken) => {
+  const closeBar = (barlineText: string) => {
     if (!open) return;
     bars.push({
-      chords: current.filter((c) => c !== SIMILE),
-      isSimile: current.length > 0 && current.every((c) => c === SIMILE),
+      chords: currentChords.filter((c) => c !== SIMILE),
+      isSimile: currentChords.length > 0 && currentChords.every((c) => c === SIMILE),
+      leftBar: pendingLeftBar,
+      rightBar: rightBarKind(barlineText),
+      endingLabel: currentEndingLabel,
     });
-    current = [];
-    void closing;
+    currentChords = [];
+    currentEndingLabel = null;
   };
 
   for (const line of section.lines) {
     for (const token of line.tokens) {
       if (token.kind === 'barline') {
-        closeBar(token);
+        closeBar(token.text);
+        // Always update pendingLeftBar so the next bar's leftBar is correct,
+        // even when open=false (i.e. the very first barline of the section).
+        pendingLeftBar = nextLeftBarKind(token.text);
         open = true;
       } else if (token.kind === 'chord' && open) {
-        current.push(token.text);
+        currentChords.push(token.text);
+      } else if (token.kind === 'lyric' && open) {
+        if (ENDING_LABEL_RE.test(token.text.trim())) {
+          currentEndingLabel = token.text.trim();
+        }
       }
     }
   }
-  // CSMPN lines always end with a closing barline, so `current` is empty here.
+  // CSMPN lines always end with a closing barline, so `currentChords` is empty here.
   // Flush any trailing partial bar defensively.
-  if (open && current.length > 0) {
-    bars.push({ chords: current.filter((c) => c !== SIMILE), isSimile: false });
+  if (open && currentChords.length > 0) {
+    bars.push({
+      chords: currentChords.filter((c) => c !== SIMILE),
+      isSimile: false,
+      leftBar: pendingLeftBar,
+      rightBar: 'single',
+      endingLabel: currentEndingLabel,
+    });
   }
 
   return bars;
@@ -336,6 +385,7 @@ export function generateMusicXml(doc: ChordChartDocument, options?: MusicXmlOpti
 
   const measureParts: string[] = [];
   let measureIndex = 0;
+  let prevBarEndingLabel: string | null = null;
 
   for (const section of doc.sections) {
     const bars = extractBars(section);
@@ -382,8 +432,33 @@ export function generateMusicXml(doc: ChordChartDocument, options?: MusicXmlOpti
         xml += `\n      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divisions}</duration><type>quarter</type><notehead>slash</notehead></note>`;
       }
 
+      // ── 5. Repeat barlines and volta ending brackets ─────────────────────
+      const curEl = bar.endingLabel;
+      const nextEl = bi + 1 < bars.length ? bars[bi + 1].endingLabel : null;
+      const endingStart = curEl && curEl !== prevBarEndingLabel ? endingNumber(curEl) : null;
+      const endingStop = curEl && nextEl !== curEl ? endingNumber(curEl) : null;
+
+      let leftBarlineXml = '';
+      if (bar.leftBar === 'repeat-start') {
+        leftBarlineXml +=
+          '\n      <barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>';
+      }
+      if (endingStart) {
+        leftBarlineXml += `\n      <barline location="left"><ending number="${endingStart}" type="start"/></barline>`;
+      }
+
+      let rightBarlineXml = '';
+      if (endingStop || bar.rightBar === 'repeat-end') {
+        const bStyle = bar.rightBar === 'repeat-end' ? '<bar-style>light-heavy</bar-style>' : '';
+        const endXml = endingStop ? `<ending number="${endingStop}" type="stop"/>` : '';
+        const repXml = bar.rightBar === 'repeat-end' ? '<repeat direction="backward"/>' : '';
+        rightBarlineXml = `\n      <barline location="right">${bStyle}${endXml}${repXml}</barline>`;
+      }
+
+      prevBarEndingLabel = curEl;
+
       measureParts.push(`
-    <measure number="${num}">${xml}
+    <measure number="${num}">${leftBarlineXml}${xml}${rightBarlineXml}
     </measure>`);
     }
   }

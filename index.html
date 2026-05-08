@@ -4825,6 +4825,7 @@ window.runCSMPNSelfTests = function(){
 
     let measureXml = '';
     let measureIndex = 0;
+    let prevBarEndingLabel = null; // volta state tracker
 
     for (const sec of sections){
       const label = sec.label || '';
@@ -4913,8 +4914,38 @@ window.runCSMPNSelfTests = function(){
       <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divisions}</duration><type>quarter</type><notehead>slash</notehead></note>`;
         }
 
+        // ── 5. Repeat barlines and volta ending brackets ───────────────────
+        // Derives from bar.leftBar / bar.rightBar (repeat-start / repeat-end)
+        // and bar.endingLabel ('1.' / '2.' — set by parseBarStructures for GP volta tokens).
+        const curEl  = bar.endingLabel || null;
+        const nextEl = bi + 1 < sec.bars.length ? (sec.bars[bi + 1].endingLabel || null) : null;
+        const lBar   = bar.leftBar  || 'single';
+        const rBar   = bar.rightBar || 'single';
+        // Volta start: endingLabel begins (changes from previous bar)
+        const endingStart = (curEl && curEl !== prevBarEndingLabel) ? endingNumber(curEl) : null;
+        // Volta stop: endingLabel ends (next bar has different or no endingLabel)
+        const endingStop  = (curEl && nextEl !== curEl) ? endingNumber(curEl) : null;
+
+        let leftBarlineXml = '';
+        if (lBar === 'repeat-start'){
+          leftBarlineXml += '\n      <barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>';
+        }
+        if (endingStart){
+          leftBarlineXml += `\n      <barline location="left"><ending number="${endingStart}" type="start"/></barline>`;
+        }
+
+        let rightBarlineXml = '';
+        if (endingStop || rBar === 'repeat-end'){
+          const bStyle = rBar === 'repeat-end' ? '<bar-style>light-heavy</bar-style>' : '';
+          const endXml = endingStop ? `<ending number="${endingStop}" type="stop"/>` : '';
+          const repXml = rBar === 'repeat-end' ? '<repeat direction="backward"/>' : '';
+          rightBarlineXml = `\n      <barline location="right">${bStyle}${endXml}${repXml}</barline>`;
+        }
+
+        prevBarEndingLabel = curEl;
+
         measureXml += `
-    <measure number="${num}">${attrs}${rehearsalXml}${harmonyXml}${notesXml}
+    <measure number="${num}">${leftBarlineXml}${attrs}${rehearsalXml}${harmonyXml}${notesXml}${rightBarlineXml}
     </measure>`;
       }
     }

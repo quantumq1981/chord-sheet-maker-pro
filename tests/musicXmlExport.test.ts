@@ -354,3 +354,83 @@ test('generateMusicXml: ampersand in title is XML-escaped', () => {
   assert.ok(xml.includes('Rock &amp; Roll'));
   assert.ok(!xml.includes('Rock & Roll'));
 });
+
+// ── Repeat barlines ───────────────────────────────────────────────────────────
+
+test('generateMusicXml: |: emits forward repeat on left barline of first measure', () => {
+  const doc = parseCsmpn('[A]\n|: C | Am |\n');
+  const xml = generateMusicXml(doc);
+  assert.ok(
+    xml.includes(
+      '<barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>'
+    ),
+    'forward repeat barline expected'
+  );
+});
+
+test('generateMusicXml: :| emits backward repeat on right barline', () => {
+  const doc = parseCsmpn('[A]\n| C | Am :|\n');
+  const xml = generateMusicXml(doc);
+  assert.ok(
+    xml.includes(
+      '<barline location="right"><bar-style>light-heavy</bar-style><repeat direction="backward"/></barline>'
+    ),
+    'backward repeat barline expected'
+  );
+});
+
+test('generateMusicXml: |: ... :| emits both forward and backward repeats', () => {
+  const doc = parseCsmpn('[A]\n|: C | Am :|  \n');
+  const xml = generateMusicXml(doc);
+  assert.ok(xml.includes('direction="forward"'), 'forward repeat expected');
+  assert.ok(xml.includes('direction="backward"'), 'backward repeat expected');
+});
+
+test('generateMusicXml: plain | barlines do not emit repeat barline elements', () => {
+  const doc = parseCsmpn('[A]\n| C | Am | F | G |\n');
+  const xml = generateMusicXml(doc);
+  assert.ok(!xml.includes('<barline'), 'no barline elements for plain bar separators');
+});
+
+// ── Volta ending brackets ─────────────────────────────────────────────────────
+
+test('generateMusicXml: 1. prefix emits ending start and stop for first volta', () => {
+  const doc = parseCsmpn('[A]\n|: 1. C :|  \n');
+  const xml = generateMusicXml(doc);
+  assert.ok(xml.includes('<ending number="1" type="start"/>'), 'volta 1 start expected');
+  assert.ok(xml.includes('<ending number="1" type="stop"/>'), 'volta 1 stop expected');
+});
+
+test('generateMusicXml: 2. prefix emits ending start and stop for second volta', () => {
+  const doc = parseCsmpn('[A]\n| 2. F | G |\n');
+  const xml = generateMusicXml(doc);
+  assert.ok(xml.includes('<ending number="2" type="start"/>'), 'volta 2 start expected');
+  assert.ok(xml.includes('<ending number="2" type="stop"/>'), 'volta 2 stop expected');
+});
+
+test('generateMusicXml: repeat + volta structure emits correct element sequence', () => {
+  // |: 1. C | Am :| 2. F | G |
+  const doc = parseCsmpn('[A]\n|: 1. C | Am :| 2. F | G |\n');
+  const xml = generateMusicXml(doc);
+  // Forward repeat on measure 1 (the 1. bar)
+  assert.ok(xml.includes('direction="forward"'), 'forward repeat expected');
+  // Ending 1 brackets on measure 1
+  assert.ok(xml.includes('<ending number="1" type="start"/>'), 'ending-1 start');
+  assert.ok(xml.includes('<ending number="1" type="stop"/>'), 'ending-1 stop');
+  // Backward repeat on measure 2 (the Am bar)
+  assert.ok(xml.includes('direction="backward"'), 'backward repeat expected');
+  // Ending 2 brackets on measure 3 (the F bar)
+  assert.ok(xml.includes('<ending number="2" type="start"/>'), 'ending-2 start');
+  assert.ok(xml.includes('<ending number="2" type="stop"/>'), 'ending-2 stop');
+  // 4 measures total
+  assert.equal(countOccurrences(xml, '<measure number='), 4);
+});
+
+test('generateMusicXml: consecutive bars with same ending label emit one bracket', () => {
+  // Both bars of this section have the same endingLabel — only the first gets endingStart
+  const doc = parseCsmpn('[A]\n|: 1. C | 1. Am :|  \n');
+  const xml = generateMusicXml(doc);
+  // Ending start uses type="start"/> (without a trailing space) — distinct from
+  // <slash type="start" use-stems="no"/> in the attributes block.
+  assert.equal(countOccurrences(xml, 'type="start"/>'), 1, 'only one ending start bracket');
+});
