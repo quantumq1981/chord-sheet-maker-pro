@@ -4588,7 +4588,7 @@ window.runCSMPNSelfTests = function(){
         const repeatToken = isSimile ? (bar.token || '%') : null;
         // Raw chord names (before formatting) used for TAB voicing lookup
         const rawChords = isSimile ? [] : (bar.token || '').split('_').map(s => s.trim().replace(/[!^.=]$/, ''));
-        return { chords, rawChords, isSimile, repeatToken, leftBar: bar.leftBar || 'single', rightBar: bar.rightBar || 'single' };
+        return { chords, rawChords, isSimile, repeatToken, leftBar: bar.leftBar || 'single', rightBar: bar.rightBar || 'single', endingLabel: bar.endingLabel || null };
       });
       // Nav text: explicit from block order, or auto-detect if label IS a nav marker
       const navText = sec.navText || extractNavText(sec.label) || null;
@@ -4597,20 +4597,40 @@ window.runCSMPNSelfTests = function(){
     });
 
     // Per-section measures-per-row
+    // Sections are split into ending sub-groups on endingLabel transitions so
+    // GP-imported volta bars (bar.endingLabel = '1.' / '2.') render as proper
+    // 1st/2nd ending brackets without requiring section-level labels.
     const rows = [];
     for (const sec of processedSections){
-      const mpr      = mprForSection(sec.label, overrides, defaultMpr);
-      const dispLabel = sec.ending ? null : sec.label; // suppress label for ending sections (bracket serves as label)
-      for (let i = 0; i < sec.measures.length; i += mpr){
-        const isLast = (i + mpr >= sec.measures.length);
-        rows.push({
-          measures:     sec.measures.slice(i, i + mpr),
-          measureWidth: USABLE_W / mpr,
-          sectionLabel: (i === 0) ? dispLabel : undefined,
-          navText:      isLast ? sec.navText : null,
-          ending:       (i === 0) ? sec.ending : null,
-          tabVoicings:  sec.tabVoicings || null,
-        });
+      const mpr = mprForSection(sec.label, overrides, defaultMpr);
+
+      const endingGroups = [];
+      let curGrp = { ending: sec.ending, measures: [] };
+      for (const m of sec.measures){
+        const mEnd = m.endingLabel ? endingNumber(m.endingLabel) : null;
+        if (mEnd !== null && mEnd !== curGrp.ending){
+          if (curGrp.measures.length > 0) endingGroups.push(curGrp);
+          curGrp = { ending: mEnd, measures: [] };
+        }
+        curGrp.measures.push(m);
+      }
+      if (curGrp.measures.length > 0) endingGroups.push(curGrp);
+
+      for (let gi = 0; gi < endingGroups.length; gi++){
+        const grp      = endingGroups[gi];
+        const isLastGrp = gi === endingGroups.length - 1;
+        const grpLabel  = (gi === 0 && !grp.ending) ? sec.label : null;
+        for (let i = 0; i < grp.measures.length; i += mpr){
+          const isLast = (i + mpr >= grp.measures.length);
+          rows.push({
+            measures:     grp.measures.slice(i, i + mpr),
+            measureWidth: USABLE_W / mpr,
+            sectionLabel: (i === 0) ? grpLabel : undefined,
+            navText:      (isLast && isLastGrp) ? sec.navText : null,
+            ending:       (i === 0) ? grp.ending : null,
+            tabVoicings:  sec.tabVoicings || null,
+          });
+        }
       }
     }
 

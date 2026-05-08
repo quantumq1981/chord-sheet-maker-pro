@@ -26,8 +26,9 @@
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
 ## Current State (2026-05-08)
-- **665 tests passing** (`npm run test:all`) — 302 npm-test + 363 parser/exporter/utils; includes Sprint 13 Phase 3 chord recognition tests
+- **669 tests passing** (`npm run test:all`) — 306 npm-test + 363 parser/exporter/utils; includes Sprint 13 Phase 3+4
 - `tests/gpCsmpnConverter.test.mjs` — 53 tests for GP→CSMPN pure helpers (flat names, new patterns, slash chords, tuplets, repeats, voltas)
+- `tests/chordProcessingUtils.test.mjs` — 4 new `parseBarStructures` volta tests
 - `tests/abcParser.test.ts` added — 21 new tests for modal key conversion + multi-voice extraction
 - **CI now syntax-checks root JS files** (`node --check`) — catches browser SyntaxErrors before GitHub Pages deploy
 - **Primary app track: `index.html`** — the developer uses iOS/iPad exclusively; all active feature work goes here
@@ -809,7 +810,7 @@ Total: **333 tests** (103 `npm test` + 196 `test:parsers`; +42 vs Sprint 11 base
 | 13.P1 | Tuplet-aware cumQ, repeat barlines, volta brackets + 3 new tests | ✅ DONE — 2026-05-06, PR #211 |
 | 13.P2 | Hybrid renderer visual quality (beat-boundary beaming, tuplet brackets, tN flag) | ✅ DONE — 2026-05-06, PR #213 |
 | 13.P3 | Chord recognition quality improvements | ✅ DONE — 2026-05-08, PR #215 |
-| 13.P4 | Fake book polish (slash notation from GP output) | pending |
+| 13.P4 | Fake book polish (slash notation from GP output) | ✅ DONE — 2026-05-08, PR #216 |
 | 13.P5 | Round-trip export (GP→CSMPN→MusicXML) | pending |
 
 ## SPRINT 13 CHANGES (2026-05-06, PR #211)
@@ -878,3 +879,21 @@ Total: **657 tests** (294 `npm test` + 363 `test:parsers`)
 - No-slash baseline: `C` (root in bass)
 
 Total: **665 tests** (302 `npm test` + 363 `test:parsers`)
+
+## SPRINT 13 CHANGES — Phase 4 (2026-05-08, PR #216)
+
+**Phase 4 — Fake book polish: slash notation from GP output**
+
+**Root cause:** GP-imported CSMPN uses `bar.endingLabel` (e.g. `'1.'`, `'2.'`) on individual bars for volta endings. The slash notation renderer only checked `endingNumber(sec.label)` (the section-level label) for ending bracket detection — so GP volta endings were never rendered as 1st/2nd ending brackets.
+
+**`index.html`** (slash notation IIFE)
+- `processedSections` mapping (line ~4591): adds `endingLabel: bar.endingLabel || null` to each measure object, propagating the per-bar ending info into the render pipeline.
+- Row-building loop (~line 4600): replaced simple `i += mpr` chunking with an **ending-group-splitting** pass. For each section, measures are partitioned into consecutive groups on `endingLabel` transitions; each group with `ending !== null` gets a 1st/2nd bracket on its first row. Backward-compatible: the `sec.ending` (section-label) path is unchanged.
+
+**`tests/chordProcessingUtils.test.mjs`** — 4 new tests (`parseBarStructures — volta endingLabel` suite)
+- `1. prefix sets endingLabel on the bar and token on the chord`
+- `2. prefix sets endingLabel on the bar`
+- `volta prefix only affects its own bar, not subsequent bars`
+- `volta prefix with repeat barlines preserves leftBar/rightBar`
+
+Total: **669 tests** (306 `npm test` + 363 `test:parsers`)

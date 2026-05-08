@@ -317,6 +317,49 @@ describe('parseChordToken', () => {
   });
 });
 
+// ── parseBarStructures: volta endingLabel ─────────────────────────────────────
+
+describe('parseBarStructures — volta endingLabel', () => {
+  it('1. prefix sets endingLabel on the bar and token on the chord', () => {
+    // "| 1. G | Am |"
+    const bars = ctx.parseBarStructures(['|', '1.', 'G', '|', 'Am', '|']);
+    assert.equal(bars.length, 2);
+    assert.equal(bars[0].endingLabel, '1.');
+    assert.equal(bars[0].token, 'G');
+    assert.ok(!bars[1].endingLabel);
+    assert.equal(bars[1].token, 'Am');
+  });
+
+  it('2. prefix sets endingLabel on the bar', () => {
+    // "| 2. Em |"
+    const bars = ctx.parseBarStructures(['|', '2.', 'Em', '|']);
+    assert.equal(bars.length, 1);
+    assert.equal(bars[0].endingLabel, '2.');
+    assert.equal(bars[0].token, 'Em');
+  });
+
+  it('volta prefix only affects its own bar, not subsequent bars', () => {
+    // "| G | Am | 1. C | D |"
+    const bars = ctx.parseBarStructures(['|', 'G', '|', 'Am', '|', '1.', 'C', '|', 'D', '|']);
+    assert.equal(bars.length, 4);
+    assert.ok(!bars[0].endingLabel);
+    assert.ok(!bars[1].endingLabel);
+    assert.equal(bars[2].endingLabel, '1.');
+    assert.equal(bars[2].token, 'C');
+    assert.ok(!bars[3].endingLabel);
+    assert.equal(bars[3].token, 'D');
+  });
+
+  it('volta prefix with repeat barlines preserves leftBar/rightBar', () => {
+    // "|: G | Am | 1. C :|"
+    const bars = ctx.parseBarStructures(['|:', 'G', '|', 'Am', '|', '1.', 'C', ':|']);
+    assert.equal(bars.length, 3);
+    assert.equal(bars[0].leftBar, 'repeat-start');
+    assert.equal(bars[2].endingLabel, '1.');
+    assert.equal(bars[2].rightBar, 'repeat-end');
+  });
+});
+
 // ── formatChordQuality with alternate fbSettings ──────────────────────────────
 
 describe('formatChordQuality — alternate settings', () => {
