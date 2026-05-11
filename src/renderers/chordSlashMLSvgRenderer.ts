@@ -138,10 +138,22 @@ function trebleClef(x: number, y: number, _col: string): string {
 }
 
 const SHARP_KEY_COUNT: Record<string, number> = {
-  G: 1, D: 2, A: 3, E: 4, B: 5, 'F#': 6, 'C#': 7,
+  G: 1,
+  D: 2,
+  A: 3,
+  E: 4,
+  B: 5,
+  'F#': 6,
+  'C#': 7,
 };
 const FLAT_KEY_COUNT: Record<string, number> = {
-  F: 1, Bb: 2, Eb: 3, Ab: 4, Db: 5, Gb: 6, Cb: 7,
+  F: 1,
+  Bb: 2,
+  Eb: 3,
+  Ab: 4,
+  Db: 5,
+  Gb: 6,
+  Cb: 7,
 };
 const SHARP_Y_OFFSETS = [0, 12, -4, 8, 20, 4, 16];
 const FLAT_Y_OFFSETS = [16, 4, 20, 8, 24, 12, 28];
@@ -156,7 +168,9 @@ function keySigSvg(x: number, staffY: number, keySig: string, col: string): KsRe
     const count = SHARP_KEY_COUNT[keySig];
     const parts: string[] = [];
     for (let i = 0; i < count; i++) {
-      parts.push(`<text x="${x + i * 8}" y="${staffY + SHARP_Y_OFFSETS[i] - 4}" font-size="14" font-family="serif" fill="${col}" dominant-baseline="hanging">♯</text>`);
+      parts.push(
+        `<text x="${x + i * 8}" y="${staffY + SHARP_Y_OFFSETS[i] - 4}" font-size="14" font-family="serif" fill="${col}" dominant-baseline="hanging">♯</text>`
+      );
     }
     return { svg: parts.join(''), width: count * 8 + 4 };
   }
@@ -164,7 +178,9 @@ function keySigSvg(x: number, staffY: number, keySig: string, col: string): KsRe
     const count = FLAT_KEY_COUNT[keySig];
     const parts: string[] = [];
     for (let i = 0; i < count; i++) {
-      parts.push(`<text x="${x + i * 8}" y="${staffY + FLAT_Y_OFFSETS[i] - 8}" font-size="14" font-family="serif" fill="${col}" dominant-baseline="hanging">♭</text>`);
+      parts.push(
+        `<text x="${x + i * 8}" y="${staffY + FLAT_Y_OFFSETS[i] - 8}" font-size="14" font-family="serif" fill="${col}" dominant-baseline="hanging">♭</text>`
+      );
     }
     return { svg: parts.join(''), width: count * 8 + 4 };
   }
