@@ -864,14 +864,97 @@
     return csmlToMusicXmlDoc(csmlParse(text));
   }
 
+  // ─── ChordSlashML → CSMPN Transpiler ──────────────────────────────────────
+
+  // Extract the first chord name from a beat (for bar-level chord tracking).
+  function csmlFirstChordOfBeat(beat) {
+    if (beat.kind === 'chord') return beat.text;
+    if (beat.kind === 'compound') return beat.parts[0] ? beat.parts[0].chord : null;
+    if (beat.kind === 'tuplet') {
+      for (const b of beat.beats) { const t = csmlFirstChordOfBeat(b); if (t) return t; }
+    }
+    return null; // slash/rest/continuation
+  }
+
+  // Derive the CSMPN bar token from a ChordSlashML measure.
+  // Returns a string like "G", "Am_F", or "%" (all-continuation/rest).
+  function csmlMeasureToBarToken(meas) {
+    const seen = [];
+    let last = null;
+    for (const beat of meas.beats) {
+      const ch = csmlFirstChordOfBeat(beat);
+      if (ch && ch !== last) { seen.push(ch); last = ch; }
+    }
+    if (seen.length === 0) return '%';
+    return seen.join('_');
+  }
+
+  function csmlToCsmpnDoc(doc) {
+    const lines = [];
+
+    // Header — use full-word field names (CSMPN accepts both short and long)
+    if (doc.title)    lines.push(`Title: ${doc.title}`);
+    if (doc.composer) lines.push(`Composer: ${doc.composer}`);
+    if (doc.key)      lines.push(`Key: ${doc.key}`);
+    if (doc.time && doc.time !== '4/4') lines.push(`Time: ${doc.time}`);
+    if (doc.tempo)    lines.push(`Tempo: ${doc.tempo}`);
+    if (doc.style)    lines.push(`Style: ${doc.style}`);
+
+    for (const sec of doc.sections) {
+      lines.push('');
+      if (sec.label) lines.push(`- ${sec.label}`);
+
+      // Collect bar tokens, tracking repeat groups
+      const tokens = sec.measures.map(csmlMeasureToBarToken);
+      const lBars  = sec.measures.map(m => m.leftBarline);
+      const rBars  = sec.measures.map(m => m.rightBarline);
+
+      // Group into repeat/non-repeat runs, then emit each run on one line.
+      // A repeat group spans from a 'repeat-start' left barline to the
+      // matching 'repeat-end' right barline.
+      let i = 0;
+      while (i < tokens.length) {
+        if (lBars[i] === 'repeat-start') {
+          // Collect until repeat-end
+          const group = [];
+          while (i < tokens.length) {
+            group.push(tokens[i]);
+            const isEnd = rBars[i] === 'repeat-end';
+            i++;
+            if (isEnd) break;
+          }
+          lines.push(`|: ${group.join(' ')} :|`);
+        } else {
+          // Plain run until next repeat-start or end
+          const group = [];
+          while (i < tokens.length && lBars[i] !== 'repeat-start') {
+            group.push(tokens[i]);
+            const isFinal = rBars[i] === 'final';
+            i++;
+            if (isFinal) break;
+          }
+          if (group.length) lines.push(group.join(' '));
+        }
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  function csmlToCsmpn(text) {
+    return csmlToCsmpnDoc(csmlParse(text));
+  }
+
   // ─── Export ────────────────────────────────────────────────────────────────
 
   window.csml = {
-    parse:       csmlParse,
-    toSvg:       csmlToSvg,
-    toSvgDoc:    csmlToSvgDoc,
-    toLilypond:  csmlToLilypond,
-    toMusicXml:  csmlToMusicXml,
+    parse:         csmlParse,
+    toSvg:         csmlToSvg,
+    toSvgDoc:      csmlToSvgDoc,
+    toLilypond:    csmlToLilypond,
+    toMusicXml:    csmlToMusicXml,
     toMusicXmlDoc: csmlToMusicXmlDoc,
+    toCsmpn:       csmlToCsmpn,
+    toCsmpnDoc:    csmlToCsmpnDoc,
   };
 })();
