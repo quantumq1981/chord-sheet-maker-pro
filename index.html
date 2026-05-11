@@ -1734,6 +1734,7 @@ body.exporting .sectionBlock{
               <button class="import-item power-only" id="btnImportOpenLyrics" role="menuitem">OpenLyrics XML</button>
               <button class="import-item power-only" id="btnImportIRealPro" role="menuitem">iReal Pro</button>
               <button class="import-item power-only" id="btnImportGuitarPro" role="menuitem">Guitar Pro</button>
+              <button class="import-item power-only" id="btnImportCsml" role="menuitem">ChordSlashML (.csml)</button>
             </div>
           </div>
           <button class="info-btn" onclick="openFeatureInfo('import')" title="About Import">ⓘ</button>
@@ -2047,6 +2048,7 @@ Tempo: 120
 
       <div class="csml-editor-actions">
         <button class="primary" id="btnCsmlLoad" title="Replace the main chart source with this ChordSlashML text">← Load into Chart</button>
+        <button id="btnCsmlSave" title="Download the source as a .csml file">↓ Save .csml</button>
         <button id="btnCsmlDownloadSvg" title="Download the current preview as an SVG file">↓ SVG</button>
         <button id="btnCsmlDownloadXml" title="Download a MusicXML .xml file (opens in MuseScore, Dorico, Sibelius)">↓ MusicXML</button>
         <button id="btnCsmlDownloadLy" title="Download a LilyPond .ly file from the current source">↓ LilyPond (.ly)</button>
@@ -2061,7 +2063,7 @@ Tempo: 120
       </div>
     </div>
 
-    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx,text/plain,application/pdf" style="display:none" />
+    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx,.csml,text/plain,application/pdf" style="display:none" />
     <!-- Dedicated hidden file inputs for each format -->
     <input id="fileInputMusicXML" type="file" accept=".musicxml,.xml,.mxl,text/xml,application/xml" style="display:none" />
     <input id="fileInputChordPro" type="file" accept=".pro,.chordpro,.cho,.chopro,.txt,text/plain" style="display:none" />
@@ -2072,6 +2074,7 @@ Tempo: 120
     <input id="fileInputOpenLyrics" type="file" accept=".xml,.lyrics,text/xml,application/xml" style="display:none" />
     <input id="fileInputIRealPro" type="file" accept=".irealb,.txt,text/plain" style="display:none" />
     <input id="fileInputGuitarPro" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx" style="display:none" />
+    <input id="fileInputCsml" type="file" accept=".csml,.csm,text/plain" style="display:none" />
   </div>
 
   <!-- Fake Book Settings Panel -->
@@ -2909,6 +2912,41 @@ fileInputGuitarPro.addEventListener('change', async () => {
   }
 });
 
+// ── ChordSlashML (.csml) import ─────────────────────────────────────────────
+(function () {
+  function openCsmlEditor(text, filename) {
+    const panel    = document.getElementById('csmlEditorPanel');
+    const inputEl  = document.getElementById('csmlEditorInput');
+    if (!panel || !inputEl) return;
+    inputEl.value = text;
+    panel.classList.add('open');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // Trigger the live preview via a synthetic input event
+    inputEl.dispatchEvent(new Event('input'));
+    setStatus(`Opened ${filename} in ChordSlashML Editor.`);
+  }
+
+  const fileInputCsml = document.getElementById('fileInputCsml');
+  document.getElementById('btnImportCsml').addEventListener('click', () => {
+    fileInputCsml.value = '';
+    fileInputCsml.click();
+  });
+  fileInputCsml.addEventListener('change', async () => {
+    const file = fileInputCsml.files && fileInputCsml.files[0];
+    if (!file) return;
+    try {
+      const text = await readImportedTextFile(file);
+      openCsmlEditor(text, file.name);
+    } catch (err) {
+      console.error(err);
+      setStatus(`ChordSlashML import failed: ${err?.message || err}`, 'error');
+    }
+  });
+
+  // Expose for auto-detect in the main fileInput handler
+  window._openCsmlEditor = openCsmlEditor;
+})();
+
 document.addEventListener('keydown', function(e){
   if (e.key === 'Escape'){
     closeFeatureInfo();
@@ -3359,6 +3397,13 @@ fileInput.addEventListener('change', async () => {
     setStatus(`Importing ${file.name}...`);
     const name = file.name.toLowerCase();
     const type = (file.type || '').toLowerCase();
+
+    // ChordSlashML: open directly in the live editor panel
+    if (name.endsWith('.csml') || name.endsWith('.csm')) {
+      const text = await readImportedTextFile(file);
+      if (typeof window._openCsmlEditor === 'function') window._openCsmlEditor(text, file.name);
+      return;
+    }
 
     // Guitar Pro: detect by extension before text-based format detection
     if (['.gp','.gp3','.gp4','.gp5','.gpx'].some(ext => name.endsWith(ext))){
@@ -5937,6 +5982,7 @@ ${headerHtml}${svg.outerHTML}
   const mprSel     = document.getElementById('csmlEditorMpr');
   const stemsChk   = document.getElementById('csmlEditorStems');
   const btnLoad    = document.getElementById('btnCsmlLoad');
+  const btnSave    = document.getElementById('btnCsmlSave');
   const btnSvg     = document.getElementById('btnCsmlDownloadSvg');
   const btnXml     = document.getElementById('btnCsmlDownloadXml');
   const btnLy      = document.getElementById('btnCsmlDownloadLy');
@@ -6008,6 +6054,20 @@ ${headerHtml}${svg.outerHTML}
       panel.classList.remove('open');
       setStatus('ChordSlashML source loaded into chart.', 'ok');
     }
+  });
+
+  if (btnSave) btnSave.addEventListener('click', () => {
+    const text = inputEl.value;
+    if (!text.trim()) return;
+    const doc   = window.csml ? window.csml.parse(text) : null;
+    const title = (doc && doc.title) ? doc.title : 'chord-sheet';
+    const blob  = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url   = URL.createObjectURL(blob);
+    const a     = Object.assign(document.createElement('a'), { href: url, download: safeFilename(title) + '.csml' });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   });
 
   if (btnSvg) btnSvg.addEventListener('click', () => {
