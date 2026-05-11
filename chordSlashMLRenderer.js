@@ -662,12 +662,216 @@
     return csmlToLilypondDoc(csmlParse(text));
   }
 
+  // ─── MusicXML Exporter ─────────────────────────────────────────────────────
+
+  function xmlEsc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function csmlChordKind(quality) {
+    if (!quality) return 'major';
+    const q = quality.toLowerCase();
+    if (q.startsWith('ø') || q === 'm7b5' || q === 'm7♭5') return 'half-diminished';
+    if (q.startsWith('maj') || q.startsWith('ma') || q.startsWith('δ') || q.startsWith('Δ')) return 'major-seventh';
+    if (q.startsWith('°7') || q.startsWith('dim7') || q === 'o7') return 'diminished-seventh';
+    if (q.startsWith('°') || q.startsWith('dim') || q === 'o') return 'diminished';
+    if (q.startsWith('+7') || q.startsWith('aug7') || q.startsWith('7#5') || q.startsWith('7♯5')) return 'augmented-seventh';
+    if (q === '+' || q.startsWith('aug')) return 'augmented';
+    if (q === 'm' || q === 'min' || q === 'mi' || q === '−') return 'minor';
+    if (q.startsWith('m7') || q.startsWith('min7') || q.startsWith('mi7') || q.startsWith('−7')) return 'minor-seventh';
+    if (q.startsWith('m') && /\d/.test(q)) return 'minor-seventh';
+    if (q.startsWith('−') && /\d/.test(q)) return 'minor-seventh';
+    if (q === '6' || q.startsWith('6/9')) return 'major-sixth';
+    if (q === '7') return 'dominant';
+    if (/^[79]/.test(q) || q.startsWith('13') || q.startsWith('11')) return 'dominant';
+    if (q.startsWith('sus4') || q === 'sus') return 'suspended-fourth';
+    if (q.startsWith('sus2')) return 'suspended-second';
+    return 'major';
+  }
+
+  function csmlKeySigFifths(keyStr) {
+    const SHARPS = { C:0,G:1,D:2,A:3,E:4,B:5,'F#':6,'C#':7 };
+    const FLATS  = { F:-1,Bb:-2,Eb:-3,Ab:-4,Db:-5,Gb:-6,Cb:-7 };
+    if (!keyStr) return 0;
+    const s = keyStr.trim().replace(/♭/g,'b').replace(/♯/g,'#')
+      .replace(/\s*(major|maj)\s*$/i,'').replace(/\s*(minor|min)\s*$/i,'m');
+    const root = s.endsWith('m') ? s.slice(0,-1) : s;
+    const norm = root[0].toUpperCase() + root.slice(1);
+    // For minor keys find relative major
+    const MINOR_TO_MAJOR = { Am:'C',Em:'G',Bm:'D','F#m':'A','C#m':'E','G#m':'B','D#m':'F#','A#m':'C#',
+      Dm:'F',Gm:'Bb',Cm:'Eb',Fm:'Ab',Bbm:'Db',Ebm:'Gb',Abm:'Cb' };
+    if (s.endsWith('m')) {
+      const rel = MINOR_TO_MAJOR[s[0].toUpperCase() + s.slice(1)];
+      if (rel) return SHARPS[rel] !== undefined ? SHARPS[rel] : (FLATS[rel] || 0);
+    }
+    if (SHARPS[norm] !== undefined) return SHARPS[norm];
+    if (FLATS[norm] !== undefined) return FLATS[norm];
+    return 0;
+  }
+
+  function csmlKeyMode(keyStr) {
+    if (!keyStr) return 'major';
+    const s = keyStr.trim().replace(/\s*(minor|min)\s*$/i,'m').replace(/\s*(major|maj)\s*$/i,'');
+    return (s.endsWith('m') || /minor/i.test(keyStr)) ? 'minor' : 'major';
+  }
+
+  function csmlBeatsPerMeasure(timeSig) {
+    // Compound meters: count dotted-quarter groups
+    if (timeSig === '12/8') return 4;
+    if (timeSig === '9/8')  return 3;
+    if (timeSig === '6/8')  return 2;
+    const m = (timeSig || '4/4').match(/^(\d+)/);
+    return m ? parseInt(m[1], 10) : 4;
+  }
+
+  // Extract the first chord text from a beat (for harmony elements)
+  function csmlBeatChordText(beat) {
+    if (beat.kind === 'chord') return beat.text;
+    if (beat.kind === 'compound') return beat.parts[0] ? beat.parts[0].chord : null;
+    if (beat.kind === 'tuplet') {
+      for (const b of beat.beats) { const t = csmlBeatChordText(b); if (t) return t; }
+    }
+    return null;
+  }
+
+  function csmlHarmonyXml(chordText, offset, bpm) {
+    if (!chordText) return '';
+    const m = chordText.match(/^([A-G])(♭|♯|b|#)?(.*)$/);
+    if (!m) return '';
+    const rootStep  = m[1];
+    const accStr    = m[2] || '';
+    const rootAlter = (accStr === '♭' || accStr === 'b') ? -1 : (accStr === '♯' || accStr === '#') ? 1 : 0;
+    const rest      = m[3] || '';
+    const qualRaw   = rest.replace(/\/.*$/, '').trim();
+    const bassMatch = rest.match(/\/([A-G])(♭|♯|b|#)?$/);
+    const bassStep  = bassMatch ? bassMatch[1] : '';
+    const bassAcc   = bassMatch ? (bassMatch[2] || '') : '';
+    const bassAlter = (bassAcc === '♭' || bassAcc === 'b') ? -1 : (bassAcc === '♯' || bassAcc === '#') ? 1 : 0;
+    const alterTag  = rootAlter !== 0 ? `<alter>${rootAlter}</alter>` : '';
+    const bassXml   = bassStep ? `<bass><bass-step>${xmlEsc(bassStep)}</bass-step>${bassAlter !== 0 ? `<bass-alter>${bassAlter}</bass-alter>` : ''}</bass>` : '';
+    const offsetTag = offset > 0 ? `<offset>${offset}</offset>` : '';
+    return `\n      <harmony>${offsetTag}<root><root-step>${xmlEsc(rootStep)}</root-step>${alterTag}</root><kind>${csmlChordKind(qualRaw)}</kind>${bassXml}</harmony>`;
+  }
+
+  function csmlToMusicXmlDoc(doc) {
+    if (!doc.sections.length) return null;
+
+    const timeSig   = doc.time || '4/4';
+    const bpm       = csmlBeatsPerMeasure(timeSig);
+    const timeParts = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/) || ['4/4','4','4'];
+    const beats     = timeParts[1];
+    const beatType  = timeParts[2];
+    const divisions = 1;
+    const fifths    = csmlKeySigFifths(doc.key);
+    const mode      = csmlKeyMode(doc.key);
+    const title     = xmlEsc(doc.title    || 'Untitled');
+    const composer  = xmlEsc(doc.composer || '');
+
+    let measureXml = '';
+    let measureIndex = 0;
+
+    for (const sec of doc.sections) {
+      const label = sec.label || '';
+
+      for (let mi = 0; mi < sec.measures.length; mi++) {
+        const meas = sec.measures[mi];
+        const num  = ++measureIndex;
+
+        // ── 1. <attributes> (first measure only) ──────────────────────────
+        let attrsXml = '';
+        if (num === 1) {
+          attrsXml = `
+      <attributes>
+        <divisions>${divisions}</divisions>
+        <key><fifths>${fifths}</fifths><mode>${mode}</mode></key>
+        <time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+        <measure-style><slash type="start" use-stems="no"/></measure-style>
+      </attributes>`;
+          if (doc.tempo) {
+            attrsXml += `
+      <direction placement="above">
+        <direction-type><metronome parentheses="no">
+          <beat-unit>quarter</beat-unit><per-minute>${xmlEsc(doc.tempo)}</per-minute>
+        </metronome></direction-type>
+        <sound tempo="${xmlEsc(doc.tempo)}"/>
+      </direction>`;
+          }
+        }
+
+        // ── 2. Rehearsal mark (first measure of each named section) ───────
+        let rehearsalXml = '';
+        if (mi === 0 && label) {
+          rehearsalXml = `
+      <direction placement="above">
+        <direction-type>
+          <rehearsal enclosure="square" default-y="40">${xmlEsc(label)}</rehearsal>
+        </direction-type>
+      </direction>`;
+        }
+
+        // ── 3. <harmony> elements — one per chord-change beat ─────────────
+        let harmonyXml = '';
+        let lastChord  = null;
+        for (let bi = 0; bi < meas.beats.length; bi++) {
+          const beat      = meas.beats[bi];
+          const chordText = csmlBeatChordText(beat);
+          if (chordText && chordText !== lastChord) {
+            const offset = Math.round((bi / Math.max(meas.beats.length, 1)) * bpm * divisions);
+            harmonyXml += csmlHarmonyXml(chordText, offset, bpm);
+            lastChord = chordText;
+          }
+        }
+
+        // ── 4. <note> slash noteheads ─────────────────────────────────────
+        let notesXml = '';
+        for (let b = 0; b < bpm; b++) {
+          notesXml += `
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divisions}</duration><type>quarter</type><notehead>slash</notehead></note>`;
+        }
+
+        // ── 5. Barlines ───────────────────────────────────────────────────
+        let leftBarlineXml = '';
+        if (meas.leftBarline === 'repeat-start') {
+          leftBarlineXml = '\n      <barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>';
+        }
+        let rightBarlineXml = '';
+        if (meas.rightBarline === 'repeat-end') {
+          rightBarlineXml = '\n      <barline location="right"><bar-style>light-heavy</bar-style><repeat direction="backward"/></barline>';
+        } else if (meas.rightBarline === 'final') {
+          rightBarlineXml = '\n      <barline location="right"><bar-style>light-heavy</bar-style></barline>';
+        }
+
+        measureXml += `
+    <measure number="${num}">${leftBarlineXml}${attrsXml}${rehearsalXml}${harmonyXml}${notesXml}${rightBarlineXml}
+    </measure>`;
+      }
+    }
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <movement-title>${title}</movement-title>${composer ? `\n  <identification><creator type="composer">${composer}</creator></identification>` : ''}
+  <part-list>
+    <score-part id="P1"><part-name>Rhythm Guitar</part-name></score-part>
+  </part-list>
+  <part id="P1">${measureXml}
+  </part>
+</score-partwise>`;
+  }
+
+  function csmlToMusicXml(text) {
+    return csmlToMusicXmlDoc(csmlParse(text));
+  }
+
   // ─── Export ────────────────────────────────────────────────────────────────
 
   window.csml = {
-    parse:      csmlParse,
-    toSvg:      csmlToSvg,
-    toSvgDoc:   csmlToSvgDoc,
-    toLilypond: csmlToLilypond,
+    parse:       csmlParse,
+    toSvg:       csmlToSvg,
+    toSvgDoc:    csmlToSvgDoc,
+    toLilypond:  csmlToLilypond,
+    toMusicXml:  csmlToMusicXml,
+    toMusicXmlDoc: csmlToMusicXmlDoc,
   };
 })();
