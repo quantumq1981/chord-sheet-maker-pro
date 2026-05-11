@@ -25,8 +25,8 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-05-08)
-- **677 tests passing** (`npm run test:all`) — 306 npm-test + 371 parser/exporter/utils; includes Sprint 13 Phase 3+4+5
+## Current State (2026-05-11)
+- **484 tests passing** (`npm run test:all`) — 306 npm-test + 371 parser/exporter/utils + ChordSlashML phases; Sprint 13 Phase 3+4+5 + all ChordSlashML phases complete
 - `tests/gpCsmpnConverter.test.mjs` — 53 tests for GP→CSMPN pure helpers (flat names, new patterns, slash chords, tuplets, repeats, voltas)
 - `tests/musicXmlExport.test.ts` — 8 new repeat/volta tests (51 total); `musicXmlExporter.ts` now emits repeat barlines + ending brackets
 - `tests/chordProcessingUtils.test.mjs` — 4 new `parseBarStructures` volta tests
@@ -50,17 +50,20 @@
 ## Quick Reference: Key Files
 | File | Purpose |
 |------|---------|
-| `index.html` | Legacy monolith — fake-book shell, event wiring, slash notation IIFE, self-tests (4,601 lines) |
+| `index.html` | Legacy monolith — fake-book shell, event wiring, slash notation IIFE, self-tests |
 | `settings.js` | Fake Book Settings state: `fbSettings`, font maps, `applyFBSettings`, `setStatus`, `filterLyricsLines` |
 | `renderer.js` | CSMPN HTML renderer: `renderDoc`, `updatePreview`, VexFlow notation helpers |
 | `importPipeline.js` | All format importers: `SongModel`, `extractHeaderFromText`, `importUGText`, `importChordPro`, `importMusicXML`, `importIRealPro`, `importUGProPDF`, etc. |
+| `chordSlashMLRenderer.js` | Browser IIFE bundle: ChordSlashML parser + SVG renderer + LilyPond + MusicXML + CSMPN transpiler; exposes `window.csml` |
 | `app.html` + `src/` | React app — importers, OSMD notation, chord chart view |
 | `ug-pro-importer.html` | Vite HTML shell for the PDF importer page (multi-page build entry) |
 | `ug-txt-importer.html` | Standalone dark-UI page: paste UG text → convert to CSMPN → copy/download |
 | `src/pages/ugProImporterPage.tsx` | React bootstrap for the importer page — renders `UGProImporterPanel` |
 | `src/ingest/ugProPdfImporter.ts` | Canonical PDF importer (TypeScript module; drives the Vite build page) |
 | `src/ingest/ugProPdfUtils.ts` | Pure span utilities (no pdfjs-dist): TextSpan, SMuFL constants, `detectTimeSigSpans`, `detectKeySig`, `mergeFragmentSpans` — safe to import in Node.js tests |
-| `src/parsers/` | Zero-dependency TypeScript parsers (chordPro, csmpn, abc, gp, musicXml) |
+| `src/parsers/` | Zero-dependency TypeScript parsers (chordPro, csmpn, abc, gp, musicXml, chordSlashML) |
+| `src/renderers/chordSlashMLSvgRenderer.ts` | TypeScript SVG renderer for ChordSlashML (source of truth; browser IIFE mirrors it) |
+| `src/converters/chordSlashMLToLilypond.ts` | TypeScript LilyPond exporter for ChordSlashML |
 | `src/converters/types.ts` | All public types for the MusicXML→ChordPro converter |
 | `src/converters/chordExtractor.ts` | KIND_SUFFIX_MAP + harmony→chord text functions |
 | `src/converters/xmlParser.ts` | MusicXML DOM parsing (metadata, measures, lyrics, key, repeats) |
@@ -927,3 +930,94 @@ Total: **669 tests** (306 `npm test` + 363 `test:parsers`)
 - Consecutive same-label bars emit exactly one `type="start"/>` bracket
 
 Total: **677 tests** (306 `npm test` + 371 `test:parsers`)
+
+## Sprint 14 — ChordSlashML Authoring Suite ✅ COMPLETE (2026-05-11)
+| # | Task | Status |
+|---|------|--------|
+| 14.0 | ChordSlashML syntax help panel (collapsible reference, Power Mode) | ✅ DONE — PR #227 |
+| 14.UI | Toolbar redesign: two-row layout, import dropdown, `.btn-pill`, `.toolbar-sep` | ✅ DONE — PR #229 |
+| 14.A | ChordSlashML Live Editor: two-pane panel, debounced SVG preview, `chordSlashMLRenderer.js` | ✅ DONE — PR #231 |
+| 14.B | MusicXML export from Live Editor (`↓ MusicXML`, `text/xml`, iOS-compatible) | ✅ DONE — PR #232 |
+| 14.C | `.csml` file import (dropdown + auto-detect) + `↓ Save .csml` export | ✅ DONE — PR #234 |
+| 14.D | ChordSlashML → CSMPN transpiler; `← Convert & Load` button transpiles before loading | ✅ DONE — PR #235 |
+
+## SPRINT 14 CHANGES (2026-05-11)
+
+### Sprint 14.0 — ChordSlashML Syntax Help Panel (PR #227)
+- `#btnCsmlHelp` (Power Mode) opens collapsible `#csmlHelpPanel` with full syntax reference tables: header fields, beat tokens, barlines, section labels, example, supported chord qualities
+- JS IIFE toggle + smooth scroll into view
+
+### Sprint 14.UI — Toolbar Redesign (PR #229)
+- Two-row `.toolbar` layout: Row 1 = primary workflow (all users), Row 2 = power tools (`toolbar-row--tools power-only`)
+- Import consolidated into `⬇ Import` + `▾` dropdown (`#importMenu`) — all 9 format buttons inside, power-only ones hidden in user mode
+- `.btn-pill` grouping for transpose controls; `.toolbar-sep` dividers between groups
+- `button.cta` accent class for Print/PDF; `.outline` for Save/Load/Settings
+- Import dropdown closes on outside-click, item-click, and scroll (IIFE)
+- Title updated to include `v1.10.0` version chip
+
+### Sprint 14.A — ChordSlashML Live Editor (PR #231)
+
+**`chordSlashMLRenderer.js`** (new, ~680 lines — browser IIFE)
+- Translates `src/parsers/chordSlashMLParser.ts` → `csmlParse(text)` → `CSMLDocument`
+- Translates `src/renderers/chordSlashMLSvgRenderer.ts` → `csmlToSvg(text, opts)` / `csmlToSvgDoc(doc, opts)`
+- Translates `src/converters/chordSlashMLToLilypond.ts` → `csmlToLilypond(text)`
+- Exposes `window.csml = { parse, toSvg, toSvgDoc, toLilypond, warnings }` — `warnings` updated after every `toSvg()` call from `doc.warnings`
+
+**`index.html`** — new panel and script tag
+- `<script defer src="chordSlashMLRenderer.js">` in `<head>`
+- `.csmlEditorPanel` CSS: two-column grid (textarea + preview), monospace editor, warning strip, action buttons; responsive stack on mobile < 700 px
+- `#btnCsmlEditor` in power-tools row; toggles panel open/closed
+- Panel pre-seeded with a starter example; renders immediately on open
+- Controls: Rows/line select (2–6), Stems checkbox
+- 300 ms debounced re-render on every keypress via `debounce()` (global util)
+- Parse warnings displayed below the textarea
+- Export: `↓ SVG` (SVG Blob download), `↓ LilyPond (.ly)` (text/plain)
+- `↓ Save .csml` (text/plain, `.csml` extension — added in 14.C)
+- `← Convert & Load` transpiles to CSMPN then loads (updated in 14.D)
+
+### Sprint 14.B — MusicXML Export from Live Editor (PR #232)
+
+**`chordSlashMLRenderer.js`** additions
+- `csmlChordKind(quality)` — MusicXML 4.0 chord kind mapping (mirrors `chordKind()` in CSMPN engine)
+- `csmlKeySigFifths(keyStr)` — maps key string to MusicXML `<fifths>` (includes minor → relative major lookup)
+- `csmlKeyMode(keyStr)` — `'major'` | `'minor'` detection
+- `csmlBeatsPerMeasure(timeSig)` — compound meter support (12/8→4, 9/8→3, 6/8→2)
+- `csmlBeatChordText(beat)` — extracts first chord text from any beat kind
+- `csmlHarmonyXml(chordText, offset, bpm)` — full `<harmony>` element with root, alter, kind, bass
+- `csmlToMusicXmlDoc(doc)` — complete MusicXML 4.0 Partwise generator: attributes, tempo, section rehearsal marks (`enclosure="square"`), harmonies per chord-change, slash noteheads, repeat barlines
+- `csmlToMusicXml(text)` — parse + export entry point; exposed as `window.csml.toMusicXml` / `window.csml.toMusicXmlDoc`
+
+**`index.html`** — `↓ MusicXML` button + download handler (`.xml` + `text/xml` MIME, iOS-compatible)
+
+### Sprint 14.C — `.csml` File Import & Save (PR #234)
+
+**`index.html`** changes
+- `"ChordSlashML (.csml)"` entry added to Import dropdown (power-only, after Guitar Pro)
+- `<input id="fileInputCsml" type="file" accept=".csml,.csm,text/plain">` hidden input
+- `.csml` / `.csm` added to main `fileInput` accept list
+- Auto-detect in main `fileInput` change handler: `.csml`/`.csm` files bypass CSMPN pipeline, open directly in Live Editor panel
+- `window._openCsmlEditor(text, filename)` shared helper (IIFE-scoped, exposed on window) used by both handlers
+- `↓ Save .csml` button downloads current editor content as `{title}.csml` (`text/plain`, UTF-8)
+
+### Sprint 14.D — ChordSlashML → CSMPN Transpiler (PR #235)
+
+**`chordSlashMLRenderer.js`** additions
+- `csmlFirstChordOfBeat(beat)` — extracts first chord from any beat kind (chord / compound / tuplet)
+- `csmlMeasureToBarToken(meas)` — derives CSMPN bar token: single chord, `chord1_chord2` split, or `%` (all-continuation / rest)
+- `csmlToCsmpnDoc(doc)` — full transpiler: CSMPN header lines, `- Section` markers, bar tokens grouped into plain runs or `|: … :|` repeat groups, final barlines respected
+- `csmlToCsmpn(text)` — entry point; exposed as `window.csml.toCsmpn` / `window.csml.toCsmpnDoc`
+
+**`index.html`** — `← Convert & Load` button now calls `window.csml.toCsmpn(text)` before setting `sourceEl.value`, so fake-book / slash notation / hybrid mode all render the converted chart correctly. Button label and tooltip updated.
+
+### `window.csml` API Summary (after Sprint 14)
+| Method | Description |
+|--------|-------------|
+| `csml.parse(text)` | Parse ChordSlashML → `CSMLDocument` |
+| `csml.toSvg(text, opts)` | Render → SVG string; stores warnings in `csml.warnings` |
+| `csml.toSvgDoc(text)` | Parse only, returns `CSMLDocument` (for title/metadata) |
+| `csml.toLilypond(text)` | Export → LilyPond `.ly` string |
+| `csml.toMusicXml(text)` | Export → MusicXML 4.0 string (`.xml`, `text/xml`) |
+| `csml.toMusicXmlDoc(doc)` | Same but accepts pre-parsed doc |
+| `csml.toCsmpn(text)` | Transpile ChordSlashML → CSMPN string |
+| `csml.toCsmpnDoc(doc)` | Same but accepts pre-parsed doc |
+| `csml.warnings` | Last parse warning array (updated by `toSvg`) |
