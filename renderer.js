@@ -476,8 +476,11 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
     if (events[idxs[0]].duration === 's') s += hrBeam(bx1, bx2, stemTopY + 6, fg);
   }
 
+  const hasTupletEvents = events.some((ev) => ev.tuplet > 0);
+  const anyEvChord = events.some((ev) => ev.chord);
+
   // Tuplet brackets: ⌐ N ¬ above groups of notes sharing the same tuplet value
-  if (events.some((ev) => ev.tuplet > 0)) {
+  if (hasTupletEvents) {
     const bracketY = staffY - 38;
     for (let ti = 0; ti < events.length; ) {
       const n = events[ti].tuplet || 0;
@@ -495,7 +498,6 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
   }
 
   // Render bar-level chord token at beat-1 when no per-event chord is set
-  const anyEvChord = events.some((ev) => ev.chord);
   if (!anyEvChord && bar.chordToken) {
     const cx1 = hrBeatX(1, timeSig, ul, uw);
     s += `<text x="${cx1}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family="Georgia,serif">${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;

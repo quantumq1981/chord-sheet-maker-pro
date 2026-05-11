@@ -133,6 +133,127 @@
     border:2px solid var(--border);
   }
 
+  /* ── Toolbar ──────────────────────────────────────────────── */
+  .toolbar{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin:10px 0 8px;
+  }
+  .toolbar-row{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+  }
+  .toolbar-group{
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .toolbar-sep{
+    width:1px;
+    height:28px;
+    background:var(--border);
+    flex-shrink:0;
+  }
+  @media screen and (max-width:480px){ .toolbar-sep{ display:none; } }
+
+  /* Pill-style transpose buttons */
+  .btn-pill{
+    display:flex;
+    align-items:stretch;
+  }
+  .btn-pill button{
+    border-radius:0;
+    border:1.5px solid var(--border);
+    background:var(--card);
+    color:var(--ink);
+    padding:9px 13px;
+    font-size:14px;
+    font-weight:700;
+    line-height:1;
+  }
+  .btn-pill button:first-child{ border-radius:10px 0 0 10px; }
+  .btn-pill button:last-child{ border-radius:0 10px 10px 0; }
+  .btn-pill button+button{ border-left:none; }
+  .btn-pill button:hover{ background:#f0f4ff; color:var(--accent); border-color:#b0c4ff; z-index:1; }
+  .btn-pill button:active{ background:#e0e8ff; }
+
+  /* Print / PDF primary CTA */
+  button.cta{
+    background:linear-gradient(135deg,#1d4ed8,#2563eb);
+    box-shadow:0 2px 8px rgba(37,99,235,0.3);
+    padding:11px 22px;
+    font-size:15px;
+    letter-spacing:0.01em;
+  }
+  button.cta:hover{
+    background:linear-gradient(135deg,#1e40af,#1d4ed8);
+    box-shadow:0 4px 14px rgba(37,99,235,0.4);
+  }
+  button.cta:active{
+    transform:translateY(1px);
+    box-shadow:0 1px 4px rgba(37,99,235,0.25);
+  }
+
+  /* Import dropdown */
+  .import-wrap{ display:flex; position:relative; }
+  #btnImport{ border-radius:12px 0 0 12px !important; }
+  .import-more{
+    border-left:1px solid rgba(255,255,255,0.3) !important;
+    padding:0 11px !important;
+    border-radius:0 12px 12px 0 !important;
+    font-size:12px !important;
+    font-weight:900 !important;
+    min-width:30px;
+  }
+  .import-menu{
+    position:absolute;
+    top:calc(100% + 6px);
+    left:0;
+    min-width:210px;
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:12px;
+    box-shadow:0 8px 28px rgba(0,0,0,0.13);
+    z-index:300;
+    overflow:hidden;
+    display:none;
+    padding:4px 0;
+  }
+  .import-menu.open{ display:block; }
+  .import-menu .import-item{
+    display:block;
+    width:100%;
+    text-align:left;
+    border-radius:0;
+    border:none;
+    border-bottom:1px solid var(--border);
+    padding:11px 16px;
+    font-size:14px;
+    font-weight:600;
+    background:transparent;
+    color:var(--ink);
+    cursor:pointer;
+  }
+  .import-menu .import-item:last-child{ border-bottom:none; }
+  .import-menu .import-item:hover{ background:var(--bg); color:var(--accent); }
+  .import-menu hr.import-divider{
+    margin:4px 0;
+    border:none;
+    border-top:1px solid var(--border);
+  }
+
+  /* Power tools row */
+  .toolbar-row--tools{ padding-top:4px; border-top:1px solid var(--border); }
+
+  /* Responsive: tighten on small screens */
+  @media screen and (max-width:480px){
+    .toolbar-row{ gap:6px; }
+    button.cta{ padding:11px 16px; font-size:14px; }
+  }
+
   .tips{
     margin-top:8px;
     font-size:13px;
@@ -803,7 +924,7 @@ body.exporting .sectionBlock{
 
 @media print{
     body{ background:white; }
-    .topbar, .card.editorCard, .tips, .status, .btnrow, .settingsPanel, .diagnosticsPanel, #feature-modal, #pin-modal, .mode-toggle-wrap { display:none !important; }
+    .topbar, .card.editorCard, .tips, .status, .btnrow, .toolbar, .settingsPanel, .diagnosticsPanel, #feature-modal, #pin-modal, .mode-toggle-wrap { display:none !important; }
     .app{ max-width:none; padding:0; }
     .previewWrap{ border:0; padding:0; }
     .sheet{ border-radius:0; padding:24px 36px; box-shadow:none; }
@@ -1412,7 +1533,7 @@ body.exporting .sectionBlock{
 <div id="abc-hidden" style="display:none"></div>
 <div class="app">
   <div class="topbar">
-    <div class="title">ChordSheet CSMPN Builder v1.10.0 — Fake Book Edition</div>
+    <div class="title">Chord Sheet Maker Pro <span style="font-size:12px;font-weight:500;color:var(--muted);letter-spacing:0;">v1.10.0</span></div>
 
     <!-- User / Power Mode Toggle -->
     <div class="mode-toggle-wrap">
@@ -1433,35 +1554,79 @@ body.exporting .sectionBlock{
       <div class="field"><label>Style</label><input id="hdrStyle" placeholder="e.g., Swing"></div>
     </div>
 
-    <div class="btnrow">
-      <!-- Auto-detect import remains for backwards compatibility -->
-      <button class="accent" id="btnImport">Import File</button><button class="info-btn" onclick="openFeatureInfo('import')" title="About Import">ⓘ</button>
-      <!-- New dedicated import buttons for supported formats -->
-      <button class="accent" id="btnImportMusicXML">Import MusicXML/MXL</button>
-      <button class="accent" id="btnImportChordPro">Import ChordPro</button>
-      <button class="accent" id="btnImportChordMark">Import ChordMark</button>
-      <button class="accent" id="btnImportUG">Import UG</button>
-      <button class="accent power-only" id="btnImportOnSong">Import OnSong</button>
-      <button class="accent power-only" id="btnImportOpenSong">Import OpenSong XML</button>
-      <button class="accent power-only" id="btnImportOpenLyrics">Import OpenLyrics XML</button>
-      <button class="accent power-only" id="btnImportIRealPro">Import iReal Pro</button>
-      <button class="accent power-only" id="btnImportGuitarPro">Import Guitar Pro</button>
+    <div class="toolbar">
 
-      <button class="secondary" id="btnTransposeDown">-1</button>
-      <button class="secondary" id="btnTransposeUp">+1</button>
-      <button class="secondary" id="btnTransposeReset">Reset</button>
-      <button class="outline" id="btnSettings">Settings</button>
-      <button class="accent" id="btnPrint">Print / PDF</button>
-      <button class="secondary" id="btnDownloadPdf">Download PDF</button>
-      <button class="secondary" id="btnPng">PNG</button>
-      <button class="secondary" id="btnCopy">Copy</button>
-      <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
-      <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
-      <button class="outline power-only" id="btnSlashNotation">𝄞 Slash Notation</button>
-      <button class="outline power-only" id="btnCsmlHelp">♩ ChordSlashML Help</button>
-      <button class="outline" id="btnSave">Save</button>
-      <button class="outline" id="btnLoad">Load</button>
-      <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
+      <!-- Row 1: primary workflow (all users) -->
+      <div class="toolbar-row">
+
+        <!-- Import with format dropdown -->
+        <div class="toolbar-group">
+          <div class="import-wrap">
+            <button class="accent" id="btnImport">⬇ Import</button><button class="accent import-more" id="btnImportMore" title="Choose import format" aria-haspopup="true" aria-expanded="false">▾</button>
+            <div class="import-menu" id="importMenu" role="menu">
+              <button class="import-item" id="btnImportMusicXML" role="menuitem">MusicXML / MXL</button>
+              <button class="import-item" id="btnImportChordPro" role="menuitem">ChordPro</button>
+              <button class="import-item" id="btnImportChordMark" role="menuitem">ChordMark</button>
+              <button class="import-item" id="btnImportUG" role="menuitem">Ultimate Guitar</button>
+              <hr class="import-divider power-only">
+              <button class="import-item power-only" id="btnImportOnSong" role="menuitem">OnSong</button>
+              <button class="import-item power-only" id="btnImportOpenSong" role="menuitem">OpenSong XML</button>
+              <button class="import-item power-only" id="btnImportOpenLyrics" role="menuitem">OpenLyrics XML</button>
+              <button class="import-item power-only" id="btnImportIRealPro" role="menuitem">iReal Pro</button>
+              <button class="import-item power-only" id="btnImportGuitarPro" role="menuitem">Guitar Pro</button>
+            </div>
+          </div>
+          <button class="info-btn" onclick="openFeatureInfo('import')" title="About Import">ⓘ</button>
+        </div>
+
+        <div class="toolbar-sep"></div>
+
+        <!-- Transpose pill -->
+        <div class="toolbar-group">
+          <div class="btn-pill" title="Transpose">
+            <button id="btnTransposeDown" title="Down one semitone">−1</button>
+            <button id="btnTransposeUp" title="Up one semitone">+1</button>
+            <button id="btnTransposeReset" title="Reset transposition">↺</button>
+          </div>
+        </div>
+
+        <div class="toolbar-sep"></div>
+
+        <!-- Print / PDF — primary CTA -->
+        <div class="toolbar-group">
+          <button class="accent cta" id="btnPrint">⎙ Print / PDF</button>
+          <button class="secondary" id="btnDownloadPdf" title="Download as PDF">↓ PDF</button>
+          <button class="secondary" id="btnPng" title="Export PNG">PNG</button>
+          <button class="secondary" id="btnCopy" title="Copy chart text">Copy</button>
+        </div>
+
+        <div class="toolbar-sep"></div>
+
+        <!-- Save / Load / Settings -->
+        <div class="toolbar-group">
+          <button class="outline" id="btnSave">Save</button>
+          <button class="outline" id="btnLoad">Load</button>
+          <button class="outline" id="btnSettings" title="Open settings">⚙ Settings</button>
+        </div>
+
+      </div>
+
+      <!-- Row 2: power tools (hidden in user mode) -->
+      <div class="toolbar-row toolbar-row--tools power-only">
+        <div class="toolbar-group">
+          <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
+          <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <div class="toolbar-group">
+          <button class="outline power-only" id="btnSlashNotation">𝄞 Slash Notation</button>
+          <button class="outline power-only" id="btnCsmlHelp">♩ ChordSlashML Help</button>
+        </div>
+        <div class="toolbar-group">
+          <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
+        </div>
+      </div>
+
     </div>
 
     <div class="tips power-only">
@@ -2944,6 +3109,26 @@ document.getElementById('btnImport').addEventListener('click', () => {
   fileInput.value = '';
   fileInput.click();
 });
+
+// Import format dropdown
+(function () {
+  const importMenu = document.getElementById('importMenu');
+  const btnMore    = document.getElementById('btnImportMore');
+  if (!importMenu || !btnMore) return;
+
+  function openMenu()  { importMenu.classList.add('open');    btnMore.setAttribute('aria-expanded', 'true');  }
+  function closeMenu() { importMenu.classList.remove('open'); btnMore.setAttribute('aria-expanded', 'false'); }
+  function toggleMenu(e) { e.stopPropagation(); importMenu.classList.contains('open') ? closeMenu() : openMenu(); }
+
+  btnMore.addEventListener('click', toggleMenu);
+
+  // Close when any menu item is clicked (it will then trigger its own file-picker)
+  importMenu.addEventListener('click', closeMenu);
+
+  // Close on outside click / scroll
+  document.addEventListener('click', (e) => { if (!importMenu.contains(e.target) && e.target !== btnMore) closeMenu(); });
+  document.addEventListener('scroll', closeMenu, { passive: true });
+})();
 
 fileInput.addEventListener('change', async () => {
   const file = fileInput.files && fileInput.files[0];
