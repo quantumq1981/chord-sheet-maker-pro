@@ -25,6 +25,7 @@ export type SourceFormat =
   | 'abc'
   | 'guitarpro'
   | 'fakebook'
+  | 'chordslashml'
   | 'oemer-image';
 
 export type DetectedFormat =
@@ -37,6 +38,7 @@ export type DetectedFormat =
   | { format: 'abc' }
   | { format: 'guitarpro' }
   | { format: 'fakebook' }
+  | { format: 'chordslashml' }
   | { format: 'pdf' }
   | { format: 'unknown' };
 
@@ -75,6 +77,11 @@ const ABC_HEADER_RE = /^X\s*:\s*\d/m;
 
 // Fake-book lead-sheet: repeat-bar barlines (|: or :|) or ·/· simile marker
 const FAKEBOOK_RE = /(?:^\s*\|:[ \t]|[ \t]:\|\s*$|\u00B7\/\u00B7)/m;
+
+// ChordSlashML: pipe-delimited measure lines containing underscore beat-continuation tokens.
+// The underscore inside bars distinguishes ChordSlashML from CSMPN/fakebook format,
+// which only places chord names (no beat markers) between barlines.
+const CHORDSLASHML_RE = /^\s*\|[^|\n]*_[^|\n]*\|/m;
 
 function hasZipMagic(bytes: Uint8Array): boolean {
   return (
@@ -191,7 +198,8 @@ export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): Detected
     return { format: 'fakebook' };
   }
 
-  // 4. ChordPro directives
+  // 4. ChordPro directives — checked before ChordSlashML so {directive}-tagged
+  //    files with measure lines are not mis-classified.
   if (CHORDPRO_DIRECTIVE_RE.test(head)) {
     return { format: 'chordpro' };
   }
@@ -204,6 +212,12 @@ export function sniffFormatFromBytes(bytes: Uint8Array, filename = ''): Detected
   // 6. Inline bracket chords (without UG sections → treat as ChordPro)
   if (BRACKET_CHORD_RE.test(head)) {
     return { format: 'chordpro' };
+  }
+
+  // 6b. ChordSlashML — pipe-delimited measures with underscore beat tokens.
+  //     Checked after all other named text formats so more specific signatures win.
+  if (ext === 'csml' || CHORDSLASHML_RE.test(head)) {
+    return { format: 'chordslashml' };
   }
 
   // 7. Chord-over-words heuristic: count chord-only lines vs text lines
@@ -267,7 +281,8 @@ export function sniffFormatFromText(text: string): DetectedFormat {
     return { format: 'fakebook' };
   }
 
-  // ChordPro directives
+  // ChordSlashML — pipe-delimited measures with underscore beat tokens
+  // ChordPro directives — checked before ChordSlashML
   if (CHORDPRO_DIRECTIVE_RE.test(head)) {
     return { format: 'chordpro' };
   }
@@ -280,6 +295,11 @@ export function sniffFormatFromText(text: string): DetectedFormat {
   // Inline bracket chords
   if (BRACKET_CHORD_RE.test(head)) {
     return { format: 'chordpro' };
+  }
+
+  // ChordSlashML — checked after all other named text formats
+  if (CHORDSLASHML_RE.test(head)) {
+    return { format: 'chordslashml' };
   }
 
   // Chord-over-words heuristic
