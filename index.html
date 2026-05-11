@@ -2048,6 +2048,7 @@ Tempo: 120
       <div class="csml-editor-actions">
         <button class="primary" id="btnCsmlLoad" title="Replace the main chart source with this ChordSlashML text">← Load into Chart</button>
         <button id="btnCsmlDownloadSvg" title="Download the current preview as an SVG file">↓ SVG</button>
+        <button id="btnCsmlDownloadXml" title="Download a MusicXML .xml file (opens in MuseScore, Dorico, Sibelius)">↓ MusicXML</button>
         <button id="btnCsmlDownloadLy" title="Download a LilyPond .ly file from the current source">↓ LilyPond (.ly)</button>
       </div>
     </div>
@@ -5937,6 +5938,7 @@ ${headerHtml}${svg.outerHTML}
   const stemsChk   = document.getElementById('csmlEditorStems');
   const btnLoad    = document.getElementById('btnCsmlLoad');
   const btnSvg     = document.getElementById('btnCsmlDownloadSvg');
+  const btnXml     = document.getElementById('btnCsmlDownloadXml');
   const btnLy      = document.getElementById('btnCsmlDownloadLy');
 
   if (!panel || !btnOpen) return;
@@ -6015,6 +6017,24 @@ ${headerHtml}${svg.outerHTML}
     const blob = new Blob([lastSvg], { type: 'image/svg+xml;charset=utf-8' });
     const url  = URL.createObjectURL(blob);
     const a    = Object.assign(document.createElement('a'), { href: url, download: safeFilename(title) + '.svg' });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  });
+
+  if (btnXml) btnXml.addEventListener('click', () => {
+    if (!window.csml) return;
+    const text = inputEl.value;
+    if (!text.trim()) return;
+    let xmlText;
+    try { xmlText = window.csml.toMusicXml(text); } catch (e) { setStatus('MusicXML export failed: ' + e.message, 'err'); return; }
+    if (!xmlText) { setStatus('Nothing to export.', 'err'); return; }
+    const doc   = window.csml.parse(text);
+    const title = doc.title || 'chord-sheet';
+    const blob  = new Blob([xmlText], { type: 'text/xml;charset=utf-8' });
+    const url   = URL.createObjectURL(blob);
+    const a     = Object.assign(document.createElement('a'), { href: url, download: safeFilename(title) + '.xml' });
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
