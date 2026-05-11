@@ -1299,6 +1299,91 @@ body.exporting .sectionBlock{
     color:#666;
     margin-top:2px;
   }
+  /* ── ChordSlashML Help Panel ──────────────────────────────── */
+  .csmlHelpPanel{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:12px;
+    display:none;
+  }
+  .csmlHelpPanel.open{ display:block; }
+  .csml-help-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:12px;
+  }
+  .csml-help-header h3{
+    margin:0;
+    font-size:16px;
+    font-weight:800;
+    color:var(--ink);
+  }
+  #btnCsmlHelpClose{
+    font-size:12px;
+    padding:5px 10px;
+    border-radius:6px;
+    border:1px solid var(--border);
+    background:var(--card);
+    color:var(--muted);
+    cursor:pointer;
+  }
+  #btnCsmlHelpClose:hover{ background:#f0f0f0; }
+  .csml-ref-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+    margin-bottom:14px;
+  }
+  .csml-ref-table th{
+    text-align:left;
+    padding:6px 10px;
+    background:var(--bg);
+    border-bottom:2px solid var(--border);
+    font-weight:700;
+    color:var(--muted);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+  }
+  .csml-ref-table td{
+    padding:6px 10px;
+    border-bottom:1px solid var(--border);
+    vertical-align:top;
+  }
+  .csml-ref-table code{
+    background:var(--bg);
+    border:1px solid var(--border);
+    border-radius:4px;
+    padding:1px 5px;
+    font-family:monospace;
+    font-size:12px;
+    color:var(--ink);
+    white-space:nowrap;
+  }
+  .csml-example{
+    background:var(--bg);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:10px 14px;
+    font-family:monospace;
+    font-size:13px;
+    color:var(--ink);
+    white-space:pre;
+    overflow-x:auto;
+    line-height:1.6;
+    margin-top:4px;
+  }
+  .csml-section-hd{
+    font-size:13px;
+    font-weight:700;
+    color:var(--ink);
+    margin:12px 0 6px;
+    padding-bottom:4px;
+    border-bottom:1px solid var(--border);
+  }
   .hybridSvgWrap{ display:block; overflow:visible; }
   .hybridModeChip{
     display:inline-block;
@@ -1373,6 +1458,7 @@ body.exporting .sectionBlock{
       <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
       <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
       <button class="outline power-only" id="btnSlashNotation">𝄞 Slash Notation</button>
+      <button class="outline power-only" id="btnCsmlHelp">♩ ChordSlashML Help</button>
       <button class="outline" id="btnSave">Save</button>
       <button class="outline" id="btnLoad">Load</button>
       <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
@@ -1493,6 +1579,92 @@ body.exporting .sectionBlock{
       </div>
       <div id="slashNotationOutput">
         <p style="color:#888;text-align:center;padding:16px 0">Import or paste a chord chart, then click <strong>𝄞 Slash Notation</strong> to render.</p>
+      </div>
+    </div>
+
+    <!-- ChordSlashML Syntax Reference Panel (power-mode only) -->
+    <div id="csmlHelpPanel" class="csmlHelpPanel power-only">
+      <div class="csml-help-header">
+        <h3>♩ ChordSlashML Syntax Reference</h3>
+        <button id="btnCsmlHelpClose" title="Close syntax reference">&#x2715;</button>
+      </div>
+      <div class="csml-help-body">
+        <p class="csml-section-hd">Header Fields</p>
+        <table class="csml-ref-table">
+          <thead><tr><th>Field</th><th>Example</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>Title:</code></td><td><code>Title: Autumn Leaves</code></td><td>Song title displayed above the staff</td></tr>
+            <tr><td><code>Composer:</code></td><td><code>Composer: J. Kosma</code></td><td>Composer / arranger name</td></tr>
+            <tr><td><code>Key:</code></td><td><code>Key: Bb</code> &nbsp; <code>Key: Gm</code></td><td>Tonic note; append <code>m</code> for minor</td></tr>
+            <tr><td><code>Time:</code></td><td><code>Time: 4/4</code> &nbsp; <code>Time: 6/8</code></td><td>Time signature</td></tr>
+            <tr><td><code>Tempo:</code></td><td><code>Tempo: 120</code></td><td>BPM (integer)</td></tr>
+          </tbody>
+        </table>
+
+        <p class="csml-section-hd">Beat Tokens (inside a measure)</p>
+        <table class="csml-ref-table">
+          <thead><tr><th>Token</th><th>Meaning</th><th>Example measure</th></tr></thead>
+          <tbody>
+            <tr><td><code>C</code>, <code>Am7</code>, <code>Bbmaj7</code>&hellip;</td><td>Chord name — occupies one beat slot</td><td><code>| Dm7 _ G7 _ |</code></td></tr>
+            <tr><td><code>_</code></td><td>Slash / continue — holds the previous chord</td><td><code>| C _ _ _ |</code></td></tr>
+            <tr><td><code>.</code></td><td>Rest — silence for one beat</td><td><code>| C . Am . |</code></td></tr>
+            <tr><td><code>A_B</code></td><td>Compound beat — two chords share one beat</td><td><code>| G_D C _ _ _ |</code></td></tr>
+            <tr><td><code>(A B C)</code></td><td>Tuplet — 3 beats squeezed into 2 beat slots</td><td><code>| (C Am F) G |</code></td></tr>
+          </tbody>
+        </table>
+
+        <p class="csml-section-hd">Barlines</p>
+        <table class="csml-ref-table">
+          <thead><tr><th>Barline</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>|</code></td><td>Normal barline</td></tr>
+            <tr><td><code>||</code> &nbsp; <code>|.</code></td><td>Double / final barline (end of piece)</td></tr>
+            <tr><td><code>|:</code></td><td>Repeat start</td></tr>
+            <tr><td><code>:|</code></td><td>Repeat end</td></tr>
+          </tbody>
+        </table>
+
+        <p class="csml-section-hd">Section Labels &amp; Comments</p>
+        <table class="csml-ref-table">
+          <thead><tr><th>Syntax</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>[Verse]</code>, <code>[Chorus]</code>&hellip;</td><td>Section label — renders in a box above the staff row</td></tr>
+            <tr><td><code>// comment</code></td><td>Line comment — ignored by the parser</td></tr>
+          </tbody>
+        </table>
+
+        <p class="csml-section-hd">Example</p>
+        <div class="csml-example">Title: My Song
+Composer: Me
+Key: F
+Time: 4/4
+Tempo: 100
+
+[Verse]
+| Dm7 _ G7 _ | Cmaj7 _ _ _ | Am7 _ D7 _ | Gm7 _ C7 _ |
+
+[Chorus]
+|: F _ _ _ | Bb _ _ _ | C7 _ _ _ | F _ _ _ :|
+
+[Tag]
+| F _ Gm7 _ | F_C Bb _ _ _ ||</div>
+
+        <p class="csml-section-hd">Supported Chord Qualities</p>
+        <p style="font-size:12px;color:var(--muted);line-height:1.9;margin:0">
+          Major: <code>C</code> <code>CM</code> <code>Cmaj</code> &nbsp;&middot;&nbsp;
+          Minor: <code>Cm</code> <code>Cmin</code> &nbsp;&middot;&nbsp;
+          Dom 7th: <code>C7</code> <code>C9</code> <code>C11</code> <code>C13</code> &nbsp;&middot;&nbsp;
+          Maj 7th: <code>Cmaj7</code> <code>Cmaj9</code> &nbsp;&middot;&nbsp;
+          Min 7th: <code>Cm7</code> <code>Cm9</code> <code>Cm11</code> <code>Cm13</code><br>
+          Half-dim: <code>Cm7b5</code> &nbsp;&middot;&nbsp;
+          Dim: <code>Cdim</code> <code>Cdim7</code> &nbsp;&middot;&nbsp;
+          Aug: <code>Caug</code> <code>Caug7</code> &nbsp;&middot;&nbsp;
+          Sus: <code>Csus2</code> <code>Csus4</code> <code>C7sus4</code> &nbsp;&middot;&nbsp;
+          Added: <code>Cadd9</code> <code>C6add9</code><br>
+          Altered dom: <code>C7b5</code> <code>C7#5</code> <code>C7b9</code> <code>C7#9</code> &nbsp;&middot;&nbsp;
+          Minor-major: <code>CmM7</code> &nbsp;&middot;&nbsp;
+          Slash chord: <code>G/B</code> <code>Bb/D</code> <code>D/F#</code>
+        </p>
       </div>
     </div>
 
@@ -5334,6 +5506,19 @@ ${headerHtml}${svg.outerHTML}
   document.getElementById('btnSnPrint').addEventListener('click', printSlashNotation);
   document.getElementById('btnSnXml').addEventListener('click',   downloadMusicXml);
 
+})();
+
+// ── ChordSlashML Syntax Reference Panel ─────────────────────────────
+(function () {
+  const csmlPanel = document.getElementById('csmlHelpPanel');
+  const btnOpen   = document.getElementById('btnCsmlHelp');
+  const btnClose  = document.getElementById('btnCsmlHelpClose');
+  if (btnOpen) btnOpen.addEventListener('click', () => {
+    csmlPanel.classList.toggle('open');
+    if (csmlPanel.classList.contains('open'))
+      csmlPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+  if (btnClose) btnClose.addEventListener('click', () => csmlPanel.classList.remove('open'));
 })();
 
 </script>
