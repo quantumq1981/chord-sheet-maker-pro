@@ -34,6 +34,9 @@
 <!-- Guitar Pro importer — loads AlphaTab CDN lazily on first GP file import -->
 <script defer src="importGuitarPro.js"></script>
 
+<!-- ChordSlashML browser bundle — parser + SVG renderer + LilyPond exporter -->
+<script defer src="chordSlashMLRenderer.js"></script>
+
 <style>
   :root{
     --bg:#f5f5f5;
@@ -1524,7 +1527,164 @@ body.exporting .sectionBlock{
     .hybridSvgWrap{ break-inside:avoid; page-break-inside:avoid; }
     .hybridSvgWrap svg{ width:100% !important; height:auto !important; }
     .hybridModeChip{ display:none !important; }
+    .csmlEditorPanel{ display:none !important; }
   }
+
+  /* ── ChordSlashML Live Editor Panel ─────────────────────────── */
+  .csmlEditorPanel{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:12px;
+    display:none;
+  }
+  .csmlEditorPanel.open{ display:block; }
+  .csml-editor-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:12px;
+  }
+  .csml-editor-header h3{
+    margin:0;
+    font-size:14px;
+    font-weight:700;
+  }
+  .csml-editor-header-controls{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .csml-editor-toolbar{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:10px;
+  }
+  .csml-editor-toolbar label{
+    font-size:12px;
+    color:var(--muted);
+    display:flex;
+    align-items:center;
+    gap:4px;
+    cursor:pointer;
+  }
+  .csml-editor-toolbar select{
+    font-size:12px;
+    padding:2px 6px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    background:var(--bg);
+    color:var(--ink);
+  }
+  #btnCsmlEditorClose{
+    background:none;
+    border:none;
+    font-size:16px;
+    cursor:pointer;
+    padding:4px 6px;
+    border-radius:6px;
+    color:var(--muted);
+    line-height:1;
+  }
+  #btnCsmlEditorClose:hover{ background:#f0f0f0; }
+  .csml-editor-panes{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+    align-items:start;
+  }
+  @media(max-width:700px){
+    .csml-editor-panes{ grid-template-columns:1fr; }
+  }
+  .csml-editor-pane-label{
+    font-size:11px;
+    font-weight:600;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    margin-bottom:4px;
+  }
+  #csmlEditorInput{
+    width:100%;
+    min-height:200px;
+    font-family:ui-monospace, "Cascadia Code", "Fira Code", Menlo, monospace;
+    font-size:12px;
+    line-height:1.6;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:10px;
+    background:var(--bg);
+    color:var(--ink);
+    resize:vertical;
+    box-sizing:border-box;
+  }
+  #csmlEditorInput:focus{
+    outline:none;
+    border-color:var(--accent);
+    box-shadow:0 0 0 2px rgba(37,99,235,.12);
+  }
+  .csml-preview-box{
+    min-height:200px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:var(--bg);
+    overflow:auto;
+    padding:8px;
+    display:flex;
+    align-items:flex-start;
+    justify-content:flex-start;
+  }
+  .csml-preview-box svg{
+    max-width:100%;
+    height:auto;
+  }
+  .csml-preview-empty{
+    color:var(--muted);
+    font-size:12px;
+    padding:16px;
+    text-align:center;
+    width:100%;
+    align-self:center;
+  }
+  .csml-warnings{
+    margin-top:8px;
+    font-size:11px;
+    color:#c05000;
+    background:#fff8f0;
+    border:1px solid #f0c080;
+    border-radius:6px;
+    padding:6px 10px;
+    display:none;
+  }
+  .csml-warnings.has-warnings{ display:block; }
+  .csml-editor-actions{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-top:10px;
+    padding-top:10px;
+    border-top:1px solid var(--border);
+  }
+  .csml-editor-actions button{
+    font-size:12px;
+    padding:5px 12px;
+    border-radius:8px;
+    cursor:pointer;
+    border:1px solid var(--border);
+    background:var(--bg);
+    color:var(--ink);
+    transition:background .15s;
+  }
+  .csml-editor-actions button:hover{ background:var(--border); }
+  .csml-editor-actions button.primary{
+    background:var(--accent);
+    color:#fff;
+    border-color:var(--accent);
+  }
+  .csml-editor-actions button.primary:hover{ background:#1d4ed8; border-color:#1d4ed8; }
 </style>
 <style id="dynamicPageStyle">@media print { @page { size: letter portrait; margin: 0.5in; } }</style>
 </head>
@@ -1621,6 +1781,7 @@ body.exporting .sectionBlock{
         <div class="toolbar-group">
           <button class="outline power-only" id="btnSlashNotation">𝄞 Slash Notation</button>
           <button class="outline power-only" id="btnCsmlHelp">♩ ChordSlashML Help</button>
+          <button class="outline power-only" id="btnCsmlEditor">⊞ ChordSlashML Editor</button>
         </div>
         <div class="toolbar-group">
           <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
@@ -1830,6 +1991,64 @@ Tempo: 100
           Minor-major: <code>CmM7</code> &nbsp;&middot;&nbsp;
           Slash chord: <code>G/B</code> <code>Bb/D</code> <code>D/F#</code>
         </p>
+      </div>
+    </div>
+
+    <!-- ChordSlashML Live Editor Panel (power-mode only) -->
+    <div id="csmlEditorPanel" class="csmlEditorPanel power-only">
+      <div class="csml-editor-header">
+        <h3>⊞ ChordSlashML Live Editor</h3>
+        <div class="csml-editor-header-controls">
+          <div class="csml-editor-toolbar">
+            <label title="Measures per row">
+              Rows/line:
+              <select id="csmlEditorMpr">
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4" selected>4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+              </select>
+            </label>
+            <label title="Show rhythmic stems on noteheads">
+              <input type="checkbox" id="csmlEditorStems"> Stems
+            </label>
+          </div>
+          <button id="btnCsmlEditorClose" title="Close editor">&#x2715;</button>
+        </div>
+      </div>
+
+      <div class="csml-editor-panes">
+        <div>
+          <div class="csml-editor-pane-label">ChordSlashML Source</div>
+          <textarea id="csmlEditorInput" spellcheck="false" autocorrect="off" autocapitalize="off">Title: My Song
+Composer: Me
+Key: F
+Time: 4/4
+Tempo: 120
+
+[Verse]
+| Dm7 _ G7 _ | Cmaj7 _ _ _ | Am7 _ D7 _ | Gm7 _ C7 _ |
+
+[Chorus]
+|: F _ _ _ | Bb _ _ _ | C7 _ _ _ | F _ _ _ :|
+
+[Tag]
+| F _ Gm7 _ | F_C Bb _ _ _ ||</textarea>
+          <div class="csml-warnings" id="csmlEditorWarnings"></div>
+        </div>
+        <div>
+          <div class="csml-editor-pane-label">Live Preview</div>
+          <div class="csml-preview-box" id="csmlEditorPreview">
+            <div class="csml-preview-empty">Start typing to see the preview…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="csml-editor-actions">
+        <button class="primary" id="btnCsmlLoad" title="Replace the main chart source with this ChordSlashML text">← Load into Chart</button>
+        <button id="btnCsmlDownloadSvg" title="Download the current preview as an SVG file">↓ SVG</button>
+        <button id="btnCsmlDownloadLy" title="Download a LilyPond .ly file from the current source">↓ LilyPond (.ly)</button>
       </div>
     </div>
 
@@ -5704,6 +5923,120 @@ ${headerHtml}${svg.outerHTML}
       csmlPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
   if (btnClose) btnClose.addEventListener('click', () => csmlPanel.classList.remove('open'));
+})();
+
+// ── ChordSlashML Live Editor Panel ───────────────────────────────────
+(function () {
+  const panel      = document.getElementById('csmlEditorPanel');
+  const btnOpen    = document.getElementById('btnCsmlEditor');
+  const btnClose   = document.getElementById('btnCsmlEditorClose');
+  const inputEl    = document.getElementById('csmlEditorInput');
+  const previewEl  = document.getElementById('csmlEditorPreview');
+  const warningsEl = document.getElementById('csmlEditorWarnings');
+  const mprSel     = document.getElementById('csmlEditorMpr');
+  const stemsChk   = document.getElementById('csmlEditorStems');
+  const btnLoad    = document.getElementById('btnCsmlLoad');
+  const btnSvg     = document.getElementById('btnCsmlDownloadSvg');
+  const btnLy      = document.getElementById('btnCsmlDownloadLy');
+
+  if (!panel || !btnOpen) return;
+
+  let lastSvg = '';
+
+  function renderPreview() {
+    if (!window.csml) {
+      previewEl.innerHTML = '<div class="csml-preview-empty">ChordSlashML renderer loading…</div>';
+      return;
+    }
+    const text = inputEl.value;
+    if (!text.trim()) {
+      previewEl.innerHTML = '<div class="csml-preview-empty">Start typing to see the preview…</div>';
+      warningsEl.textContent = '';
+      warningsEl.classList.remove('has-warnings');
+      lastSvg = '';
+      return;
+    }
+    try {
+      const opts = {
+        measuresPerRow: parseInt(mprSel.value, 10) || 4,
+        stems: stemsChk.checked,
+      };
+      lastSvg = window.csml.toSvg(text, opts);
+      previewEl.innerHTML = lastSvg;
+      const warns = (window.csml.warnings || []);
+      if (warns.length) {
+        warningsEl.textContent = warns.join(' · ');
+        warningsEl.classList.add('has-warnings');
+      } else {
+        warningsEl.textContent = '';
+        warningsEl.classList.remove('has-warnings');
+      }
+    } catch (err) {
+      previewEl.innerHTML = '<div class="csml-preview-empty" style="color:#c00;">' + escapeHtml(String(err)) + '</div>';
+      warningsEl.textContent = '';
+      warningsEl.classList.remove('has-warnings');
+      lastSvg = '';
+    }
+  }
+
+  const debouncedRender = debounce(renderPreview, 300);
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    renderPreview();
+  }
+
+  btnOpen.addEventListener('click', () => {
+    panel.classList.contains('open') ? panel.classList.remove('open') : openPanel();
+  });
+  if (btnClose) btnClose.addEventListener('click', () => panel.classList.remove('open'));
+
+  if (inputEl) inputEl.addEventListener('input', debouncedRender);
+  if (mprSel)  mprSel.addEventListener('change', renderPreview);
+  if (stemsChk) stemsChk.addEventListener('change', renderPreview);
+
+  if (btnLoad) btnLoad.addEventListener('click', () => {
+    const text = inputEl.value;
+    if (!text.trim()) return;
+    const sourceEl = document.getElementById('source');
+    if (sourceEl) {
+      sourceEl.value = text;
+      if (typeof updatePreview === 'function') updatePreview();
+      panel.classList.remove('open');
+      setStatus('ChordSlashML source loaded into chart.', 'ok');
+    }
+  });
+
+  if (btnSvg) btnSvg.addEventListener('click', () => {
+    if (!lastSvg) return;
+    const doc = window.csml ? window.csml.toSvgDoc(inputEl.value) : null;
+    const title = (doc && doc.title) ? doc.title : 'chord-sheet';
+    const blob = new Blob([lastSvg], { type: 'image/svg+xml;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), { href: url, download: safeFilename(title) + '.svg' });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  });
+
+  if (btnLy) btnLy.addEventListener('click', () => {
+    if (!window.csml) return;
+    const text = inputEl.value;
+    if (!text.trim()) return;
+    let lyText;
+    try { lyText = window.csml.toLilypond(text); } catch (e) { setStatus('LilyPond export failed: ' + e.message, 'err'); return; }
+    const doc   = window.csml.toSvgDoc(text);
+    const title = (doc && doc.title) ? doc.title : 'chord-sheet';
+    const blob  = new Blob([lyText], { type: 'text/plain;charset=utf-8' });
+    const url   = URL.createObjectURL(blob);
+    const a     = Object.assign(document.createElement('a'), { href: url, download: safeFilename(title) + '.ly' });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  });
 })();
 
 </script>
