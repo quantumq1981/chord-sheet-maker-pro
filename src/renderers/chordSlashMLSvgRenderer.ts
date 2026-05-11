@@ -125,11 +125,11 @@ function noteStem(cx: number, cy: number, col: string): string {
 }
 
 function staffLines(x: number, y: number, w: number, col: string): string {
-  let out = '';
+  const lines: string[] = [];
   for (let i = 0; i < STAFF_LINES; i++) {
-    out += svgLine(x, y + i * LINE_GAP, x + w, y + i * LINE_GAP, col, 1);
+    lines.push(svgLine(x, y + i * LINE_GAP, x + w, y + i * LINE_GAP, col, 1));
   }
-  return out;
+  return lines.join('');
 }
 
 function trebleClef(x: number, y: number, _col: string): string {
@@ -137,48 +137,36 @@ function trebleClef(x: number, y: number, _col: string): string {
   return `<text x="${x}" y="${y + STAFF_H + 4}" font-size="40" font-family="serif" fill="${_col}" dominant-baseline="bottom">𝄞</text>`;
 }
 
+const SHARP_KEY_COUNT: Record<string, number> = {
+  G: 1, D: 2, A: 3, E: 4, B: 5, 'F#': 6, 'C#': 7,
+};
+const FLAT_KEY_COUNT: Record<string, number> = {
+  F: 1, Bb: 2, Eb: 3, Ab: 4, Db: 5, Gb: 6, Cb: 7,
+};
+const SHARP_Y_OFFSETS = [0, 12, -4, 8, 20, 4, 16];
+const FLAT_Y_OFFSETS = [16, 4, 20, 8, 24, 12, 28];
+
 interface KsResult {
   svg: string;
   width: number;
 }
 
 function keySigSvg(x: number, staffY: number, keySig: string, col: string): KsResult {
-  const SHARP_KEYS: Record<string, number> = {
-    G: 1,
-    D: 2,
-    A: 3,
-    E: 4,
-    B: 5,
-    'F#': 6,
-    'C#': 7,
-  };
-  const FLAT_KEYS: Record<string, number> = {
-    F: 1,
-    Bb: 2,
-    Eb: 3,
-    Ab: 4,
-    Db: 5,
-    Gb: 6,
-    Cb: 7,
-  };
-  const SHARP_Y = [0, 12, -4, 8, 20, 4, 16];
-  const FLAT_Y = [16, 4, 20, 8, 24, 12, 28];
-
-  if (SHARP_KEYS[keySig] !== undefined) {
-    const count = SHARP_KEYS[keySig];
-    let svg = '';
+  if (SHARP_KEY_COUNT[keySig] !== undefined) {
+    const count = SHARP_KEY_COUNT[keySig];
+    const parts: string[] = [];
     for (let i = 0; i < count; i++) {
-      svg += `<text x="${x + i * 8}" y="${staffY + SHARP_Y[i] - 4}" font-size="14" font-family="serif" fill="${col}" dominant-baseline="hanging">♯</text>`;
+      parts.push(`<text x="${x + i * 8}" y="${staffY + SHARP_Y_OFFSETS[i] - 4}" font-size="14" font-family="serif" fill="${col}" dominant-baseline="hanging">♯</text>`);
     }
-    return { svg, width: count * 8 + 4 };
+    return { svg: parts.join(''), width: count * 8 + 4 };
   }
-  if (FLAT_KEYS[keySig] !== undefined) {
-    const count = FLAT_KEYS[keySig];
-    let svg = '';
+  if (FLAT_KEY_COUNT[keySig] !== undefined) {
+    const count = FLAT_KEY_COUNT[keySig];
+    const parts: string[] = [];
     for (let i = 0; i < count; i++) {
-      svg += `<text x="${x + i * 8}" y="${staffY + FLAT_Y[i] - 8}" font-size="14" font-family="serif" fill="${col}" dominant-baseline="hanging">♭</text>`;
+      parts.push(`<text x="${x + i * 8}" y="${staffY + FLAT_Y_OFFSETS[i] - 8}" font-size="14" font-family="serif" fill="${col}" dominant-baseline="hanging">♭</text>`);
     }
-    return { svg, width: count * 8 + 4 };
+    return { svg: parts.join(''), width: count * 8 + 4 };
   }
   return { svg: '', width: 0 };
 }
