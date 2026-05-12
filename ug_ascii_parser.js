@@ -86,20 +86,25 @@ function generateUUID() {
  */
 function isTabLine(line) {
   const trimmed = line.trim();
-  // Match leading string name + pipe
-  return /^([eEBGDA]\|)[-0-9hpbtrx\/\\~().]+$/i.test(trimmed);
+  // Match leading string name + pipe. The content class includes | so that
+  // multi-measure tabs (e|--0--|--2--|) are accepted alongside single-segment ones.
+  return /^([eEBGDA]\|)[-0-9hpbtrx|\/\\~().]+$/i.test(trimmed);
 }
 
 /**
- * Regular expression for chord token detection.  This pattern matches
- * root notes with optional accidentals (#/b), optional quality tokens
- * (maj, min, m, dim, aug, sus, add, alt), optional extension numbers,
- * and optional slash bass notes.  It is deliberately permissive to
- * support variations found in ASCII sheets.  It does not accept
- * arbitrary text: tokens must be separate by boundaries (word or
- * whitespace).  See the spec's suggestion for chord detection.
+ * Regex for scanning a full line and extracting all chord tokens via .match().
+ * Using /gi with .match() is safe because .match() resets lastIndex after
+ * completion.  Quality alternatives are ordered longest-first so that
+ * compound suffixes like m7b5 and 7sus4 are consumed before their prefixes.
+ * The trailing (?![a-zA-Z0-9]) prevents partial matches inside longer words.
  */
-const CHORD_REGEX = /\b([A-G](?:#|b)?(?:maj|min|m|dim|aug|sus|add|alt)?\d*(?:\/[A-G](?:#|b)?)?)\b/gi;
+const CHORD_REGEX = /\b([A-G][b#]?(?:maj\d*|m7b5|mM7|m\d*|min(?:7b5|\d*)?|dim7?|aug7?|\d+(?:sus[24]?)?(?:[b#]\d+)*|sus[24]?|add\d+|alt)?(?:\/[A-G][b#]?)?)(?![a-zA-Z0-9])/gi;
+
+/**
+ * Stateless anchored version for testing a single whitespace-split token.
+ * Must NOT use the /g flag to avoid lastIndex state between calls.
+ */
+const CHORD_TOKEN_RE = /^[A-G][b#]?(?:maj\d*|m7b5|mM7|m\d*|min(?:7b5|\d*)?|dim7?|aug7?|\d+(?:sus[24]?)?(?:[b#]\d+)*|sus[24]?|add\d+|alt)?(?:\/[A-G][b#]?)?$/i;
 
 /**
  * Determine if a line is predominantly chords.  We compute the ratio of
@@ -115,7 +120,9 @@ function isChordLine(line) {
   if (tokens.length === 0) return false;
   const chordTokens = line.match(CHORD_REGEX) || [];
   const ratio = chordTokens.length / tokens.length;
-  return chordTokens.length > 0 && ratio >= 0.4;
+  // Require at least 2 chord tokens to avoid single-letter false positives
+  // (e.g. a lyric line whose first word starts with A–G).
+  return chordTokens.length > 1 && ratio >= 0.4;
 }
 
 /**
@@ -137,7 +144,8 @@ function isChordLine(line) {
  * @returns {{root: string, qualityFamily: string, extensions: Array<string>, alterations: Array<string>, suspension: string|null, bass: string|null}}
  */
 function normalizeChord(symbol) {
-  const match = /^([A-G](#|b)?)(.*?)(?:\/(\w+))?$/.exec(symbol);
+  // Bass group uses [A-G][#b]? so D/F# correctly captures 'F#' (\w+ would stop at #).
+  const match = /^([A-G](#|b)?)(.*?)(?:\/([A-G][#b]?))?$/.exec(symbol);
   if (!match) {
     return {
       root: null,
@@ -164,7 +172,7 @@ function normalizeChord(symbol) {
     'min7b5': 'min7b5', 'm7b5': 'min7b5',
     'm7b5b9': 'min7b5b9',
     'dim': 'dim', 'dim7': 'dim7',
-    'aug': 'aug', 'aug7': 'aug',
+    'aug': 'aug', 'aug7': 'aug7',
     'sus2': 'sus2', 'sus4': 'sus4', 'sus': 'sus4',
     '7': 'dom7'
   };
@@ -265,11 +273,12 @@ function computeHarmonicFingerprint(normalizedChords) {
     const chord = normalizedChords[i];
     if (!chord || !chord.root) continue;
     const root = chord.root;
-    // Cowboy chords are major triads or minor chords in first position
-    if (cowboyRoots.has(root) && ['maj', 'maj7', 'dom7'].includes(chord.qualityFamily)) {
+    // Cowboy chords: open-position major/maj7 on these roots only (not dom7 — F7 is a barre chord).
+    if (cowboyRoots.has(root) && ['maj', 'maj7'].includes(chord.qualityFamily)) {
       cowboyCount++;
     }
-    if (cowboyMinors.has(root + 'm') && (chord.qualityFamily.startsWith('min') || chord.qualityFamily === 'min7')) {
+    // Open-position minor: Am and Em as pure minor triads only (not min7/min9 which require a barre).
+    if (cowboyMinors.has(root + 'm') && chord.qualityFamily === 'min') {
       cowboyCount++;
     }
     if (chord.qualityFamily === 'dom7') dom7Count++;
@@ -277,13 +286,21 @@ function computeHarmonicFingerprint(normalizedChords) {
     if (chord.qualityFamily === 'min7b5') min7b5Count++;
     if (chord.qualityFamily && chord.qualityFamily.toLowerCase().includes('alt')) altCount++;
     if (chord.qualityFamily === '5') powerCount++;
-    // ii–V detection: adjacent chords whose roots are a perfect fourth apart
+    // ii–V detection: adjacent minor→dominant pair where roots are a perfect fifth apart
+    // (e.g. Dm7→G7: D to G is 7 semitones up, or G to C is 5 semitones up).
+    // Require first chord to be minor quality and second to be dominant to avoid flagging
+    // plain I→IV (C→F) or V→I (G→C) as jazz ii–V motion.
     if (i < normalizedChords.length - 1) {
       const nextChord = normalizedChords[i + 1];
-      if (nextChord && semitoneMap[root] !== undefined && semitoneMap[nextChord.root] !== undefined) {
+      if (
+        nextChord &&
+        semitoneMap[root] !== undefined &&
+        semitoneMap[nextChord.root] !== undefined &&
+        (chord.qualityFamily === 'min7' || chord.qualityFamily === 'min') &&
+        nextChord.qualityFamily === 'dom7'
+      ) {
         const interval = (semitoneMap[nextChord.root] - semitoneMap[root] + 12) % 12;
         if (interval === 5 || interval === 7) {
-          // Perfect fourth below (5 semitones up) or perfect fifth above (7 semitones up)
           iiVCount++;
         }
       }
@@ -385,10 +402,13 @@ function guessGenre(hf, densities) {
     3 * densities.tabDensity +
     3 * densities.gridDensity +
     2 * hf.iiVRate;
+  // capoPresent is added to densities by parseUltimateGuitarAscii; guessGenre
+  // also works standalone without it (undefined is falsy → treated as absent).
   const folkPopScore =
     5 * hf.cowboyChordShare +
-    4 * densities.lyricDensity +
-    3 * hf.powerChordRate;
+    4 * (densities.capoPresent ? 1 : 0) +
+    3 * densities.lyricDensity +
+    2 * hf.powerChordRate;
   const scores = {
     jazz: jazzScore,
     rock_blues: rockBluesScore,
@@ -422,7 +442,20 @@ function guessGenre(hf, densities) {
  */
 function parseUltimateGuitarAscii(text, options = {}) {
   const lines = text.split(/\r?\n/);
-  const isTabFlags = lines.map(isTabLine);
+  // Raw per-line tab detection.
+  const rawTabFlags = lines.map(isTabLine);
+  // Enforce the spec's 4-consecutive-line minimum: a single isolated line matching
+  // the tab pattern (e.g. metadata containing 'E|' notation) should not count.
+  const MIN_TAB_RUN = 4;
+  const isTabFlags = rawTabFlags.map((_, i) => {
+    if (!rawTabFlags[i]) return false;
+    let run = 0;
+    for (let j = i; j < rawTabFlags.length && rawTabFlags[j]; j++) run++;
+    // Also count backwards so every line in a run of ≥4 is marked true.
+    let back = 0;
+    for (let j = i; j >= 0 && rawTabFlags[j]; j--) back++;
+    return Math.max(run + back - 1, back) >= MIN_TAB_RUN;
+  });
   const isChordFlags = lines.map((line, idx) => !isTabFlags[idx] && isChordLine(line));
   // Extract chord symbols in order of appearance
   const chordSymbols = [];
@@ -450,13 +483,16 @@ function parseUltimateGuitarAscii(text, options = {}) {
     // Collect chord tokens in order with approximate positions
     let chordPositions = [];
     for (let i = 0; i < tokens.length; i++) {
-      if (CHORD_REGEX.test(tokens[i])) {
+      if (CHORD_TOKEN_RE.test(tokens[i])) {
         chordPositions.push({ index: i, symbol: tokens[i] });
       }
     }
-    const beatIncrement = tokens.length > 0 ? 4.0 / tokens.length : 4.0;
-    chordPositions.forEach((cp) => {
-      const eventBeat = 1.0 + cp.index * beatIncrement;
+    // Space beats by chord count, not total token count. Barlines and other
+    // non-chord tokens in the line (e.g. '|') would otherwise compress all beats.
+    const chordCount = chordPositions.length;
+    const beatIncrement = chordCount > 1 ? 4.0 / chordCount : 4.0;
+    chordPositions.forEach((cp, posIdx) => {
+      const eventBeat = 1.0 + posIdx * beatIncrement;
       const sym = cp.symbol;
       const norm = normalizeChord(sym);
       harmonyEvents.push({
@@ -469,6 +505,42 @@ function parseUltimateGuitarAscii(text, options = {}) {
       });
     });
   });
+  // Capo detection: scan first 10 lines for common capo notations.
+  // Adds a real signal to folk/pop genre scoring (spec: 4*present(capo)).
+  let capoFret = null;
+  const capoRe = /capo\s*:?\s*(\d+)/i;
+  for (let i = 0; i < Math.min(10, lines.length); i++) {
+    const cm = capoRe.exec(lines[i]);
+    if (cm) { capoFret = parseInt(cm[1], 10); break; }
+  }
+  // Attach capoPresent to densities so guessGenre can use it without signature change.
+  densities.capoPresent = capoFret !== null;
+
+  // Extract section labels from [Section Name] markers.
+  const sectionRe = /^\s*\[([^\]]+)\]\s*$/;
+  const extractedSections = [];
+  for (const line of lines) {
+    const sm = sectionRe.exec(line);
+    if (sm) {
+      extractedSections.push({
+        id: String(extractedSections.length + 1),
+        label: sm[1].trim(),
+        startMeasure: null,
+        endMeasure: null,
+        sourceDeclared: true
+      });
+    }
+  }
+
+  // Collect lyric lines: non-tab, non-chord, non-section, non-empty lines.
+  const lyricLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (isTabFlags[i] || isChordFlags[i]) continue;
+    if (sectionRe.test(lines[i])) continue;
+    const trimmed = lines[i].trim();
+    if (trimmed) lyricLines.push(trimmed);
+  }
+
   // Determine source format and semantic tier based on presence of tabs
   let format = 'plain_text';
   let semanticTier = 'tier_1_ascii';
@@ -520,13 +592,13 @@ function parseUltimateGuitarAscii(text, options = {}) {
         changes: []
       },
       capo: {
-        fret: null,
-        sourceDeclared: false
+        fret: capoFret,
+        sourceDeclared: capoFret !== null
       },
       tuning: []
     },
     structure: {
-      sections: [],
+      sections: extractedSections,
       repeats: [],
       endings: [],
       rehearsalMarks: []
@@ -557,7 +629,8 @@ function parseUltimateGuitarAscii(text, options = {}) {
       }
     },
     lyrics: {
-      lines: [],
+      lines: lyricLines,
+      // Chord-to-lyric alignment is never computed for ASCII input.
       syllableAligned: false,
       language: 'en'
     },
@@ -587,7 +660,9 @@ function parseUltimateGuitarAscii(text, options = {}) {
       rhythmExplicit: false,
       voicingExplicit: false,
       layoutExplicit: false,
-      lyricsAligned: densities.lyricDensity > 0,
+      // Alignment requires explicit chord-lyric pairing, which this parser never
+      // computes. Setting true when lyrics merely exist would mislead consumers.
+      lyricsAligned: false,
       warnings: []
     },
     renderHints: {
@@ -607,9 +682,13 @@ function parseUltimateGuitarAscii(text, options = {}) {
   return song;
 }
 
-module.exports = {
-  parseUltimateGuitarAscii,
-  normalizeChord,
-  computeHarmonicFingerprint,
-  guessGenre
-};
+// CommonJS export for Node.js; guarded so the file also loads as a plain
+// browser script (where `module` is undefined).
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    parseUltimateGuitarAscii,
+    normalizeChord,
+    computeHarmonicFingerprint,
+    guessGenre
+  };
+}
