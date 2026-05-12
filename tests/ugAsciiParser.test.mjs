@@ -24,8 +24,7 @@ function loadParser() {
   return context.module.exports;
 }
 
-const { parseUltimateGuitarAscii, normalizeChord, computeHarmonicFingerprint, guessGenre } =
-  loadParser();
+const { parseUltimateGuitarAscii, normalizeChord, computeHarmonicFingerprint } = loadParser();
 
 // ─── Bug #1: isTabLine accepts multi-measure tabs ────────────────────────────
 
