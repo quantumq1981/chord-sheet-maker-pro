@@ -24,12 +24,8 @@ function loadParser() {
   return context.module.exports;
 }
 
-const {
-  parseUltimateGuitarAscii,
-  normalizeChord,
-  computeHarmonicFingerprint,
-  guessGenre,
-} = loadParser();
+const { parseUltimateGuitarAscii, normalizeChord, computeHarmonicFingerprint, guessGenre } =
+  loadParser();
 
 // ─── Bug #1: isTabLine accepts multi-measure tabs ────────────────────────────
 
@@ -46,7 +42,10 @@ describe('isTabLine — multi-measure tab detection', () => {
       'Some lyrics here',
     ].join('\n');
     const song = parseUltimateGuitarAscii(input);
-    assert.ok(song.analytics.density.tabDensity > 0, 'tabDensity should be > 0 for a real tab block');
+    assert.ok(
+      song.analytics.density.tabDensity > 0,
+      'tabDensity should be > 0 for a real tab block'
+    );
     assert.equal(song.source.format, 'ascii_tab');
     assert.equal(song.renderHints.showTab, true);
   });
@@ -60,7 +59,11 @@ describe('isTabLine — multi-measure tab detection', () => {
       'Another lyric line',
     ].join('\n');
     const song = parseUltimateGuitarAscii(input);
-    assert.equal(song.analytics.density.tabDensity, 0, 'single tab-like line should not set tabDensity');
+    assert.equal(
+      song.analytics.density.tabDensity,
+      0,
+      'single tab-like line should not set tabDensity'
+    );
   });
 });
 
@@ -96,21 +99,30 @@ describe('CHORD_REGEX — complex chord types captured', () => {
     const input = 'F#m7b5 Bm7 E7 Am7\nSome lyric words below yes';
     const song = parseUltimateGuitarAscii(input);
     const symbols = song.harmony.events.map((e) => e.symbol);
-    assert.ok(symbols.some((s) => s === 'F#m7b5' || s.startsWith('F#m7')), 'F#m7b5 must be captured');
+    assert.ok(
+      symbols.some((s) => s === 'F#m7b5' || s.startsWith('F#m7')),
+      'F#m7b5 must be captured'
+    );
   });
 
   it('captures Am7b5 (half-diminished)', () => {
     const input = 'Dm7 G7 Am7b5 Cmaj7\nSome lyric words below yes';
     const song = parseUltimateGuitarAscii(input);
     const symbols = song.harmony.events.map((e) => e.symbol);
-    assert.ok(symbols.some((s) => s === 'Am7b5' || s.startsWith('Am7')), 'Am7b5 must be captured');
+    assert.ok(
+      symbols.some((s) => s === 'Am7b5' || s.startsWith('Am7')),
+      'Am7b5 must be captured'
+    );
   });
 
   it('captures G7sus4 (dominant seventh suspended)', () => {
     const input = 'G7sus4 Csus2 Dm7 G7\nSome lyric words below yes';
     const song = parseUltimateGuitarAscii(input);
     const symbols = song.harmony.events.map((e) => e.symbol);
-    assert.ok(symbols.some((s) => s.startsWith('G7') || s === 'G7sus4'), 'G7sus4 must be captured');
+    assert.ok(
+      symbols.some((s) => s.startsWith('G7') || s === 'G7sus4'),
+      'G7sus4 must be captured'
+    );
   });
 });
 
@@ -250,7 +262,10 @@ describe('lyrics.lines — populated from non-chord non-tab lines', () => {
   it('does not include chord lines or blank lines in lyrics.lines', () => {
     const input = 'Am G F C\n\nDm Em G\nOnly real lyrics here yes';
     const song = parseUltimateGuitarAscii(input);
-    assert.ok(song.lyrics.lines.every((l) => !l.match(/^[A-G]/)), 'chord lines must not appear in lyrics');
+    assert.ok(
+      song.lyrics.lines.every((l) => !l.match(/^[A-G]/)),
+      'chord lines must not appear in lyrics'
+    );
   });
 });
 
@@ -332,7 +347,8 @@ describe('capo detection', () => {
     const songWith = parseUltimateGuitarAscii(withCapo);
     const songWithout = parseUltimateGuitarAscii(withoutCapo);
     assert.ok(
-      songWith.analytics.genreGuess.scores.folk_pop > songWithout.analytics.genreGuess.scores.folk_pop,
+      songWith.analytics.genreGuess.scores.folk_pop >
+        songWithout.analytics.genreGuess.scores.folk_pop,
       'capo presence should increase folk_pop score'
     );
   });
@@ -353,7 +369,10 @@ describe('parseUltimateGuitarAscii — schema integrity', () => {
 
   it('generates a valid UUID for songId', () => {
     const song = parseUltimateGuitarAscii('G C Am F\nWords here yes indeed');
-    assert.match(song.songId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    assert.match(
+      song.songId,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
   });
 
   it('populates creator arrays from options', () => {
