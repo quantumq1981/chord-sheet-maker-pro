@@ -56,18 +56,18 @@ const BODY_FONT_MAP = {
 const CHORD_FONT_PACK_MAP = {
   default: {
     fakeBookChordFont: '"FreeSerif", "Segoe UI Symbol", "Apple Symbols", "Noto Music", serif',
-    slashChordFont: 'Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif',
-    notationFont: 'Georgia, "Times New Roman", serif',
+    slashChordFont: 'Pori Chords ASC Std, Norfolk Chords ASC Std, "EB Garamond", Georgia, serif',
+    notationFont: '"EB Garamond", Georgia, "Times New Roman", serif',
   },
   pori: {
     fakeBookChordFont: '"Pori Chords ASC Std", "Norfolk Chords ASC Std", "FreeSerif", "Noto Music", serif',
-    slashChordFont: 'Pori Chords ASC Std, Norfolk Chords ASC Std, sans-serif',
-    notationFont: '"Pori Text ASL Std", "Pori Text ASC Std", Georgia, "Times New Roman", serif',
+    slashChordFont: 'Pori Chords ASC Std, Norfolk Chords ASC Std, "EB Garamond", Georgia, serif',
+    notationFont: '"Pori Text ASL Std", "Pori Text ASC Std", "EB Garamond", Georgia, "Times New Roman", serif',
   },
   norfolk: {
     fakeBookChordFont: '"Norfolk Chords ASC Std", "Pori Chords ASC Std", "FreeSerif", "Noto Music", serif',
-    slashChordFont: 'Norfolk Chords ASC Std, Pori Chords ASC Std, sans-serif',
-    notationFont: '"Norfolk Text ASC Std", "Norfolk Text ASL Std", Georgia, "Times New Roman", serif',
+    slashChordFont: 'Norfolk Chords ASC Std, Pori Chords ASC Std, "EB Garamond", Georgia, serif',
+    notationFont: '"Norfolk Text ASC Std", "Norfolk Text ASL Std", "EB Garamond", Georgia, "Times New Roman", serif',
   },
   norfolksans: {
     fakeBookChordFont: '"Norfolk Chords Sans ASC Std", "Norfolk Chords ASC Std", "Pori Chords ASC Std", "FreeSerif", sans-serif',
