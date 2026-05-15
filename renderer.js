@@ -232,6 +232,10 @@ const HR_DIAG_FRET_GAP   = 10;
 const HR_DIAG_STRINGS    = 6;
 const HR_DIAG_FRETS      = 4;
 const HR_DIAG_W          = (HR_DIAG_STRINGS - 1) * HR_DIAG_STRING_GAP;
+
+function _hrFont() {
+  return window.__SN_NOTATION_FONT_FAMILY || '"EB Garamond", Georgia, "Times New Roman", serif';
+}
 const HR_DIAG_H          = HR_DIAG_FRETS * HR_DIAG_FRET_GAP;
 const HR_DIAG_OUTER_W    = HR_DIAG_W + 22;
 const HR_DIAG_OUTER_H    = HR_DIAG_H + 46;
@@ -276,7 +280,7 @@ function hrBeam(x1, x2, y, col) {
 function hrTupletBracket(x1, x2, topY, n, col) {
   const mid = (x1 + x2) / 2;
   return (
-    `<text x="${mid}" y="${topY + 3}" font-size="8" fill="${col}" text-anchor="middle" font-family="Georgia,serif">${n}</text>` +
+    `<text x="${mid}" y="${topY + 3}" font-size="8" fill="${col}" text-anchor="middle" font-family='${_hrFont()}'>${n}</text>` +
     hrL(x1, topY + 5, x2, topY + 5, col, 1) +
     hrL(x1, topY + 5, x1, topY + 10, col, 1) +
     hrL(x2, topY + 5, x2, topY + 10, col, 1)
@@ -328,7 +332,7 @@ function hrTabLabel(marginX, tabY, col) {
   const mid = HR_TAB_H / 2;
   return ['T', 'A', 'B']
     .map((ch, i) =>
-      `<text x="${cx}" y="${tabY + mid - 12 + i * 12}" font-size="9" font-weight="bold" fill="${col}" text-anchor="middle" font-family="Georgia,serif">${ch}</text>`,
+      `<text x="${cx}" y="${tabY + mid - 12 + i * 12}" font-size="9" font-weight="bold" fill="${col}" text-anchor="middle" font-family='${_hrFont()}'>${ch}</text>`,
     )
     .join('');
 }
@@ -357,7 +361,7 @@ function hrParseVoicing(shapeStr) {
 
 function hrChordDiagram(name, voicing, ox, oy, fg) {
   let s = '';
-  s += `<text x="${ox + HR_DIAG_OUTER_W / 2}" y="${oy + 11}" font-size="10" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">${escapeHtml(name)}</text>`;
+  s += `<text x="${ox + HR_DIAG_OUTER_W / 2}" y="${oy + 11}" font-size="10" font-weight="bold" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${escapeHtml(name)}</text>`;
   const disp = voicing ? [...voicing].reverse() : Array(HR_DIAG_STRINGS).fill('-');
   let minFret = Infinity;
   for (const f of disp) { if (typeof f === 'number' && f > 0 && f < minFret) minFret = f; }
@@ -367,7 +371,7 @@ function hrChordDiagram(name, voicing, ox, oy, fg) {
   const nutY  = oy + 22;
   s += `<line x1="${gridX}" y1="${nutY}" x2="${gridX + HR_DIAG_W}" y2="${nutY}" stroke="${fg}" stroke-width="${atNut ? 3 : 1}"/>`;
   if (!atNut)
-    s += `<text x="${gridX + HR_DIAG_W + 3}" y="${nutY + 5}" font-size="7" fill="${fg}" font-family="Georgia,serif">${baseFret + 1}fr</text>`;
+    s += `<text x="${gridX + HR_DIAG_W + 3}" y="${nutY + 5}" font-size="7" fill="${fg}" font-family='${_hrFont()}'>${baseFret + 1}fr</text>`;
   for (let i = 0; i < HR_DIAG_STRINGS; i++) {
     const sx = gridX + i * HR_DIAG_STRING_GAP;
     s += `<line x1="${sx}" y1="${nutY}" x2="${sx}" y2="${nutY + HR_DIAG_H}" stroke="${fg}" stroke-width="0.8"/>`;
@@ -378,7 +382,7 @@ function hrChordDiagram(name, voicing, ox, oy, fg) {
     const sx   = gridX + di * HR_DIAG_STRING_GAP;
     const fret = di < disp.length ? disp[di] : '-';
     if (fret === 'x') {
-      s += `<text x="${sx}" y="${nutY - 3}" font-size="7" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">x</text>`;
+      s += `<text x="${sx}" y="${nutY - 3}" font-size="7" font-weight="bold" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>x</text>`;
     } else if (fret === 0) {
       s += `<circle cx="${sx}" cy="${nutY - 7}" r="3" fill="none" stroke="${fg}" stroke-width="1"/>`;
     } else if (typeof fret === 'number' && fret > 0) {
@@ -410,7 +414,7 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
     const nb = Number(String(timeSig).split('/')[0]) || 4;
     if (bar.chordToken) {
       const cx1 = hrBeatX(1, timeSig, ul, uw);
-      s += `<text x="${cx1}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family="Georgia,serif">${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;
+      s += `<text x="${cx1}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;
       for (let b = 1; b <= nb; b++) {
         const ex = hrBeatX(b, timeSig, ul, uw);
         s += hrHead(ex, cy, 'q', fg);
@@ -424,7 +428,7 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
 
   if (bar?.pm?.bar) {
     const pmY = staffY - 2;
-    s += `<text x="${ul}" y="${pmY - 3}" font-size="8" fill="${fg}" font-family="sans-serif" font-style="italic">P.M.</text>`;
+    s += `<text x="${ul}" y="${pmY - 3}" font-size="8" fill="${fg}" font-family='${_hrFont()}' font-style="italic">P.M.</text>`;
     s += `<line x1="${ul + 22}" y1="${pmY - 3}" x2="${barLeft + barW - HR_BAR_PAD}" y2="${pmY - 3}" stroke="${fg}" stroke-width="1" stroke-dasharray="3,2"/>`;
   }
 
@@ -462,7 +466,7 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
       const pmY = staffY - 2;
       const x1 = xs[si];
       const x2 = Math.min(xs[ei] + events[ei].beats * beatW, barLeft + barW - HR_BAR_PAD);
-      s += `<text x="${x1}" y="${pmY - 3}" font-size="8" fill="${fg}" font-family="sans-serif" font-style="italic">P.M.</text>`;
+      s += `<text x="${x1}" y="${pmY - 3}" font-size="8" fill="${fg}" font-family='${_hrFont()}' font-style="italic">P.M.</text>`;
       s += `<line x1="${x1 + 22}" y1="${pmY - 3}" x2="${x2}" y2="${pmY - 3}" stroke="${fg}" stroke-width="1" stroke-dasharray="3,2"/>`;
       s += hrL(x2, pmY - 6, x2, pmY, fg, 1);
     }
@@ -500,12 +504,12 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
   // Render bar-level chord token at beat-1 when no per-event chord is set
   if (!anyEvChord && bar.chordToken) {
     const cx1 = hrBeatX(1, timeSig, ul, uw);
-    s += `<text x="${cx1}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family="Georgia,serif">${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;
+    s += `<text x="${cx1}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;
   }
 
   events.forEach((ev, i) => {
     if (!ev.chord) return;
-    s += `<text x="${xs[i]}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="middle" font-weight="bold" font-family="Georgia,serif">${escapeHtml(String(ev.chord).replace(/[!~]$/, '').trim())}</text>`;
+    s += `<text x="${xs[i]}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="middle" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(String(ev.chord).replace(/[!~]$/, '').trim())}</text>`;
   });
 
   events.forEach((ev, i) => {
@@ -623,24 +627,24 @@ function renderHybridDoc(sourceText) {
 
   let hy = 12 + diagAreaH;
   if (title) {
-    svg += `<text x="${HR_PAGE_W/2}" y="${hy+22}" font-size="18" font-weight="bold" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">${escapeHtml(title)}</text>`;
+    svg += `<text x="${HR_PAGE_W/2}" y="${hy+22}" font-size="18" font-weight="bold" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${escapeHtml(title)}</text>`;
     hy += 30;
   }
   const metaParts = [composer, key && `Key of ${key}`, docTime, tempo && `♪=${tempo}`, style]
     .filter(Boolean).map(escapeHtml);
   if (metaParts.length)
-    svg += `<text x="${HR_PAGE_W/2}" y="${hy+14}" font-size="11" fill="${fg}" text-anchor="middle" font-family="Georgia,serif">${metaParts.join('  ·  ')}</text>`;
+    svg += `<text x="${HR_PAGE_W/2}" y="${hy+14}" font-size="11" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${metaParts.join('  ·  ')}</text>`;
 
   for (const sys of systems) {
     let y = sys.y;
     const barW = staffW / sys.rowBars.length;
 
     if (sys.firstRow) {
-      svg += `<text x="${HR_MARGIN}" y="${y+14}" font-size="12" font-weight="bold" font-style="italic" fill="${fg}" font-family="Georgia,serif">${escapeHtml(sys.sec.label || '')}</text>`;
+      svg += `<text x="${HR_MARGIN}" y="${y+14}" font-size="12" font-weight="bold" font-style="italic" fill="${fg}" font-family='${_hrFont()}'>${escapeHtml(sys.sec.label || '')}</text>`;
       y += HR_SLBL_H;
     }
     if (sys.secCue) {
-      svg += `<text x="${HR_MARGIN}" y="${y+11}" font-size="10" font-style="italic" fill="${fg}" font-family="sans-serif">${escapeHtml(sys.secCue)}</text>`;
+      svg += `<text x="${HR_MARGIN}" y="${y+11}" font-size="10" font-style="italic" fill="${fg}" font-family='${_hrFont()}'>${escapeHtml(sys.secCue)}</text>`;
       y += HR_CUE_H;
     }
 
@@ -672,7 +676,7 @@ function renderHybridDoc(sourceText) {
       }
 
       if (bar.cueText)
-        svg += `<text x="${barLeft + barW / 2}" y="${blBot + HR_CUE_H - 2}" font-size="9" font-style="italic" fill="${fg}" text-anchor="middle" font-family="sans-serif">${escapeHtml(bar.cueText)}</text>`;
+        svg += `<text x="${barLeft + barW / 2}" y="${blBot + HR_CUE_H - 2}" font-size="9" font-style="italic" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${escapeHtml(bar.cueText)}</text>`;
     });
   }
 
