@@ -6319,16 +6319,22 @@ function csmpnToCsml(csmpnText) {
     if (!text.trim()) return;
     const sourceEl = document.getElementById('source');
     if (!sourceEl) return;
-    if (window.csml && typeof window.csml.toCsmpn === 'function') {
+    const wantHybrid = typeof fbSettings !== 'undefined' && fbSettings && fbSettings.hybridRhythmMode
+                    && window.csml && typeof window.csml.toHybridText === 'function';
+    if (window.csml) {
       let csmpn;
-      try { csmpn = window.csml.toCsmpn(text); } catch (e) { setStatus('Conversion failed: ' + e.message, 'err'); return; }
+      try {
+        csmpn = wantHybrid ? window.csml.toHybridText(text) : window.csml.toCsmpn(text);
+      } catch (e) { setStatus('Conversion failed: ' + e.message, 'err'); return; }
       sourceEl.value = csmpn;
     } else {
       sourceEl.value = text;
     }
     if (typeof updatePreview === 'function') updatePreview();
     panel.classList.remove('open');
-    setStatus('ChordSlashML converted to CSMPN and loaded into chart.');
+    setStatus(wantHybrid
+      ? 'Loaded with beat positions — Hybrid Rhythm mode active.'
+      : 'ChordSlashML converted to CSMPN and loaded into chart.');
   });
 
   if (btnSave) btnSave.addEventListener('click', () => {

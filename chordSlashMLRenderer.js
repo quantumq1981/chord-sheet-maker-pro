@@ -945,16 +945,99 @@
     return csmlToCsmpnDoc(csmlParse(text));
   }
 
+  // ── CSML → CSMPN + {hybrid} beat-explicit text ──────────────────────────
+
+  // Maps a beat-slot span count to the closest supported hybrid duration letter.
+  const _SPAN_DUR = { 1: 'q', 2: 'h', 4: 'w' };
+
+  function csmlMeasureToHybridEvents(meas) {
+    const beats = meas.beats;
+    const allEmpty = beats.every(b => b.kind === 'slash' || b.kind === 'rest');
+    if (allEmpty) return ['1:rq'];
+
+    const evts = [];
+    let i = 0;
+    while (i < beats.length) {
+      const chord = csmlFirstChordOfBeat(beats[i]);
+      if (!chord) { i++; continue; }
+      let span = 1;
+      while (i + span < beats.length && beats[i + span].kind === 'slash') span++;
+      const dur = _SPAN_DUR[span] || (span >= 4 ? 'w' : span >= 2 ? 'h' : 'q');
+      evts.push(`${i + 1}:${dur}(${chord})`);
+      i += span;
+    }
+    return evts.length ? evts : ['1:rq'];
+  }
+
+  function csmlToHybridTextDoc(doc) {
+    const lines = [];
+    if (doc.title)    lines.push(`Title: ${doc.title}`);
+    if (doc.composer) lines.push(`Composer: ${doc.composer}`);
+    if (doc.key)      lines.push(`Key: ${doc.key}`);
+    if (doc.time && doc.time !== '4/4') lines.push(`Time: ${doc.time}`);
+    if (doc.tempo)    lines.push(`Tempo: ${doc.tempo}`);
+    if (doc.style)    lines.push(`Style: ${doc.style}`);
+
+    for (const sec of doc.sections) {
+      lines.push('');
+      if (sec.label) lines.push(`- ${sec.label}`);
+      if (!sec.measures.length) continue;
+
+      const tokens = sec.measures.map(csmlMeasureToBarToken);
+      const lBars  = sec.measures.map(m => m.leftBarline);
+      const rBars  = sec.measures.map(m => m.rightBarline);
+
+      // CSMPN bar lines — same grouping logic as csmlToCsmpnDoc
+      let i = 0;
+      while (i < tokens.length) {
+        if (lBars[i] === 'repeat-start') {
+          const group = [];
+          while (i < tokens.length) {
+            group.push(tokens[i]);
+            const isEnd = rBars[i] === 'repeat-end';
+            i++;
+            if (isEnd) break;
+          }
+          lines.push(`|: ${group.join(' ')} :|`);
+        } else {
+          const group = [];
+          while (i < tokens.length && lBars[i] !== 'repeat-start') {
+            group.push(tokens[i]);
+            const isFinal = rBars[i] === 'final';
+            i++;
+            if (isFinal) break;
+          }
+          if (group.length) lines.push(group.join(' '));
+        }
+      }
+
+      // {hybrid} block — one entry per measure, bar number 1-based
+      lines.push('{hybrid');
+      sec.measures.forEach((meas, idx) => {
+        lines.push(`  bar${idx + 1}: ${csmlMeasureToHybridEvents(meas).join(' ')}`);
+      });
+      lines.push('}');
+    }
+
+    return lines.join('\n');
+  }
+
+  function csmlToHybridText(text) {
+    return csmlToHybridTextDoc(csmlParse(text));
+  }
+
   // ─── Export ────────────────────────────────────────────────────────────────
 
   window.csml = {
-    parse:         csmlParse,
-    toSvg:         csmlToSvg,
-    toSvgDoc:      csmlToSvgDoc,
-    toLilypond:    csmlToLilypond,
-    toMusicXml:    csmlToMusicXml,
-    toMusicXmlDoc: csmlToMusicXmlDoc,
-    toCsmpn:       csmlToCsmpn,
-    toCsmpnDoc:    csmlToCsmpnDoc,
+    parse:            csmlParse,
+    toSvg:            csmlToSvg,
+    toSvgDoc:         csmlToSvgDoc,
+    toLilypond:       csmlToLilypond,
+    toMusicXml:       csmlToMusicXml,
+    toMusicXmlDoc:    csmlToMusicXmlDoc,
+    toCsmpn:          csmlToCsmpn,
+    toCsmpnDoc:       csmlToCsmpnDoc,
+    toHybridText:     csmlToHybridText,
+    toHybridTextDoc:  csmlToHybridTextDoc,
   };
 })();
