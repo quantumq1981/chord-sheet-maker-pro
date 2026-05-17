@@ -1528,7 +1528,59 @@ body.exporting .sectionBlock{
     .hybridSvgWrap svg{ width:100% !important; height:auto !important; }
     .hybridModeChip{ display:none !important; }
     .csmlEditorPanel{ display:none !important; }
+    .csmlGuidePanel{ display:none !important; }
   }
+
+  /* ── ChordSlashML Quick Start Guide ──────────────────────────── */
+  .csmlGuidePanel{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:12px;
+    display:none;
+  }
+  .csmlGuidePanel.open{ display:block; }
+  .guide-hdr{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:16px;
+  }
+  .guide-hdr h3{ margin:0; font-size:14px; font-weight:700; }
+  #btnCsmlGuideClose{
+    background:none; border:none; font-size:16px; cursor:pointer;
+    padding:4px 6px; border-radius:6px; color:var(--muted); line-height:1;
+  }
+  #btnCsmlGuideClose:hover{ background:#f0f0f0; }
+  .guide-intro{
+    font-size:12px; color:var(--muted); margin:0 0 16px;
+    line-height:1.6; border-left:3px solid var(--accent);
+    padding-left:10px;
+  }
+  .guide-steps{ display:flex; flex-direction:column; gap:20px; }
+  .guide-step{ display:flex; gap:14px; align-items:flex-start; }
+  .step-num{
+    flex-shrink:0; width:26px; height:26px; border-radius:50%;
+    background:var(--accent); color:#fff; font-size:12px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .step-body{ flex:1; min-width:0; }
+  .step-body h4{ margin:0 0 4px; font-size:13px; font-weight:700; }
+  .step-body p{ margin:0 0 8px; font-size:12px; color:var(--muted); line-height:1.5; }
+  .step-example{
+    background:var(--bg); border:1px solid var(--border); border-radius:6px;
+    padding:8px 10px; font-family:ui-monospace,"Cascadia Code","Fira Code",Menlo,monospace;
+    font-size:11px; line-height:1.7; margin:0 0 8px;
+    white-space:pre; overflow-x:auto; color:var(--ink);
+  }
+  .try-it-btn{
+    font-size:11px; padding:4px 12px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--accent); background:transparent; color:var(--accent);
+    font-weight:600; transition:background .15s,color .15s;
+  }
+  .try-it-btn:hover{ background:var(--accent); color:#fff; }
+  .guide-divider{ border:none; border-top:1px solid var(--border); margin:8px 0 4px; }
 
   /* ── ChordSlashML Live Editor Panel ─────────────────────────── */
   .csmlEditorPanel{
@@ -1783,6 +1835,7 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnSlashNotation">𝄞 Slash Notation</button>
           <button class="outline power-only" id="btnCsmlHelp">♩ ChordSlashML Help</button>
           <button class="outline power-only" id="btnCsmlEditor">⊞ ChordSlashML Editor</button>
+          <button class="outline power-only" id="btnCsmlGuide">★ CSML Quick Start</button>
         </div>
         <div class="toolbar-group">
           <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
@@ -2048,10 +2101,120 @@ Tempo: 120
 
       <div class="csml-editor-actions">
         <button class="primary" id="btnCsmlLoad" title="Convert ChordSlashML → CSMPN and load into the main chart">← Convert &amp; Load</button>
+        <button id="btnCsmlFromSource" title="Convert the current chart's CSMPN source to ChordSlashML and load it here for editing">⬆ From Source</button>
         <button id="btnCsmlSave" title="Download the source as a .csml file">↓ Save .csml</button>
         <button id="btnCsmlDownloadSvg" title="Download the current preview as an SVG file">↓ SVG</button>
         <button id="btnCsmlDownloadXml" title="Download a MusicXML .xml file (opens in MuseScore, Dorico, Sibelius)">↓ MusicXML</button>
         <button id="btnCsmlDownloadLy" title="Download a LilyPond .ly file from the current source">↓ LilyPond (.ly)</button>
+      </div>
+    </div>
+
+    <!-- ChordSlashML Quick Start Guide (power-mode only) -->
+    <div id="csmlGuidePanel" class="csmlGuidePanel power-only">
+      <div class="guide-hdr">
+        <h3>★ ChordSlashML — Stage-Ready Sheet Guide</h3>
+        <button id="btnCsmlGuideClose" title="Close guide">&#x2715;</button>
+      </div>
+      <p class="guide-intro">ChordSlashML uses pipe-delimited measures where every beat slot is visible. Each step below adds one layer — click <strong>Try this →</strong> to load the example into the live editor and see it render instantly.</p>
+
+      <div class="guide-steps">
+
+        <div class="guide-step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h4>Start with a complete header</h4>
+            <p>Title, key, time, and tempo appear above the staff on every export — SVG, MusicXML, and print. A complete header is the difference between a draft and a stage-ready sheet.</p>
+            <pre class="step-example">Title: My Song
+Composer: Your Name
+Key: C
+Time: 4/4
+Tempo: 120</pre>
+            <button class="try-it-btn" data-guide-step="1">Try this →</button>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h4>Add section labels</h4>
+            <p><code>[Section]</code> labels render as bold boxed rehearsal marks above the staff — exactly what musicians scan for on stage. Use standard names: Intro, Verse, Pre-Chorus, Chorus, Bridge, Outro.</p>
+            <pre class="step-example">Title: My Song
+Key: C
+Time: 4/4
+Tempo: 120
+
+[Verse]
+| C _ _ _ | Am _ _ _ | F _ _ _ | G _ _ _ |
+
+[Chorus]
+| F _ _ _ | G _ _ _ | C _ _ _ | C _ _ _ |</pre>
+            <button class="try-it-btn" data-guide-step="2">Try this →</button>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h4>Place chord changes mid-bar</h4>
+            <p>When two chords share a bar, put the second chord where it lands rhythmically. In 4/4, <code>| Am _ G _ |</code> means Am on beat 1, G on beat 3 — exactly two beats each. The underscore <code>_</code> is a slash beat: hold the chord.</p>
+            <pre class="step-example">Title: Autumn Leaves
+Key: Gm
+Time: 4/4
+Tempo: 130
+
+[A]
+| Cm7 _ F7 _ | Bbmaj7 _ _ _ | Ebmaj7 _ _ _ | Am7b5 _ D7 _ |
+| Gm _ _ _ | Gm _ _ _ | Am7b5 _ D7 _ | Gm _ _ _ |</pre>
+            <button class="try-it-btn" data-guide-step="3">Try this →</button>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <h4>Mark repeated sections with barlines</h4>
+            <p><code>|: … :|</code> wraps any repeated section. Performers read this instantly — no need to write the section twice. Pair with section labels for maximum clarity.</p>
+            <pre class="step-example">Title: My Song
+Key: G
+Time: 4/4
+Tempo: 120
+
+[Verse]
+| G _ _ _ | Em _ _ _ | C _ _ _ | D _ _ _ |
+
+[Chorus]
+|: G _ _ _ | C _ _ _ | D _ _ _ | G _ _ _ :|</pre>
+            <button class="try-it-btn" data-guide-step="4">Try this →</button>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="step-num">5</div>
+          <div class="step-body">
+            <h4>Full stage-ready chart</h4>
+            <p>Combine everything: complete header, section labels, mid-bar changes, and repeat barlines. This is the format that produces the cleanest, most readable SVG and MusicXML output for rehearsal, recording, and performance.</p>
+            <pre class="step-example">Title: Autumn Leaves
+Composer: J. Kosma / J. Mercer
+Key: Gm
+Time: 4/4
+Tempo: 130
+
+[Intro]
+| Gm _ _ _ | Gm _ _ _ ||
+
+[A — Head]
+| Cm7 _ F7 _ | Bbmaj7 _ _ _ | Ebmaj7 _ _ _ | Am7b5 _ D7 _ |
+| Gm _ _ _ | Gm _ _ _ | Am7b5 _ D7 _ | Gm _ _ _ |
+
+[B — Bridge]
+|: Cm7 _ F7 _ | Bbmaj7 _ _ _ | Ebmaj7 _ _ _ | Ebmaj7 _ _ _ :|
+
+[Outro]
+| Am7b5 _ D7 _ | Gm _ _ _ | Gm _ _ _ | Gm _ _ _ ||</pre>
+            <button class="try-it-btn" data-guide-step="5">Try this →</button>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -5958,6 +6121,111 @@ ${headerHtml}${svg.outerHTML}
 
 })();
 
+// ── CSMPN → ChordSlashML reverse transpiler ──────────────────────────
+function csmpnToCsml(csmpnText) {
+  if (typeof parseCSMPN !== 'function') return '';
+  const doc = parseCSMPN(csmpnText || '');
+
+  function beatsFromTime(t) {
+    if (t === '12/8') return 4;
+    if (t === '9/8')  return 3;
+    if (t === '6/8')  return 2;
+    const m = (t || '4/4').match(/^(\d+)/);
+    return m ? parseInt(m[1], 10) : 4;
+  }
+  const bpb = beatsFromTime(doc.time || '4/4');
+  const bpr = Math.min(
+    (typeof fbSettings !== 'undefined' && fbSettings && fbSettings.barsPerRow) || 4,
+    6
+  );
+
+  const out = [];
+  if (doc.title)    out.push('Title: ' + doc.title);
+  if (doc.composer) out.push('Composer: ' + doc.composer);
+  if (doc.key)      out.push('Key: ' + doc.key);
+  if (doc.time)     out.push('Time: ' + doc.time);
+  if (doc.tempo)    out.push('Tempo: ' + doc.tempo);
+  if (doc.style)    out.push('Style: ' + doc.style);
+  if (out.length)   out.push('');
+
+  function tokenSlots(tok) {
+    if (!tok || tok === 'N.C.' || tok === 'NC') return Array(bpb).fill('.');
+    const parts = tok.replace(/[!^]/g, '').split('_').filter(Boolean);
+    const slots = [];
+    if (parts.length === 1) {
+      slots.push(parts[0]);
+      for (let i = 1; i < bpb; i++) slots.push('_');
+    } else if (parts.length === 2) {
+      const half = Math.floor(bpb / 2);
+      slots.push(parts[0]);
+      for (let i = 1; i < half; i++) slots.push('_');
+      slots.push(parts[1]);
+      for (let i = half + 1; i < bpb; i++) slots.push('_');
+    } else {
+      for (let i = 0; i < bpb; i++) slots.push(i < parts.length ? parts[i] : '_');
+    }
+    return slots;
+  }
+
+  function emitRow(measures, isRepeat) {
+    const mStrs = measures.map(s => s.join(' '));
+    out.push(isRepeat
+      ? '|: ' + mStrs.join(' | ') + ' :|'
+      : '| '  + mStrs.join(' | ') + ' |');
+  }
+
+  let prevSlots = Array(bpb).fill('C');
+
+  for (const block of (doc.blocks || [])) {
+    if (block.type === 'marker') {
+      const label = (block.text || '').trim();
+      if (label) out.push('\n[' + label + ']');
+    } else if (block.type === 'bars') {
+      let bars = [];
+      if (typeof parseBarStructures === 'function') {
+        try { bars = parseBarStructures(block.tokens || []); } catch (_) { bars = []; }
+      }
+      if (!bars.length) {
+        (block.tokens || []).forEach(t => {
+          if (t && !/^\|/.test(t) && t !== '||') bars.push({ type: 'bar', token: t, leftBar: 'single', rightBar: 'single' });
+        });
+      }
+
+      let rowBuf = [];
+      let repeatBuf = null;
+
+      for (let i = 0; i < bars.length; i++) {
+        const bar  = bars[i];
+        const tok  = bar.token || '';
+        const slots = (tok === '%' || tok === '%%')
+          ? prevSlots.slice()
+          : tokenSlots(tok);
+        if (tok !== '%' && tok !== '%%') prevSlots = slots.slice();
+
+        const isRS = bar.leftBar === 'repeat-start';
+        const isRE = bar.rightBar === 'repeat-end';
+
+        if (isRS && repeatBuf === null) {
+          if (rowBuf.length) { emitRow(rowBuf, false); rowBuf = []; }
+          repeatBuf = [];
+        }
+
+        if (repeatBuf !== null) {
+          repeatBuf.push(slots);
+          if (isRE || i === bars.length - 1) { emitRow(repeatBuf, true); repeatBuf = null; }
+        } else {
+          rowBuf.push(slots);
+          if (rowBuf.length >= bpr) { emitRow(rowBuf, false); rowBuf = []; }
+        }
+      }
+      if (repeatBuf && repeatBuf.length) emitRow(repeatBuf, true);
+      if (rowBuf.length) emitRow(rowBuf, false);
+    }
+  }
+
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 // ── ChordSlashML Syntax Reference Panel ─────────────────────────────
 (function () {
   const csmlPanel = document.getElementById('csmlHelpPanel');
@@ -6121,6 +6389,57 @@ ${headerHtml}${svg.outerHTML}
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 10000);
+  });
+
+  const btnFromSource = document.getElementById('btnCsmlFromSource');
+  if (btnFromSource) btnFromSource.addEventListener('click', () => {
+    const sourceEl = document.getElementById('source');
+    if (!sourceEl || !sourceEl.value.trim()) {
+      setStatus('No chart loaded — paste or import a CSMPN chart first.', 'err');
+      return;
+    }
+    let csml;
+    try { csml = csmpnToCsml(sourceEl.value); } catch (e) {
+      setStatus('Conversion failed: ' + e.message, 'err');
+      return;
+    }
+    if (!csml.trim()) { setStatus('Could not convert the current chart.', 'err'); return; }
+    inputEl.value = csml;
+    inputEl.dispatchEvent(new Event('input'));
+    setStatus('Chart converted to ChordSlashML and loaded into editor.');
+  });
+})();
+
+// ── ChordSlashML Quick Start Guide ───────────────────────────────────
+(function () {
+  const guidePanel = document.getElementById('csmlGuidePanel');
+  const btnOpen    = document.getElementById('btnCsmlGuide');
+  const btnClose   = document.getElementById('btnCsmlGuideClose');
+
+  if (!guidePanel || !btnOpen) return;
+
+  btnOpen.addEventListener('click', () => {
+    guidePanel.classList.toggle('open');
+    if (guidePanel.classList.contains('open'))
+      guidePanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+  if (btnClose) btnClose.addEventListener('click', () => guidePanel.classList.remove('open'));
+
+  const CSML_EXAMPLES = {
+    1: 'Title: My Song\nComposer: Your Name\nKey: C\nTime: 4/4\nTempo: 120',
+    2: 'Title: My Song\nKey: C\nTime: 4/4\nTempo: 120\n\n[Verse]\n| C _ _ _ | Am _ _ _ | F _ _ _ | G _ _ _ |\n\n[Chorus]\n| F _ _ _ | G _ _ _ | C _ _ _ | C _ _ _ |',
+    3: 'Title: Autumn Leaves\nKey: Gm\nTime: 4/4\nTempo: 130\n\n[A]\n| Cm7 _ F7 _ | Bbmaj7 _ _ _ | Ebmaj7 _ _ _ | Am7b5 _ D7 _ |\n| Gm _ _ _ | Gm _ _ _ | Am7b5 _ D7 _ | Gm _ _ _ |',
+    4: 'Title: My Song\nKey: G\nTime: 4/4\nTempo: 120\n\n[Verse]\n| G _ _ _ | Em _ _ _ | C _ _ _ | D _ _ _ |\n\n[Chorus]\n|: G _ _ _ | C _ _ _ | D _ _ _ | G _ _ _ :|',
+    5: 'Title: Autumn Leaves\nComposer: J. Kosma / J. Mercer\nKey: Gm\nTime: 4/4\nTempo: 130\n\n[Intro]\n| Gm _ _ _ | Gm _ _ _ ||\n\n[A — Head]\n| Cm7 _ F7 _ | Bbmaj7 _ _ _ | Ebmaj7 _ _ _ | Am7b5 _ D7 _ |\n| Gm _ _ _ | Gm _ _ _ | Am7b5 _ D7 _ | Gm _ _ _ |\n\n[B — Bridge]\n|: Cm7 _ F7 _ | Bbmaj7 _ _ _ | Ebmaj7 _ _ _ | Ebmaj7 _ _ _ :|\n\n[Outro]\n| Am7b5 _ D7 _ | Gm _ _ _ | Gm _ _ _ | Gm _ _ _ ||',
+  };
+
+  guidePanel.querySelectorAll('.try-it-btn[data-guide-step]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const example = CSML_EXAMPLES[btn.dataset.guideStep];
+      if (!example) return;
+      if (typeof window._openCsmlEditor === 'function') window._openCsmlEditor(example, 'guide-example.csml');
+      guidePanel.classList.remove('open');
+    });
   });
 })();
 
