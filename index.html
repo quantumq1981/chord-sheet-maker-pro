@@ -1712,11 +1712,16 @@ body.exporting .sectionBlock{
     display:none;
   }
   .csml-warnings.has-warnings{ display:block; }
+  .csml-editor-workflow-hint{
+    font-size:11px; color:var(--muted); line-height:1.5;
+    background:var(--bg); border:1px solid var(--border); border-radius:6px;
+    padding:7px 10px; margin-top:10px;
+  }
   .csml-editor-actions{
     display:flex;
     gap:8px;
     flex-wrap:wrap;
-    margin-top:10px;
+    margin-top:8px;
     padding-top:10px;
     border-top:1px solid var(--border);
   }
@@ -2099,14 +2104,18 @@ Tempo: 120
         </div>
       </div>
 
+      <div class="csml-editor-workflow-hint">
+        <strong>Workflow:</strong> Import or paste a chart → <em>⬆ From Source</em> to convert it here → edit beat slots → <em>← Load into Chart</em> to render it.
+        SVG / MusicXML / Print export from the preview above. Hybrid mode (Settings) preserves exact beat positions when loading.
+      </div>
       <div class="csml-editor-actions">
-        <button class="primary" id="btnCsmlLoad" title="Convert ChordSlashML → CSMPN and load into the main chart">← Convert &amp; Load</button>
-        <button id="btnCsmlFromSource" title="Convert the current chart's CSMPN source to ChordSlashML and load it here for editing">⬆ From Source</button>
-        <button id="btnCsmlSave" title="Download the source as a .csml file">↓ Save .csml</button>
-        <button id="btnCsmlDownloadSvg" title="Download the current preview as an SVG file">↓ SVG</button>
+        <button class="primary" id="btnCsmlLoad" title="Convert this ChordSlashML to CSMPN and render it in the main chart (or to CSMPN+hybrid if Hybrid mode is ON in Settings)">← Load into Chart</button>
+        <button id="btnCsmlFromSource" title="Convert the current main chart to ChordSlashML and open it here for editing">⬆ From Source</button>
+        <button id="btnCsmlSave" title="Download the ChordSlashML source as a .csml file">↓ Save .csml</button>
+        <button id="btnCsmlDownloadSvg" title="Download the live preview as an SVG file">↓ SVG</button>
         <button id="btnCsmlDownloadXml" title="Download a MusicXML .xml file (opens in MuseScore, Dorico, Sibelius)">↓ MusicXML</button>
-        <button id="btnCsmlDownloadLy" title="Download a LilyPond .ly file from the current source">↓ LilyPond (.ly)</button>
-        <button id="btnCsmlPrint" title="Open a print-ready popup and print / save as PDF">⎙ Print</button>
+        <button id="btnCsmlDownloadLy" title="Download a LilyPond .ly source file">↓ LilyPond (.ly)</button>
+        <button id="btnCsmlPrint" title="Open a print-ready popup and print or save as PDF">⎙ Print</button>
       </div>
     </div>
 
@@ -6261,9 +6270,14 @@ function csmpnToCsml(csmpnText) {
 
   let lastSvg = '';
 
+  // Re-render when the renderer script finishes loading (defer timing).
+  window.addEventListener('csmlready', () => {
+    if (panel.classList.contains('open')) renderPreview();
+  });
+
   function renderPreview() {
     if (!window.csml) {
-      previewEl.innerHTML = '<div class="csml-preview-empty">ChordSlashML renderer loading…</div>';
+      previewEl.innerHTML = '<div class="csml-preview-empty">ChordSlashML renderer loading… (refresh if this persists)</div>';
       return;
     }
     const text = inputEl.value;
@@ -6321,15 +6335,15 @@ function csmpnToCsml(csmpnText) {
     if (!sourceEl) return;
     const wantHybrid = typeof fbSettings !== 'undefined' && fbSettings && fbSettings.hybridRhythmMode
                     && window.csml && typeof window.csml.toHybridText === 'function';
-    if (window.csml) {
-      let csmpn;
-      try {
-        csmpn = wantHybrid ? window.csml.toHybridText(text) : window.csml.toCsmpn(text);
-      } catch (e) { setStatus('Conversion failed: ' + e.message, 'err'); return; }
-      sourceEl.value = csmpn;
-    } else {
-      sourceEl.value = text;
+    if (!window.csml) {
+      setStatus('ChordSlashML renderer not ready — wait a moment and try again.', 'err');
+      return;
     }
+    let csmpn;
+    try {
+      csmpn = wantHybrid ? window.csml.toHybridText(text) : window.csml.toCsmpn(text);
+    } catch (e) { setStatus('Conversion failed: ' + e.message, 'err'); return; }
+    sourceEl.value = csmpn;
     if (typeof updatePreview === 'function') updatePreview();
     panel.classList.remove('open');
     setStatus(wantHybrid
