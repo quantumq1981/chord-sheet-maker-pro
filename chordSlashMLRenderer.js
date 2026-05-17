@@ -1040,4 +1040,5 @@
     toHybridText:     csmlToHybridText,
     toHybridTextDoc:  csmlToHybridTextDoc,
   };
+  window.dispatchEvent(new CustomEvent('csmlready'));
 })();
