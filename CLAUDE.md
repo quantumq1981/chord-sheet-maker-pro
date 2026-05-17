@@ -25,8 +25,8 @@
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-05-11)
-- **484 tests passing** (`npm run test:all`) — 306 npm-test + 371 parser/exporter/utils + ChordSlashML phases; Sprint 13 Phase 3+4+5 + all ChordSlashML phases complete
+## Current State (2026-05-17)
+- **484 tests passing** (`npm run test:all`) — 306 npm-test + 371 parser/exporter/utils + ChordSlashML phases; Sprint 13 Phase 3+4+5 + all ChordSlashML phases + Sprint 15 complete
 - `tests/gpCsmpnConverter.test.mjs` — 53 tests for GP→CSMPN pure helpers (flat names, new patterns, slash chords, tuplets, repeats, voltas)
 - `tests/musicXmlExport.test.ts` — 8 new repeat/volta tests (51 total); `musicXmlExporter.ts` now emits repeat barlines + ending brackets
 - `tests/chordProcessingUtils.test.mjs` — 4 new `parseBarStructures` volta tests
@@ -1009,7 +1009,7 @@ Total: **677 tests** (306 `npm test` + 371 `test:parsers`)
 
 **`index.html`** — `← Convert & Load` button now calls `window.csml.toCsmpn(text)` before setting `sourceEl.value`, so fake-book / slash notation / hybrid mode all render the converted chart correctly. Button label and tooltip updated.
 
-### `window.csml` API Summary (after Sprint 14)
+### `window.csml` API Summary (after Sprint 15)
 | Method | Description |
 |--------|-------------|
 | `csml.parse(text)` | Parse ChordSlashML → `CSMLDocument` |
@@ -1020,4 +1020,47 @@ Total: **677 tests** (306 `npm test` + 371 `test:parsers`)
 | `csml.toMusicXmlDoc(doc)` | Same but accepts pre-parsed doc |
 | `csml.toCsmpn(text)` | Transpile ChordSlashML → CSMPN string |
 | `csml.toCsmpnDoc(doc)` | Same but accepts pre-parsed doc |
+| `csml.toHybridText(text)` | Transpile ChordSlashML → CSMPN + `{hybrid}` blocks (beat-exact positions) |
+| `csml.toHybridTextDoc(doc)` | Same but accepts pre-parsed doc |
 | `csml.warnings` | Last parse warning array (updated by `toSvg`) |
+
+## Sprint 15 — CSML Authoring Completion ✅ COMPLETE (2026-05-17)
+| # | Task | Status |
+|---|------|--------|
+| 15.1 | `csmpnToCsml()` reverse transpiler — CSMPN → ChordSlashML (beat-slotted measures, repeat barlines, section labels) | ✅ DONE — PR #241 |
+| 15.2 | `⬆ From Source` button — loads current CSMPN chart into CSML editor in one click | ✅ DONE — PR #241 |
+| 15.3 | `★ CSML Quick Start` guide panel — 5 progressive steps with "Try this →" buttons that load examples into the live editor | ✅ DONE — PR #241 |
+| 15.4 | `⎙ Print` button in CSML editor — popup + `window.print()` for iOS print-to-PDF | ✅ DONE — PR #243 |
+| 15.5 | `csmlToHybridText()` — CSML → CSMPN + `{hybrid}` blocks preserving beat positions; `← Convert & Load` auto-routes when Hybrid mode ON | ✅ DONE — PR #245 |
+
+## SPRINT 15 CHANGES (2026-05-17)
+
+### PR #241 — CSMPN→ChordSlashML reverse transpiler + Quick Start guide
+
+**`index.html`** additions:
+- `csmpnToCsml(csmpnText)` global function: reads `parseCSMPN()` + `parseBarStructures()`, emits ChordSlashML with header fields, `[Section]` labels, beat-slotted measures (`C _ _ _`, `Am _ G _`), `|: :|` repeat groups, `%`/`N.C.` handling, bpr-aware row grouping
+- `⬆ From Source` button in CSML editor: calls `csmpnToCsml(sourceEl.value)` → populates editor → triggers live preview
+- `★ CSML Quick Start` guide panel: 5 numbered steps from bare header to full Autumn Leaves chart; each step has a "Try this →" button calling `window._openCsmlEditor(example, 'guide-example.csml')`
+- CSS: `.csmlGuidePanel`, `.guide-hdr`, `.guide-steps`, `.guide-step`, `.step-num` (blue circle 26×26px), `.step-body`, `.step-example` (monospace pre), `.try-it-btn` (outlined accent button)
+
+### PR #243 — Print button for CSML editor
+
+**`index.html`** — `⎙ Print` button + handler:
+- Uses `lastSvg` from the IIFE closure (already rendered SVG)
+- `window.open()` popup with the SVG + `window.print()` on load
+- Chart title from `csml.parse(text).title` used as popup window title
+- Graceful error for pop-up blocked + empty-preview states
+
+### PR #245 — CSML → Hybrid direct-render
+
+**`chordSlashMLRenderer.js`** additions:
+- `_SPAN_DUR` map: `{1:'q', 2:'h', 4:'w'}` — slot span → duration letter
+- `csmlMeasureToHybridEvents(meas)` — converts `meas.beats[]` to hybrid event strings: each chord beat gets `beatNum:dur(chord)` based on how many `slash` beats follow it; all-empty measures → `['1:rq']`
+- `csmlToHybridTextDoc(doc)` — emits CSMPN bar lines (same repeat-group logic as `csmlToCsmpnDoc`) followed by a `{hybrid}…}` block per section; bar numbers are 1-based and match the section's measure count
+- `csmlToHybridText(text)` — parse + export entry point; exposed as `window.csml.toHybridText` / `window.csml.toHybridTextDoc`
+
+**`index.html`** — `← Convert & Load` handler updated:
+- Detects `fbSettings.hybridRhythmMode && window.csml.toHybridText`
+- When hybrid mode ON: calls `toHybridText()` → CSMPN with beat-positioned `{hybrid}` blocks
+- When hybrid mode OFF: existing `toCsmpn()` path unchanged
+- Status message distinguishes the two paths
