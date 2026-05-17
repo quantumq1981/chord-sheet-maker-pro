@@ -2106,6 +2106,7 @@ Tempo: 120
         <button id="btnCsmlDownloadSvg" title="Download the current preview as an SVG file">↓ SVG</button>
         <button id="btnCsmlDownloadXml" title="Download a MusicXML .xml file (opens in MuseScore, Dorico, Sibelius)">↓ MusicXML</button>
         <button id="btnCsmlDownloadLy" title="Download a LilyPond .ly file from the current source">↓ LilyPond (.ly)</button>
+        <button id="btnCsmlPrint" title="Open a print-ready popup and print / save as PDF">⎙ Print</button>
       </div>
     </div>
 
@@ -6254,6 +6255,7 @@ function csmpnToCsml(csmpnText) {
   const btnSvg     = document.getElementById('btnCsmlDownloadSvg');
   const btnXml     = document.getElementById('btnCsmlDownloadXml');
   const btnLy      = document.getElementById('btnCsmlDownloadLy');
+  const btnPrint   = document.getElementById('btnCsmlPrint');
 
   if (!panel || !btnOpen) return;
 
@@ -6389,6 +6391,22 @@ function csmpnToCsml(csmpnText) {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 10000);
+  });
+
+  if (btnPrint) btnPrint.addEventListener('click', () => {
+    if (!lastSvg) { setStatus('Nothing to print — render a chart first.', 'err'); return; }
+    const doc   = window.csml ? window.csml.parse(inputEl.value) : null;
+    const title = (doc && doc.title) ? escapeHtml(doc.title) : 'Chord Sheet';
+    const win   = window.open('', '_blank');
+    if (!win) { setStatus('Pop-up blocked — allow pop-ups and try again.', 'err'); return; }
+    win.document.write(
+      '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title>' +
+      '<style>body{margin:0;padding:16px;background:#fff;}' +
+      'svg{max-width:100%;height:auto;display:block;}' +
+      '@media print{body{padding:0;}}</style></head>' +
+      '<body>' + lastSvg + '<script>window.onload=function(){window.print();}<\/script></body></html>'
+    );
+    win.document.close();
   });
 
   const btnFromSource = document.getElementById('btnCsmlFromSource');
