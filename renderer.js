@@ -413,8 +413,12 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
   if (!events.length) {
     const nb = Number(String(timeSig).split('/')[0]) || 4;
     if (bar.chordToken) {
-      const cx1 = hrBeatX(1, timeSig, ul, uw);
-      s += `<text x="${cx1}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;
+      const parts = String(bar.chordToken).replace(/[!~]$/, '').trim().split('_').map(p => p.trim()).filter(Boolean);
+      const step = nb / parts.length;
+      parts.forEach((chord, pi) => {
+        const cx = hrBeatX(1 + pi * step, timeSig, ul, uw);
+        s += `<text x="${cx}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(chord)}</text>`;
+      });
       for (let b = 1; b <= nb; b++) {
         const ex = hrBeatX(b, timeSig, ul, uw);
         s += hrHead(ex, cy, 'q', fg);
@@ -501,10 +505,15 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
     }
   }
 
-  // Render bar-level chord token at beat-1 when no per-event chord is set
+  // Render bar-level chord token when no per-event chord is set; split multi-chord tokens
   if (!anyEvChord && bar.chordToken) {
-    const cx1 = hrBeatX(1, timeSig, ul, uw);
-    s += `<text x="${cx1}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(String(bar.chordToken).replace(/[!~]$/, '').trim())}</text>`;
+    const nb2 = Number(String(timeSig).split('/')[0]) || 4;
+    const parts2 = String(bar.chordToken).replace(/[!~]$/, '').trim().split('_').map(p => p.trim()).filter(Boolean);
+    const step2 = nb2 / parts2.length;
+    parts2.forEach((chord, pi) => {
+      const cx = hrBeatX(1 + pi * step2, timeSig, ul, uw);
+      s += `<text x="${cx}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(chord)}</text>`;
+    });
   }
 
   events.forEach((ev, i) => {

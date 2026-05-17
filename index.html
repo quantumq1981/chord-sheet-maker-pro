@@ -34,8 +34,7 @@
 <!-- Guitar Pro importer — loads AlphaTab CDN lazily on first GP file import -->
 <script defer src="importGuitarPro.js"></script>
 
-<!-- ChordSlashML browser bundle — parser + SVG renderer + LilyPond exporter -->
-<script defer src="chordSlashMLRenderer.js"></script>
+<!-- ChordSlashML browser bundle loaded at end of body for guaranteed timing -->
 
 <style>
   :root{
@@ -6269,17 +6268,22 @@ function csmpnToCsml(csmpnText) {
   if (!panel || !btnOpen) return;
 
   let lastSvg = '';
+  let _csmlRetries = 0;
 
   // Re-render when the renderer script finishes loading (defer timing).
   window.addEventListener('csmlready', () => {
+    _csmlRetries = 0;
     if (panel.classList.contains('open')) renderPreview();
   });
 
   function renderPreview() {
     if (!window.csml) {
-      previewEl.innerHTML = '<div class="csml-preview-empty">ChordSlashML renderer loading… (refresh if this persists)</div>';
+      previewEl.innerHTML = '<div class="csml-preview-empty">ChordSlashML renderer loading…</div>';
+      if (_csmlRetries++ < 20) setTimeout(renderPreview, 250);
+      else previewEl.innerHTML = '<div class="csml-preview-empty">Renderer failed to load — try refreshing the page.</div>';
       return;
     }
+    _csmlRetries = 0;
     const text = inputEl.value;
     if (!text.trim()) {
       previewEl.innerHTML = '<div class="csml-preview-empty">Start typing to see the preview…</div>';
@@ -6482,5 +6486,6 @@ function csmpnToCsml(csmpnText) {
 })();
 
 </script>
+<script src="chordSlashMLRenderer.js"></script>
 </body>
 </html>
