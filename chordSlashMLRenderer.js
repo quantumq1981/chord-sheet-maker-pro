@@ -14,8 +14,7 @@
  */
 (function () {
   'use strict';
-
-  // ─── Parser ────────────────────────────────────────────────────────────────
+  try {
 
   const QUALITY_SUFFIXES = [
     'maj13','maj11','maj9','maj7','maj6','maj',
@@ -1028,17 +1027,20 @@
 
   // ─── Export ────────────────────────────────────────────────────────────────
 
-  window.csml = {
-    parse:            csmlParse,
-    toSvg:            csmlToSvg,
-    toSvgDoc:         csmlToSvgDoc,
-    toLilypond:       csmlToLilypond,
-    toMusicXml:       csmlToMusicXml,
-    toMusicXmlDoc:    csmlToMusicXmlDoc,
-    toCsmpn:          csmlToCsmpn,
-    toCsmpnDoc:       csmlToCsmpnDoc,
-    toHybridText:     csmlToHybridText,
-    toHybridTextDoc:  csmlToHybridTextDoc,
-  };
+    window.csml = {
+      parse:            csmlParse,
+      toSvg:            csmlToSvg,
+      toSvgDoc:         csmlToSvgDoc,
+      toLilypond:       csmlToLilypond,
+      toMusicXml:       csmlToMusicXml,
+      toMusicXmlDoc:    csmlToMusicXmlDoc,
+      toCsmpn:          csmlToCsmpn,
+      toCsmpnDoc:       csmlToCsmpnDoc,
+      toHybridText:     csmlToHybridText,
+      toHybridTextDoc:  csmlToHybridTextDoc,
+    };
+  } catch (e) {
+    window.__csmlError = (e && (e.message || String(e))) || 'unknown error';
+  }
   window.dispatchEvent(new CustomEvent('csmlready'));
 })();
