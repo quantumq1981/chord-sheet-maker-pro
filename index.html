@@ -6279,8 +6279,9 @@ function csmpnToCsml(csmpnText) {
   function renderPreview() {
     if (!window.csml) {
       previewEl.innerHTML = '<div class="csml-preview-empty">ChordSlashML renderer loading…</div>';
-      if (_csmlRetries++ < 20) setTimeout(renderPreview, 250);
-      else previewEl.innerHTML = '<div class="csml-preview-empty">Renderer failed to load — try refreshing the page.</div>';
+      if (_csmlRetries++ < 20) { setTimeout(renderPreview, 250); return; }
+      const errMsg = window.__csmlError ? ' Error: ' + escapeHtml(String(window.__csmlError)) : '';
+      previewEl.innerHTML = '<div class="csml-preview-empty">Renderer failed to load.' + errMsg + '</div>';
       return;
     }
     _csmlRetries = 0;

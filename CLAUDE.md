@@ -4,7 +4,7 @@
 ## Project Identity
 - **App:** Chord Sheet Maker Pro — music finishing app (not a primary converter)
 - **Developer:** iOS 16+ (iPhone/iPad) — no local console. GitHub Actions = the CI console.
-- **Branch:** `claude/guitar-pro-format-support-fLBZa` — all work goes here
+- **Branch:** `claude/chord-syntax-converter-P1unR` — all work goes here
 - **Optimization persona:** Opp the CoderOptimizer — prioritize clean architecture, performance, correctness
 
 ## Sprint 1 — Foundation Hardening ✅ COMPLETE
@@ -26,7 +26,7 @@
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
 ## Current State (2026-05-17)
-- **484 tests passing** (`npm run test:all`) — 306 npm-test + 371 parser/exporter/utils + ChordSlashML phases; Sprint 13 Phase 3+4+5 + all ChordSlashML phases + Sprint 15 complete
+- **484 tests passing** (`npm run test:all`) — 306 npm-test + 371 parser/exporter/utils; Sprint 13 Phase 3+4+5 + all ChordSlashML phases + Sprint 15 + PR #250 bug fixes complete
 - `tests/gpCsmpnConverter.test.mjs` — 53 tests for GP→CSMPN pure helpers (flat names, new patterns, slash chords, tuplets, repeats, voltas)
 - `tests/musicXmlExport.test.ts` — 8 new repeat/volta tests (51 total); `musicXmlExporter.ts` now emits repeat barlines + ending brackets
 - `tests/chordProcessingUtils.test.mjs` — 4 new `parseBarStructures` volta tests
@@ -1032,6 +1032,17 @@ Total: **677 tests** (306 `npm test` + 371 `test:parsers`)
 | 15.3 | `★ CSML Quick Start` guide panel — 5 progressive steps with "Try this →" buttons that load examples into the live editor | ✅ DONE — PR #241 |
 | 15.4 | `⎙ Print` button in CSML editor — popup + `window.print()` for iOS print-to-PDF | ✅ DONE — PR #243 |
 | 15.5 | `csmlToHybridText()` — CSML → CSMPN + `{hybrid}` blocks preserving beat positions; `← Convert & Load` auto-routes when Hybrid mode ON | ✅ DONE — PR #245 |
+
+## Post-Sprint 15 Bug Fixes (2026-05-17, PR #247 + PR #250)
+
+**PR #247 — `fix(csml): live preview never renders + dangerous load fallback + UX clarity`**
+- `chordSlashMLRenderer.js`: dispatches `csmlready` custom event after `window.csml` is set — editor IIFE listens and retriggers `renderPreview()` when panel is open (race-condition fix for `defer` timing)
+- `index.html`: `← Load into Chart` fallback removed — now shows error status if `window.csml` not ready; prevents raw ChordSlashML being loaded into CSMPN source
+- Workflow hint bar added above action buttons; button renamed `← Load into Chart`
+
+**PR #250 — `fix: split multi-chord bar tokens + CSML preview always renders`**
+- `renderer.js` `hrBar()`: splits `bar.chordToken` on `_` and distributes each chord at evenly-spaced beat positions — `Bb_Bb7` now renders `Bb` at beat 1 and `Bb7` at beat 3 instead of the literal string; fix in both no-events path and `anyEvChord` fallback
+- `index.html`: moved `chordSlashMLRenderer.js` from `<head defer>` to end of `<body>` — guarantees synchronous execution after all other scripts; added 250ms auto-retry loop (up to 20 attempts / 5 seconds) in `renderPreview()` for iOS Safari edge cases
 
 ## SPRINT 15 CHANGES (2026-05-17)
 
