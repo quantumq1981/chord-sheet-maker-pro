@@ -98,6 +98,7 @@ jobs:
         run: |
           cp index.html settings.js renderer.js importPipeline.js \
              utils.js chordProcessing.js csmpnParser.js importGuitarPro.js \
+             chordSlashMLRenderer.js \
              ug-txt-importer.html dist/
 
       - name: Setup Pages
