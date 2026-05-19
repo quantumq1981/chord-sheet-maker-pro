@@ -6376,9 +6376,20 @@ function csmpnToCsml(csmpnText) {
     const title = (doc && doc.title) ? doc.title : 'chord-sheet';
     const fname = safeFilename(title) + '.svg';
     const blob  = new Blob([lastSvg], { type: 'image/svg+xml;charset=utf-8' });
-    if (navigator.share) {
-      try { await navigator.share({ files: [new File([blob], fname, { type: 'image/svg+xml' })] }); return; } catch (_) { /* cancelled or unsupported — fall through */ }
+    // Web Share API (iOS 15.1+ file sharing)
+    if (navigator.share && navigator.canShare) {
+      const f = new File([blob], fname, { type: 'image/svg+xml' });
+      if (navigator.canShare({ files: [f] })) {
+        try { await navigator.share({ files: [f] }); return; } catch (_) { /* user cancelled */ return; }
+      }
     }
+    // iOS fallback: open in popup — user can long-press → Share → Save to Files
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + escapeHtml(title) + '</title><style>body{margin:0;background:#fff}svg{max-width:100%;height:auto}</style></head><body>' + lastSvg + '</body></html>');
+      win.document.close(); return;
+    }
+    // Desktop fallback
     const url = URL.createObjectURL(blob);
     const a   = Object.assign(document.createElement('a'), { href: url, download: fname });
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -6413,9 +6424,20 @@ function csmpnToCsml(csmpnText) {
     const title = (doc && doc.title) ? doc.title : 'chord-sheet';
     const fname = safeFilename(title) + '.ly';
     const blob  = new Blob([lyText], { type: 'text/plain;charset=utf-8' });
-    if (navigator.share) {
-      try { await navigator.share({ files: [new File([blob], fname, { type: 'text/plain' })] }); return; } catch (_) { /* cancelled or unsupported — fall through */ }
+    // Web Share API (iOS 15.1+ file sharing)
+    if (navigator.share && navigator.canShare) {
+      const f = new File([blob], fname, { type: 'text/plain' });
+      if (navigator.canShare({ files: [f] })) {
+        try { await navigator.share({ files: [f] }); return; } catch (_) { /* user cancelled */ return; }
+      }
     }
+    // iOS fallback: open in popup — user can long-press → Share → Save to Files
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + escapeHtml(title) + ' (.ly)</title><style>body{margin:16px;font-family:monospace;white-space:pre-wrap;word-break:break-all}</style></head><body>' + escapeHtml(lyText) + '</body></html>');
+      win.document.close(); return;
+    }
+    // Desktop fallback
     const url   = URL.createObjectURL(blob);
     const a     = Object.assign(document.createElement('a'), { href: url, download: fname });
     document.body.appendChild(a);

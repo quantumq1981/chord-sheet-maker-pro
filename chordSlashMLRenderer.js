@@ -244,6 +244,42 @@
 
   // ─── SVG Renderer ──────────────────────────────────────────────────────────
 
+  // Normalize chord text for display only (SVG preview).
+  // Converts: dim→o, dim7→o7, m7b5→ø, maj7→Δ7, b→♭, #→♯ in accidentals/quality.
+  function normalizeChordDisplay(raw) {
+    if (!raw) return raw;
+    const rm = /^([A-G])(bb|##|[b#♭♯])?/.exec(raw);
+    if (!rm) return raw;
+    const acc = rm[2] || '';
+    const dispAcc = acc === 'b' ? '♭' : acc === '#' ? '♯' : acc === 'bb' ? '𝄫' : acc === '##' ? '𝄪' : acc;
+    let rest = raw.slice(rm[0].length);
+    // Separate bass note
+    let bassDisp = '';
+    const si = rest.indexOf('/');
+    if (si >= 0) {
+      const br = rest.slice(si + 1);
+      const bm = /^([A-G])(bb|##|[b#♭♯])?/.exec(br);
+      if (bm) {
+        const ba = bm[2] || '';
+        const bda = ba === 'b' ? '♭' : ba === '#' ? '♯' : ba === 'bb' ? '𝄫' : ba === '##' ? '𝄪' : ba;
+        bassDisp = '/' + bm[1] + bda + br.slice(bm[0].length);
+        rest = rest.slice(0, si);
+      }
+    }
+    // Normalize quality (longer patterns first)
+    let q = rest;
+    q = q.replace(/m7b5|m7♭5/g, 'ø');
+    q = q.replace(/(?:maj|Maj|MAJ|MA)7/g, 'Δ7');
+    q = q.replace(/dim7|°7/g, 'o7');
+    q = q.replace(/dim|°(?!7)/g, 'o');
+    // Accidentals within quality (e.g. 7b5→7♭5, 7#9→7♯9, b5→♭5)
+    q = q.replace(/(\d)b(\d)/g, '$1♭$2');
+    q = q.replace(/(\d)#(\d)/g, '$1♯$2');
+    q = q.replace(/^b(\d)/, '♭$1');
+    q = q.replace(/^#(\d)/, '♯$1');
+    return rm[1] + dispAcc + q + bassDisp;
+  }
+
   const PAGE_W = 760, MARGIN_H = 36, CLEF_W = 50;
   const LINE_GAP = 8, STAFF_LINES = 5, STAFF_H = 32;
   const CHORD_AREA_H = 38, SYSTEM_PAD_BOT = 40, SYSTEM_ROW_H = 110;
@@ -442,7 +478,7 @@
           const beat = measure.beats[bi];
           const bx = measLeft + beatSpacing*bi + beatSpacing*0.5;
           const chordTxt = beatChordText(beat);
-          if (chordTxt) parts.push(`<text x="${bx}" y="${staffY-10}" font-size="${o.chordFontSize}" font-family="${svgEsc(o.chordFont)}" fill="${cc}" text-anchor="middle">${svgEsc(chordTxt)}</text>`);
+          if (chordTxt) parts.push(`<text x="${bx}" y="${staffY-10}" font-size="${o.chordFontSize}" font-family="${svgEsc(o.chordFont)}" fill="${cc}" text-anchor="middle">${svgEsc(normalizeChordDisplay(chordTxt))}</text>`);
           const nh = [];
           renderBeatNoteheads(beat, bx, noteCy, beatSpacing*0.4, fg, o.stems, nh, 0);
           parts.push(...nh);
