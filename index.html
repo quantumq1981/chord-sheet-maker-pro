@@ -6370,16 +6370,18 @@ function csmpnToCsml(csmpnText) {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   });
 
-  if (btnSvg) btnSvg.addEventListener('click', () => {
+  if (btnSvg) btnSvg.addEventListener('click', async () => {
     if (!lastSvg) return;
-    const doc = window.csml ? window.csml.toSvgDoc(inputEl.value) : null;
+    const doc   = window.csml ? window.csml.toSvgDoc(inputEl.value) : null;
     const title = (doc && doc.title) ? doc.title : 'chord-sheet';
-    const blob = new Blob([lastSvg], { type: 'image/svg+xml;charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
-    const a    = Object.assign(document.createElement('a'), { href: url, download: safeFilename(title) + '.svg' });
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const fname = safeFilename(title) + '.svg';
+    const blob  = new Blob([lastSvg], { type: 'image/svg+xml;charset=utf-8' });
+    if (navigator.share) {
+      try { await navigator.share({ files: [new File([blob], fname, { type: 'image/svg+xml' })] }); return; } catch (_) { /* cancelled or unsupported — fall through */ }
+    }
+    const url = URL.createObjectURL(blob);
+    const a   = Object.assign(document.createElement('a'), { href: url, download: fname });
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   });
 
@@ -6401,7 +6403,7 @@ function csmpnToCsml(csmpnText) {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   });
 
-  if (btnLy) btnLy.addEventListener('click', () => {
+  if (btnLy) btnLy.addEventListener('click', async () => {
     if (!window.csml) return;
     const text = inputEl.value;
     if (!text.trim()) return;
@@ -6409,9 +6411,13 @@ function csmpnToCsml(csmpnText) {
     try { lyText = window.csml.toLilypond(text); } catch (e) { setStatus('LilyPond export failed: ' + e.message, 'err'); return; }
     const doc   = window.csml.toSvgDoc(text);
     const title = (doc && doc.title) ? doc.title : 'chord-sheet';
+    const fname = safeFilename(title) + '.ly';
     const blob  = new Blob([lyText], { type: 'text/plain;charset=utf-8' });
+    if (navigator.share) {
+      try { await navigator.share({ files: [new File([blob], fname, { type: 'text/plain' })] }); return; } catch (_) { /* cancelled or unsupported — fall through */ }
+    }
     const url   = URL.createObjectURL(blob);
-    const a     = Object.assign(document.createElement('a'), { href: url, download: safeFilename(title) + '.ly' });
+    const a     = Object.assign(document.createElement('a'), { href: url, download: fname });
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
