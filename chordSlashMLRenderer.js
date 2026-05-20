@@ -421,7 +421,7 @@
   }
 
   function csmlToSvgDoc(doc, opts) {
-    const o = Object.assign({ measuresPerRow:4, fgColor:'#000', bgColor:'#fff', chordColor:'#000', chordFontSize:14, chordFont:'Georgia,serif', labelFont:'Arial,sans-serif', stems:false, keySig:'' }, opts || {});
+    const o = Object.assign({ measuresPerRow:4, fgColor:'#000', bgColor:'#fff', chordColor:'#000', chordFontSize:14, chordFont:'Georgia,serif', labelFont:'Arial,sans-serif', stems:false, keySig:'', rawChords:false, chordAlign:'center' }, opts || {});
     const mpr = o.measuresPerRow;
     const { fgColor: fg, bgColor: bg, chordColor: cc } = o;
     const rows = buildRows(doc, mpr);
@@ -478,7 +478,12 @@
           const beat = measure.beats[bi];
           const bx = measLeft + beatSpacing*bi + beatSpacing*0.5;
           const chordTxt = beatChordText(beat);
-          if (chordTxt) parts.push(`<text x="${bx}" y="${staffY-10}" font-size="${o.chordFontSize}" font-family="${svgEsc(o.chordFont)}" fill="${cc}" text-anchor="middle">${svgEsc(normalizeChordDisplay(chordTxt))}</text>`);
+          if (chordTxt) {
+            const dispTxt = o.rawChords ? chordTxt : normalizeChordDisplay(chordTxt);
+            const anchor = o.chordAlign === 'left' ? 'start' : 'middle';
+            const cx = o.chordAlign === 'left' ? measLeft + 4 : bx;
+            parts.push(`<text x="${cx}" y="${staffY-10}" font-size="${o.chordFontSize}" font-family="${svgEsc(o.chordFont)}" fill="${cc}" text-anchor="${anchor}">${svgEsc(dispTxt)}</text>`);
+          }
           const nh = [];
           renderBeatNoteheads(beat, bx, noteCy, beatSpacing*0.4, fg, o.stems, nh, 0);
           parts.push(...nh);

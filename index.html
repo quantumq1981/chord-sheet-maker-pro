@@ -1741,6 +1741,76 @@ body.exporting .sectionBlock{
     border-color:var(--accent);
   }
   .csml-editor-actions button.primary:hover{ background:#1d4ed8; border-color:#1d4ed8; }
+
+  /* ── ChordSlashML Style Settings Panel ─────────────────────────── */
+  .csml-style-toggle{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-size:12px;
+    font-weight:600;
+    color:var(--muted);
+    cursor:pointer;
+    background:none;
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:3px 10px;
+    margin-bottom:8px;
+    transition:background .15s;
+  }
+  .csml-style-toggle:hover{ background:var(--border); }
+  .csml-style-settings{
+    display:none;
+    background:var(--bg);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:12px;
+    margin-bottom:10px;
+  }
+  .csml-style-settings.open{ display:block; }
+  .csml-style-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+    gap:8px 12px;
+  }
+  .csml-style-field{
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+  }
+  .csml-style-field label{
+    font-size:11px;
+    font-weight:600;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+  }
+  .csml-style-field select,
+  .csml-style-field input[type=color]{
+    font-size:12px;
+    padding:3px 6px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    background:var(--card);
+    color:var(--ink);
+    height:30px;
+    cursor:pointer;
+  }
+  .csml-style-field input[type=color]{
+    padding:2px;
+    width:100%;
+  }
+  .csml-style-reset{
+    margin-top:10px;
+    font-size:11px;
+    padding:4px 10px;
+    border-radius:6px;
+    border:1px solid var(--border);
+    background:var(--bg);
+    color:var(--muted);
+    cursor:pointer;
+  }
+  .csml-style-reset:hover{ color:var(--ink); background:var(--border); }
 </style>
 <style id="dynamicPageStyle">@media print { @page { size: letter portrait; margin: 0.5in; } }</style>
 </head>
@@ -2074,6 +2144,89 @@ Tempo: 100
           </div>
           <button id="btnCsmlEditorClose" title="Close editor">&#x2715;</button>
         </div>
+      </div>
+
+      <!-- CSML Style Settings (collapsible) -->
+      <button class="csml-style-toggle" id="btnCsmlStyleSettings" title="Toggle style settings">⚙ Style Settings <span id="csmlStyleArrow">▾</span></button>
+      <div class="csml-style-settings" id="csmlStyleSettings">
+        <div class="csml-style-grid">
+          <div class="csml-style-field">
+            <label>Background Color</label>
+            <input type="color" id="csmlBgColor" value="#ffffff">
+          </div>
+          <div class="csml-style-field">
+            <label>Staff &amp; Line Color</label>
+            <input type="color" id="csmlFgColor" value="#000000">
+          </div>
+          <div class="csml-style-field">
+            <label>Chord Color</label>
+            <input type="color" id="csmlChordColor" value="#000000">
+          </div>
+          <div class="csml-style-field">
+            <label>Chord Font Size</label>
+            <select id="csmlChordFontSize">
+              <option value="10">Small (10px)</option>
+              <option value="12">Compact (12px)</option>
+              <option value="14" selected>Medium (14px)</option>
+              <option value="17">Large (17px)</option>
+              <option value="20">XL (20px)</option>
+            </select>
+          </div>
+          <div class="csml-style-field">
+            <label>Chord Font</label>
+            <select id="csmlChordFont">
+              <option value="Georgia,serif" selected>Georgia (serif)</option>
+              <option value="Arial,Helvetica,sans-serif">Arial / Helvetica</option>
+              <option value="'Times New Roman',serif">Times New Roman</option>
+              <option value="'Courier New',monospace">Courier New</option>
+              <option value="Palatino,Georgia,serif">Palatino</option>
+              <option value="system-ui,sans-serif">System UI</option>
+            </select>
+          </div>
+          <div class="csml-style-field">
+            <label>Label &amp; Title Font</label>
+            <select id="csmlLabelFont">
+              <option value="Arial,Helvetica,sans-serif" selected>Arial / Helvetica</option>
+              <option value="Georgia,serif">Georgia (serif)</option>
+              <option value="'Times New Roman',serif">Times New Roman</option>
+              <option value="system-ui,sans-serif">System UI</option>
+            </select>
+          </div>
+          <div class="csml-style-field">
+            <label>Chord Alignment</label>
+            <select id="csmlChordAlign">
+              <option value="center" selected>Center (default)</option>
+              <option value="left">Left</option>
+            </select>
+          </div>
+          <div class="csml-style-field">
+            <label>Chord Display</label>
+            <select id="csmlChordDisplay">
+              <option value="symbols" selected>Symbols (♭♯Δ7ø°)</option>
+              <option value="plain">Plain text (b#maj7dim)</option>
+            </select>
+          </div>
+          <div class="csml-style-field">
+            <label>Key Signature</label>
+            <select id="csmlKeySig">
+              <option value="" selected>Auto (from header)</option>
+              <option value="C">C (none)</option>
+              <option value="G">G (1♯)</option>
+              <option value="D">D (2♯)</option>
+              <option value="A">A (3♯)</option>
+              <option value="E">E (4♯)</option>
+              <option value="B">B (5♯)</option>
+              <option value="F#">F♯ (6♯)</option>
+              <option value="F">F (1♭)</option>
+              <option value="Bb">B♭ (2♭)</option>
+              <option value="Eb">E♭ (3♭)</option>
+              <option value="Ab">A♭ (4♭)</option>
+              <option value="Db">D♭ (5♭)</option>
+              <option value="Gb">G♭ (6♭)</option>
+            </select>
+          </div>
+        </div>
+        <button class="csml-style-reset" id="btnCsmlStyleReset" title="Reset all style settings to defaults">↺ Reset to defaults</button>
       </div>
 
       <div class="csml-editor-panes">
@@ -6265,12 +6418,100 @@ function csmpnToCsml(csmpnText) {
   const btnLy      = document.getElementById('btnCsmlDownloadLy');
   const btnPrint   = document.getElementById('btnCsmlPrint');
 
+  // Style settings controls
+  const btnStyleToggle  = document.getElementById('btnCsmlStyleSettings');
+  const stylePanel      = document.getElementById('csmlStyleSettings');
+  const styleArrow      = document.getElementById('csmlStyleArrow');
+  const bgColorEl       = document.getElementById('csmlBgColor');
+  const fgColorEl       = document.getElementById('csmlFgColor');
+  const chordColorEl    = document.getElementById('csmlChordColor');
+  const chordFontSizeEl = document.getElementById('csmlChordFontSize');
+  const chordFontEl     = document.getElementById('csmlChordFont');
+  const labelFontEl     = document.getElementById('csmlLabelFont');
+  const chordAlignEl    = document.getElementById('csmlChordAlign');
+  const chordDisplayEl  = document.getElementById('csmlChordDisplay');
+  const keySigEl_       = document.getElementById('csmlKeySig');
+  const btnStyleReset   = document.getElementById('btnCsmlStyleReset');
+
   if (!panel || !btnOpen) return;
+
+  const CSML_STYLE_KEY = 'csml_editor_settings';
+  const CSML_STYLE_DEFAULTS = {
+    bgColor: '#ffffff', fgColor: '#000000', chordColor: '#000000',
+    chordFontSize: '14', chordFont: 'Georgia,serif',
+    labelFont: 'Arial,Helvetica,sans-serif',
+    chordAlign: 'center', chordDisplay: 'symbols', keySig: '',
+  };
+
+  function loadStyleSettings() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CSML_STYLE_KEY) || '{}');
+      return Object.assign({}, CSML_STYLE_DEFAULTS, saved);
+    } catch(_) { return Object.assign({}, CSML_STYLE_DEFAULTS); }
+  }
+
+  function saveStyleSettings(s) {
+    try { localStorage.setItem(CSML_STYLE_KEY, JSON.stringify(s)); } catch(_){}
+  }
+
+  function applyStyleSettingsToUI(s) {
+    if (bgColorEl)       bgColorEl.value       = s.bgColor;
+    if (fgColorEl)       fgColorEl.value       = s.fgColor;
+    if (chordColorEl)    chordColorEl.value    = s.chordColor;
+    if (chordFontSizeEl) chordFontSizeEl.value = s.chordFontSize;
+    if (chordFontEl)     chordFontEl.value     = s.chordFont;
+    if (labelFontEl)     labelFontEl.value     = s.labelFont;
+    if (chordAlignEl)    chordAlignEl.value    = s.chordAlign;
+    if (chordDisplayEl)  chordDisplayEl.value  = s.chordDisplay;
+    if (keySigEl_)       keySigEl_.value       = s.keySig;
+  }
+
+  function readStyleSettings() {
+    return {
+      bgColor:       bgColorEl       ? bgColorEl.value       : CSML_STYLE_DEFAULTS.bgColor,
+      fgColor:       fgColorEl       ? fgColorEl.value       : CSML_STYLE_DEFAULTS.fgColor,
+      chordColor:    chordColorEl    ? chordColorEl.value    : CSML_STYLE_DEFAULTS.chordColor,
+      chordFontSize: chordFontSizeEl ? chordFontSizeEl.value : CSML_STYLE_DEFAULTS.chordFontSize,
+      chordFont:     chordFontEl     ? chordFontEl.value     : CSML_STYLE_DEFAULTS.chordFont,
+      labelFont:     labelFontEl     ? labelFontEl.value     : CSML_STYLE_DEFAULTS.labelFont,
+      chordAlign:    chordAlignEl    ? chordAlignEl.value    : CSML_STYLE_DEFAULTS.chordAlign,
+      chordDisplay:  chordDisplayEl  ? chordDisplayEl.value  : CSML_STYLE_DEFAULTS.chordDisplay,
+      keySig:        keySigEl_       ? keySigEl_.value       : CSML_STYLE_DEFAULTS.keySig,
+    };
+  }
+
+  // Initialise style settings from localStorage
+  applyStyleSettingsToUI(loadStyleSettings());
+
+  // Style panel toggle
+  if (btnStyleToggle && stylePanel) {
+    btnStyleToggle.addEventListener('click', () => {
+      const open = stylePanel.classList.toggle('open');
+      if (styleArrow) styleArrow.textContent = open ? '▴' : '▾';
+    });
+  }
+
+  // Reset button
+  if (btnStyleReset) {
+    btnStyleReset.addEventListener('click', () => {
+      applyStyleSettingsToUI(CSML_STYLE_DEFAULTS);
+      saveStyleSettings(CSML_STYLE_DEFAULTS);
+      renderPreview();
+    });
+  }
+
+  // Wire all style controls to re-render
+  [bgColorEl, fgColorEl, chordColorEl, chordFontSizeEl, chordFontEl,
+   labelFontEl, chordAlignEl, chordDisplayEl, keySigEl_].forEach(el => {
+    if (!el) return;
+    const evt = el.type === 'color' ? 'input' : 'change';
+    el.addEventListener(evt, () => { saveStyleSettings(readStyleSettings()); renderPreview(); });
+  });
 
   let lastSvg = '';
   let _csmlRetries = 0;
 
-  // Re-render when the renderer script finishes loading (defer timing).
+  // Re-render when the renderer script finishes loading.
   window.addEventListener('csmlready', () => {
     _csmlRetries = 0;
     if (panel.classList.contains('open')) renderPreview();
@@ -6294,9 +6535,19 @@ function csmpnToCsml(csmpnText) {
       return;
     }
     try {
+      const s = readStyleSettings();
       const opts = {
         measuresPerRow: parseInt(mprSel.value, 10) || 4,
-        stems: stemsChk.checked,
+        stems:          stemsChk.checked,
+        bgColor:        s.bgColor,
+        fgColor:        s.fgColor,
+        chordColor:     s.chordColor,
+        chordFontSize:  parseInt(s.chordFontSize, 10) || 14,
+        chordFont:      s.chordFont,
+        labelFont:      s.labelFont,
+        chordAlign:     s.chordAlign,
+        rawChords:      s.chordDisplay === 'plain',
+        keySig:         s.keySig,
       };
       lastSvg = window.csml.toSvg(text, opts);
       previewEl.innerHTML = lastSvg;
