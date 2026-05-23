@@ -2265,6 +2265,7 @@ Tempo: 120
         <button id="btnCsmlFromSource" title="Convert the current main chart to ChordSlashML and open it here for editing">⬆ From Source</button>
         <button id="btnCsmlSave" title="Download the ChordSlashML source as a .csml file">↓ Save .csml</button>
         <button id="btnCsmlDownloadSvg" title="Download the live preview as an SVG file">↓ SVG</button>
+        <button id="btnCsmlDownloadPng" title="Download the live preview as a PNG image (2× resolution)">↓ PNG</button>
         <button id="btnCsmlDownloadXml" title="Download a MusicXML .xml file (opens in MuseScore, Dorico, Sibelius)">↓ MusicXML</button>
         <button id="btnCsmlDownloadLy" title="Download a LilyPond .ly source file">↓ LilyPond (.ly)</button>
         <button id="btnCsmlPrint" title="Open a print-ready popup and print or save as PDF">⎙ Print</button>
@@ -6414,6 +6415,7 @@ function csmpnToCsml(csmpnText) {
   const btnLoad    = document.getElementById('btnCsmlLoad');
   const btnSave    = document.getElementById('btnCsmlSave');
   const btnSvg     = document.getElementById('btnCsmlDownloadSvg');
+  const btnPng_    = document.getElementById('btnCsmlDownloadPng');
   const btnXml     = document.getElementById('btnCsmlDownloadXml');
   const btnLy      = document.getElementById('btnCsmlDownloadLy');
   const btnPrint   = document.getElementById('btnCsmlPrint');
@@ -6645,6 +6647,40 @@ function csmpnToCsml(csmpnText) {
     const a   = Object.assign(document.createElement('a'), { href: url, download: fname });
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 10000);
+  });
+
+  if (btnPng_) btnPng_.addEventListener('click', () => {
+    if (!lastSvg) return;
+    const doc_   = window.csml ? window.csml.parse(inputEl.value) : null;
+    const title  = (doc_ && doc_.title) ? doc_.title : 'chord-sheet';
+    const fname  = safeFilename(title) + '.png';
+    const s      = readStyleSettings();
+    // Parse viewBox from the rendered SVG to get exact pixel dimensions.
+    const vbMatch = lastSvg.match(/viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
+    const vbW = vbMatch ? parseFloat(vbMatch[1]) : 760;
+    const vbH = vbMatch ? parseFloat(vbMatch[2]) : 400;
+    const scale  = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width  = vbW * scale;
+    canvas.height = vbH * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+    ctx.fillStyle = s.bgColor || '#ffffff';
+    ctx.fillRect(0, 0, vbW, vbH);
+    // Use data URL — blob URLs taint the canvas on iOS Safari (SecurityError).
+    const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(lastSvg);
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(async (blob) => {
+        if (!blob) { setStatus('PNG export failed — canvas is empty.', 'err'); return; }
+        const file = new File([blob], fname, { type: 'image/png' });
+        const shared = await tryShareFile(file);
+        if (!shared) downloadBlob(blob, fname);
+      }, 'image/png');
+    };
+    img.onerror = () => setStatus('PNG render failed — try SVG instead.', 'err');
+    img.src = url;
   });
 
   if (btnXml) btnXml.addEventListener('click', () => {
