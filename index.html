@@ -2225,6 +2225,22 @@ Tempo: 100
               <option value="Gb">G♭ (6♭)</option>
             </select>
           </div>
+          <div class="csml-style-field">
+            <label>Print Paper Size</label>
+            <select id="csmlPaperSize">
+              <option value="letter">Letter</option>
+              <option value="a4">A4</option>
+              <option value="a3">A3</option>
+            </select>
+          </div>
+          <div class="csml-style-field">
+            <label>Print Margins</label>
+            <select id="csmlPrintMargin">
+              <option value="0.5in">Normal (0.5in)</option>
+              <option value="0.25in">Tight (0.25in)</option>
+              <option value="0.75in">Wide (0.75in)</option>
+            </select>
+          </div>
         </div>
         <button class="csml-style-reset" id="btnCsmlStyleReset" title="Reset all style settings to defaults">↺ Reset to defaults</button>
       </div>
@@ -6433,6 +6449,8 @@ function csmpnToCsml(csmpnText) {
   const chordAlignEl    = document.getElementById('csmlChordAlign');
   const chordDisplayEl  = document.getElementById('csmlChordDisplay');
   const keySigEl_       = document.getElementById('csmlKeySig');
+  const paperSizeEl     = document.getElementById('csmlPaperSize');
+  const printMarginEl   = document.getElementById('csmlPrintMargin');
   const btnStyleReset   = document.getElementById('btnCsmlStyleReset');
 
   if (!panel || !btnOpen) return;
@@ -6443,6 +6461,7 @@ function csmpnToCsml(csmpnText) {
     chordFontSize: '14', chordFont: 'Georgia,serif',
     labelFont: 'Arial,Helvetica,sans-serif',
     chordAlign: 'center', chordDisplay: 'symbols', keySig: '',
+    paperSize: 'letter', printMargin: '0.5in',
   };
 
   function loadStyleSettings() {
@@ -6466,6 +6485,8 @@ function csmpnToCsml(csmpnText) {
     if (chordAlignEl)    chordAlignEl.value    = s.chordAlign;
     if (chordDisplayEl)  chordDisplayEl.value  = s.chordDisplay;
     if (keySigEl_)       keySigEl_.value       = s.keySig;
+    if (paperSizeEl)     paperSizeEl.value     = s.paperSize;
+    if (printMarginEl)   printMarginEl.value   = s.printMargin;
   }
 
   function readStyleSettings() {
@@ -6479,6 +6500,8 @@ function csmpnToCsml(csmpnText) {
       chordAlign:    chordAlignEl    ? chordAlignEl.value    : CSML_STYLE_DEFAULTS.chordAlign,
       chordDisplay:  chordDisplayEl  ? chordDisplayEl.value  : CSML_STYLE_DEFAULTS.chordDisplay,
       keySig:        keySigEl_       ? keySigEl_.value       : CSML_STYLE_DEFAULTS.keySig,
+      paperSize:     paperSizeEl     ? paperSizeEl.value     : CSML_STYLE_DEFAULTS.paperSize,
+      printMargin:   printMarginEl   ? printMarginEl.value   : CSML_STYLE_DEFAULTS.printMargin,
     };
   }
 
@@ -6504,7 +6527,8 @@ function csmpnToCsml(csmpnText) {
 
   // Wire all style controls to re-render
   [bgColorEl, fgColorEl, chordColorEl, chordFontSizeEl, chordFontEl,
-   labelFontEl, chordAlignEl, chordDisplayEl, keySigEl_].forEach(el => {
+   labelFontEl, chordAlignEl, chordDisplayEl, keySigEl_,
+   paperSizeEl, printMarginEl].forEach(el => {
     if (!el) return;
     const evt = el.type === 'color' ? 'input' : 'change';
     el.addEventListener(evt, () => { saveStyleSettings(readStyleSettings()); renderPreview(); });
@@ -6735,15 +6759,19 @@ function csmpnToCsml(csmpnText) {
 
   if (btnPrint) btnPrint.addEventListener('click', () => {
     if (!lastSvg) { setStatus('Nothing to print — render a chart first.', 'err'); return; }
-    const doc   = window.csml ? window.csml.parse(inputEl.value) : null;
-    const title = (doc && doc.title) ? escapeHtml(doc.title) : 'Chord Sheet';
-    const win   = window.open('', '_blank');
+    const doc_   = window.csml ? window.csml.parse(inputEl.value) : null;
+    const title  = (doc_ && doc_.title) ? escapeHtml(doc_.title) : 'Chord Sheet';
+    const s      = readStyleSettings();
+    const paperCss = s.paperSize === 'a3' ? 'A3' : s.paperSize === 'a4' ? 'A4' : 'letter';
+    const win = window.open('', '_blank');
     if (!win) { setStatus('Pop-up blocked — allow pop-ups and try again.', 'err'); return; }
     win.document.write(
       '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title>' +
-      '<style>body{margin:0;padding:16px;background:#fff;}' +
+      '<style>' +
+      'body{margin:0;padding:' + s.printMargin + ';background:' + escapeHtml(s.bgColor) + ';}' +
       'svg{max-width:100%;height:auto;display:block;}' +
-      '@media print{body{padding:0;}}</style></head>' +
+      '@media print{@page{size:' + paperCss + ';margin:' + s.printMargin + ';}body{padding:0;}}' +
+      '</style></head>' +
       '<body>' + lastSvg + '<script>window.onload=function(){window.print();}<\/script></body></html>'
     );
     win.document.close();
