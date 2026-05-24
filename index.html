@@ -1845,6 +1845,62 @@ body.exporting .sectionBlock{
     margin-bottom:12px;
   }
   .gpNotationPanel.open{ display:block; }
+
+  /* ── Setlist / Songbook Manager ──────────────────────────────────────── */
+  .setlistPanel{
+    display:none;
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:12px;
+  }
+  .setlistPanel.open{ display:block; }
+  .setlist-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    margin-bottom:10px;
+    flex-wrap:wrap;
+  }
+  .setlist-header h3{ margin:0; font-size:14px; font-weight:700; }
+  .setlist-header-actions{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .setlist-empty{ color:var(--muted,#888); font-size:13px; font-style:italic; padding:12px 0; text-align:center; }
+  .setlist-item{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 0;
+    border-bottom:1px solid var(--border);
+    font-size:13px;
+  }
+  .setlist-item:last-child{ border-bottom:none; }
+  .setlist-item-num{ color:var(--muted,#888); min-width:22px; font-size:12px; text-align:right; flex-shrink:0; }
+  .setlist-item-title{ flex:1; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .setlist-item-date{ color:var(--muted,#888); font-size:11px; white-space:nowrap; flex-shrink:0; }
+  .setlist-item-btns{ display:flex; gap:4px; flex-shrink:0; }
+  .setlist-item-btns button{
+    font-size:11px; padding:3px 8px; border:1px solid var(--border);
+    border-radius:4px; background:transparent; cursor:pointer; color:inherit;
+    line-height:1.3;
+  }
+  .setlist-item-btns button:disabled{ opacity:0.35; cursor:default; }
+  .setlist-item-btns button:not(:disabled):hover{ background:var(--hover,#f0f0f0); }
+  .setlist-item-btns .btn-sl-load{ color:#0044cc; border-color:#0044cc; }
+  .setlist-item-btns .btn-sl-del{ color:#c00; border-color:#c00; }
+  .setlist-badge{
+    display:inline-block; background:#0044cc; color:#fff;
+    border-radius:10px; font-size:11px; padding:1px 7px; margin-left:4px;
+    font-weight:700; vertical-align:middle;
+  }
+  #btnSetlistClose{
+    background:none; border:none; cursor:pointer; font-size:17px;
+    line-height:1; padding:2px 6px; border-radius:4px; flex-shrink:0;
+  }
+  #btnSetlistClose:hover{ background:#f0f0f0; }
+  @media print{ .setlistPanel{ display:none !important; } }
+
   .gpn-header{
     display:flex;
     align-items:center;
@@ -2016,6 +2072,7 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnCsmlEditor">⊞ ChordSlashML Editor</button>
           <button class="outline power-only" id="btnCsmlGuide">★ CSML Quick Start</button>
           <button class="outline power-only" id="btnGpNotation" title="View Guitar Pro or Power Tab notation">🎸 Tab View</button>
+          <button class="outline power-only" id="btnSetlist" title="Setlist / Songbook — save and print multiple charts">&#9776; Setlist<span class="setlist-badge" id="setlistBadge" style="display:none">0</span></button>
         </div>
         <div class="toolbar-group">
           <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
@@ -2527,6 +2584,20 @@ Tempo: 130
         </div>
 
       </div>
+    </div>
+
+    <!-- Setlist / Songbook Manager Panel -->
+    <div id="setlistPanel" class="setlistPanel power-only">
+      <div class="setlist-header">
+        <h3>&#9776; Setlist</h3>
+        <div class="setlist-header-actions">
+          <button class="outline" id="btnSetlistAdd" title="Save current chart to setlist">+ Add Chart</button>
+          <button class="outline" id="btnSetlistPrint" title="Print all charts as one PDF">&#x2399; Print All</button>
+          <button class="outline" id="btnSetlistClear" style="color:#c00;" title="Remove all charts">&#x2715; Clear All</button>
+          <button id="btnSetlistClose" title="Close">&#x2715;</button>
+        </div>
+      </div>
+      <div id="setlistItems"></div>
     </div>
 
     <!-- Import Diagnostics Panel (collapsible, power-mode only) -->
@@ -5692,14 +5763,14 @@ window.runCSMPNSelfTests = function(){
 
   // ── Main render function ──────────────────────────────────
 
-  function renderSlashNotationHtml(defaultMpr, overrideStr){
+  function renderSlashNotationHtml(defaultMpr, overrideStr, srcOverride){
     defaultMpr = Math.max(1, Math.min(16, parseInt(defaultMpr, 10) || 4));
     const overrides = parseSectionOverrides(overrideStr);
 
     // Snapshot current fbSettings + UI control state for this render pass
     getSnRenderSettings();
 
-    const original = sourceEl.value || '';
+    const original = srcOverride !== undefined ? srcOverride : (sourceEl.value || '');
     const text = (fbSettings.includeLyrics === false) ? filterLyricsLines(original) : original;
     const doc  = parseCSMPN(text);
 
@@ -6407,6 +6478,11 @@ ${headerHtml}${svg.outerHTML}
 
   window.updateSlashNotationIfOpen = refreshSlashNotation;
 
+  // Render any CSMPN text to an SVG string without touching the live editor.
+  window.renderCsmpnToSvg = function(csmpnText, mpr) {
+    return renderSlashNotationHtml(mpr || 4, '', csmpnText || '');
+  };
+
   btnOpen.addEventListener('click', () => {
     panel.classList.toggle('open');
     if (panel.classList.contains('open')){
@@ -7096,6 +7172,154 @@ function csmpnToCsml(csmpnText) {
 
   // Auto-open when a Power Tab file is loaded (no CSMPN conversion available)
   window.addEventListener('gpbytesready', () => openPanel());
+})();
+
+// ── Setlist / Songbook Manager ────────────────────────────────────────────
+(function(){
+  const SETLIST_KEY = 'csmp_setlist_v1';
+
+  const panel    = document.getElementById('setlistPanel');
+  const itemsEl  = document.getElementById('setlistItems');
+  const badge    = document.getElementById('setlistBadge');
+  const btnOpen  = document.getElementById('btnSetlist');
+  const btnAdd   = document.getElementById('btnSetlistAdd');
+  const btnPrint = document.getElementById('btnSetlistPrint');
+  const btnClear = document.getElementById('btnSetlistClear');
+  const btnClose = document.getElementById('btnSetlistClose');
+
+  function getSetlist() {
+    try { return JSON.parse(localStorage.getItem(SETLIST_KEY) || '[]'); }
+    catch { return []; }
+  }
+
+  function saveSetlist(items) {
+    try { localStorage.setItem(SETLIST_KEY, JSON.stringify(items)); } catch(e) {}
+    updateBadge(items.length);
+  }
+
+  function updateBadge(count) {
+    if (!badge) return;
+    badge.textContent = count;
+    badge.style.display = count > 0 ? '' : 'none';
+  }
+
+  function renderList() {
+    if (!itemsEl) return;
+    const items = getSetlist();
+    if (!items.length) {
+      itemsEl.innerHTML = '<div class="setlist-empty">No charts saved yet — open a chart and click <strong>+ Add Chart</strong>.</div>';
+      return;
+    }
+    itemsEl.innerHTML = items.map((it, i) => {
+      const date = new Date(it.addedAt).toLocaleDateString();
+      const isFirst = i === 0;
+      const isLast  = i === items.length - 1;
+      return `<div class="setlist-item" data-id="${escapeHtml(it.id)}">
+        <span class="setlist-item-num">${i + 1}.</span>
+        <span class="setlist-item-title" title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
+        <span class="setlist-item-date">${date}</span>
+        <span class="setlist-item-btns">
+          <button class="btn-sl-up" title="Move up"${isFirst ? ' disabled' : ''}>&#9650;</button>
+          <button class="btn-sl-dn" title="Move down"${isLast  ? ' disabled' : ''}>&#9660;</button>
+          <button class="btn-sl-load">Load</button>
+          <button class="btn-sl-del">&#x2715;</button>
+        </span>
+      </div>`;
+    }).join('');
+  }
+
+  function addCurrentChart() {
+    const sourceEl = document.getElementById('source');
+    if (!sourceEl) return;
+    const source = sourceEl.value.trim();
+    if (!source) { setStatus('Nothing to save — editor is empty.', 'err'); return; }
+    const doc = typeof parseCSMPN === 'function' ? parseCSMPN(source) : null;
+    const title = (doc && doc.title) ? doc.title : ('Chart ' + new Date().toLocaleDateString());
+    const items = getSetlist();
+    items.push({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      title,
+      source,
+      addedAt: Date.now(),
+    });
+    saveSetlist(items);
+    renderList();
+    setStatus('Added to setlist: ' + title, 'ok');
+  }
+
+  function printAll() {
+    const items = getSetlist();
+    if (!items.length) { setStatus('Setlist is empty — add charts first.', 'err'); return; }
+    if (typeof window.renderCsmpnToSvg !== 'function') { setStatus('Slash notation engine not ready.', 'err'); return; }
+    const pages = items.map((it, i) => {
+      let svg;
+      try { svg = window.renderCsmpnToSvg(it.source, 4); }
+      catch(e) { svg = `<p style="color:red">Error rendering "${escapeHtml(it.title)}"</p>`; }
+      const pb = i < items.length - 1 ? 'page-break-after:always' : '';
+      return `<div style="${pb}">${svg}</div>`;
+    }).join('');
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (!w) { setStatus('Pop-up blocked — allow pop-ups and try again.', 'err'); return; }
+    w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Setlist</title>' +
+      '<style>body{margin:0;padding:0;background:#fff;}svg{display:block;width:100%;height:auto;}' +
+      '@media print{@page{margin:0.5in;}}</style></head><body>' +
+      pages +
+      '<scr' + 'ipt>window.onload=function(){window.print();}<\/scr' + 'ipt></body></html>');
+    w.document.close();
+  }
+
+  function handleItemClick(e) {
+    const item = e.target.closest('.setlist-item');
+    if (!item) return;
+    const id = item.dataset.id;
+    const items = getSetlist();
+    const idx = items.findIndex(x => x.id === id);
+    if (idx === -1) return;
+
+    if (e.target.classList.contains('btn-sl-load')) {
+      const sourceEl = document.getElementById('source');
+      if (sourceEl) {
+        sourceEl.value = items[idx].source;
+        if (typeof updatePreview === 'function') updatePreview();
+        setStatus('Loaded: ' + items[idx].title, 'ok');
+        panel.classList.remove('open');
+      }
+    } else if (e.target.classList.contains('btn-sl-del')) {
+      items.splice(idx, 1);
+      saveSetlist(items);
+      renderList();
+    } else if (e.target.classList.contains('btn-sl-up') && idx > 0) {
+      [items[idx - 1], items[idx]] = [items[idx], items[idx - 1]];
+      saveSetlist(items);
+      renderList();
+    } else if (e.target.classList.contains('btn-sl-dn') && idx < items.length - 1) {
+      [items[idx], items[idx + 1]] = [items[idx + 1], items[idx]];
+      saveSetlist(items);
+      renderList();
+    }
+  }
+
+  // Init badge on load
+  updateBadge(getSetlist().length);
+
+  if (itemsEl)  itemsEl.addEventListener('click', handleItemClick);
+  if (btnOpen)  btnOpen.addEventListener('click', () => {
+    if (!panel) return;
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) {
+      renderList();
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+  if (btnAdd)   btnAdd.addEventListener('click', addCurrentChart);
+  if (btnPrint) btnPrint.addEventListener('click', printAll);
+  if (btnClear) btnClear.addEventListener('click', () => {
+    if (!getSetlist().length) return;
+    if (!confirm('Remove all charts from the setlist?')) return;
+    saveSetlist([]);
+    renderList();
+  });
+  if (btnClose) btnClose.addEventListener('click', () => panel && panel.classList.remove('open'));
 })();
 
 </script>
