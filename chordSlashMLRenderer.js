@@ -510,6 +510,125 @@
     return csmlToSvgDoc(doc, opts);
   }
 
+  // Page-height budgets in SVG units (PAGE_W=760, scaled to fill usable width).
+  // Formula: (pageH_in - 2*margin_in) / (usableW_in / PAGE_W)
+  // where usableW_in = pageW_in - 2*margin_in
+  const PAGE_HEIGHTS = {
+    // [paper][margin] → SVG-unit budget per page
+    'letter': { '0.5in': 1014, '0.25in': 1066, '0.75in': 964 },
+    'a4':     { '0.5in': 1118, '0.25in': 1174, '0.75in': 1064 },
+    'a3':     { '0.5in': 1584, '0.25in': 1664, '0.75in': 1506 },
+  };
+
+  function csmlToSvgPages(doc, opts) {
+    const o = Object.assign({ measuresPerRow:4, fgColor:'#000', bgColor:'#fff', chordColor:'#000', chordFontSize:14, chordFont:'Georgia,serif', labelFont:'Arial,sans-serif', stems:false, keySig:'', rawChords:false, chordAlign:'center', paperSize:'letter', printMargin:'0.5in' }, opts || {});
+    const rows = buildRows(doc, o.measuresPerRow);
+    const bpm  = beatsPerMeasure(doc.time);
+    const { fgColor: fg, bgColor: bg, chordColor: cc } = o;
+
+    const budget = (PAGE_HEIGHTS[o.paperSize] || PAGE_HEIGHTS['letter'])[o.printMargin] || 1014;
+
+    // Split rows into pages
+    const pages = [];
+    let pageRows = [];
+    let usedH = TITLE_AREA_H; // first page reserves title area
+    for (const row of rows) {
+      const hasLabel = row.measures.some(rm => rm.sectionLabel);
+      const rowH = (hasLabel ? SECTION_LABEL_H : 0) + SYSTEM_ROW_H;
+      if (pageRows.length > 0 && usedH + rowH > budget) {
+        pages.push(pageRows);
+        pageRows = [];
+        usedH = 0;
+      }
+      pageRows.push({ row, rowH });
+      usedH += rowH;
+    }
+    if (pageRows.length > 0) pages.push(pageRows);
+
+    return pages.map((pageRowsArr, pi) => {
+      const isFirstPage = pi === 0;
+      let totalH = isFirstPage ? TITLE_AREA_H : 0;
+      for (const { rowH } of pageRowsArr) totalH += rowH;
+
+      const parts = [];
+      parts.push(`<rect width="${PAGE_W}" height="${totalH}" fill="${bg}"/>`);
+
+      if (isFirstPage) {
+        if (doc.title) parts.push(`<text x="${PAGE_W/2}" y="28" font-size="20" font-weight="bold" font-family="${svgEsc(o.labelFont)}" fill="${fg}" text-anchor="middle">${svgEsc(doc.title)}</text>`);
+        const metaParts = [];
+        if (doc.composer) metaParts.push(svgEsc(doc.composer));
+        if (doc.key)      metaParts.push(`Key: ${svgEsc(doc.key)}`);
+        if (doc.tempo)    metaParts.push(`♩= ${doc.tempo}`);
+        if (doc.style)    metaParts.push(svgEsc(doc.style));
+        if (metaParts.length) parts.push(`<text x="${PAGE_W/2}" y="46" font-size="11" font-family="${svgEsc(o.labelFont)}" fill="${fg}" text-anchor="middle">${metaParts.join('   ')}</text>`);
+      }
+
+      let curY = isFirstPage ? TITLE_AREA_H : 0;
+      for (const { row } of pageRowsArr) {
+        const labelText = (row.measures.find(rm => rm.sectionLabel) || {}).sectionLabel;
+        if (labelText) {
+          parts.push(`<text x="${MARGIN_H}" y="${curY+16}" font-size="13" font-weight="bold" font-style="italic" font-family="${svgEsc(o.labelFont)}" fill="${fg}">${svgEsc(labelText)}</text>`);
+          curY += SECTION_LABEL_H;
+        }
+        const staffY = curY + CHORD_AREA_H;
+        const rowX = MARGIN_H;
+        const showClef = row.isFirstRow || Boolean(labelText) || (!isFirstPage && curY === 0);
+        const clefUsedW = showClef ? CLEF_W : 0;
+        if (showClef) {
+          parts.push(trebleClefEl(rowX, staffY-8, fg));
+          const ks = keySigEl(rowX+28, staffY, o.keySig, fg);
+          parts.push(ks.svg);
+          parts.push(timeSigEl(rowX+28+ks.width, staffY, doc.time, fg));
+        }
+        const rowUsableW = PAGE_W - 2*MARGIN_H - clefUsedW;
+        const measW = rowUsableW / row.measures.length;
+        const staffStartX = rowX + clefUsedW;
+        parts.push(staffLinesEl(staffStartX, staffY, rowUsableW, fg));
+        const firstBarKind = row.measures[0].measure.leftBarline;
+        parts.push(barlineEl(staffStartX, staffY, STAFF_H, firstBarKind === 'repeat-start' ? 'repeat-start' : 'single', fg));
+        let mx = staffStartX;
+        for (let mi = 0; mi < row.measures.length; mi++) {
+          const { measure } = row.measures[mi];
+          const measLeft = mx;
+          const measRight = mx + measW;
+          const beatSpacing = measW / Math.max(bpm, 1);
+          const noteCy = staffY + Math.floor(STAFF_H / 2);
+          for (let bi = 0; bi < measure.beats.length; bi++) {
+            const beat = measure.beats[bi];
+            const bx = measLeft + beatSpacing*bi + beatSpacing*0.5;
+            const chordTxt = beatChordText(beat);
+            if (chordTxt) {
+              const dispTxt = o.rawChords ? chordTxt : normalizeChordDisplay(chordTxt);
+              const anchor = o.chordAlign === 'left' ? 'start' : 'middle';
+              const cx = o.chordAlign === 'left' ? measLeft + 4 : bx;
+              parts.push(`<text x="${cx}" y="${staffY-10}" font-size="${o.chordFontSize}" font-family="${svgEsc(o.chordFont)}" fill="${cc}" text-anchor="${anchor}">${svgEsc(dispTxt)}</text>`);
+            }
+            const nh = [];
+            renderBeatNoteheads(beat, bx, noteCy, beatSpacing*0.4, fg, o.stems, nh, 0);
+            parts.push(...nh);
+          }
+          for (let bi = measure.beats.length; bi < bpm; bi++) {
+            const bx = measLeft + beatSpacing*bi + beatSpacing*0.5;
+            parts.push(slashHead(bx, noteCy, fg));
+            if (o.stems) parts.push(noteStem(bx, noteCy, fg));
+          }
+          mx = measRight;
+          const isLast = mi === row.measures.length - 1;
+          const rk = measure.rightBarline;
+          const resolvedRk = (rk === 'final' && isLast) ? 'final' : (rk === 'repeat-end') ? 'repeat-end' : (rk === 'double') ? 'double' : 'single';
+          parts.push(barlineEl(measRight, staffY, STAFF_H, resolvedRk, fg));
+        }
+        curY += SYSTEM_ROW_H;
+      }
+      return [`<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${totalH}" viewBox="0 0 ${PAGE_W} ${totalH}">`, ...parts, '</svg>'].join('\n');
+    });
+  }
+
+  function csmlToSvgPagesFromText(text, opts) {
+    const doc = csmlParse(text);
+    return csmlToSvgPages(doc, opts);
+  }
+
   // ─── LilyPond Converter ─────────────────────────────────────────────────────
 
   const NOTE_MAP = {
@@ -1079,6 +1198,8 @@
       toCsmpnDoc:       csmlToCsmpnDoc,
       toHybridText:     csmlToHybridText,
       toHybridTextDoc:  csmlToHybridTextDoc,
+      toSvgPages:       csmlToSvgPagesFromText,
+      toSvgPagesDoc:    csmlToSvgPages,
     };
   } catch (e) {
     window.__csmlError = (e && (e.message || String(e))) || 'unknown error';
