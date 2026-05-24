@@ -1630,6 +1630,29 @@ body.exporting .sectionBlock{
     background:var(--bg);
     color:var(--ink);
   }
+  .csml-toolbar-sep{
+    display:inline-block;
+    width:1px;
+    height:18px;
+    background:var(--border);
+    margin:0 2px;
+    vertical-align:middle;
+  }
+  .csml-toolbar-label{
+    font-size:12px;
+    color:var(--muted);
+  }
+  .csml-transpose-btn{
+    font-size:12px;
+    padding:2px 8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    background:var(--bg);
+    color:var(--ink);
+    cursor:pointer;
+    line-height:1.4;
+  }
+  .csml-transpose-btn:hover{ background:var(--border); }
   #btnCsmlEditorClose{
     background:none;
     border:none;
@@ -2141,6 +2164,10 @@ Tempo: 100
             <label title="Show rhythmic stems on noteheads">
               <input type="checkbox" id="csmlEditorStems"> Stems
             </label>
+            <span class="csml-toolbar-sep"></span>
+            <span class="csml-toolbar-label">Transpose</span>
+            <button class="csml-transpose-btn" id="btnCsmlTransposeDown" title="Transpose down one semitone">▼ −1</button>
+            <button class="csml-transpose-btn" id="btnCsmlTransposeUp" title="Transpose up one semitone">▲ +1</button>
           </div>
           <button id="btnCsmlEditorClose" title="Close editor">&#x2715;</button>
         </div>
@@ -6505,6 +6532,29 @@ function csmpnToCsml(csmpnText) {
     };
   }
 
+  // CSML-aware transpose — reuses globals from chordProcessing.js
+  function transposeCsml(text, semis) {
+    if (!semis || !text.trim()) return text;
+    const keyMatch = text.match(/^Key:\s*(.+)$/im);
+    const key = keyMatch ? keyMatch[1].trim() : '';
+    const pref = detectNotationPreferenceFromKeyOrText(key, text);
+    const PASS = new Set(['|', '|:', ':|', '||', '_', '%', '']);
+    return text.split(/\r?\n/).map(line => {
+      const trimmed = line.trim();
+      const keyM = line.match(/^(Key:\s*)(.+)$/i);
+      if (keyM) return keyM[1] + transposeChordSimple(keyM[2].trim(), semis, pref);
+      if (/^(Title|Composer|Artist|Style|Tempo|Time)\s*:/i.test(trimmed)) return line;
+      if (!trimmed || /^\[.*\]/.test(trimmed) || /^[//#]/.test(trimmed)) return line;
+      if (line.includes('|')) {
+        // Preserve internal whitespace by splitting on whitespace tokens
+        return line.split(/(\s+)/).map(tok =>
+          /^\s+$/.test(tok) || PASS.has(tok) ? tok : transposeChordToken(tok, semis, pref)
+        ).join('');
+      }
+      return line;
+    }).join('\n');
+  }
+
   // Initialise style settings from localStorage
   applyStyleSettingsToUI(loadStyleSettings());
 
@@ -6609,6 +6659,16 @@ function csmpnToCsml(csmpnText) {
   if (inputEl) inputEl.addEventListener('input', debouncedRender);
   if (mprSel)  mprSel.addEventListener('change', renderPreview);
   if (stemsChk) stemsChk.addEventListener('change', renderPreview);
+
+  function applyTranspose(delta) {
+    if (!inputEl || !inputEl.value.trim()) return;
+    inputEl.value = transposeCsml(inputEl.value, delta);
+    renderPreview();
+  }
+  const btnTpDn = document.getElementById('btnCsmlTransposeDown');
+  const btnTpUp = document.getElementById('btnCsmlTransposeUp');
+  if (btnTpDn) btnTpDn.addEventListener('click', () => applyTranspose(-1));
+  if (btnTpUp) btnTpUp.addEventListener('click', () => applyTranspose(1));
 
   if (btnLoad) btnLoad.addEventListener('click', () => {
     const text = inputEl.value;
@@ -6759,20 +6819,39 @@ function csmpnToCsml(csmpnText) {
 
   if (btnPrint) btnPrint.addEventListener('click', () => {
     if (!lastSvg) { setStatus('Nothing to print — render a chart first.', 'err'); return; }
-    const doc_   = window.csml ? window.csml.parse(inputEl.value) : null;
+    if (!window.csml) { setStatus('Renderer not ready.', 'err'); return; }
+    const text   = inputEl.value;
+    const doc_   = window.csml.parse(text);
     const title  = (doc_ && doc_.title) ? escapeHtml(doc_.title) : 'Chord Sheet';
     const s      = readStyleSettings();
     const paperCss = s.paperSize === 'a3' ? 'A3' : s.paperSize === 'a4' ? 'A4' : 'letter';
+    const opts   = {
+      measuresPerRow: parseInt(mprSel.value, 10) || 4,
+      stems: stemsChk.checked,
+      bgColor: s.bgColor, fgColor: s.fgColor, chordColor: s.chordColor,
+      chordFontSize: parseInt(s.chordFontSize, 10) || 14,
+      chordFont: s.chordFont, labelFont: s.labelFont,
+      chordAlign: s.chordAlign, rawChords: s.chordDisplay === 'plain', keySig: s.keySig,
+      paperSize: s.paperSize, printMargin: s.printMargin,
+    };
+    let pages;
+    try { pages = window.csml.toSvgPages(text, opts); } catch(e) { setStatus('Print render failed: ' + e.message, 'err'); return; }
     const win = window.open('', '_blank');
     if (!win) { setStatus('Pop-up blocked — allow pop-ups and try again.', 'err'); return; }
+    const svgBlocks = pages.map((svg, i) =>
+      '<div class="pg">' + svg + '</div>'
+    ).join('\n');
     win.document.write(
       '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title>' +
       '<style>' +
-      'body{margin:0;padding:' + s.printMargin + ';background:' + escapeHtml(s.bgColor) + ';}' +
-      'svg{max-width:100%;height:auto;display:block;}' +
-      '@media print{@page{size:' + paperCss + ';margin:' + s.printMargin + ';}body{padding:0;}}' +
+      'body{margin:0;background:' + escapeHtml(s.bgColor) + ';}' +
+      '.pg{padding:' + s.printMargin + ';box-sizing:border-box;}' +
+      '.pg svg{max-width:100%;height:auto;display:block;}' +
+      '@media print{@page{size:' + paperCss + ';margin:0;}' +
+      '.pg{padding:' + s.printMargin + ';page-break-after:always;break-after:page;}' +
+      '.pg:last-child{page-break-after:avoid;break-after:avoid;}}' +
       '</style></head>' +
-      '<body>' + lastSvg + '<script>window.onload=function(){window.print();}<\/script></body></html>'
+      '<body>' + svgBlocks + '<script>window.onload=function(){window.print();}<\/script></body></html>'
     );
     win.document.close();
   });
