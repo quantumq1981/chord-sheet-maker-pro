@@ -652,6 +652,47 @@ async function importGuitarProToCSMPN(input, opts) {
 // Expose on window for index.html
 if (typeof window !== 'undefined') {
   window.importGuitarProToCSMPN = importGuitarProToCSMPN;
+
+  /**
+   * Render GP / Power Tab notation into a DOM container using AlphaTab's
+   * native rendering engine.  Returns a Promise<AlphaTabApi>.
+   *
+   * opts:
+   *   staveProfile  1=ScoreTab (default), 2=Score, 3=Tab
+   *   layoutMode    0=Page (default), 1=Horizontal
+   */
+  window.renderGpNotation = async function renderGpNotation(container, bytes, opts) {
+    var at = await _loadAlphaTab();
+    var o  = opts || {};
+
+    // Build settings — handle varied API shapes across AlphaTab builds
+    var settings;
+    if      (at.Settings)               settings = new at.Settings();
+    else if (at.model && at.model.Settings) settings = new at.model.Settings();
+    else                                settings = {};
+
+    if (settings.core) {
+      // Disable workers — required for inline use without a separate worker file
+      settings.core.useWorkers = false;
+      // Point font + script to the CDN so SMuFL fonts load correctly on iOS
+      settings.core.fontDirectory =
+        'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.1/dist/font/';
+      settings.core.scriptFile = _GP_AT_CDN;
+    }
+
+    if (settings.display) {
+      settings.display.staveProfile = o.staveProfile !== undefined ? o.staveProfile : 1;
+      settings.display.layoutMode   = o.layoutMode   !== undefined ? o.layoutMode   : 0;
+    }
+
+    var Api = at.AlphaTabApi || (at.model && at.model.AlphaTabApi);
+    if (!Api) throw new Error('AlphaTabApi not found in this AlphaTab build — try refreshing.');
+
+    var api  = new Api(container, settings);
+    var data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    api.load(data);
+    return api;
+  };
 }
 
 // Expose pure helpers for Node.js vm.runInContext tests

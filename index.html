@@ -1834,6 +1834,88 @@ body.exporting .sectionBlock{
     cursor:pointer;
   }
   .csml-style-reset:hover{ color:var(--ink); background:var(--border); }
+
+  /* ── Guitar Pro / Power Tab Notation Panel ──────────────────────────── */
+  .gpNotationPanel{
+    display:none;
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:12px;
+  }
+  .gpNotationPanel.open{ display:block; }
+  .gpn-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:10px;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .gpn-header h3{ margin:0; font-size:14px; font-weight:700; }
+  .gpn-controls{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .gpn-controls label{
+    font-size:12px;
+    color:var(--muted);
+    display:flex;
+    align-items:center;
+    gap:4px;
+  }
+  .gpn-controls select{
+    font-size:12px;
+    padding:2px 6px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    background:var(--bg);
+    color:var(--ink);
+  }
+  .gpn-controls button{
+    font-size:12px;
+    padding:3px 10px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    background:var(--bg);
+    color:var(--ink);
+    cursor:pointer;
+  }
+  .gpn-controls button:hover{ background:var(--border); }
+  #btnGpnClose{
+    background:none; border:none; font-size:16px;
+    cursor:pointer; padding:4px 6px; border-radius:6px;
+    color:var(--muted); line-height:1;
+  }
+  #btnGpnClose:hover{ background:#f0f0f0; }
+  .gpn-container{
+    min-height:300px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:#fff;
+    overflow:auto;
+    position:relative;
+  }
+  .gpn-empty{
+    padding:32px;
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+  }
+  .gpn-loading{
+    padding:32px;
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+    font-style:italic;
+  }
+  /* AlphaTab injects its own elements — ensure they overflow correctly */
+  .gpn-container .at-surface,
+  .gpn-container .at-viewport{ overflow-x:auto !important; }
+  @media(max-width:600px){ .gpn-header{ flex-direction:column; align-items:flex-start; } }
 </style>
 <style id="dynamicPageStyle">@media print { @page { size: letter portrait; margin: 0.5in; } }</style>
 </head>
@@ -1882,7 +1964,7 @@ body.exporting .sectionBlock{
               <button class="import-item power-only" id="btnImportOpenSong" role="menuitem">OpenSong XML</button>
               <button class="import-item power-only" id="btnImportOpenLyrics" role="menuitem">OpenLyrics XML</button>
               <button class="import-item power-only" id="btnImportIRealPro" role="menuitem">iReal Pro</button>
-              <button class="import-item power-only" id="btnImportGuitarPro" role="menuitem">Guitar Pro</button>
+              <button class="import-item power-only" id="btnImportGuitarPro" role="menuitem">Guitar Pro / Power Tab</button>
               <button class="import-item power-only" id="btnImportCsml" role="menuitem">ChordSlashML (.csml)</button>
             </div>
           </div>
@@ -1933,6 +2015,7 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnCsmlHelp">♩ ChordSlashML Help</button>
           <button class="outline power-only" id="btnCsmlEditor">⊞ ChordSlashML Editor</button>
           <button class="outline power-only" id="btnCsmlGuide">★ CSML Quick Start</button>
+          <button class="outline power-only" id="btnGpNotation" title="View Guitar Pro or Power Tab notation">🎸 Tab View</button>
         </div>
         <div class="toolbar-group">
           <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
@@ -2142,6 +2225,28 @@ Tempo: 100
           Minor-major: <code>CmM7</code> &nbsp;&middot;&nbsp;
           Slash chord: <code>G/B</code> <code>Bb/D</code> <code>D/F#</code>
         </p>
+      </div>
+    </div>
+
+    <!-- Guitar Pro / Power Tab Notation Panel (power-mode only) -->
+    <div id="gpNotationPanel" class="gpNotationPanel power-only">
+      <div class="gpn-header">
+        <h3>🎸 Guitar Tab / Notation View</h3>
+        <div class="gpn-controls">
+          <label title="Choose which staves to display">
+            View:
+            <select id="gpnStaveProfile">
+              <option value="1" selected>Score + Tab</option>
+              <option value="3">Tab Only</option>
+              <option value="2">Score Only</option>
+            </select>
+          </label>
+          <button id="btnGpnPrint" title="Print or save as PDF">⎙ Print</button>
+          <button id="btnGpnClose" title="Close notation view">&#x2715;</button>
+        </div>
+      </div>
+      <div id="gpNotationContainer" class="gpn-container">
+        <div class="gpn-empty">Load a Guitar Pro (.gp/.gp5/.gpx) or Power Tab (.ptb) file first — then click <strong>🎸 Tab View</strong> to render the full notation here.</div>
       </div>
     </div>
 
@@ -2432,7 +2537,7 @@ Tempo: 130
       </div>
     </div>
 
-    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx,.csml,text/plain,application/pdf" style="display:none" />
+    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx,.ptb,.csml,text/plain,application/pdf" style="display:none" />
     <!-- Dedicated hidden file inputs for each format -->
     <input id="fileInputMusicXML" type="file" accept=".musicxml,.xml,.mxl,text/xml,application/xml" style="display:none" />
     <input id="fileInputChordPro" type="file" accept=".pro,.chordpro,.cho,.chopro,.txt,text/plain" style="display:none" />
@@ -2442,7 +2547,7 @@ Tempo: 130
     <input id="fileInputOpenSong" type="file" accept=".opensong,.xml,.txt,text/plain,text/xml" style="display:none" />
     <input id="fileInputOpenLyrics" type="file" accept=".xml,.lyrics,text/xml,application/xml" style="display:none" />
     <input id="fileInputIRealPro" type="file" accept=".irealb,.txt,text/plain" style="display:none" />
-    <input id="fileInputGuitarPro" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx" style="display:none" />
+    <input id="fileInputGuitarPro" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx,.ptb" style="display:none" />
     <input id="fileInputCsml" type="file" accept=".csml,.csm,text/plain" style="display:none" />
   </div>
 
@@ -3260,20 +3365,28 @@ fileInputGuitarPro.addEventListener('change', async () => {
     importDiagnostics.sourceFlavor = 'guitarpro';
     importDiagnostics.confidence = 'high';
     const gpBuf = await file.arrayBuffer();
-    const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
-    const gpDoc = parseCSMPN(csmpn);
-    const gpMarkers = gpDoc.blocks.filter(b => b.type === 'marker');
-    importDiagnostics.sections = gpMarkers.length || 1;
-    importDiagnostics.bars = gpDoc.blocks
-      .filter(b => b.type === 'bars')
-      .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
-    importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-    const finalCsmpn = filterLyricsLines(csmpn);
-    sourceEl.value = finalCsmpn;
-    extractHeaderFromText(finalCsmpn);
-    updatePreview();
-    setStatus(`Imported Guitar Pro (${importDiagnostics.sections} sections, ${importDiagnostics.bars} bars).`);
-    updateDiagnosticsPanel();
+    window._gpLastBytes = gpBuf;
+    window._gpLastFileName = file.name;
+    importDiagnostics.miner = file.name.endsWith('.ptb') ? 'Power Tab' : 'Guitar Pro';
+    if (!file.name.endsWith('.ptb')) {
+      const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
+      const gpDoc = parseCSMPN(csmpn);
+      const gpMarkers = gpDoc.blocks.filter(b => b.type === 'marker');
+      importDiagnostics.sections = gpMarkers.length || 1;
+      importDiagnostics.bars = gpDoc.blocks
+        .filter(b => b.type === 'bars')
+        .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      const finalCsmpn = filterLyricsLines(csmpn);
+      sourceEl.value = finalCsmpn;
+      extractHeaderFromText(finalCsmpn);
+      updatePreview();
+      setStatus(`Imported ${importDiagnostics.miner} (${importDiagnostics.sections} sections, ${importDiagnostics.bars} bars). Use 🎸 Tab View to see full notation.`);
+      updateDiagnosticsPanel();
+    } else {
+      setStatus(`Power Tab loaded: ${file.name}. Opening notation view…`);
+      window.dispatchEvent(new CustomEvent('gpbytesready', { detail: { name: file.name } }));
+    }
   } catch(err) {
     console.error(err);
     setStatus(`Guitar Pro import failed: ${err?.message || err}`, 'error');
@@ -3774,9 +3887,9 @@ fileInput.addEventListener('change', async () => {
       return;
     }
 
-    // Guitar Pro: detect by extension before text-based format detection
-    if (['.gp','.gp3','.gp4','.gp5','.gpx'].some(ext => name.endsWith(ext))){
-      importDiagnostics.miner = 'Guitar Pro';
+    // Guitar Pro / Power Tab: detect by extension before text-based format detection
+    if (['.gp','.gp3','.gp4','.gp5','.gpx','.ptb'].some(ext => name.endsWith(ext))){
+      importDiagnostics.miner = name.endsWith('.ptb') ? 'Power Tab' : 'Guitar Pro';
       importDiagnostics.sourceFlavor = 'guitarpro';
       importDiagnostics.confidence = 'high';
       if (typeof importGuitarProToCSMPN !== 'function') {
@@ -3784,20 +3897,30 @@ fileInput.addEventListener('change', async () => {
         return;
       }
       const gpBuf = await file.arrayBuffer();
-      const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
-      const gpDoc = parseCSMPN(csmpn);
-      const gpMarkers = gpDoc.blocks.filter(b => b.type === 'marker');
-      importDiagnostics.sections = gpMarkers.length || 1;
-      importDiagnostics.bars = gpDoc.blocks
-        .filter(b => b.type === 'bars')
-        .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
-      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-      const finalGpCsmpn = filterLyricsLines(csmpn);
-      sourceEl.value = finalGpCsmpn;
-      extractHeaderFromText(finalGpCsmpn);
-      updatePreview();
-      setStatus(`Imported Guitar Pro (${importDiagnostics.sections} sections, ${importDiagnostics.bars} bars).`);
-      updateDiagnosticsPanel();
+      // Store bytes globally for the notation view panel
+      window._gpLastBytes = gpBuf;
+      window._gpLastFileName = file.name;
+      if (!name.endsWith('.ptb')) {
+        // Full CSMPN conversion for GP files
+        const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
+        const gpDoc = parseCSMPN(csmpn);
+        const gpMarkers = gpDoc.blocks.filter(b => b.type === 'marker');
+        importDiagnostics.sections = gpMarkers.length || 1;
+        importDiagnostics.bars = gpDoc.blocks
+          .filter(b => b.type === 'bars')
+          .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
+        importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+        const finalGpCsmpn = filterLyricsLines(csmpn);
+        sourceEl.value = finalGpCsmpn;
+        extractHeaderFromText(finalGpCsmpn);
+        updatePreview();
+        setStatus(`Imported ${importDiagnostics.miner} (${importDiagnostics.sections} sections, ${importDiagnostics.bars} bars). Use 🎸 Tab View to see full notation.`);
+        updateDiagnosticsPanel();
+      } else {
+        // Power Tab: notation view only (no CSMPN conversion)
+        setStatus(`Power Tab loaded: ${file.name}. Opening notation view…`);
+        window.dispatchEvent(new CustomEvent('gpbytesready', { detail: { name: file.name } }));
+      }
       return;
     }
 
@@ -6906,6 +7029,73 @@ function csmpnToCsml(csmpnText) {
       guidePanel.classList.remove('open');
     });
   });
+})();
+
+// ── Guitar Pro / Power Tab Notation Panel ────────────────────────────
+(function () {
+  const panel       = document.getElementById('gpNotationPanel');
+  const btnOpen     = document.getElementById('btnGpNotation');
+  const btnClose    = document.getElementById('btnGpnClose');
+  const btnPrint    = document.getElementById('btnGpnPrint');
+  const staveSelEl  = document.getElementById('gpnStaveProfile');
+  const container   = document.getElementById('gpNotationContainer');
+
+  if (!panel || !btnOpen) return;
+
+  let currentApi = null;
+
+  function showLoading(msg) {
+    container.innerHTML = '<div class="gpn-loading">' + escapeHtml(msg || 'Loading notation…') + '</div>';
+  }
+
+  async function renderNotation() {
+    if (!window._gpLastBytes) {
+      container.innerHTML = '<div class="gpn-empty">Load a Guitar Pro or Power Tab file first.</div>';
+      return;
+    }
+    if (typeof window.renderGpNotation !== 'function') {
+      container.innerHTML = '<div class="gpn-empty" style="color:#c00">Notation renderer not loaded — try refreshing.</div>';
+      return;
+    }
+    showLoading('Loading AlphaTab and rendering notation…');
+    try {
+      container.innerHTML = '';
+      currentApi = await window.renderGpNotation(container, window._gpLastBytes, {
+        staveProfile: parseInt(staveSelEl.value, 10) || 1,
+        layoutMode: 0,
+      });
+    } catch (err) {
+      container.innerHTML = '<div class="gpn-empty" style="color:#c00">Notation render failed: ' + escapeHtml(String(err.message || err)) + '</div>';
+    }
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    renderNotation();
+  }
+
+  btnOpen.addEventListener('click', () => {
+    if (panel.classList.contains('open')) { panel.classList.remove('open'); return; }
+    openPanel();
+  });
+
+  if (btnClose) btnClose.addEventListener('click', () => panel.classList.remove('open'));
+
+  if (staveSelEl) staveSelEl.addEventListener('change', () => {
+    if (panel.classList.contains('open')) renderNotation();
+  });
+
+  if (btnPrint) btnPrint.addEventListener('click', () => {
+    if (currentApi && typeof currentApi.print === 'function') {
+      currentApi.print();
+    } else {
+      setStatus('Nothing to print — render a file first.', 'err');
+    }
+  });
+
+  // Auto-open when a Power Tab file is loaded (no CSMPN conversion available)
+  window.addEventListener('gpbytesready', () => openPanel());
 })();
 
 </script>
