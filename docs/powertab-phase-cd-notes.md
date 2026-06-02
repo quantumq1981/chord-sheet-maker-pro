@@ -89,16 +89,35 @@ best-effort GP convert → TuxGuitar guidance) so it calls `window.PowerTab.pars
 builds the render input, and feeds AlphaTab. Keep the graceful "convert with
 TuxGuitar" fallback for corrupt/variant files.
 
-## Phase E — editable chart (chords → CSMPN)
-PowerTab stores chords as a **chord-key bitfield** (root + formula), not text:
-`_ptbReadChord` reads `chordKey`(u16) + modifications; `_ptbReadChordText` reads
-position/key bytes. Decode the chord-key → chord name (like the GP chord
-decoder), map sections/bars → CSMPN, populate the editable fake-book chart.
+## Phase E — editable chart (chords → CSMPN) ✅ DONE (this branch)
+PowerTab stores chords as a **ChordName bitfield**, not text. `_ptbReadChordText`
+now captures `{position, key(u16), formula(u8), mods(u16)}` into
+`section.chordNames` (was discarded). `_ptbDecodeChord(key, formula, mods)` is a
+faithful port of Power Tab Editor's `ChordName::GetText/GetFormulaText/GetKeyText`
+(BSD) — exact name match (`Am`, `E5/B`, `Cm7b5`, `C7sus4`, `N.C.`). Bitfield:
+tonic key = `(key&0xf00)>>8`, variation `(key&0x3000)>>12`; bass key `key&0xf`,
+variation `(key&0x30)>>4`; formula low nibble = core quality, `mods` = extension
+bits. `powerTabToChart(bytes|doc, {barsPerRow})` groups chord-texts by barline
+(same position grouping as beats), dedupes consecutive, and emits a CSMPN
+fake-book chart (header + `- Chart` + `|`-rows, `%` for unannotated bars,
+`chord1_chord2` for multi-chord bars). **58% of the corpus carries chord texts
+(171,986 total).** Wired into `tryImportPowerTab`: parses once, renders notation
+*and* loads the chart into `sourceEl` when `chordCount > 0`. `window.PowerTab`
+gains `toChart` + `decodeChord`.
 
-## Phase F — robustness
-Corpus: 98.7% clean. The ~38 "errors" are **all-zero corrupt files** in the
-collection (correctly rejected — leave as graceful error). **6 overruns** are
-real format-variant edge cases to investigate (`bytesConsumed > fileSize`).
+## Phase F — robustness ✅ DONE (this branch)
+The ~37 all-zero corrupt files are rejected by the `ptab` magic check (graceful
+fallback). The **6 overruns** were a real bug: they desync mid-stream, read far
+past EOF, and — because the trailer went *negative* — falsely reported
+`complete: true`, so they'd feed garbage to the renderer. Fix: `PtbReader._need(n)`
+bounds-checks every `readU8/16/32/Bytes`, so a desync throws
+`"Power Tab stream desync: read past end of file"` immediately (no runaway loop
+over a bogus item count); `complete` now also requires a non-negative remainder.
+**Corpus after fix: 3,011 complete, 6 clean desync rejects, 37 magic rejects, 0
+overruns returned, 0 regressions** (the old "3,017 complete" had wrongly counted
+the 6 garbage parses). The 6 variant files now fall through to the TuxGuitar
+message — investigating each variant's exact layout is deferred (0.2%, and each
+looks distinct; not worth the risk to the 98.7% that parse cleanly).
 
 ## References & samples
 - TuxGuitar reference (raw.githubusercontent is reachable; api.github.com is
