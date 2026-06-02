@@ -661,9 +661,9 @@ if (typeof window !== 'undefined') {
    *   staveProfile  1=ScoreTab (default), 2=Score, 3=Tab
    *   layoutMode    0=Page (default), 1=Horizontal
    */
-  window.renderGpNotation = async function renderGpNotation(container, bytes, opts) {
+  // Build a wired AlphaTabApi (shared by the GP-bytes and AlphaTex render paths).
+  async function _buildGpApi(container, o) {
     var at = await _loadAlphaTab();
-    var o  = opts || {};
 
     // Build settings — handle varied API shapes across AlphaTab builds
     var settings;
@@ -710,18 +710,41 @@ if (typeof window !== 'undefined') {
     if (typeof o.onInfo === 'function') {
       _wire(api.renderFinished, function () { o.onInfo('rendered', {}); });
     }
+    return api;
+  }
 
-    var data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-    api.load(data);
-
-    // Defeat the display:none -> display:block width race: when the panel was
-    // just made visible, AlphaTab's initial layout can measure width 0 and draw
-    // nothing. Re-render once after layout settles (a second render is a no-op
-    // if the first succeeded).
+  // Defeat the display:none -> display:block width race: when the panel was
+  // just made visible, AlphaTab's initial layout can measure width 0 and draw
+  // nothing. Re-render once after layout settles (a no-op if the first worked).
+  function _nudgeRender(api) {
     if (typeof api.render === 'function') {
       setTimeout(function () { try { api.render(); } catch (_e) {} }, 200);
     }
+  }
 
+  window.renderGpNotation = async function renderGpNotation(container, bytes, opts) {
+    var o = opts || {};
+    var api = await _buildGpApi(container, o);
+    var data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    api.load(data);
+    _nudgeRender(api);
+    return api;
+  };
+
+  /**
+   * Render an AlphaTex string into a container via AlphaTab's native engine.
+   * Used by the Power Tab importer, which converts .ptb → AlphaTex (AlphaTab has
+   * no Power Tab importer of its own). Same options/event wiring as
+   * renderGpNotation. Returns a Promise<AlphaTabApi>.
+   */
+  window.renderAlphaTex = async function renderAlphaTex(container, tex, opts) {
+    var o = opts || {};
+    var api = await _buildGpApi(container, o);
+    if (typeof api.tex !== 'function') {
+      throw new Error('This AlphaTab build does not expose tex() — cannot render Power Tab.');
+    }
+    api.tex(String(tex || ''));
+    _nudgeRender(api);
     return api;
   };
 }

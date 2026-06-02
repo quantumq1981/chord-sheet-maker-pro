@@ -157,3 +157,118 @@ test('parsePowerTab: bar lines carry a time signature', () => {
   assert.ok(firstBar.numerator >= 1 && firstBar.numerator <= 32);
   assert.ok([1, 2, 4, 8, 16, 32].includes(firstBar.denominator));
 });
+
+test('parsePowerTab: beats carry tuplet enters/times (1:1 for plain beats)', () => {
+  const { parsePowerTab } = loadPtb();
+  const m = parsePowerTab(fixtureBytes());
+  const beats = m.tracks[0].sections.flatMap((s) => s.beats);
+  assert.ok(beats.length > 0, 'has beats');
+  for (const b of beats) {
+    assert.ok(Number.isInteger(b.tupletEnters) && b.tupletEnters >= 1, 'tupletEnters int >=1');
+    assert.ok(Number.isInteger(b.tupletTimes) && b.tupletTimes >= 1, 'tupletTimes int >=1');
+  }
+  // The arpeggio exercise has no tuplets — every beat should decode to 1:1.
+  assert.ok(beats.every((b) => b.tupletEnters === 1 && b.tupletTimes === 1));
+});
+
+// ── Phase C: clean musical model ─────────────────────────────────────────────
+
+test('powerTabToMeasures: builds measures with tuning, time sig and notes', () => {
+  const { parsePowerTab, powerTabToMeasures } = loadPtb();
+  const m = parsePowerTab(fixtureBytes());
+  const model = powerTabToMeasures(m.tracks[0]);
+  assert.equal(model.tuningNotes.join(','), 'E4,B3,G3,D3,A2,E2');
+  assert.equal(model.capo, 0);
+  assert.ok(model.measures.length >= 1, 'has measures');
+  const first = model.measures[0];
+  assert.equal(first.numerator, 4);
+  assert.equal(first.denominator, 4);
+  // voices[0] is the primary voice; each note has a valid string/fret/midi.
+  const beats = first.voices[0];
+  assert.ok(beats.length >= 1, 'first measure has beats');
+  for (const beat of beats) {
+    assert.ok([1, 2, 4, 8, 16, 32, 64].includes(beat.duration), 'valid duration');
+    for (const n of beat.notes) {
+      assert.ok(n.string >= 1 && n.string <= 7, 'string in range');
+      assert.ok(n.fret >= 0 && n.fret <= 31, 'fret in range');
+      assert.ok(typeof n.midi === 'number' && n.midi > 0, 'sounding midi computed');
+    }
+  }
+});
+
+test('beatDurDivisions: quarter/half/dotted/triplet are exact', () => {
+  const { beatDurDivisions } = loadPtb();
+  const Q = 960;
+  assert.equal(beatDurDivisions({ duration: 4 }), Q); // quarter
+  assert.equal(beatDurDivisions({ duration: 2 }), 2 * Q); // half
+  assert.equal(beatDurDivisions({ duration: 1 }), 4 * Q); // whole
+  assert.equal(beatDurDivisions({ duration: 8 }), Q / 2); // eighth
+  assert.equal(beatDurDivisions({ duration: 4, dotted: true }), Q * 1.5); // dotted quarter
+  // triplet eighth (3 in the time of 2): 480 * 2/3 = 320
+  assert.equal(beatDurDivisions({ duration: 8, tupletEnters: 3, tupletTimes: 2 }), 320);
+});
+
+test('powerTabToMeasures: fixture measures sum to their time signature', () => {
+  const { parsePowerTab, powerTabToMeasures, beatDurDivisions } = loadPtb();
+  const model = powerTabToMeasures(parsePowerTab(fixtureBytes()).tracks[0]);
+  const Q = 960;
+  for (const meas of model.measures) {
+    const target = (meas.numerator * Q * 4) / meas.denominator;
+    const sum = meas.voices[0].reduce((t, b) => t + beatDurDivisions(b), 0);
+    assert.ok(Math.abs(sum - target) < 1, `measure sums to ${target} (got ${sum})`);
+  }
+});
+
+// ── Phase D: AlphaTex render ─────────────────────────────────────────────────
+
+test('powerTabToAlphaTex: emits tuning, time sig, separators and note tokens', () => {
+  const { parsePowerTab, powerTabToMeasures, powerTabToAlphaTex } = loadPtb();
+  const model = powerTabToMeasures(parsePowerTab(fixtureBytes()).tracks[0]);
+  const tex = powerTabToAlphaTex(model, { title: 'Test', tempo: 120 });
+  assert.match(tex, /\\title "Test"/);
+  assert.match(tex, /\\tempo 120/);
+  assert.match(tex, /\\tuning e4 b3 g3 d3 a2 e2/);
+  assert.match(tex, /\n\.\n/); // metadata terminator
+  assert.match(tex, /\\ts 4 4/);
+  assert.match(tex, /\|/); // bar separators
+  assert.match(tex, /\d+\.\d+\.\d+/); // fret.string.duration token
+  assert.ok(!/undefined|NaN|null/.test(tex), 'no malformed tokens');
+});
+
+test('powerTabToRender: top-level entry produces tex + bar/section counts', () => {
+  const { powerTabToRender } = loadPtb();
+  const r = powerTabToRender(fixtureBytes(), {});
+  assert.ok(r.complete, 'parse complete');
+  assert.ok(r.bars >= 1, 'has bars');
+  assert.ok(typeof r.tex === 'string' && r.tex.length > 0, 'has tex');
+  assert.match(r.tex, /\\tuning/);
+});
+
+test('powerTabToAlphaTex: dead notes render x.string, tied notes render -.string', () => {
+  const { powerTabToAlphaTex } = loadPtb();
+  const model = {
+    tuningNotes: ['E4', 'B3', 'G3', 'D3', 'A2', 'E2'],
+    capo: 0,
+    measures: [
+      {
+        numerator: 4,
+        denominator: 4,
+        repeatStart: true,
+        repeatClose: 0,
+        voices: [
+          [
+            { duration: 4, notes: [{ string: 6, fret: 0, dead: true, tied: false }], rest: false },
+            { duration: 4, notes: [{ string: 6, fret: 3, dead: false, tied: true }], rest: false },
+            { duration: 2, notes: [], rest: true },
+          ],
+          [],
+        ],
+      },
+    ],
+  };
+  const tex = powerTabToAlphaTex(model, {});
+  assert.match(tex, /\\ro/); // repeat start
+  assert.match(tex, /x\.6\.4/); // dead note
+  assert.match(tex, /-\.6\.4/); // tied note
+  assert.match(tex, /r\.2/); // rest
+});

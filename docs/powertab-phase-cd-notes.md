@@ -12,6 +12,34 @@ parse it ourselves (pure JS, iOS-safe).
 - **Phase B** (PR #274): `parsePowerTab(bytes)` — faithful port of TuxGuitar
   `PTInputStream`, full document → model. Validated on the **whole 3,056-file
   corpus: 98.7% parse complete, 4,044,804 notes, ZERO invalid string/fret**.
+- **Phase C+D** (this branch): clean measure model + AlphaTex render, wired into
+  the existing AlphaTab notation view.
+  - Parser now captures the `beaming` byte → `beat.tupletEnters`/`tupletTimes`
+    (was read-and-discarded). Plain beats decode to 1:1.
+  - `powerTabToMeasures(track)` — position-based barline grouping (a beat joins
+    the measure of the greatest barline position ≤ its position). Carries time
+    sigs forward; reads repeat-close from the *next* barline in a flattened
+    cross-section segment chain. Notes carry sounding `midi`. **Validated: 96.3%
+    of reconstructed measures sum exactly to their time signature** (rest are
+    genuine irregular/pickup bars). The notes' "position is layout only" caution
+    turned out to be over-cautious — barline positions delimit measures cleanly.
+  - `powerTabToAlphaTex(model, meta)` + `powerTabToRender(bytes, meta)`. Went with
+    **AlphaTex** over MusicXML: confirmed from AlphaTab source that with `\tuning`
+    high→low, user string S maps to `tuning[S-1]`, so string 1 = highest =
+    identical to the PowerTab model (no string flipping). Emits `\tuning` (octave
+    numbering matches our `_ptbMidiToName`), `\capo`, `\ts`, `\ro`/`\rc`,
+    chords `(f.s f.s)`, rests `r.d`, dead `x.s`, ties `-.s`, dotted `{d}/{dd}`,
+    tuplets `{tu e t}`, and a second voice via `\voice`.
+  - **Corpus render check: 3018/3056 files → AlphaTex with no malformed tokens,
+    216,948 bars, 1,228 multi-voice files.** The ~38 failures are the known
+    all-zero corrupt files (correctly rejected → TuxGuitar fallback message).
+  - `importGuitarPro.js`: `window.renderAlphaTex(container, tex, opts)` (shares
+    `_buildGpApi` with `renderGpNotation`; calls `api.tex()`).
+  - `index.html`: `tryImportPowerTab` now parses natively → sets
+    `window._ptbAlphaTex`, dispatches `gpbytesready` to auto-open the Tab View.
+    The notation panel renders `_ptbAlphaTex` via `renderAlphaTex` when set,
+    else GP bytes via `renderGpNotation`. GP imports clear `_ptbAlphaTex`.
+  - Tests: `tests/powerTab.test.mjs` 12 → 19 (model, durations, tex, render).
 
 ## The parsed model (`window.PowerTab.parse(bytes)` / `_PTB_TEST_EXPORTS.parsePowerTab`)
 ```

@@ -48,6 +48,9 @@
 <!-- Guitar Pro importer — loads AlphaTab CDN lazily on first GP file import -->
 <script defer src="importGuitarPro.js"></script>
 
+<!-- Power Tab (.ptb) importer — pure-JS parser + AlphaTex render (no CDN) -->
+<script defer src="powerTabImporter.js"></script>
+
 <!-- ChordSlashML browser bundle loaded at end of body for guaranteed timing -->
 
 <style>
@@ -3499,12 +3502,43 @@ fileInputIRealPro.addEventListener('change', async () => {
 });
 
 // Power Tab (.ptb) handling.
-// AlphaTab 1.8.1 ships no Power Tab importer (only AlphaTex, Capella, Guitar
-// Pro/Gpx, and MusicXML), so genuine .ptb files cannot be read in the browser —
-// neither the notation view nor this converter can parse them. We still attempt
-// conversion (a Guitar Pro file simply renamed .ptb would succeed); if nothing
-// usable comes back, we give clear guidance instead of opening a blank view.
+// AlphaTab ships no Power Tab importer, so we parse the binary ourselves
+// (powerTabImporter.js — a faithful TuxGuitar port) and convert the score to
+// AlphaTex, which AlphaTab's native engine renders in the Tab View. We keep a
+// best-effort GP path (a Guitar Pro file renamed .ptb still works) and a clear
+// TuxGuitar-conversion message for genuinely corrupt/variant files.
 async function tryImportPowerTab(gpBuf, fileName, importStart) {
+  const bytes = gpBuf instanceof Uint8Array ? gpBuf : new Uint8Array(gpBuf);
+
+  // 1) Native Power Tab parse → AlphaTex notation render.
+  if (window.PowerTab && typeof window.PowerTab.toRender === 'function') {
+    let render = null;
+    try {
+      render = window.PowerTab.toRender(bytes, { title: fileName.replace(/\.ptb$/i, '') });
+    } catch (_e) {
+      render = null;
+    }
+    if (render && render.complete && render.bars > 0 && render.tex) {
+      window._ptbAlphaTex = render.tex;
+      window._gpLastBytes = bytes; // keep raw bytes around (GP-rename fallback / tests)
+      window._gpLastFileName = fileName;
+      importDiagnostics.miner = 'Power Tab';
+      importDiagnostics.sourceFlavor = 'powertab';
+      importDiagnostics.confidence = 'high';
+      importDiagnostics.sections = render.sections || 1;
+      importDiagnostics.bars = render.bars;
+      importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+      setStatus(
+        `Imported Power Tab: ${fileName} (${render.bars} bars). Opening Tab View…`
+      );
+      updateDiagnosticsPanel();
+      window.dispatchEvent(new Event('gpbytesready')); // auto-open notation panel
+      return true;
+    }
+  }
+
+  // 2) Fallback: maybe it's a Guitar Pro file renamed .ptb.
+  window._ptbAlphaTex = null;
   let csmpn = '';
   try {
     csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
@@ -3530,8 +3564,10 @@ async function tryImportPowerTab(gpBuf, fileName, importStart) {
     updateDiagnosticsPanel();
     return true;
   }
+
+  // 3) Genuinely unreadable (corrupt/variant) — clear guidance.
   setStatus(
-    'Power Tab (.ptb) can’t be read by the in-browser engine. Convert it to .gp5, .gpx, or MusicXML with the free TuxGuitar app, then import that file.',
+    'This Power Tab (.ptb) file could not be read. If it is an unusual variant, convert it to .gp5, .gpx, or MusicXML with the free TuxGuitar app, then import that file.',
     'error'
   );
   updateDiagnosticsPanel();
@@ -3561,6 +3597,7 @@ fileInputGuitarPro.addEventListener('change', async () => {
     const gpBuf = await file.arrayBuffer();
     window._gpLastBytes = gpBuf;
     window._gpLastFileName = file.name;
+    window._ptbAlphaTex = null; // GP path renders raw bytes; PTB path re-sets this
     importDiagnostics.miner = file.name.endsWith('.ptb') ? 'Power Tab' : 'Guitar Pro';
     if (!file.name.endsWith('.ptb')) {
       const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
@@ -4093,6 +4130,7 @@ fileInput.addEventListener('change', async () => {
       // Store bytes globally for the notation view panel
       window._gpLastBytes = gpBuf;
       window._gpLastFileName = file.name;
+      window._ptbAlphaTex = null; // GP path renders raw bytes; PTB path re-sets this
       if (!name.endsWith('.ptb')) {
         // Full CSMPN conversion for GP files
         const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
@@ -7247,7 +7285,8 @@ function csmpnToCsml(csmpnText) {
   }
 
   async function renderNotation() {
-    if (!window._gpLastBytes) {
+    const ptbTex = window._ptbAlphaTex;
+    if (!window._gpLastBytes && !ptbTex) {
       container.innerHTML = '<div class="gpn-empty">Load a Guitar Pro or Power Tab file first.</div>';
       return;
     }
@@ -7259,7 +7298,7 @@ function csmpnToCsml(csmpnText) {
     let rendered = false;
     try {
       container.innerHTML = '';
-      currentApi = await window.renderGpNotation(container, window._gpLastBytes, {
+      const renderOpts = {
         staveProfile: parseInt(staveSelEl.value, 10) || 1,
         layoutMode: 0,
         onInfo: (kind) => { if (kind === 'rendered') rendered = true; },
@@ -7269,7 +7308,12 @@ function csmpnToCsml(csmpnText) {
             escapeHtml(String(msg)) +
             '<br><span style="color:var(--muted)">Power Tab (.ptb) and some Guitar Pro variants may be only partially supported by the notation engine. Try re-importing as Guitar Pro, or export the chart with the editor instead.</span></div>';
         },
-      });
+      };
+      // Power Tab files are converted to AlphaTex (AlphaTab has no .ptb importer);
+      // Guitar Pro files load their raw bytes directly.
+      currentApi = ptbTex
+        ? await window.renderAlphaTex(container, ptbTex, renderOpts)
+        : await window.renderGpNotation(container, window._gpLastBytes, renderOpts);
       // If AlphaTab silently produced nothing (no surface, no error event),
       // surface a clear message after a grace period instead of a blank box.
       setTimeout(() => {
