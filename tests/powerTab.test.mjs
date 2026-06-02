@@ -244,6 +244,61 @@ test('powerTabToRender: top-level entry produces tex + bar/section counts', () =
   assert.match(r.tex, /\\tuning/);
 });
 
+// ── Phase E: chord-key decode + CSMPN chart ──────────────────────────────────
+
+test('decodeChord: decodes ChordName bitfields to display names', () => {
+  const { decodeChord } = loadPtb();
+  // Real values observed in the corpus + spec-derived cases.
+  assert.equal(decodeChord(0x1919, 0xc1, 0x0000), 'Am');
+  assert.equal(decodeChord(0x1b1b, 0xc1, 0x0000), 'Bm');
+  assert.equal(decodeChord(0x1717, 0xc0, 0x0000), 'G');
+  assert.equal(decodeChord(0x141b, 0xc4, 0x0000), 'E5/B'); // power chord w/ bass
+  assert.equal(decodeChord(0x1919, 0xc9, 0x0000), 'Am7');
+  assert.equal(decodeChord(0x1010, 0x00, 0x0000), 'C');
+  assert.equal(decodeChord(0x1010, 0x08, 0x0000), 'Cmaj7');
+  assert.equal(decodeChord(0x1010, 0x0d, 0x0000), 'Cm7b5');
+  assert.equal(decodeChord(0x1010, 0x07, 0x0001), 'C9'); // dominant7 + extended9th
+  assert.equal(decodeChord(0x1010, 0x07, 0x8000), 'C7sus4'); // + suspended4th
+  assert.equal(decodeChord(0x1010, 0x10, 0x0000), 'N.C.'); // noChord flag
+});
+
+test('powerTabToChart: builds a CSMPN chart with header and bar rows', () => {
+  const { powerTabToChart } = loadPtb();
+  const chart = powerTabToChart(fixtureBytes(), { barsPerRow: 4 });
+  assert.ok(chart.bars >= 1, 'has bars');
+  assert.ok(typeof chart.csmpn === 'string' && chart.csmpn.length > 0);
+  assert.match(chart.csmpn, /Time: 4\/4/);
+  assert.match(chart.csmpn, /\n- Chart\n/); // section marker
+  assert.match(chart.csmpn, /\| .* \|/); // at least one bar row
+  // The arpeggio exercise has no chord-text annotations → all bars are N.C.
+  assert.equal(chart.chordCount, 0);
+  assert.match(chart.csmpn, /N\.C\./);
+});
+
+// ── Phase F: desync robustness ───────────────────────────────────────────────
+
+test('PtbReader: reading past the end of the stream throws (no silent overrun)', () => {
+  const { PtbReader } = loadPtb();
+  const r = new PtbReader(new Uint8Array([0x01, 0x02]));
+  assert.equal(r.readU16(), 0x0201);
+  assert.throws(() => r.readU8(), /past end|desync/);
+});
+
+test('parsePowerTab: a truncated body fails cleanly instead of overrunning', () => {
+  const { parsePowerTab } = loadPtb();
+  const full = fixtureBytes();
+  // Keep the valid "ptab" magic + version but cut the structural body short.
+  const truncated = full.slice(0, 64);
+  assert.throws(() => parsePowerTab(truncated), /past end|desync/);
+});
+
+test('parsePowerTab: the good fixture still parses complete (no false desync)', () => {
+  const { parsePowerTab } = loadPtb();
+  const m = parsePowerTab(fixtureBytes());
+  assert.ok(m.complete, 'fixture parse remains complete');
+  assert.ok(m.bytesConsumed <= m.fileSize, 'no overrun on a good file');
+});
+
 test('powerTabToAlphaTex: dead notes render x.string, tied notes render -.string', () => {
   const { powerTabToAlphaTex } = loadPtb();
   const model = {

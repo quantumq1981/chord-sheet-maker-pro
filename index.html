@@ -3510,11 +3510,15 @@ fileInputIRealPro.addEventListener('change', async () => {
 async function tryImportPowerTab(gpBuf, fileName, importStart) {
   const bytes = gpBuf instanceof Uint8Array ? gpBuf : new Uint8Array(gpBuf);
 
-  // 1) Native Power Tab parse → AlphaTex notation render.
-  if (window.PowerTab && typeof window.PowerTab.toRender === 'function') {
+  // 1) Native Power Tab parse → AlphaTex notation render + editable chord chart.
+  if (window.PowerTab && typeof window.PowerTab.parse === 'function') {
+    let parsed = null;
     let render = null;
+    let chart = null;
     try {
-      render = window.PowerTab.toRender(bytes, { title: fileName.replace(/\.ptb$/i, '') });
+      parsed = window.PowerTab.parse(bytes);
+      render = window.PowerTab.toRender(parsed, { title: fileName.replace(/\.ptb$/i, '') });
+      chart = window.PowerTab.toChart(parsed, { barsPerRow: fbSettings.barsPerRow });
     } catch (_e) {
       render = null;
     }
@@ -3527,10 +3531,22 @@ async function tryImportPowerTab(gpBuf, fileName, importStart) {
       importDiagnostics.confidence = 'high';
       importDiagnostics.sections = render.sections || 1;
       importDiagnostics.bars = render.bars;
+
+      // Phase E: load the decoded chord progression into the editable chart when
+      // the file carries chord annotations; otherwise leave the source for the
+      // notation view (most tab-only files have no chord texts).
+      let statusMsg;
+      if (chart && chart.chordCount > 0) {
+        const finalCsmpn = filterLyricsLines(chart.csmpn);
+        sourceEl.value = finalCsmpn;
+        extractHeaderFromText(finalCsmpn);
+        updatePreview();
+        statusMsg = `Imported Power Tab: ${fileName} (${render.bars} bars, ${chart.chordCount} chords). Editable chart loaded — open 🎸 Tab View for full notation.`;
+      } else {
+        statusMsg = `Imported Power Tab: ${fileName} (${render.bars} bars). No chord annotations — opening Tab View for notation.`;
+      }
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-      setStatus(
-        `Imported Power Tab: ${fileName} (${render.bars} bars). Opening Tab View…`
-      );
+      setStatus(statusMsg);
       updateDiagnosticsPanel();
       window.dispatchEvent(new Event('gpbytesready')); // auto-open notation panel
       return true;

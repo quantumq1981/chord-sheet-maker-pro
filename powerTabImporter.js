@@ -54,17 +54,30 @@ PtbReader.prototype.eof = function () {
   return this.pos >= this.u8.length;
 };
 
+// Reads past the end of the stream mean the cursor desynced from the real
+// structure (a format variant we don't model). Throwing here turns a runaway
+// garbage parse into a clean failure the caller can fall back from, instead of
+// looping over a bogus item count and emitting nonsense.
+PtbReader.prototype._need = function (n) {
+  if (this.pos + n > this.u8.length) {
+    throw new Error('Power Tab stream desync: read past end of file');
+  }
+};
+
 PtbReader.prototype.readU8 = function () {
+  this._need(1);
   return this.u8[this.pos++];
 };
 
 PtbReader.prototype.readU16 = function () {
+  this._need(2);
   const v = this.u8[this.pos] | (this.u8[this.pos + 1] << 8);
   this.pos += 2;
   return v;
 };
 
 PtbReader.prototype.readU32 = function () {
+  this._need(4);
   const v =
     (this.u8[this.pos] |
       (this.u8[this.pos + 1] << 8) |
@@ -80,6 +93,7 @@ PtbReader.prototype.readI32 = function () {
 };
 
 PtbReader.prototype.readBytes = function (n) {
+  this._need(n);
   const s = this.u8.subarray(this.pos, this.pos + n);
   this.pos += n;
   return s;
@@ -312,6 +326,7 @@ function _ptbMakeSection() {
     barLines: [], // {position, repeatStart, repeatClose, numerator, denominator}
     directions: 0,
     chordTexts: 0,
+    chordNames: [], // {position, key, formula, mods} — decoded in Phase E
     rhythmSlashes: 0,
     staffCount: 0,
     beats: [], // {staff, voice, position, duration, dotted, notes:[{string,fret,tied,dead}]}
@@ -441,12 +456,16 @@ function _ptbReadDirection(r) {
   for (let i = 0; i < symbolCount; i++) r.readU16();
 }
 
-function _ptbReadChordText(r) {
-  r.readU8();
-  r.readU16();
-  r.readU8();
-  r.readU16();
-  r.readU8();
+function _ptbReadChordText(r, section) {
+  // ChordText serialise order: position(u8), key(u16), formula(u8),
+  // formulaModifications(u16), extra(u8). The key/formula/mods triple is a
+  // PowerTab ChordName bitfield — decoded to a display name in Phase E.
+  const position = r.readU8();
+  const key = r.readU16();
+  const formula = r.readU8();
+  const mods = r.readU16();
+  r.readU8(); // extra (fret position / type — unused for naming)
+  if (section) section.chordNames.push({ position: position, key: key, formula: formula, mods: mods });
 }
 
 function _ptbReadRhythmSlash(r) {
@@ -475,7 +494,7 @@ function _ptbReadSection(r, section) {
   n = _ptbReadHeaderItems(r);
   section.chordTexts = n;
   for (let j = 0; j < n; j++) {
-    _ptbReadChordText(r);
+    _ptbReadChordText(r, section);
     if (j < n - 1) r.readU16();
   }
   n = _ptbReadHeaderItems(r);
@@ -682,8 +701,10 @@ function parsePowerTab(bytes) {
     fileSize: r.u8.length,
     trailerBytes: r.u8.length - r.pos,
     // After track 2, PTB carries a small fixed font/layout trailer (~95 bytes)
-    // that TuxGuitar also stops before. A clean parse leaves only that trailer.
-    complete: r.u8.length - r.pos <= 256,
+    // that TuxGuitar also stops before. A clean parse leaves only that trailer —
+    // i.e. a small *non-negative* remainder. A negative remainder means the
+    // cursor overran (desync) and the parse is not trustworthy.
+    complete: r.u8.length - r.pos >= 0 && r.u8.length - r.pos <= 256,
   };
 }
 
@@ -736,6 +757,88 @@ function _ptbCleanBeat(b, tuning, capo) {
   };
 }
 
+// ── Phase E: chord-key bitfield → chord name ─────────────────────────────────
+//
+// PowerTab stores chords as a packed ChordName (key u16 + formula u8 + mods u16),
+// not as text. This is a faithful port of Power Tab Editor's ChordName::GetText /
+// GetFormulaText / GetKeyText (powertabeditor, BSD) so the names match exactly.
+
+var _PTB_KEY_DEFAULT = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+var _PTB_KEY_DOWN = ['B#', 'Bx', 'Cx', 'D#', 'Dx', 'E#', 'Ex', 'Fx', 'G#', 'Gx', 'A#', 'Ax'];
+var _PTB_KEY_UP = ['Dbb', 'Db', 'Ebb', 'Fbb', 'Fb', 'Gbb', 'Gb', 'Abb', '', 'Bbb', 'Cbb', 'Cb'];
+
+// keyVariations: down = 0, default = 1, up = 2.
+function _ptbKeyText(key, variation) {
+  if (variation === 1) return _PTB_KEY_DEFAULT[key] || '';
+  if (variation === 0) return _PTB_KEY_DOWN[key] || '';
+  return _PTB_KEY_UP[key] || '';
+}
+
+function _ptbFormulaText(formula, mods) {
+  // abbr[3] is the degree symbol in PowerTab; we emit "dim" for CSMPN safety.
+  var abbr = ['maj', 'm', '+', 'dim', '5', 'add', 'sus2', 'sus4', '#', 'b'];
+  var ext = [0x01, 0x02, 0x04];
+  var extStr = ['9', '11', '13'];
+  var ret = '';
+  var f = formula & 0x0f;
+  var bExtension = false;
+  for (var j = 0; j < 3; j++) {
+    if (mods & ext[j]) {
+      if (f >= 8) {
+        ret +=
+          f === 8 ? abbr[0]
+          : f === 9 ? abbr[1]
+          : f === 10 ? abbr[2]
+          : f === 11 ? abbr[3]
+          : f === 12 ? abbr[1] + '/' + abbr[0]
+          : abbr[1] + extStr[j] + 'b5';
+        if (f < 13) ret += extStr[j];
+      } else if (f === 7) {
+        ret += extStr[j];
+      }
+      bExtension = true;
+    }
+  }
+  var suffix = [
+    '', abbr[1], abbr[2], abbr[3], abbr[4], '6', abbr[1] + '6', '7',
+    abbr[0] + '7', abbr[1] + '7', abbr[2] + '7', abbr[3] + '7',
+    abbr[1] + '/' + abbr[0] + '7', 'm7' + abbr[9] + '5',
+  ];
+  if (!bExtension && f !== 0) ret += suffix[f];
+  // wFormulaBit order from the spec (sus2, sus4, add2/4/6/9/11, b13, +11, b9, +9, b5, +5).
+  var fbit = [0x4000, 0x8000, 0x08, 0x10, 0x20, 0x40, 0x80, 0x2000, 0x1000, 0x400, 0x800, 0x100, 0x200];
+  var add = [
+    abbr[6], abbr[7], abbr[5] + '2', abbr[5] + '4', abbr[5] + '6', abbr[5] + '9',
+    abbr[5] + '11', abbr[9] + '13', abbr[2] + '11', abbr[9] + '9', abbr[2] + '9',
+    abbr[9] + '5', abbr[2] + '5',
+  ];
+  for (var k = 0; k < 13; k++) {
+    if (mods & fbit[k]) ret += add[k];
+  }
+  return ret;
+}
+
+/** Decode a {key, formula, mods} ChordName triple → display string ('Am7', 'E5/B', 'N.C.'). */
+function _ptbDecodeChord(key, formula, mods) {
+  if (formula & 0x10) return 'N.C.'; // noChord flag
+  var tonicKey = (key & 0xf00) >> 8;
+  var tonicVar = (key & 0x3000) >> 12;
+  var bassKey = key & 0xf;
+  var bassVar = (key & 0x30) >> 4;
+  var name = _ptbKeyText(tonicKey, tonicVar) + _ptbFormulaText(formula, mods);
+  // Show the bass note only when tonic and bass differ (key + variation).
+  if (((key & 0x3f00) >> 8) !== (key & 0x3f)) {
+    name += '/' + _ptbKeyText(bassKey, bassVar);
+  }
+  return name;
+}
+
+/** Root note (letter + accidental) of a decoded chord name, for key inference. */
+function _ptbChordRoot(name) {
+  var m = /^[A-G][#b]?/.exec(name || '');
+  return m ? m[0] : '';
+}
+
 /**
  * Build a clean measure list for one track (guitar or bass score).
  *
@@ -772,7 +875,20 @@ function powerTabToMeasures(track) {
           (bt.voice === 1 ? v1 : v0).push(_ptbCleanBeat(bt, tuning, capo));
         }
       }
-      segments.push({ bar: bls[bi], v0: v0, v1: v1 });
+      // Collect chord-text annotations in this barline span (in position order),
+      // decode them, and drop consecutive duplicates (fake-book style).
+      var chords = [];
+      var cns = (sec.chordNames || []).filter(function (c) {
+        return c.position >= start && c.position < end;
+      });
+      cns.sort(function (a, b) {
+        return a.position - b.position;
+      });
+      for (var ci = 0; ci < cns.length; ci++) {
+        var name = _ptbDecodeChord(cns[ci].key, cns[ci].formula, cns[ci].mods);
+        if (name && name !== chords[chords.length - 1]) chords.push(name);
+      }
+      segments.push({ bar: bls[bi], v0: v0, v1: v1, chords: chords });
     }
   }
 
@@ -790,7 +906,7 @@ function powerTabToMeasures(track) {
       curNum = num;
       curDen = den;
     }
-    if (!seg.v0.length && !seg.v1.length) continue; // barline-only marker
+    if (!seg.v0.length && !seg.v1.length && !seg.chords.length) continue; // barline-only marker
     var next = segments[i + 1];
     var rc = next && next.bar.repeatClose ? next.bar.repeatClose : 0;
     measures.push({
@@ -799,6 +915,7 @@ function powerTabToMeasures(track) {
       repeatStart: !!seg.bar.repeatStart,
       repeatClose: rc,
       voices: [seg.v0, seg.v1],
+      chords: seg.chords,
     });
   }
 
@@ -937,7 +1054,7 @@ function _ptbFindTempo(track) {
  */
 function powerTabToRender(input, meta) {
   meta = meta || {};
-  var parsed = parsePowerTab(input);
+  var parsed = input && input.tracks ? input : parsePowerTab(input);
   var info = parsed.info || {};
   var t0 = powerTabToMeasures(parsed.tracks[0] || { infos: [], sections: [] });
   var t1 = parsed.tracks[1]
@@ -962,6 +1079,74 @@ function powerTabToRender(input, meta) {
   };
 }
 
+/**
+ * Build an editable CSMPN fake-book chart from the chord-text annotations.
+ * Bars with no chord repeat the previous one (`%`), matching fake-book practice.
+ *
+ * @param {Uint8Array|ArrayBuffer|object} input  raw bytes or a parsed document
+ * @param {{barsPerRow?:number}} [opts]
+ * @returns {{csmpn:string, chordCount:number, bars:number}}
+ */
+function powerTabToChart(input, opts) {
+  opts = opts || {};
+  var barsPerRow = opts.barsPerRow > 0 ? Math.floor(opts.barsPerRow) : 4;
+  var parsed = input && input.tracks ? input : parsePowerTab(input);
+  var info = parsed.info || {};
+  var t0 = powerTabToMeasures(parsed.tracks[0] || { infos: [], sections: [] });
+  var t1 = parsed.tracks[1] ? powerTabToMeasures(parsed.tracks[1]) : { measures: [], capo: 0 };
+  var model = t0.measures.length ? t0 : t1;
+  var measures = model.measures;
+
+  var chordCount = 0;
+  var firstChordRoot = '';
+  var lastChord = '';
+  var barTokens = [];
+  for (var i = 0; i < measures.length; i++) {
+    var m = measures[i];
+    var token;
+    if (m.chords && m.chords.length) {
+      chordCount += m.chords.length;
+      token = m.chords.join('_');
+      lastChord = m.chords[m.chords.length - 1];
+      if (!firstChordRoot) firstChordRoot = _ptbChordRoot(m.chords[0]);
+    } else {
+      token = lastChord ? '%' : 'N.C.';
+    }
+    barTokens.push({ token: token, repeatStart: m.repeatStart, repeatClose: m.repeatClose });
+  }
+
+  var lines = [];
+  if (info.title) lines.push('Title: ' + info.title);
+  if (info.artist) lines.push('Composer: ' + info.artist);
+  lines.push('Key: ' + (firstChordRoot || 'C'));
+  lines.push('Time: ' + (measures.length ? measures[0].numerator + '/' + measures[0].denominator : '4/4'));
+  var tempo = _ptbFindTempo(parsed.tracks[0]) || _ptbFindTempo(parsed.tracks[1]) || 0;
+  if (tempo > 0) lines.push('Tempo: ' + tempo);
+  if (model.capo) lines.push('Capo: ' + model.capo);
+  lines.push('');
+  lines.push('- Chart');
+
+  var row = [];
+  function flushRow() {
+    if (!row.length) return;
+    var parts = [];
+    for (var r = 0; r < row.length; r++) {
+      parts.push((row[r].repeatStart ? '|:' : '|') + ' ' + row[r].token);
+    }
+    var last = row[row.length - 1];
+    lines.push(parts.join(' ') + (last.repeatClose > 0 ? ' :|' : ' |'));
+    row = [];
+  }
+  for (var b = 0; b < barTokens.length; b++) {
+    if (barTokens[b].repeatStart && row.length > 0) flushRow();
+    row.push(barTokens[b]);
+    if (barTokens[b].repeatClose > 0 || row.length >= barsPerRow) flushRow();
+  }
+  flushRow();
+
+  return { csmpn: lines.join('\n'), chordCount: chordCount, bars: measures.length };
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 // Pure helpers for Node vm.runInContext tests (becomes a context global).
@@ -976,6 +1161,8 @@ var _PTB_TEST_EXPORTS = {
   powerTabToMeasures: powerTabToMeasures,
   powerTabToAlphaTex: powerTabToAlphaTex,
   powerTabToRender: powerTabToRender,
+  powerTabToChart: powerTabToChart,
+  decodeChord: _ptbDecodeChord,
   beatDurDivisions: _ptbBeatDurDivisions,
 };
 
@@ -993,5 +1180,7 @@ if (typeof window !== 'undefined') {
       return powerTabToRender(input, meta).tex;
     },
     toRender: powerTabToRender,
+    toChart: powerTabToChart,
+    decodeChord: _ptbDecodeChord,
   };
 }
