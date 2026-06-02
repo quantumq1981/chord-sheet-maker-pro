@@ -276,7 +276,24 @@
     color:var(--muted);
     line-height:1.35;
   }
-  .tips ul{ margin:8px 0 0 18px; }
+  .tips ul, .tips ol{ margin:8px 0 0 18px; }
+  /* Getting Started & Syntax guide — native <details>, iOS-safe, no JS. */
+  .guide > summary{
+    cursor:pointer; list-style:none; padding:10px 12px;
+    background:var(--card,#f3f4f6); border:1px solid var(--border,#d1d5db);
+    border-radius:8px; color:var(--ink,#111); font-size:14px;
+    -webkit-user-select:none; user-select:none;
+  }
+  .guide > summary::-webkit-details-marker{ display:none; }
+  .guide[open] > summary{ border-bottom-left-radius:0; border-bottom-right-radius:0; }
+  .guide-body{
+    border:1px solid var(--border,#d1d5db); border-top:none;
+    border-radius:0 0 8px 8px; padding:6px 12px 12px;
+  }
+  .guide-body details{ margin:8px 0; }
+  .guide-body summary{ cursor:pointer; padding:6px 0; font-weight:600; color:var(--ink,#111); }
+  .guide-body code{ font-size:12px; }
+  .guide-body li{ margin:4px 0; }
 
   .status{
     margin-top:10px;
@@ -2095,16 +2112,68 @@ body.exporting .sectionBlock{
 
     </div>
 
-    <div class="tips power-only">
-      <strong>Fake Book Style:</strong>
-      <ul>
-        <li>Each chord token = 1 bar. Use <code>_</code> for split bars (e.g., <code>Bb7_A7</code>).</li>
-        <li>Section markers: <code>- Verse</code>, <code>: Chorus</code>, <code>= Bridge</code> with optional rehearsal letters.</li>
-        <li>Repeats: <code>|:</code> and <code>:|</code>, or <code>(A B C D)x2</code>. Endings: <code>1. C D 2. E F</code>.</li>
-        <li><code>%</code> = repeat bar. Use Settings to adjust font size, bars/row, line spacing, and chord styles.</li>
-        <li><strong>Notation blocks:</strong> <code>{vt C4/q, D4/q, E4/q, F4/q}</code> — embeds a VexFlow staff. New syntax supports multi-bar phrases, rests (<code>qr</code>), chords (<code>&lt;C4 E4 G4&gt;/q</code>), ties (<code>C4/q^ C4/q</code>), and note modifiers like <code>[staccato, lyric="Hi"]</code>.</li>
-        <li><strong>Shortcuts:</strong> Ctrl+S Save, Ctrl+P Print, Ctrl+↑/↓ Transpose.</li>
-      </ul>
+    <div class="tips">
+      <details class="guide">
+        <summary><strong>📖 Getting Started &amp; Syntax Guide</strong> — tap to open</summary>
+        <div class="guide-body">
+
+          <details open>
+            <summary>Quick start (3 steps)</summary>
+            <ol>
+              <li><strong>Get a chart in:</strong> type chords in the editor (see syntax below), or tap <strong>Import</strong> to load a <em>Guitar Pro</em>, <em>MusicXML</em>, <em>PDF</em>, <em>ChordPro</em>, or <em>Ultimate&nbsp;Guitar</em> file.</li>
+              <li><strong>Style it:</strong> use <strong>Settings</strong> for bars-per-row, fonts and chord spellings; use <strong>Transpose</strong> (▲▼) to change key.</li>
+              <li><strong>Get it out:</strong> <strong>Print</strong> (best on iPad/iPhone → "Save to PDF"), or <strong>↓ PDF / ↓ PNG / Copy</strong>.</li>
+            </ol>
+          </details>
+
+          <details>
+            <summary>Editing syntax — CSMPN Fake Book (the main editor)</summary>
+            <ul>
+              <li><strong>Header lines:</strong> <code>Title:</code> <code>Composer:</code> <code>Key:</code> <code>Time:</code> <code>Tempo:</code> <code>Capo:</code> — one per line.</li>
+              <li><strong>One chord = one bar.</strong> Split a bar with <code>_</code> → <code>Bb7_A7</code>. <code>%</code> repeats the previous bar; <code>N.C.</code> = no chord.</li>
+              <li><strong>Sections:</strong> <code>- Verse</code> (plain), <code>: Chorus</code> (boxed rehearsal mark), <code>= Bridge</code>. Add a rehearsal letter after the name if you like.</li>
+              <li><strong>Repeats &amp; endings:</strong> <code>|: … :|</code> or <code>(A B C D)x2</code>; first/second endings: <code>1. C D 2. E F</code>.</li>
+              <li><strong>Accents on a chord:</strong> <code>!</code> accent, <code>^</code> marcato, <code>.</code> staccato (e.g. <code>G!</code>).</li>
+              <li><strong>Lyrics / notes:</strong> lines starting with <code>;</code> are treated as lyric/comment lines.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Importing other formats</summary>
+            <ul>
+              <li><strong>Guitar Pro</strong> (<code>.gp .gp3 .gp4 .gp5 .gpx</code>) — auto-converts to a fake-book chart, with TAB voicings where present.</li>
+              <li><strong>MusicXML</strong> (<code>.xml .musicxml .mxl</code>) — extracts chord symbols and structure from an engraved score.</li>
+              <li><strong>Ultimate Guitar</strong> — paste UG text, or import a UG&nbsp;Pro <strong>PDF</strong> (the standard-notation + tab hybrid layout).</li>
+              <li><strong>ChordPro, ABC, OnSong, OpenSong, OpenLyrics, iReal&nbsp;Pro, ChordMark</strong> — all available from the Import menu.</li>
+              <li>After any import, open <strong>Import Details</strong> (power mode) to see what was detected.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>ChordSlashML — beat-level rhythm editor (advanced)</summary>
+            <ul>
+              <li>Open the <strong>ChordSlashML</strong> editor for a live two-pane view: type on the left, see slash notation on the right.</li>
+              <li>Uses <code>[Section]</code> labels and beat-slotted measures (<code>C _ _ _</code>, <code>Am _ G _</code>) with <code>|: :|</code> repeats.</li>
+              <li><strong>Load into Chart</strong> converts it to a CSMPN fake-book chart (or a Hybrid rhythm chart when Hybrid mode is on). <strong>⬆ From Source</strong> goes the other way.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Exporting</summary>
+            <ul>
+              <li><strong>Editor:</strong> <strong>Print</strong> (iOS → Save to PDF), <strong>↓ PDF</strong>, <strong>↓ PNG</strong>, <strong>Copy</strong>.</li>
+              <li><strong>Slash Notation</strong> &amp; <strong>ChordSlashML</strong> panels add <strong>↓ SVG</strong>, <strong>↓ MusicXML</strong> (<code>.xml</code>, opens in notation apps) and <strong>↓ LilyPond</strong>.</li>
+              <li><strong>Setlist</strong> can print several saved charts to one PDF.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Keyboard shortcuts (external keyboard)</summary>
+            <ul><li>Ctrl/⌘ + S = Save · Ctrl/⌘ + P = Print · Ctrl/⌘ + ↑/↓ = Transpose.</li></ul>
+          </details>
+
+        </div>
+      </details>
     </div>
 
     <div id="status" class="status">Ready. v1.10.0 — Fake Book formatting.</div>
@@ -2824,7 +2893,7 @@ Tempo: 130
   <div class="grid">
     <div class="card editorCard">
       <label>CSMPN Source (ChordSheet-compatible)</label>
-      <textarea id="source"></textarea>
+      <textarea id="source" placeholder="Title: Your Song&#10;Key: C&#10;Time: 4/4&#10;&#10;- Verse&#10;C G Am F&#10;&#10;- Chorus&#10;F G C C&#10;&#10;Each chord = one bar  ·  _ splits a bar (Bb7_A7)  ·  % = repeat bar  ·  |: … :| = repeat&#10;…or tap Import to load Guitar Pro, MusicXML, a PDF, ChordPro, ABC and more."></textarea>
     </div>
 
     <div class="previewWrap">
@@ -2994,7 +3063,7 @@ const featureInfo = {
   },
   import: {
     title: "Import",
-    body: "Imports chords from PDF, MusicXML, MXL (compressed MusicXML), ABC notation, ChordPro, OnSong, OpenSong XML, OpenLyrics XML, iReal Pro (irealb://), ChordMark, or plain text files. The app extracts harmonic structure and rebuilds it in clean fake book format. Supported sources include Ultimate Guitar exports, church worship apps, iReal Pro jazz charts, and standard lead sheet PDFs. Power mode exposes dedicated per-format buttons for OnSong, OpenSong XML, OpenLyrics XML, and iReal Pro."
+    body: "Brings a chart in and rebuilds it as a clean fake book chart. Most-used: Guitar Pro (.gp/.gp3/.gp4/.gp5/.gpx), MusicXML (.xml/.musicxml/.mxl), and Ultimate Guitar (paste text, or a UG Pro PDF with the standard-notation + tab layout). Also supports ChordPro, ABC, OnSong, OpenSong XML, OpenLyrics XML, iReal Pro (irealb://), ChordMark, and plain text. After importing, open Import Details (power mode) to see exactly what was detected."
   },
   notation: {
     title: "VexFlow Notation Blocks",
