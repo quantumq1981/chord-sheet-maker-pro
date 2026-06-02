@@ -2,6 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<!--
+  Content-Security-Policy: defense-in-depth for a static, client-side app.
+  This is a paste/import tool, so it renders user-supplied content; the policy
+  restricts WHERE code/resources may load from (blocking an injected
+  <script src="https://attacker…">), forbids <object>/<embed>, and pins the
+  base URI. 'unsafe-inline'/'unsafe-eval' are required because index.html ships
+  inline <script>/<style> blocks, inline event handlers, and CDN libs that use
+  eval — and GitHub Pages (static hosting) cannot mint per-request nonces.
+  Allowed origins are the only five the app actually contacts:
+    cdnjs.cloudflare.com  (pdf.js + worker, html2canvas, jsPDF)
+    cdn.jsdelivr.net      (abcjs, jszip, vexflow, AlphaTab + its SMuFL font)
+    fonts.googleapis.com / fonts.gstatic.com / fonts.cdnfonts.com (web fonts)
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.cdnfonts.com; font-src 'self' data: https://fonts.gstatic.com https://fonts.cdnfonts.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>ChordSheet CSMPN Builder v1.10.0</title>
 
