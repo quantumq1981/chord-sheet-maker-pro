@@ -4811,7 +4811,7 @@ document.addEventListener('keydown', (e) => {
 /* =========================================================
    Init
 ========================================================= */
-sourceEl.value = `Title: Sin City Blues
+const _SAMPLE_SOURCE = `Title: Sin City Blues
 Style: Slow Blues Swing
 Tempo: 90
 Time: 12/8
@@ -4877,6 +4877,30 @@ F9_F13 :|
 = CODA
 |: Bb7_Bb6_Eb9 Bb_B13_Bb7 :|
 `;
+
+// ── Working-source persistence ──────────────────────────────────────────────
+// iOS Safari reclaims a backgrounded tab's memory and reloads the page on
+// return; without this, that reload (or any manual refresh) wiped an imported
+// or hand-edited chart back to the sample above. Persist the working source and
+// restore it on load, so work survives a reload. First run (no saved draft)
+// still shows the sample as an onboarding example.
+const _SOURCE_DRAFT_KEY = 'csmpn_draft';
+function saveSourceDraft() {
+  try { localStorage.setItem(_SOURCE_DRAFT_KEY, sourceEl.value); } catch (_) {}
+}
+(function restoreSourceDraft() {
+  let saved = null;
+  try { saved = localStorage.getItem(_SOURCE_DRAFT_KEY); } catch (_) {}
+  sourceEl.value = saved && saved.trim() ? saved : _SAMPLE_SOURCE;
+})();
+const _debouncedSaveDraft = debounce(saveSourceDraft, 400);
+sourceEl.addEventListener('input', _debouncedSaveDraft);
+// Capture the latest source right before the tab is hidden or unloaded — the
+// moment iOS is most likely to evict the page and later reload it. Imports set
+// the source programmatically (no 'input' event), so these hooks are what keep
+// an imported chart from being lost on the next reload.
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveSourceDraft(); });
+window.addEventListener('pagehide', saveSourceDraft);
 
 loadFBSettings();
 applyFBSettings();
