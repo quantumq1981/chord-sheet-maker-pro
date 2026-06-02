@@ -1949,21 +1949,46 @@ async function readImportedTextFile(file){
 }
 
 /* Regex-based MusicXML fallback — used when DOMParser is unavailable (Node.js / tests). */
+// ── MusicXML regex caches ─────────────────────────────────────────────────
+// importMusicXMLRegex loops over measures × harmonies and previously compiled
+// a fresh RegExp on every tag()/attr() call (~M×H×T compilations on a large
+// score). There are only ~12 distinct patterns, so compile each once and reuse
+// it for the lifetime of the page/process.
+const _mxTagRe = new Map(); // name -> RegExp
+const _mxAttrRe = new Map(); // `${tagName}\x00${attrName}` -> RegExp
+
+function _mxGetTagRe(name) {
+  let re = _mxTagRe.get(name);
+  if (!re) {
+    re = new RegExp('<' + name + '[^>]*>([^<]*)</' + name + '>', 'i');
+    _mxTagRe.set(name, re);
+  }
+  return re;
+}
+
+function _mxGetAttrRe(tagName, attrName) {
+  const key = tagName + '\x00' + attrName;
+  let re = _mxAttrRe.get(key);
+  if (!re) {
+    re = new RegExp('<' + tagName + '[^>]*\\b' + attrName + '=["\']([^"\']*)["\']', 'i');
+    _mxAttrRe.set(key, re);
+  }
+  return re;
+}
+
 function importMusicXMLRegex(xmlText){
   const song = new SongModel();
   const t = xmlText || '';
 
-  // Helper: extract text content of a tag
+  // Helper: extract text content of a tag (regex compiled once, then cached)
   const tag = (src, name) => {
-    const re = new RegExp('<' + name + '[^>]*>([^<]*)</' + name + '>', 'i');
-    const m = src.match(re);
+    const m = src.match(_mxGetTagRe(name));
     return m ? m[1].trim() : '';
   };
 
-  // Helper: extract an attribute value
+  // Helper: extract an attribute value (regex compiled once, then cached)
   const attr = (src, tagName, attrName) => {
-    const re = new RegExp('<' + tagName + '[^>]*\\b' + attrName + '=["\']([^"\']*)["\']', 'i');
-    const m = src.match(re);
+    const m = src.match(_mxGetAttrRe(tagName, attrName));
     return m ? m[1].trim() : '';
   };
 

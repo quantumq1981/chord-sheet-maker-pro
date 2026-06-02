@@ -187,6 +187,35 @@ function parseCSMPN(text){
   return doc;
 }
 
+// ── parseCSMPN memoization ────────────────────────────────────────────────
+// A single user action (transpose / keystroke) parses the SAME source text
+// 2–3×: updatePreview → parseCSMPN, the slash-notation panel → parseCSMPN, and
+// the MusicXML exporter → parseCSMPN. Wrap the parser in a small FIFO cache so
+// repeated calls on identical text are O(1) instead of re-walking every line
+// and token. The parsed `doc` is consumed read-only by all callers (renderers
+// read doc.blocks/title/key/...; nothing mutates the returned tree), so caching
+// by reference is safe.
+(function installParseCsmpnMemo() {
+  if (typeof parseCSMPN !== 'function' || parseCSMPN.__memoized) return;
+  const _raw = parseCSMPN;
+  const _cache = new Map(); // text -> doc
+  const MAX = 4; // covers transpose + preview + slash panel + export in one tick
+  function parseCSMPNMemoized(text) {
+    const key = text || '';
+    if (_cache.has(key)) return _cache.get(key);
+    const doc = _raw(key);
+    if (_cache.size >= MAX) {
+      // FIFO eviction (Map preserves insertion order) — avoids a full flush.
+      _cache.delete(_cache.keys().next().value);
+    }
+    _cache.set(key, doc);
+    return doc;
+  }
+  parseCSMPNMemoized.__memoized = true;
+  // Reassign the global binding callers already use; no call sites change.
+  parseCSMPN = parseCSMPNMemoized;
+})();
+
 /**
  * Expand |: ... :| repeat barlines in CSMPN text.
  *
