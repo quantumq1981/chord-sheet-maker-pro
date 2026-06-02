@@ -370,7 +370,9 @@ function _ptbReadTimeSignature(r, bar) {
 }
 
 function _ptbReadKeySignature(r) {
-  r.readU8();
+  // m_data: bits 0-3 = accidentals (0=none, 1-7 sharps, 8-14 flats),
+  // bit 4 = shown, bit 6 = key type (0 major, 1 minor).
+  return r.readU8();
 }
 
 function _ptbReadRehearsalSign(r) {
@@ -387,7 +389,7 @@ function _ptbReadBarLine(r, section) {
   const type = r.readU8();
   bar.repeatStart = type >>> 5 === 3;
   bar.repeatClose = type >>> 5 === 4 ? type - 128 : 0;
-  _ptbReadKeySignature(r);
+  bar.keySig = _ptbReadKeySignature(r);
   _ptbReadTimeSignature(r, bar);
   bar.rehearsal = _ptbReadRehearsalSign(r);
   section.barLines.push(bar);
@@ -836,6 +838,29 @@ function _ptbDecodeChord(key, formula, mods) {
   return name;
 }
 
+// Key-signature decode: accidental count + major/minor → key name. Relative
+// majors/minors share an accidental count, so the tables are indexed by it.
+var _PTB_MAJOR_SHARP = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
+var _PTB_MAJOR_FLAT = ['C', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'Cb'];
+var _PTB_MINOR_SHARP = ['Am', 'Em', 'Bm', 'F#m', 'C#m', 'G#m', 'D#m', 'A#m'];
+var _PTB_MINOR_FLAT = ['Am', 'Dm', 'Gm', 'Cm', 'Fm', 'Bbm', 'Ebm', 'Abm'];
+
+/** Decode a PowerTab key-signature byte to a key name ('E', 'Bbm', 'C'). */
+function _ptbDecodeKeySig(data) {
+  var a = data & 0x0f;
+  var minor = ((data >> 6) & 1) === 1;
+  var sharps = a >= 1 && a <= 7 ? a : 0;
+  var flats = a >= 8 ? a - 7 : 0;
+  if (sharps) return minor ? _PTB_MINOR_SHARP[sharps] : _PTB_MAJOR_SHARP[sharps];
+  if (flats) return minor ? _PTB_MINOR_FLAT[flats] : _PTB_MAJOR_FLAT[flats];
+  return minor ? 'Am' : 'C';
+}
+
+/** Does a key-sig byte carry real info (accidentals set, or explicitly shown)? */
+function _ptbKeySigHasInfo(data) {
+  return (data & 0x0f) !== 0 || (data & 0x10) !== 0;
+}
+
 /** Section label from a barline's rehearsal sign, or null when none is set. */
 function _ptbRehearsalLabel(reh) {
   if (!reh || reh.letter === 0x7f || reh.letter === 0xff) return null;
@@ -896,7 +921,11 @@ function powerTabToMeasures(track) {
       });
       for (var ci = 0; ci < cns.length; ci++) {
         var name = _ptbDecodeChord(cns[ci].key, cns[ci].formula, cns[ci].mods);
-        if (name && name !== chords[chords.length - 1]) chords.push(name);
+        // Keep only distinct chords within a bar (first-appearance order). A busy
+        // strummed measure annotates every hit (e.g. A5 E5 B5 A5 B5); collapsing
+        // repeats to A5 E5 B5 reads as a fake-book bar while preserving genuine
+        // multi-chord bars like Bb7 G7 C7 F7.
+        if (name && chords.indexOf(name) === -1) chords.push(name);
       }
       segments.push({ bar: bls[bi], v0: v0, v1: v1, chords: chords });
     }
@@ -909,8 +938,14 @@ function powerTabToMeasures(track) {
   var curNum = 4;
   var curDen = 4;
   var pendingSection = null; // rehearsal label carried over skipped empty barlines
+  var keySigByte = 0; // first barline that carries real key info (else 0 = C)
+  var keySigFound = false;
   for (var i = 0; i < segments.length; i++) {
     var seg = segments[i];
+    if (!keySigFound && _ptbKeySigHasInfo(seg.bar.keySig || 0)) {
+      keySigByte = seg.bar.keySig;
+      keySigFound = true;
+    }
     var num = seg.bar.numerator;
     var den = seg.bar.denominator;
     if (num >= 1 && num <= 32 && _PTB_VALID_DENOM.indexOf(den) >= 0) {
@@ -942,6 +977,8 @@ function powerTabToMeasures(track) {
     tuningNotes: tuning.map(_ptbMidiToName),
     capo: capo,
     instrument: info.instrument || 0,
+    keySig: keySigByte,
+    keyName: keySigFound ? _ptbDecodeKeySig(keySigByte) : null,
     measures: measures,
   };
 }
@@ -1141,7 +1178,9 @@ function powerTabToChart(input, opts) {
   var lines = [];
   if (info.title) lines.push('Title: ' + info.title);
   if (info.artist) lines.push('Composer: ' + info.artist);
-  lines.push('Key: ' + (firstChordRoot || 'C'));
+  // Prefer the file's stated key signature; fall back to the first chord's
+  // root only when no key signature is present.
+  lines.push('Key: ' + (model.keyName || firstChordRoot || 'C'));
   lines.push('Time: ' + (measures.length ? measures[0].numerator + '/' + measures[0].denominator : '4/4'));
   var tempo = _ptbFindTempo(parsed.tracks[0]) || _ptbFindTempo(parsed.tracks[1]) || 0;
   if (tempo > 0) lines.push('Tempo: ' + tempo);
@@ -1203,6 +1242,7 @@ var _PTB_TEST_EXPORTS = {
   powerTabToRender: powerTabToRender,
   powerTabToChart: powerTabToChart,
   decodeChord: _ptbDecodeChord,
+  decodeKeySig: _ptbDecodeKeySig,
   rehearsalLabel: _ptbRehearsalLabel,
   beatDurDivisions: _ptbBeatDurDivisions,
 };
