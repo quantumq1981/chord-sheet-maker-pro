@@ -689,8 +689,39 @@ if (typeof window !== 'undefined') {
     if (!Api) throw new Error('AlphaTabApi not found in this AlphaTab build — try refreshing.');
 
     var api  = new Api(container, settings);
+
+    // AlphaTab reports load/parse failures through its `error` event rather than
+    // by throwing — without this wiring an unsupported file (or a render glitch)
+    // shows as a silent blank box. Surface those events to the caller.
+    function _wire(evt, cb) { if (evt && typeof evt.on === 'function') evt.on(cb); }
+    if (typeof o.onError === 'function') {
+      _wire(api.error, function (e) {
+        o.onError((e && (e.message || e.reason || e)) || 'Unknown notation error');
+      });
+    }
+    _wire(api.scoreLoaded, function (score) {
+      var tracks = (score && score.tracks && score.tracks.length) || 0;
+      if (tracks === 0 && typeof o.onError === 'function') {
+        o.onError('The file parsed but contains no playable tracks.');
+      } else if (typeof o.onInfo === 'function') {
+        o.onInfo('loaded', { tracks: tracks, title: score && score.title });
+      }
+    });
+    if (typeof o.onInfo === 'function') {
+      _wire(api.renderFinished, function () { o.onInfo('rendered', {}); });
+    }
+
     var data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     api.load(data);
+
+    // Defeat the display:none -> display:block width race: when the panel was
+    // just made visible, AlphaTab's initial layout can measure width 0 and draw
+    // nothing. Re-render once after layout settles (a second render is a no-op
+    // if the first succeeded).
+    if (typeof api.render === 'function') {
+      setTimeout(function () { try { api.render(); } catch (_e) {} }, 200);
+    }
+
     return api;
   };
 }

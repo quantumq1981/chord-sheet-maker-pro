@@ -7217,12 +7217,29 @@ function csmpnToCsml(csmpnText) {
       return;
     }
     showLoading('Loading AlphaTab and rendering notation…');
+    let rendered = false;
     try {
       container.innerHTML = '';
       currentApi = await window.renderGpNotation(container, window._gpLastBytes, {
         staveProfile: parseInt(staveSelEl.value, 10) || 1,
         layoutMode: 0,
+        onInfo: (kind) => { if (kind === 'rendered') rendered = true; },
+        onError: (msg) => {
+          container.innerHTML =
+            '<div class="gpn-empty" style="color:#c00">Could not render this file: ' +
+            escapeHtml(String(msg)) +
+            '<br><span style="color:var(--muted)">Power Tab (.ptb) and some Guitar Pro variants may be only partially supported by the notation engine. Try re-importing as Guitar Pro, or export the chart with the editor instead.</span></div>';
+        },
       });
+      // If AlphaTab silently produced nothing (no surface, no error event),
+      // surface a clear message after a grace period instead of a blank box.
+      setTimeout(() => {
+        if (!rendered && container && !container.querySelector('.at-surface, svg, canvas')) {
+          container.innerHTML =
+            '<div class="gpn-empty">The notation engine loaded the file but produced no output. ' +
+            'This can happen with some Power Tab (.ptb) files — try re-importing as Guitar Pro (.gp5/.gpx).</div>';
+        }
+      }, 2500);
     } catch (err) {
       container.innerHTML = '<div class="gpn-empty" style="color:#c00">Notation render failed: ' + escapeHtml(String(err.message || err)) + '</div>';
     }
