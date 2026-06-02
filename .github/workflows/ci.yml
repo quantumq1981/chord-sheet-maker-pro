@@ -101,6 +101,9 @@ jobs:
              powerTabImporter.js chordSlashMLRenderer.js \
              ug-txt-importer.html dist/
 
+      - name: Verify deploy assets (no referenced script is missing from dist)
+        run: node scripts/verify-deploy-assets.mjs dist
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
