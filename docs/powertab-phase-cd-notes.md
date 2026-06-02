@@ -105,6 +105,19 @@ fake-book chart (header + `- Chart` + `|`-rows, `%` for unannotated bars,
 *and* loads the chart into `sourceEl` when `chordCount > 0`. `window.PowerTab`
 gains `toChart` + `decodeChord`.
 
+## Section labels ✅ DONE (follow-up)
+PowerTab stores a **rehearsal sign** on each barline: an ASCII letter (A/B/C…,
+`0x7F` = unused) + a description CString ("Intro", "Verse 1", "Chorus"). These
+were read-and-discarded; now `_ptbReadRehearsalSign` returns `{letter, desc}`
+onto `bar.rehearsal`, `_ptbRehearsalLabel` turns it into a label (desc, else the
+letter), and `powerTabToMeasures` attaches `measure.section` (carrying the label
+forward over skipped empty barlines). `powerTabToChart` groups bars under `- Label`
+headers instead of one flat `- Chart` (which remains the fallback for files with
+no rehearsal marks). **82% of chord-bearing files now come in multi-sectioned** —
+real labels: Chorus, Intro, Verse, Outro, Interlude, Guitar Solo, Bridge,
+Pre-Chorus. No parse regression (still 3,011 complete). `toChart` returns a
+`sections` count; the import status shows it. Tests +2 (24→26).
+
 ## Phase F — robustness ✅ DONE (this branch)
 The ~37 all-zero corrupt files are rejected by the `ptab` magic check (graceful
 fallback). The **6 overruns** were a real bug: they desync mid-stream, read far

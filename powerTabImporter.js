@@ -374,8 +374,11 @@ function _ptbReadKeySignature(r) {
 }
 
 function _ptbReadRehearsalSign(r) {
-  r.readU8();
-  _ptbReadStr(r);
+  // letter is an ASCII rehearsal letter (A, B, C…) or 0x7F when unused; desc is
+  // the human section name ("Intro", "Verse 1", "Chorus") shown in the chart.
+  const letter = r.readU8();
+  const desc = _ptbReadStr(r);
+  return { letter: letter, desc: desc };
 }
 
 function _ptbReadBarLine(r, section) {
@@ -386,7 +389,7 @@ function _ptbReadBarLine(r, section) {
   bar.repeatClose = type >>> 5 === 4 ? type - 128 : 0;
   _ptbReadKeySignature(r);
   _ptbReadTimeSignature(r, bar);
-  _ptbReadRehearsalSign(r);
+  bar.rehearsal = _ptbReadRehearsalSign(r);
   section.barLines.push(bar);
 }
 
@@ -833,6 +836,13 @@ function _ptbDecodeChord(key, formula, mods) {
   return name;
 }
 
+/** Section label from a barline's rehearsal sign, or null when none is set. */
+function _ptbRehearsalLabel(reh) {
+  if (!reh || reh.letter === 0x7f || reh.letter === 0xff) return null;
+  var d = (reh.desc || '').replace(/\s+/g, ' ').trim();
+  return d || String.fromCharCode(reh.letter);
+}
+
 /** Root note (letter + accidental) of a decoded chord name, for key inference. */
 function _ptbChordRoot(name) {
   var m = /^[A-G][#b]?/.exec(name || '');
@@ -898,6 +908,7 @@ function powerTabToMeasures(track) {
   var measures = [];
   var curNum = 4;
   var curDen = 4;
+  var pendingSection = null; // rehearsal label carried over skipped empty barlines
   for (var i = 0; i < segments.length; i++) {
     var seg = segments[i];
     var num = seg.bar.numerator;
@@ -906,9 +917,15 @@ function powerTabToMeasures(track) {
       curNum = num;
       curDen = den;
     }
-    if (!seg.v0.length && !seg.v1.length && !seg.chords.length) continue; // barline-only marker
+    var segLabel = _ptbRehearsalLabel(seg.bar.rehearsal);
+    if (!seg.v0.length && !seg.v1.length && !seg.chords.length) {
+      if (segLabel) pendingSection = segLabel; // keep the label for the next real bar
+      continue; // barline-only marker
+    }
     var next = segments[i + 1];
     var rc = next && next.bar.repeatClose ? next.bar.repeatClose : 0;
+    var label = segLabel || pendingSection;
+    pendingSection = null;
     measures.push({
       numerator: curNum,
       denominator: curDen,
@@ -916,6 +933,7 @@ function powerTabToMeasures(track) {
       repeatClose: rc,
       voices: [seg.v0, seg.v1],
       chords: seg.chords,
+      section: label ? { label: label } : null,
     });
   }
 
@@ -1112,7 +1130,12 @@ function powerTabToChart(input, opts) {
     } else {
       token = lastChord ? '%' : 'N.C.';
     }
-    barTokens.push({ token: token, repeatStart: m.repeatStart, repeatClose: m.repeatClose });
+    barTokens.push({
+      token: token,
+      repeatStart: m.repeatStart,
+      repeatClose: m.repeatClose,
+      sectionLabel: m.section ? m.section.label : null,
+    });
   }
 
   var lines = [];
@@ -1124,9 +1147,13 @@ function powerTabToChart(input, opts) {
   if (tempo > 0) lines.push('Tempo: ' + tempo);
   if (model.capo) lines.push('Capo: ' + model.capo);
   lines.push('');
-  lines.push('- Chart');
 
+  // Group bars under section headers from PowerTab rehearsal signs (Intro,
+  // Verse, Chorus…). Files with no rehearsal marks fall back to a single
+  // "- Chart" section. Rows break at barsPerRow, repeat boundaries, and at the
+  // start of every new section.
   var row = [];
+  var sectionCount = 0;
   function flushRow() {
     if (!row.length) return;
     var parts = [];
@@ -1137,14 +1164,27 @@ function powerTabToChart(input, opts) {
     lines.push(parts.join(' ') + (last.repeatClose > 0 ? ' :|' : ' |'));
     row = [];
   }
+  function startSection(label) {
+    flushRow();
+    lines.push('- ' + label);
+    sectionCount++;
+  }
   for (var b = 0; b < barTokens.length; b++) {
-    if (barTokens[b].repeatStart && row.length > 0) flushRow();
-    row.push(barTokens[b]);
-    if (barTokens[b].repeatClose > 0 || row.length >= barsPerRow) flushRow();
+    var bt = barTokens[b];
+    if (bt.sectionLabel) startSection(bt.sectionLabel);
+    else if (sectionCount === 0) startSection('Chart');
+    if (bt.repeatStart && row.length > 0) flushRow();
+    row.push(bt);
+    if (bt.repeatClose > 0 || row.length >= barsPerRow) flushRow();
   }
   flushRow();
 
-  return { csmpn: lines.join('\n'), chordCount: chordCount, bars: measures.length };
+  return {
+    csmpn: lines.join('\n'),
+    chordCount: chordCount,
+    bars: measures.length,
+    sections: sectionCount,
+  };
 }
 
 // ── Exports ───────────────────────────────────────────────────────────────────
@@ -1163,6 +1203,7 @@ var _PTB_TEST_EXPORTS = {
   powerTabToRender: powerTabToRender,
   powerTabToChart: powerTabToChart,
   decodeChord: _ptbDecodeChord,
+  rehearsalLabel: _ptbRehearsalLabel,
   beatDurDivisions: _ptbBeatDurDivisions,
 };
 
