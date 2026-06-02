@@ -151,6 +151,7 @@ function applyFBSettings(){
     orientStyle.textContent = `@media print { @page { size: letter ${fbSettings.pageOrientation || 'portrait'}; margin: 0.5in; } }`;
   }
   _chordParseCache.clear(); // Invalidate cache when chord style settings change
+  _chordStyleSig = null; // Force the cached chord-style signature to recompute
   saveFBSettings();
   updatePreview();
 }

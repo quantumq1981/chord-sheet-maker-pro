@@ -472,9 +472,21 @@ function formatChordQuality(quality){
 const _chordParseCache = new Map();
 const CHORD_CACHE_MAX = 512;
 
+// Cached "style signature" — the chord-style settings only change when the user
+// edits Fake Book Settings (which calls _chordParseCache.clear() in settings.js).
+// Recomputing it lazily here avoids re-concatenating 5 fields on every call.
+let _chordStyleSig = null;
+function _chordStyleSignature(){
+  if (_chordStyleSig === null){
+    _chordStyleSig = '|' + fbSettings.maj7Style + '|' + fbSettings.minorStyle +
+      '|' + fbSettings.dimStyle + '|' + fbSettings.halfDimStyle;
+  }
+  return _chordStyleSig;
+}
+
 function parseChordToken(token){
   let raw = token || '';
-  const cacheKey = raw + '|' + fbSettings.maj7Style + '|' + fbSettings.minorStyle + '|' + fbSettings.dimStyle + '|' + fbSettings.halfDimStyle;
+  const cacheKey = raw + _chordStyleSignature();
   if (_chordParseCache.has(cacheKey)) return _chordParseCache.get(cacheKey);
 
   // Lowercase root = minor: a → Am, bb → Bbm, etc.
@@ -514,7 +526,13 @@ function parseChordToken(token){
     quality: formatChordQuality(quality),
     bass: displayBass,
   };
-  if (_chordParseCache.size > CHORD_CACHE_MAX) _chordParseCache.clear();
+  // Evict the single oldest entry instead of clearing the whole cache — a full
+  // flush at every 512th miss throws away the hot working set and forces a cold
+  // re-parse of the entire chart. Map preserves insertion order, so the first
+  // key is the oldest.
+  if (_chordParseCache.size >= CHORD_CACHE_MAX){
+    _chordParseCache.delete(_chordParseCache.keys().next().value);
+  }
   _chordParseCache.set(cacheKey, result);
   return result;
 }
