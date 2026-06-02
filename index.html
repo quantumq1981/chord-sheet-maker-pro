@@ -3541,7 +3541,8 @@ async function tryImportPowerTab(gpBuf, fileName, importStart) {
         sourceEl.value = finalCsmpn;
         extractHeaderFromText(finalCsmpn);
         updatePreview();
-        statusMsg = `Imported Power Tab: ${fileName} (${render.bars} bars, ${chart.chordCount} chords). Editable chart loaded — open 🎸 Tab View for full notation.`;
+        const secPart = chart.sections > 1 ? `, ${chart.sections} sections` : '';
+        statusMsg = `Imported Power Tab: ${fileName} (${render.bars} bars, ${chart.chordCount} chords${secPart}). Editable chart loaded — open 🎸 Tab View for full notation.`;
       } else {
         statusMsg = `Imported Power Tab: ${fileName} (${render.bars} bars). No chord annotations — opening Tab View for notation.`;
       }

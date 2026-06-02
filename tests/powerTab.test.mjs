@@ -268,11 +268,35 @@ test('powerTabToChart: builds a CSMPN chart with header and bar rows', () => {
   assert.ok(chart.bars >= 1, 'has bars');
   assert.ok(typeof chart.csmpn === 'string' && chart.csmpn.length > 0);
   assert.match(chart.csmpn, /Time: 4\/4/);
-  assert.match(chart.csmpn, /\n- Chart\n/); // section marker
+  assert.match(chart.csmpn, /\n- .+\n/); // at least one section marker
   assert.match(chart.csmpn, /\| .* \|/); // at least one bar row
   // The arpeggio exercise has no chord-text annotations → all bars are N.C.
   assert.equal(chart.chordCount, 0);
   assert.match(chart.csmpn, /N\.C\./);
+});
+
+// ── Section labels (PowerTab rehearsal signs → CSMPN section headers) ─────────
+
+test('rehearsalLabel: decodes rehearsal signs and ignores unused ones', () => {
+  const { rehearsalLabel } = loadPtb();
+  assert.equal(rehearsalLabel({ letter: 0x41, desc: 'Intro' }), 'Intro');
+  assert.equal(rehearsalLabel({ letter: 0x43, desc: '  Pre-Chorus ' }), 'Pre-Chorus'); // trimmed
+  assert.equal(rehearsalLabel({ letter: 0x42, desc: '' }), 'B'); // letter fallback
+  assert.equal(rehearsalLabel({ letter: 0x7f, desc: '' }), null); // unused sentinel
+  assert.equal(rehearsalLabel(null), null);
+});
+
+test('powerTabToChart: emits section headers from rehearsal signs', () => {
+  const { powerTabToChart } = loadPtb();
+  const chart = powerTabToChart(fixtureBytes(), { barsPerRow: 4 });
+  // The exercise fixture labels each position as its own rehearsal section.
+  assert.ok(chart.sections >= 2, 'multiple sections detected');
+  const headers = chart.csmpn.split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(headers.length, chart.sections, 'one header per section');
+  assert.ok(
+    headers.some((h) => h === '- B') && headers.some((h) => h === '- C'),
+    'note-named sections present'
+  );
 });
 
 // ── Phase F: desync robustness ───────────────────────────────────────────────
