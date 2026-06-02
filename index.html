@@ -3498,6 +3498,46 @@ fileInputIRealPro.addEventListener('change', async () => {
   }
 });
 
+// Power Tab (.ptb) handling.
+// AlphaTab 1.8.1 ships no Power Tab importer (only AlphaTex, Capella, Guitar
+// Pro/Gpx, and MusicXML), so genuine .ptb files cannot be read in the browser —
+// neither the notation view nor this converter can parse them. We still attempt
+// conversion (a Guitar Pro file simply renamed .ptb would succeed); if nothing
+// usable comes back, we give clear guidance instead of opening a blank view.
+async function tryImportPowerTab(gpBuf, fileName, importStart) {
+  let csmpn = '';
+  try {
+    csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
+  } catch (_e) {
+    csmpn = '';
+  }
+  const doc = csmpn ? parseCSMPN(csmpn) : null;
+  const bars = doc
+    ? doc.blocks
+        .filter((b) => b.type === 'bars')
+        .reduce((sum, b) => sum + b.tokens.filter((t) => !isBarlineToken(t)).length, 0)
+    : 0;
+  if (bars > 0) {
+    const finalCsmpn = filterLyricsLines(csmpn);
+    sourceEl.value = finalCsmpn;
+    extractHeaderFromText(finalCsmpn);
+    updatePreview();
+    importDiagnostics.miner = 'Power Tab';
+    importDiagnostics.sections = doc.blocks.filter((b) => b.type === 'marker').length || 1;
+    importDiagnostics.bars = bars;
+    importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+    setStatus(`Imported Power Tab: ${fileName} (${bars} bars).`);
+    updateDiagnosticsPanel();
+    return true;
+  }
+  setStatus(
+    'Power Tab (.ptb) can’t be read by the in-browser engine. Convert it to .gp5, .gpx, or MusicXML with the free TuxGuitar app, then import that file.',
+    'error'
+  );
+  updateDiagnosticsPanel();
+  return false;
+}
+
 // Guitar Pro import
 const fileInputGuitarPro = document.getElementById('fileInputGuitarPro');
 document.getElementById('btnImportGuitarPro').addEventListener('click', () => {
@@ -3538,8 +3578,7 @@ fileInputGuitarPro.addEventListener('change', async () => {
       setStatus(`Imported ${importDiagnostics.miner} (${importDiagnostics.sections} sections, ${importDiagnostics.bars} bars). Use 🎸 Tab View to see full notation.`);
       updateDiagnosticsPanel();
     } else {
-      setStatus(`Power Tab loaded: ${file.name}. Opening notation view…`);
-      window.dispatchEvent(new CustomEvent('gpbytesready', { detail: { name: file.name } }));
+      await tryImportPowerTab(gpBuf, file.name, importStart);
     }
   } catch(err) {
     console.error(err);
@@ -4071,9 +4110,9 @@ fileInput.addEventListener('change', async () => {
         setStatus(`Imported ${importDiagnostics.miner} (${importDiagnostics.sections} sections, ${importDiagnostics.bars} bars). Use 🎸 Tab View to see full notation.`);
         updateDiagnosticsPanel();
       } else {
-        // Power Tab: notation view only (no CSMPN conversion)
-        setStatus(`Power Tab loaded: ${file.name}. Opening notation view…`);
-        window.dispatchEvent(new CustomEvent('gpbytesready', { detail: { name: file.name } }));
+        // Power Tab (.ptb): AlphaTab has no Power Tab importer. Try a best-effort
+        // conversion (handles a GP file renamed .ptb); otherwise give guidance.
+        await tryImportPowerTab(gpBuf, file.name, importStart);
       }
       return;
     }
