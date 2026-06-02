@@ -299,6 +299,80 @@ test('powerTabToChart: emits section headers from rehearsal signs', () => {
   );
 });
 
+// ── Key signature + dense-bar cleanup ────────────────────────────────────────
+
+test('decodeKeySig: maps the key-signature byte to a key name', () => {
+  const { decodeKeySig } = loadPtb();
+  assert.equal(decodeKeySig(0x00), 'C'); // no accidentals, major
+  assert.equal(decodeKeySig(0x14), 'E'); // 4 sharps, major
+  assert.equal(decodeKeySig(0x13), 'A'); // 3 sharps, major
+  assert.equal(decodeKeySig(0x0a), 'Eb'); // 3 flats, major (a=10)
+  assert.equal(decodeKeySig(0x51), 'Em'); // 1 sharp, minor
+  assert.equal(decodeKeySig(0x40), 'Am'); // no accidentals, minor
+  assert.equal(decodeKeySig(0x4e), 'Abm'); // 7 flats, minor (a=14)
+});
+
+test('powerTabToChart: Key comes from the key signature', () => {
+  const { powerTabToChart } = loadPtb();
+  const chart = powerTabToChart(fixtureBytes(), { barsPerRow: 4 });
+  assert.match(chart.csmpn, /(^|\n)Key: C\n/); // fixture key-sig byte 0x10 = C major
+});
+
+test('powerTabToChart: collapses repeated chords within a bar', () => {
+  const { powerTabToChart } = loadPtb();
+  const pc = (key) => ({ key: key, formula: 0xc4, mods: 0 }); // power chord
+  // One 4/4 bar annotated A5 E5 B5 A5 B5 should reduce to distinct A5_E5_B5.
+  const doc = {
+    info: { title: 'T', artist: 'A' },
+    tracks: [
+      {
+        infos: [{ tuning: [64, 59, 55, 50, 45, 40], capo: 0 }],
+        sections: [
+          {
+            barLines: [
+              {
+                position: 0,
+                numerator: 4,
+                denominator: 4,
+                repeatStart: false,
+                repeatClose: 0,
+                keySig: 0,
+                rehearsal: { letter: 0x7f, desc: '' },
+              },
+            ],
+            beats: [
+              {
+                staff: 0,
+                voice: 0,
+                position: 0,
+                duration: 4,
+                dotted: false,
+                doubleDotted: false,
+                tupletEnters: 1,
+                tupletTimes: 1,
+                notes: [{ string: 6, fret: 3, tied: false, dead: false }],
+              },
+            ],
+            chordNames: [
+              Object.assign({ position: 0 }, pc(0x1919)), // A5
+              Object.assign({ position: 1 }, pc(0x1414)), // E5
+              Object.assign({ position: 2 }, pc(0x1b1b)), // B5
+              Object.assign({ position: 3 }, pc(0x1919)), // A5 (repeat)
+              Object.assign({ position: 4 }, pc(0x1b1b)), // B5 (repeat)
+            ],
+            tempos: [],
+            staffCount: 1,
+          },
+        ],
+      },
+      { infos: [], sections: [] },
+    ],
+  };
+  const chart = powerTabToChart(doc, { barsPerRow: 4 });
+  assert.match(chart.csmpn, /A5_E5_B5/);
+  assert.ok(!/A5_E5_B5_A5/.test(chart.csmpn), 'repeated chords collapsed');
+});
+
 // ── Phase F: desync robustness ───────────────────────────────────────────────
 
 test('PtbReader: reading past the end of the stream throws (no silent overrun)', () => {

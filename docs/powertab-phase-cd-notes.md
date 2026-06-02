@@ -118,6 +118,21 @@ real labels: Chorus, Intro, Verse, Outro, Interlude, Guitar Solo, Bridge,
 Pre-Chorus. No parse regression (still 3,011 complete). `toChart` returns a
 `sections` count; the import status shows it. Tests +2 (24→26).
 
+## Key signature + dense-bar cleanup ✅ DONE (follow-up)
+- **Real key:** `_ptbReadKeySignature` now returns the barline key-sig byte
+  (`bits 0-3` = accidentals: 0 none / 1-7 sharps / 8-14 flats; `bit 6` =
+  major/minor) onto `bar.keySig`. `_ptbDecodeKeySig` maps it to a name;
+  `powerTabToMeasures` captures the first barline with real key info into
+  `model.keyName`; `powerTabToChart` uses it for `Key:` (first-chord root only as
+  a fallback). 1,837 corpus files now get a stated key (Tears in Heaven→A,
+  Caught Up In You→E). It reflects the *transcriber's* key sig, so a 1-sharp/major
+  file reads G even if the song is really Em — faithful to the file, user-editable.
+- **Dense bars:** chord collection in `powerTabToMeasures` switched from
+  consecutive-dedup to **distinct (first-appearance)**, so a strummed bar
+  annotated `A5 E5 B5 A5 B5` collapses to `A5_E5_B5` while genuine multi-chord
+  bars (`Bb7 G7 C7 F7`) are preserved.
+- `decodeKeySig` exported; tests +3 (26→29). No parse regression (3,011 complete).
+
 ## Phase F — robustness ✅ DONE (this branch)
 The ~37 all-zero corrupt files are rejected by the `ptab` magic check (graceful
 fallback). The **6 overruns** were a real bug: they desync mid-stream, read far
