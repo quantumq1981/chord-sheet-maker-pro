@@ -269,12 +269,425 @@ function inspectPowerTab(bytes) {
   };
 }
 
+// ── Full structural parse (Phase B) ─────────────────────────────────────────
+//
+// Faithful port of TuxGuitar's PTInputStream (helge17/tuxguitar @1.6.4,
+// TuxGuitar-ptb, LGPL) — the read ORDER must match byte-for-byte or the stream
+// desyncs. We translate its read* methods 1:1 and collect the data we need
+// (track tunings, per-section barlines/time-sigs/tempos, and beats with notes:
+// string + fret + duration). A correct parse consumes both tracks and lands at
+// (or very near) EOF — `parsePowerTab` reports `bytesConsumed`/`fileSize` so
+// alignment is self-checking.
+
+// PowerTab CString: 1 length byte; if 0xFF, a u16 length follows. (Matches
+// TuxGuitar's readString() — note it does NOT use the 0xFFFF→u32 extension.)
+function _ptbReadStr(r) {
+  const len = r.readU8();
+  const n = len < 0xff ? len : r.readU16();
+  if (n <= 0) return '';
+  const bytes = r.readBytes(n);
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return s;
+}
+
+// Array prefix: u16 count; if non-zero, consume the first item's class tag
+// (and, when it's a new-class 0xFFFF descriptor, its schema + name). Leaves the
+// cursor at the first item's data. Returns the item count.
+function _ptbReadHeaderItems(r) {
+  const nbItems = r.readU16();
+  if (nbItems !== 0) {
+    const header = r.readU16();
+    if (header === 0xffff) {
+      if (r.readU16() !== 1) return -1; // schema must be 1
+      const nameLen = r.readU16();
+      r.readBytes(nameLen); // class name
+    }
+  }
+  return nbItems;
+}
+
+function _ptbMakeSection() {
+  return {
+    barLines: [], // {position, repeatStart, repeatClose, numerator, denominator}
+    directions: 0,
+    chordTexts: 0,
+    rhythmSlashes: 0,
+    staffCount: 0,
+    beats: [], // {staff, voice, position, duration, dotted, notes:[{string,fret,tied,dead}]}
+    tempos: [], // {position, tempo}
+  };
+}
+
+// Lazy section accessor mirroring TuxGuitar's track.getSection(n).
+function _ptbGetSection(track, n) {
+  while (track.sections.length <= n) track.sections.push(_ptbMakeSection());
+  return track.sections[n];
+}
+
+function _ptbReadTrackInfo(r, track) {
+  const info = {};
+  info.number = r.readU8();
+  info.name = _ptbReadStr(r);
+  info.instrument = r.readU8();
+  info.volume = r.readU8();
+  info.balance = r.readU8();
+  info.reverb = r.readU8();
+  info.chorus = r.readU8();
+  info.tremolo = r.readU8();
+  info.phaser = r.readU8();
+  info.capo = r.readU8();
+  info.tuningName = _ptbReadStr(r);
+  r.readU8(); // music-notation offset / sharps-flats flags
+  const strings = [];
+  const nStrings = r.readU8() & 0xff;
+  for (let i = 0; i < nStrings; i++) strings.push(r.readU8());
+  info.tuning = strings;
+  info.tuningNotes = strings.map(_ptbMidiToName);
+  track.infos.push(info);
+}
+
+function _ptbReadTimeSignature(r, bar) {
+  const data = r.readI32();
+  r.readU8(); // measure pulses
+  bar.numerator = (((data >> 24) - (((data >> 24) % 8)) ) / 8) + 1;
+  bar.denominator = Math.pow(2, (data >> 24) % 8);
+}
+
+function _ptbReadKeySignature(r) {
+  r.readU8();
+}
+
+function _ptbReadRehearsalSign(r) {
+  r.readU8();
+  _ptbReadStr(r);
+}
+
+function _ptbReadBarLine(r, section) {
+  const bar = {};
+  bar.position = r.readU8();
+  const type = r.readU8();
+  bar.repeatStart = type >>> 5 === 3;
+  bar.repeatClose = type >>> 5 === 4 ? type - 128 : 0;
+  _ptbReadKeySignature(r);
+  _ptbReadTimeSignature(r, bar);
+  _ptbReadRehearsalSign(r);
+  section.barLines.push(bar);
+}
+
+function _ptbReadNote(r, beat) {
+  const note = {};
+  const position = r.readU8();
+  const simpleData = r.readU16();
+  const symbolCount = r.readU8();
+  for (let i = 0; i < symbolCount; i++) {
+    r.readU8();
+    r.readU8();
+    r.readU8();
+    r.readU8();
+  }
+  note.fret = position & 0x1f;
+  note.string = ((position & 0xe0) >> 5) + 1;
+  note.tied = (simpleData & 0x01) !== 0;
+  note.dead = (simpleData & 0x02) !== 0;
+  beat.notes.push(note);
+}
+
+function _ptbReadPosition(r, staff, voice, section) {
+  const beat = { staff: staff, voice: voice, notes: [] };
+  beat.position = r.readU8();
+  r.readU8(); // beaming
+  r.readU8();
+  const data1 = r.readU8();
+  r.readU8();
+  r.readU8(); // data3
+  beat.duration = r.readU8();
+  const complexCount = r.readU8();
+  for (let i = 0; i < complexCount; i++) {
+    r.readU16();
+    r.readU8();
+    r.readU8();
+  }
+  const itemCount = _ptbReadHeaderItems(r);
+  for (let j = 0; j < itemCount; j++) {
+    _ptbReadNote(r, beat);
+    if (j < itemCount - 1) r.readU16();
+  }
+  beat.dotted = (data1 & 0x01) !== 0;
+  beat.doubleDotted = (data1 & 0x02) !== 0;
+  section.beats.push(beat);
+}
+
+function _ptbReadStaff(r, staff, section) {
+  for (let i = 0; i < 5; i++) r.readU8();
+  for (let voice = 0; voice < 2; voice++) {
+    const itemCount = _ptbReadHeaderItems(r);
+    for (let j = 0; j < itemCount; j++) {
+      _ptbReadPosition(r, staff, voice, section);
+      if (j < itemCount - 1) r.readU16();
+    }
+  }
+}
+
+function _ptbReadDirection(r) {
+  r.readU8(); // position
+  const symbolCount = r.readU8();
+  for (let i = 0; i < symbolCount; i++) r.readU16();
+}
+
+function _ptbReadChordText(r) {
+  r.readU8();
+  r.readU16();
+  r.readU8();
+  r.readU16();
+  r.readU8();
+}
+
+function _ptbReadRhythmSlash(r) {
+  r.readU8();
+  r.readU8();
+  r.readI32();
+}
+
+function _ptbReadSection(r, section) {
+  r.readI32(); // left
+  r.readI32(); // top
+  r.readI32(); // right
+  r.readI32(); // bottom
+  r.readU8(); // lastBarData
+  r.readU8();
+  r.readU8();
+  r.readU8();
+  r.readU8();
+  _ptbReadBarLine(r, section);
+  let n = _ptbReadHeaderItems(r);
+  section.directions = n;
+  for (let j = 0; j < n; j++) {
+    _ptbReadDirection(r);
+    if (j < n - 1) r.readU16();
+  }
+  n = _ptbReadHeaderItems(r);
+  section.chordTexts = n;
+  for (let j = 0; j < n; j++) {
+    _ptbReadChordText(r);
+    if (j < n - 1) r.readU16();
+  }
+  n = _ptbReadHeaderItems(r);
+  section.rhythmSlashes = n;
+  for (let j = 0; j < n; j++) {
+    _ptbReadRhythmSlash(r);
+    if (j < n - 1) r.readU16();
+  }
+  section.staffCount = _ptbReadHeaderItems(r);
+  for (let staff = 0; staff < section.staffCount; staff++) {
+    _ptbReadStaff(r, staff, section);
+    if (staff < section.staffCount - 1) r.readU16();
+  }
+  n = _ptbReadHeaderItems(r);
+  for (let j = 0; j < n; j++) {
+    _ptbReadBarLine(r, section);
+    if (j < n - 1) r.readU16();
+  }
+}
+
+function _ptbReadChord(r) {
+  r.readU16(); // chord key
+  r.readU8();
+  r.readU16(); // modification
+  r.readU8();
+  r.readU8();
+  const stringCount = r.readU8();
+  for (let j = 0; j < stringCount; j++) r.readU8();
+}
+
+function _ptbReadFontSetting(r) {
+  _ptbReadStr(r);
+  r.readI32();
+  r.readI32();
+  r.readU8(); // italic (bool)
+  r.readU8(); // underline
+  r.readU8(); // strikeout
+  r.readI32();
+}
+
+function _ptbReadFloatingText(r) {
+  _ptbReadStr(r);
+  r.readI32();
+  r.readI32();
+  r.readI32();
+  r.readI32();
+  r.readU8();
+  _ptbReadFontSetting(r);
+}
+
+function _ptbReadGuitarIn(r) {
+  r.readU16(); // section
+  r.readU8(); // staff
+  r.readU8(); // position
+  r.readU8(); // skip 1
+  r.readU8(); // info
+}
+
+function _ptbReadTempoMarker(r, track) {
+  const section = r.readU16();
+  const position = r.readU8();
+  const tempo = r.readU16();
+  r.readU16(); // data
+  _ptbReadStr(r); // description
+  if (tempo > 0) _ptbGetSection(track, section).tempos.push({ position: position, tempo: tempo });
+}
+
+function _ptbReadSectionSymbol(r) {
+  r.readU16();
+  r.readU8();
+  r.readI32();
+}
+
+function _ptbReadDynamic(r) {
+  r.readU16();
+  r.readU8();
+  r.readU8();
+  r.readU16();
+}
+
+function _ptbReadDataInstruments(r, track) {
+  // Guitars
+  let n = _ptbReadHeaderItems(r);
+  for (let j = 0; j < n; j++) {
+    _ptbReadTrackInfo(r, track);
+    if (j < n - 1) r.readU16();
+  }
+  // Chord diagrams
+  n = _ptbReadHeaderItems(r);
+  for (let j = 0; j < n; j++) {
+    _ptbReadChord(r);
+    if (j < n - 1) r.readU16();
+  }
+  // Floating text
+  n = _ptbReadHeaderItems(r);
+  for (let j = 0; j < n; j++) {
+    _ptbReadFloatingText(r);
+    if (j < n - 1) r.readU16();
+  }
+  // Guitar-ins
+  n = _ptbReadHeaderItems(r);
+  for (let j = 0; j < n; j++) {
+    _ptbReadGuitarIn(r);
+    if (j < n - 1) r.readU16();
+  }
+  // Tempo markers
+  n = _ptbReadHeaderItems(r);
+  for (let j = 0; j < n; j++) {
+    _ptbReadTempoMarker(r, track);
+    if (j < n - 1) r.readU16();
+  }
+  // Dynamics
+  n = _ptbReadHeaderItems(r);
+  for (let j = 0; j < n; j++) {
+    _ptbReadDynamic(r);
+    if (j < n - 1) r.readU16();
+  }
+  // Section symbols
+  n = _ptbReadHeaderItems(r);
+  for (let j = 0; j < n; j++) {
+    _ptbReadSectionSymbol(r);
+    if (j < n - 1) r.readU16();
+  }
+  // Sections
+  n = _ptbReadHeaderItems(r);
+  for (let j = 0; j < n; j++) {
+    _ptbReadSection(r, _ptbGetSection(track, j));
+    if (j < n - 1) r.readU16();
+  }
+}
+
+// Full song-info header (port of readSongInfo).
+function _ptbReadSongInfo(r) {
+  const info = {};
+  info.classification = r.readU8();
+  if (info.classification === 0) {
+    r.readU8(); // skip(1)
+    info.title = _ptbReadStr(r);
+    info.artist = _ptbReadStr(r);
+    info.releaseType = r.readU8();
+    if (info.releaseType === 0) {
+      info.albumType = r.readU8();
+      info.album = _ptbReadStr(r);
+      info.year = r.readU16();
+      info.live = r.readU8() > 0;
+    } else if (info.releaseType === 1) {
+      info.album = _ptbReadStr(r);
+      info.live = r.readU8() > 0;
+    } else if (info.releaseType === 2) {
+      info.album = _ptbReadStr(r);
+      info.day = r.readU16();
+      info.month = r.readU16();
+      info.year = r.readU16();
+    }
+    if (r.readU8() === 0) {
+      info.author = _ptbReadStr(r);
+      info.lyricist = _ptbReadStr(r);
+    }
+    info.arranger = _ptbReadStr(r);
+    info.guitarTranscriber = _ptbReadStr(r);
+    info.bassTranscriber = _ptbReadStr(r);
+    info.copyright = _ptbReadStr(r);
+    info.lyrics = _ptbReadStr(r);
+    info.guitarInstructions = _ptbReadStr(r);
+    info.bassInstructions = _ptbReadStr(r);
+  } else if (info.classification === 1) {
+    info.title = _ptbReadStr(r);
+    info.album = _ptbReadStr(r);
+    info.style = r.readU16();
+    info.level = r.readU8();
+    info.author = _ptbReadStr(r);
+    info.instructions = _ptbReadStr(r);
+    info.copyright = _ptbReadStr(r);
+  }
+  return info;
+}
+
+/**
+ * Full Power Tab parse → structured model.
+ *
+ * @param {Uint8Array|ArrayBuffer} bytes
+ * @returns {{
+ *   version:number, info:object,
+ *   tracks: Array<{infos:object[], sections:object[]}>,
+ *   bytesConsumed:number, fileSize:number, complete:boolean
+ * }}
+ */
+function parsePowerTab(bytes) {
+  const r = new PtbReader(bytes);
+  let magic = '';
+  for (let i = 0; i < 4; i++) magic += String.fromCharCode(r.readU8());
+  if (magic !== 'ptab') throw new Error('Not a Power Tab file (bad magic: "' + magic + '")');
+  const version = r.readU16();
+  const info = _ptbReadSongInfo(r);
+  const track1 = { infos: [], sections: [] };
+  const track2 = { infos: [], sections: [] };
+  _ptbReadDataInstruments(r, track1);
+  _ptbReadDataInstruments(r, track2);
+  return {
+    version: version,
+    info: info,
+    tracks: [track1, track2],
+    bytesConsumed: r.pos,
+    fileSize: r.u8.length,
+    trailerBytes: r.u8.length - r.pos,
+    // After track 2, PTB carries a small fixed font/layout trailer (~95 bytes)
+    // that TuxGuitar also stops before. A clean parse leaves only that trailer.
+    complete: r.u8.length - r.pos <= 256,
+  };
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 // Pure helpers for Node vm.runInContext tests (becomes a context global).
 var _PTB_TEST_EXPORTS = {
   PtbReader: PtbReader,
   parsePowerTabHeader: parsePowerTabHeader,
+  parsePowerTab: parsePowerTab,
   extractTunings: extractTunings,
   listPowerTabClasses: listPowerTabClasses,
   inspectPowerTab: inspectPowerTab,
@@ -285,6 +698,7 @@ var _PTB_TEST_EXPORTS = {
 if (typeof window !== 'undefined') {
   window.PowerTab = {
     parseHeader: parsePowerTabHeader,
+    parse: parsePowerTab,
     extractTunings: extractTunings,
     inspect: inspectPowerTab,
   };

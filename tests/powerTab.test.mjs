@@ -102,3 +102,58 @@ test('inspectPowerTab: reports header + at least the core music classes', () => 
   assert.ok(info.classes.CStaff >= 1);
   assert.ok(info.classes.CPosition >= 1);
 });
+
+// ── Phase B: full structural parse ──────────────────────────────────────────
+
+test('parsePowerTab: consumes the whole file (byte alignment is correct)', () => {
+  const { parsePowerTab } = loadPtb();
+  const m = parsePowerTab(fixtureBytes());
+  assert.equal(m.version, 4);
+  // A correct parse reaches both tracks and leaves only the small fixed trailer.
+  assert.ok(m.complete, 'parse should be complete (trailer=' + m.trailerBytes + ')');
+  assert.ok(m.trailerBytes >= 0 && m.trailerBytes <= 256);
+});
+
+test('parsePowerTab: two tracks (guitar score + bass score) with tunings', () => {
+  const { parsePowerTab } = loadPtb();
+  const m = parsePowerTab(fixtureBytes());
+  assert.equal(m.tracks.length, 2);
+  assert.ok(m.tracks[0].infos.length >= 1, 'guitar score has >=1 guitar');
+  const g = m.tracks[0].infos[0];
+  assert.equal(g.tuningNotes.join(','), 'E4,B3,G3,D3,A2,E2'); // standard tuning
+  assert.equal(g.capo, 0);
+});
+
+test('parsePowerTab: extracts sections, bars, and beats with valid notes', () => {
+  const { parsePowerTab } = loadPtb();
+  const m = parsePowerTab(fixtureBytes());
+  let beats = 0;
+  let notes = 0;
+  let bars = 0;
+  for (const tr of m.tracks) {
+    for (const s of tr.sections) {
+      bars += s.barLines.length;
+      for (const b of s.beats) {
+        beats++;
+        for (const n of b.notes) {
+          notes++;
+          // Every note must have a valid guitar string and fret.
+          assert.ok(n.string >= 1 && n.string <= 7, 'string in range: ' + n.string);
+          assert.ok(n.fret >= 0 && n.fret <= 31, 'fret in range: ' + n.fret);
+        }
+      }
+    }
+  }
+  assert.ok(bars >= 1, 'has bars');
+  assert.ok(beats >= 1, 'has beats');
+  assert.ok(notes >= 1, 'has notes');
+});
+
+test('parsePowerTab: bar lines carry a time signature', () => {
+  const { parsePowerTab } = loadPtb();
+  const m = parsePowerTab(fixtureBytes());
+  const firstBar = m.tracks[0].sections.flatMap((s) => s.barLines).find((b) => b.numerator > 0);
+  assert.ok(firstBar, 'at least one bar with a time signature');
+  assert.ok(firstBar.numerator >= 1 && firstBar.numerator <= 32);
+  assert.ok([1, 2, 4, 8, 16, 32].includes(firstBar.denominator));
+});
