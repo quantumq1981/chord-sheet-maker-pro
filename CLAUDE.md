@@ -1091,7 +1091,8 @@ single engine where **plain even slashes are the zero-rhythm case of the hybrid 
 | 16.2c | Nav markers (D.C./D.S./Fine/Coda) + capo on the unified staff | ✅ DONE |
 | 16.2c-2 | Ending brackets + bar-model refactor (`endingLabel`/`leftBar`/`rightBar`) | ✅ DONE |
 | 16.2c-3 | Strum arrows (Fake Book Settings UI config) | ✅ DONE |
-| 16.2d | MusicXML export from the unified engine | ⬜ TODO |
+| 16.2d | MusicXML export from the unified engine (generic slash) | ✅ DONE |
+| 16.2d-2 | MusicXML export of hybrid rhythm durations (parity with `buildHybridMusicXml`) | ⬜ TODO |
 | 16.3 | Retire the slash-notation panel engine once feature parity is reached | ⬜ TODO |
 
 ### Hybrid Scaffolder (previously undocumented — added ~PR #215)
@@ -1258,3 +1259,37 @@ alt = 2↓/2↑, custom `D U` cycles, none = 0, tab rows suppress strum.
 With 16.2c-3 done, the unified engine has parity for slash count, clef, key sig, nav,
 capo, endings, and strum. Remaining for retiring the slash panel: 16.2d (MusicXML
 export from the unified engine) and 16.3 (remove the panel IIFE).
+
+### SPRINT 16 CHANGES — Phase 2d (MusicXML export from the unified model)
+
+A self-contained MusicXML exporter that does **not** depend on the slash-notation
+panel IIFE, so the panel can be retired (16.3). Driven by `parseHybridChartFromCSMPN`.
+
+**`importPipeline.js`**
+- `buildDocSectionMap()` stores `markerType` (`-`/`:`/`=`) on each section;
+  `parseHybridChartFromCSMPN()` carries it into section models (for rehearsal-mark
+  enclosure: `:`/`=` → square, `-` → none).
+
+**`renderer.js`**
+- `hrChordKind(quality)` — quality → MusicXML `<kind>` (mirrors the panel's `chordKind`).
+- `hrKeyMode(keyStr)` — major/minor detection.
+- `hrHarmonyXml(chordToken, beats, divisions)` — `<harmony>` per chord (splits `_`,
+  parses root/alter/quality/bass, spaces multiple chords with `<offset>`).
+- `hrBuildMusicXml(sourceText)` — full MusicXML 4.0 Partwise: attributes (divisions,
+  key fifths+mode, time, G clef, slash measure-style), tempo, per-section rehearsal
+  marks (nav-suppressed), harmonies, one slash notehead per `hrVisualBeats()` beat,
+  repeat barlines + volta endings (from `leftBar`/`rightBar`/`endingLabel`).
+
+**`index.html`**
+- `#btnExportMusicXml` ("↓ MusicXML") in the power-tools toolbar row; handler calls
+  `hrBuildMusicXml()` and downloads `{title}.xml` as `text/xml` (iOS-friendly).
+
+**`tests/hybridRenderer.test.mjs`** — 7 new tests (35 total): score-partwise + title,
+empty→null, key fifths+mode (G→1 major, Am→minor), harmony root/kind/slash-bass, slash
+note count per visual beat (4/4→4, 12/8→4), repeat+volta round-trip, rehearsal
+enclosure (= square / - none) with nav suppressed.
+
+Note (16.2d-2): this emits the generic one-slash-per-beat chart (parity with the panel's
+`buildMusicXml`). The panel additionally has `buildHybridMusicXml` which encodes hybrid
+event durations; porting that is the remaining step before the panel's `↓ MusicXML` can
+be removed in 16.3.

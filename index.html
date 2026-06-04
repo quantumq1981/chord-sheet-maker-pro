@@ -2098,6 +2098,7 @@ body.exporting .sectionBlock{
         <div class="toolbar-group">
           <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
           <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
+          <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
         </div>
         <div class="toolbar-sep"></div>
         <div class="toolbar-group">
@@ -4734,6 +4735,28 @@ document.getElementById('btnExportChordPro').addEventListener('click', () => {
     setStatus('Exported as ChordPro (.chopro).');
   } catch(e) {
     setStatus('ChordPro export failed: ' + (e?.message || e), 'error');
+  }
+});
+
+document.getElementById('btnExportMusicXml').addEventListener('click', () => {
+  try {
+    if (typeof hrBuildMusicXml !== 'function'){
+      setStatus('MusicXML exporter not ready.', 'error');
+      return;
+    }
+    const text = (fbSettings.includeLyrics === false) ? filterLyricsLines(sourceEl.value || '') : (sourceEl.value || '');
+    const xml = hrBuildMusicXml(text);
+    if (!xml){
+      setStatus('No chord data to export. Import or paste a chart first.', 'warning');
+      return;
+    }
+    // .xml + text/xml so iOS Safari opens it in notation apps (MusicXML is XML).
+    const filename = safeFilename(hdr.title.value?.trim() || 'chart') + '.xml';
+    const blob = new Blob([xml], { type: 'text/xml;charset=utf-8' });
+    downloadBlob(blob, filename);
+    setStatus('Exported as MusicXML (.xml).');
+  } catch(e) {
+    setStatus('MusicXML export failed: ' + (e?.message || e), 'error');
   }
 });
 
