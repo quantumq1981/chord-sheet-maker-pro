@@ -212,3 +212,45 @@ test('chart without voltas renders no ending brackets', () => {
   assert.ok(!out.includes('>1.</text>'));
   assert.ok(!out.includes('>2.</text>'));
 });
+
+// ── 16.2c-3: strum arrows (Fake Book Settings) ──────────────────────────────
+const downs = (svg) => (svg.match(/↓/g) || []).length;
+const ups = (svg) => (svg.match(/↑/g) || []).length;
+
+test('strum "down" draws one down-arrow per beat (4/4 bar = 4)', () => {
+  const ctx = loadRenderer();
+  ctx.fbSettings.strumMode = 'down';
+  const out = ctx.renderHybridDoc('Time: 4/4\n\n- Verse\n| G |\n');
+  assert.equal(downs(out), 4);
+  assert.equal(ups(out), 0);
+});
+
+test('strum "alt" alternates down/up across beats', () => {
+  const ctx = loadRenderer();
+  ctx.fbSettings.strumMode = 'alt';
+  const out = ctx.renderHybridDoc('Time: 4/4\n\n- Verse\n| G |\n');
+  assert.equal(downs(out), 2);
+  assert.equal(ups(out), 2);
+});
+
+test('custom strum pattern "D U" cycles across beats', () => {
+  const ctx = loadRenderer();
+  ctx.fbSettings.strumMode = 'custom';
+  ctx.fbSettings.strumPattern = 'D U';
+  const out = ctx.renderHybridDoc('Time: 4/4\n\n- Verse\n| G |\n');
+  assert.equal(downs(out), 2);
+  assert.equal(ups(out), 2);
+});
+
+test('strum "none" (default) draws no arrows', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('Time: 4/4\n\n- Verse\n| G |\n');
+  assert.equal(downs(out) + ups(out), 0);
+});
+
+test('strum arrows suppressed on rows that have a tab lane', () => {
+  const ctx = loadRenderer();
+  ctx.fbSettings.strumMode = 'down';
+  const out = ctx.renderHybridDoc('- Verse\n| G |\n{hybrid\nb1: 1:q(G)\ntab1: 3,2,0,0,0,3 @ 1\n}');
+  assert.equal(downs(out), 0, 'no strum arrows over a tab lane');
+});
