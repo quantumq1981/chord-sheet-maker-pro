@@ -399,6 +399,19 @@ function hrBeatX(beat, timeSig, barLeft, barUsableW) {
   return barLeft + ((beat - 1) / nb) * barUsableW;
 }
 
+// Number of visual slash beats per bar, following Real Book convention for
+// compound meters (6/8 -> 2, 9/8 -> 3, 12/8 -> 4). Mirrors visualBeats() in the
+// slash-notation panel so the unified engine draws one slash per dotted-quarter
+// pulse instead of one per eighth (which merges into a solid black bar).
+function hrVisualBeats(timeSig) {
+  const m = String(timeSig || '4/4').match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (!m) return 4;
+  const num = parseInt(m[1], 10);
+  const den = parseInt(m[2], 10);
+  if (den === 8 && num >= 6 && num % 3 === 0) return num / 3;
+  return Math.max(1, num);
+}
+
 function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
   const events  = Array.isArray(bar?.events) ? bar.events : [];
   const tabs    = Array.isArray(bar?.tabEvents) ? bar.tabEvents : [];
@@ -411,16 +424,17 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
   let s = '';
 
   if (!events.length) {
-    const nb = Number(String(timeSig).split('/')[0]) || 4;
+    // Zero-rhythm case: one slash per visual beat. Compound meters collapse to
+    // dotted-quarter pulses via hrVisualBeats() so 12/8 draws 4 slashes, not 12.
+    const vb = hrVisualBeats(timeSig);
     if (bar.chordToken) {
       const parts = String(bar.chordToken).replace(/[!~]$/, '').trim().split('_').map(p => p.trim()).filter(Boolean);
-      const step = nb / parts.length;
       parts.forEach((chord, pi) => {
-        const cx = hrBeatX(1 + pi * step, timeSig, ul, uw);
+        const cx = ul + (pi / parts.length) * uw;
         s += `<text x="${cx}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(chord)}</text>`;
       });
-      for (let b = 1; b <= nb; b++) {
-        const ex = hrBeatX(b, timeSig, ul, uw);
+      for (let b = 1; b <= vb; b++) {
+        const ex = ul + ((b - 1) / vb) * uw;
         s += hrHead(ex, cy, 'q', fg);
         s += hrStem(ex, staffY, fg);
       }

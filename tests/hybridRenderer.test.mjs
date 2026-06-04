@@ -71,3 +71,33 @@ test('compound and simple charts both produce a single <svg> document', () => {
   assert.equal((out.match(/<svg/g) || []).length, 1, 'one SVG document per chart');
   assert.ok(out.includes('>G<'));
 });
+
+// A single chord bar in the no-events (zero-rhythm) path draws one filled
+// polygon per slash notehead, so counting <polygon> gives the slash count.
+const slashCount = (svg) => (svg.match(/<polygon/g) || []).length;
+
+test('4/4 bar draws 4 slashes (regression)', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('Time: 4/4\n\n- Verse\n| G |\n');
+  assert.equal(slashCount(out), 4);
+});
+
+test('12/8 bar collapses to 4 dotted-quarter slashes, not 12', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('Time: 12/8\n\n- Verse\n| G |\n');
+  assert.equal(slashCount(out), 4, '12/8 should draw 4 slashes (one per dotted quarter)');
+});
+
+test('6/8 bar draws 2 slashes; 9/8 draws 3', () => {
+  const ctx = loadRenderer();
+  const out68 = ctx.renderHybridDoc('Time: 6/8\n\n- Verse\n| G |\n');
+  const out98 = ctx.renderHybridDoc('Time: 9/8\n\n- Verse\n| G |\n');
+  assert.equal(slashCount(out68), 2);
+  assert.equal(slashCount(out98), 3);
+});
+
+test('3/4 simple meter still draws 3 slashes (not collapsed)', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('Time: 3/4\n\n- Verse\n| G |\n');
+  assert.equal(slashCount(out), 3);
+});
