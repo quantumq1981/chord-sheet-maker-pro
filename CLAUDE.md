@@ -1087,7 +1087,7 @@ single engine where **plain even slashes are the zero-rhythm case of the hybrid 
 | 16.1 | Unified render routing: plain charts render through the hybrid SVG engine | ✅ DONE |
 | 16.2 | Port slash-panel-only features into the unified engine | 🚧 IN PROGRESS |
 | 16.2a | `visualBeats` compound-meter slash count (6/8→2, 9/8→3, 12/8→4) | ✅ DONE |
-| 16.2b | Treble clef + key signature on the unified staff | ⬜ TODO |
+| 16.2b | Treble clef + key signature on the unified staff | ✅ DONE |
 | 16.2c | Strum arrows, capo, ending brackets, nav markers | ⬜ TODO |
 | 16.2d | MusicXML export from the unified engine | ⬜ TODO |
 | 16.3 | Retire the slash-notation panel engine once feature parity is reached | ⬜ TODO |
@@ -1153,3 +1153,23 @@ grouping ported over to avoid over-dense bars.
 
 **`tests/hybridRenderer.test.mjs`** — 4 new tests (8 total)
 - 4/4 → 4 slashes (regression), 12/8 → 4 (not 12), 6/8 → 2, 9/8 → 3, 3/4 → 3
+
+### SPRINT 16 CHANGES — Phase 2b (Treble clef + key signature)
+
+**`renderer.js`**
+- `HR_CLEF_W` 30 → 48 — reserves room for clef glyph + key-signature accidentals
+  (staffX/staffW recompute from it automatically).
+- `hrClef()` rewritten: crude two-line mark → real treble-clef glyph (U+1D11E) in a
+  single-quoted `font-family='Noto Serif, …'` attribute, matching the slash-notation
+  panel for visual parity.
+- New key-signature port from the slash panel (identical staff geometry, so offsets
+  transfer directly): `HR_KEY_SIG_DATA`, `HR_SHARP_Y` `[0,12,-4,8,20,4,16]`,
+  `HR_FLAT_Y` `[16,4,20,8,24,12,28]`, `hrKeySigFromKey(keyStr)` (handles ♭/♯, worded
+  major/minor, minor keys), `hrKeySig(staffY, count, col)` (draws ♯/♭ accidentals
+  right of the clef).
+- `renderHybridDoc()`: computes `keySigCount = hrKeySigFromKey(key)` once; draws the
+  clef **and** key signature on each section's first row (where the clef already showed).
+
+**`tests/hybridRenderer.test.mjs`** — 6 new tests (14 total)
+- treble clef glyph present; G→1♯, D→2♯, F→1♭, Eb→3♭, C/none→0; Em & "G major"
+  normalize to 1♯; key sig appears once per section first row (not every row).

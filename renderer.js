@@ -211,7 +211,7 @@ function renderMeasure(measureText, alignClass){
 
 const HR_PAGE_W  = 760;
 const HR_MARGIN  = 20;
-const HR_CLEF_W  = 30;
+const HR_CLEF_W  = 48; // clef glyph + key-signature accidentals
 const HR_BAR_PAD = 7;
 const HR_CHORD_H = 28;
 const HR_PM_H    = 14;
@@ -316,9 +316,47 @@ function hrStaff(x, y, w, col) {
 }
 
 function hrClef(x, y, col) {
-  const cy = y + HR_STAFF_H / 2;
-  return hrL(x + 8, cy - 11, x + 12, cy + 11, col, 2.5) +
-         hrL(x + 16, cy - 11, x + 20, cy + 11, col, 2.5);
+  // Treble clef glyph (U+1D11E), matching the slash-notation panel for visual
+  // parity. Single-quoted attribute so the inner double-quoted families from
+  // _hrFont() stay valid.
+  return `<text x="${x}" y="${y + HR_STAFF_H * 0.82}" font-size="40" fill="${col}" font-family='Noto Serif, ${_hrFont()}' letter-spacing="-1">&#x1D11E;</text>`;
+}
+
+// ── Key signature ───────────────────────────────────────────────────────────
+// Positive = sharps, negative = flats. Mirrors KEY_SIG_DATA in the slash panel.
+const HR_KEY_SIG_DATA = {
+  C: 0, Am: 0, G: 1, Em: 1, D: 2, Bm: 2, A: 3, 'F#m': 3,
+  E: 4, 'C#m': 4, B: 5, 'G#m': 5, 'F#': 6, 'D#m': 6, 'C#': 7,
+  F: -1, Dm: -1, Bb: -2, Gm: -2, Eb: -3, Cm: -3,
+  Ab: -4, Fm: -4, Db: -5, Bbm: -5, Gb: -6, Ebm: -6, Cb: -7,
+};
+// Treble-clef accidental y-offsets from staff top (sharp order F C G D A E B).
+// Staff geometry (HR_STAFF_H=32, HR_LG=8) matches the slash panel, so these port directly.
+const HR_SHARP_Y = [0, 12, -4, 8, 20, 4, 16];
+const HR_FLAT_Y  = [16, 4, 20, 8, 24, 12, 28];
+
+function hrKeySigFromKey(keyStr) {
+  if (!keyStr) return 0;
+  let s = String(keyStr).trim()
+    .replace(/♭/g, 'b').replace(/♯/g, '#')
+    .replace(/\s*(major|maj)\s*$/i, '')
+    .replace(/\s*(minor|min)\s*$/i, 'm');
+  if (!s) return 0;
+  s = s[0].toUpperCase() + s.slice(1);
+  return HR_KEY_SIG_DATA[s] !== undefined ? HR_KEY_SIG_DATA[s] : 0;
+}
+
+function hrKeySig(staffY, count, col) {
+  if (!count) return '';
+  const isSharp = count > 0;
+  const n = Math.min(Math.abs(count), 7);
+  const sym = isSharp ? '♯' : '♭';
+  const yOff = isSharp ? HR_SHARP_Y : HR_FLAT_Y;
+  let s = '';
+  const x0 = HR_MARGIN + 24; // just right of the clef glyph
+  for (let i = 0; i < n; i++)
+    s += `<text x="${x0 + i * 6}" y="${staffY + yOff[i] + 7}" font-size="9" font-weight="bold" fill="${col}" font-family='${_hrFont()}'>${sym}</text>`;
+  return s;
 }
 
 function hrTabStaff(x, y, w, col) {
@@ -620,6 +658,7 @@ function renderHybridDoc(sourceText) {
     : 0;
 
   const { title, composer, key, time: docTime, tempo, style } = hybrid;
+  const keySigCount = hrKeySigFromKey(key);
   let curY = 12 + diagAreaH;
   if (title) curY += 30;
   if (composer || key || docTime || tempo || style) curY += 20;
@@ -681,7 +720,10 @@ function renderHybridDoc(sourceText) {
     const tabY   = staffY + HR_STAFF_H + HR_TAB_SEP;
     const blBot  = sys.hasTab ? tabY + HR_TAB_H : staffY + HR_STAFF_H;
 
-    if (sys.firstRow) svg += hrClef(HR_MARGIN + 2, staffY, fg);
+    if (sys.firstRow) {
+      svg += hrClef(HR_MARGIN, staffY, fg);
+      svg += hrKeySig(staffY, keySigCount, fg);
+    }
     svg += hrStaff(staffX, staffY, staffW, fg);
     svg += hrL(staffX, staffY, staffX, blBot, fg, 2);
 
