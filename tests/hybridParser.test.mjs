@@ -21,7 +21,7 @@ function loadHybridParser() {
         { type: 'bars', tokens: ['|', 'G', '|', 'D', '|', 'Em', '|', 'C', '|'] },
       ],
     }),
-    parseBarStructures: () => [{}, {}, {}, {}],
+    parseBarStructures: () => [{ token: 'G' }, { token: 'D' }, { token: 'Em' }, { token: 'C' }],
     isBarlineToken: (token) => token === '|',
     window: {},
   };
