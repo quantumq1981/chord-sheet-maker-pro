@@ -2099,6 +2099,7 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
           <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
           <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
+          <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Rhythm mode)">&#x2193; SVG</button>
         </div>
         <div class="toolbar-sep"></div>
         <div class="toolbar-group">
@@ -4757,6 +4758,24 @@ document.getElementById('btnExportMusicXml').addEventListener('click', () => {
     setStatus('Exported as MusicXML (.xml).');
   } catch(e) {
     setStatus('MusicXML export failed: ' + (e?.message || e), 'error');
+  }
+});
+
+document.getElementById('btnExportSvg').addEventListener('click', () => {
+  // Export the unified slash/rhythm SVG shown in the preview (Rhythm mode).
+  const svgEl = previewEl ? previewEl.querySelector('svg') : null;
+  if (!svgEl){
+    setStatus('Turn on Rhythm mode (Fake Book Settings) to render a slash/rhythm chart, then export SVG.', 'warning');
+    return;
+  }
+  try {
+    const svgStr = new XMLSerializer().serializeToString(svgEl);
+    const filename = safeFilename(hdr.title.value?.trim() || 'chart') + '.svg';
+    const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+    downloadBlob(blob, filename);
+    setStatus('Exported as SVG (.svg).');
+  } catch(e) {
+    setStatus('SVG export failed: ' + (e?.message || e), 'error');
   }
 });
 

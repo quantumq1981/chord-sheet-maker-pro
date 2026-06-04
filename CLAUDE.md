@@ -1093,7 +1093,8 @@ single engine where **plain even slashes are the zero-rhythm case of the hybrid 
 | 16.2c-3 | Strum arrows (Fake Book Settings UI config) | ✅ DONE |
 | 16.2d | MusicXML export from the unified engine (generic slash) | ✅ DONE |
 | 16.2d-2 | MusicXML export of hybrid rhythm durations | ✅ DONE |
-| 16.3 | Retire the slash-notation panel engine once feature parity is reached | ⬜ TODO |
+| 16.3a | SVG download parity on the main toolbar (export gap before retiring panel) | ✅ DONE |
+| 16.3b | Reimplement `renderCsmpnToSvg` on the unified engine + delete the slash-panel IIFE | ⬜ TODO |
 
 ### Hybrid Scaffolder (previously undocumented — added ~PR #215)
 - `importPipeline.js` → `toHybridCSMPN(text, preset)` + `HYBRID_PRESET_PATTERNS`
@@ -1323,3 +1324,22 @@ harmony at event-beat offset; repeats + voltas survive in the hybrid path.
 The unified engine now matches (and exceeds) the slash panel's MusicXML export — the last
 functional dependency. **16.3** (audit `↓ SVG`/`↓ PNG`/`⎙ Print` parity, then remove the
 slash-panel IIFE) is now unblocked.
+
+### SPRINT 16 CHANGES — Phase 3a (SVG download parity)
+
+Pre-work for retiring the slash-notation panel. Audit of the panel's exports vs the main
+toolbar found that **PNG, PDF, Print, and MusicXML already have main-toolbar equivalents**
+that capture the unified preview (`previewEl`), but **raw SVG download existed only in the
+panel** (`btnSnSvg`). This PR closes that gap so nothing is lost when the panel is removed.
+
+**`index.html`**
+- `#btnExportSvg` ("↓ SVG") in the power-tools toolbar row, next to MusicXML.
+- Handler serializes the unified preview's `<svg>` (Rhythm mode) via `XMLSerializer` and
+  downloads `{title}.svg`; if no SVG is present (Rhythm mode off), shows a hint.
+
+Remaining (16.3b): the **Setlist** feature still calls `window.renderCsmpnToSvg` (defined
+inside the panel IIFE). 16.3b reimplements that on `renderHybridDoc` (extracting the
+`<svg>`), removes the now-dead `updateSlashNotationIfOpen` call in renderer.js, and deletes
+the panel IIFE (index.html ~5343–6852), its HTML (~2186–2287), the `btnSlashNotation`
+button, and the `.slashNotationPanel` CSS. The panel's `window.__*` font globals are
+already set independently by `applyFBSettings()` in settings.js, so they survive.
