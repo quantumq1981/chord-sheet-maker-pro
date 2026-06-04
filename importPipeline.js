@@ -2768,6 +2768,21 @@ function buildDocSectionMap(text, _doc){
     }
   }
   sections.push(current);
+  // Standalone navigation markers (e.g. a "- D.C. al Fine" line with no bars) are
+  // dropped by the bars>0 filter; carry their text onto the previous bar-bearing
+  // section so the renderer can show it at that section's last row.
+  const NAV = /\b(D\.C\.|D\.S\.|FINE|CODA|AL FINE|AL CODA|DAL SEGNO|DA CAPO|TO CODA|SEGNO)\b/i;
+  for (let si = 0; si < sections.length; si++) {
+    const sec = sections[si];
+    if (!sec.bars.length && sec.label && NAV.test(sec.label)) {
+      for (let pj = si - 1; pj >= 0; pj--) {
+        if (sections[pj].bars.length) {
+          if (!sections[pj].navText) sections[pj].navText = sec.label;
+          break;
+        }
+      }
+    }
+  }
   return sections.filter((sec) => sec.bars.length > 0);
 }
 
@@ -2853,7 +2868,8 @@ function parseHybridChartFromCSMPN(text){
   const sectionModels = docSections.map((sec, i) => ({
     label: sec.label || `Section ${i + 1}`,
     bars: sec.bars.map((bar) => ({ ...bar, events: [], tabEvents: [], cueText: '', pm: { bar: false, spans: [] }, chordToken: bar.chordToken || '' })),
-    cueText: ''
+    cueText: '',
+    navText: sec.navText || null,
   }));
   let activeHybrid = null;
   let targetSection = -1;
@@ -2941,6 +2957,7 @@ function parseHybridChartFromCSMPN(text){
     tempo: doc.tempo || null,
     composer: doc.composer || '',
     style: doc.style || '',
+    capo: doc.capo || 0,
   };
 }
 
