@@ -30,6 +30,10 @@ const fbSettings = {
   hybridRhythmMode: false,
   hybridPreset: 'default',
   hybridScaffoldPreset: 'quarter',
+  // Strum direction arrows below the staff: 'none' | 'down' | 'alt' | 'custom'
+  strumMode: 'none',
+  // Custom strum pattern string (chars D U X V -) used when strumMode === 'custom'
+  strumPattern: '',
 };
 
 const FONT_SCALE_MAP = { M: 1, S: 0.85, XS: 0.72 };
@@ -115,6 +119,8 @@ function loadFBSettings(){
       setEl('setHybridRhythmMode', String(fbSettings.hybridRhythmMode));
       setEl('setHybridPreset', fbSettings.hybridPreset || 'default');
       setEl('setHybridScaffoldPreset', fbSettings.hybridScaffoldPreset || 'quarter');
+      setEl('setStrumMode', fbSettings.strumMode || 'none');
+      setEl('setStrumPattern', fbSettings.strumPattern || '');
     }
   } catch(_){}
 }

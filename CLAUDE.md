@@ -1090,7 +1090,7 @@ single engine where **plain even slashes are the zero-rhythm case of the hybrid 
 | 16.2b | Treble clef + key signature on the unified staff | ✅ DONE |
 | 16.2c | Nav markers (D.C./D.S./Fine/Coda) + capo on the unified staff | ✅ DONE |
 | 16.2c-2 | Ending brackets + bar-model refactor (`endingLabel`/`leftBar`/`rightBar`) | ✅ DONE |
-| 16.2c-3 | Strum arrows (Fake Book Settings UI config) | ⬜ TODO |
+| 16.2c-3 | Strum arrows (Fake Book Settings UI config) | ✅ DONE |
 | 16.2d | MusicXML export from the unified engine | ⬜ TODO |
 | 16.3 | Retire the slash-notation panel engine once feature parity is reached | ⬜ TODO |
 
@@ -1227,3 +1227,34 @@ bars to match the new contract (`chordToken` is sourced from `bar.token`).
 **`tests/hybridRenderer.test.mjs`** — 3 new tests (23 total): 1st/2nd ending brackets
 render; volta prefix no longer leaks into the chord (refactor regression); non-volta
 charts render no brackets.
+
+### SPRINT 16 CHANGES — Phase 2c-3 (Strum arrows via Fake Book Settings)
+
+Config home: **Fake Book Settings** (not a CSMPN source field) — mirrors the slash
+panel's strum UX, persists via `saveFBSettings()`, and is a global toggle for the
+main-preview unified engine.
+
+**`settings.js`**
+- `fbSettings.strumMode` (`'none'|'down'|'alt'|'custom'`, default `'none'`) +
+  `fbSettings.strumPattern` (custom pattern string). `loadFBSettings()` syncs both
+  controls (restored automatically by the existing `Object.keys(fbSettings)` loop).
+
+**`index.html`**
+- Fake Book Settings panel: `#setStrumMode` select (None / ↓↓ All down / ↓↑ Alternating
+  / Custom…) + `#setStrumPattern` text field (`#strumPatternField`, shown only for
+  Custom). Change/`input` listeners update fbSettings, save, and re-render;
+  `_syncStrumPatternVis()` toggles the custom field.
+
+**`renderer.js`**
+- `hrStrumChar(beat, mode, pattern)` — mirrors the slash panel's `strumChar`
+  (`D→↓`, `U→↑`, `X`/`V→×`, `-`→none; alt = ↓↑ by beat parity).
+- `renderHybridDoc()`: reads `fbSettings.strumMode`/`strumPattern` (custom parsed to a
+  `DUXV-` char array); draws arrows below the staff at `hrVisualBeats()` positions,
+  skipped on rows with a tab lane.
+
+**`tests/hybridRenderer.test.mjs`** — 5 new tests (28 total): down = 4 arrows/4-4 bar,
+alt = 2↓/2↑, custom `D U` cycles, none = 0, tab rows suppress strum.
+
+With 16.2c-3 done, the unified engine has parity for slash count, clef, key sig, nav,
+capo, endings, and strum. Remaining for retiring the slash panel: 16.2d (MusicXML
+export from the unified engine) and 16.3 (remove the panel IIFE).

@@ -382,6 +382,21 @@ function hrFormatNavText(text) {
   return escapeHtml(subst);
 }
 
+// Strum arrow glyph for a beat index, per mode. pattern is an array of D/U/X/V/-.
+// Mirrors strumChar() in the slash-notation panel.
+function hrStrumChar(beat, mode, pattern) {
+  if (!mode || mode === 'none') return null;
+  if (mode === 'custom' && pattern && pattern.length) {
+    const c = pattern[beat % pattern.length];
+    if (c === 'D') return '↓';
+    if (c === 'U') return '↑';
+    if (c === 'X' || c === 'V') return '×';
+    return null; // '-' = rest, no arrow
+  }
+  if (mode === 'alt') return beat % 2 === 0 ? '↓' : '↑';
+  return '↓'; // 'down'
+}
+
 // 1st/2nd ending label → "1" | "2" | null. Matches "1.", "[2]", "1st", "2nd".
 function hrEndingNumber(label) {
   if (!label) return null;
@@ -672,6 +687,10 @@ function renderHybridDoc(sourceText) {
   const bpr = Math.max(1, Math.min(8, Number(fbSettings.barsPerRow) || 4));
   const staffX = HR_MARGIN + HR_CLEF_W;
   const staffW = HR_PAGE_W - HR_MARGIN * 2 - HR_CLEF_W;
+  const strumMode = fbSettings.strumMode || 'none';
+  const strumPattern = (strumMode === 'custom' && fbSettings.strumPattern)
+    ? String(fbSettings.strumPattern).toUpperCase().split('').filter((c) => 'DUXV-'.includes(c))
+    : null;
 
   const systems = [];
   for (const sec of hybrid.sections) {
@@ -814,6 +833,19 @@ function renderHybridDoc(sourceText) {
       const isVeryLast = bi === sys.rowBars.length - 1 && sys === systems[systems.length - 1];
 
       svg += hrBar(bar, barLeft, staffY, barW, fg, cc, bg);
+
+      // Strum arrows below the staff (skipped on tab rows, where the lane is occupied)
+      if (strumMode !== 'none' && !sys.hasTab) {
+        const vb = hrVisualBeats(bar.timeSig || docTime);
+        const ul = barLeft + HR_BAR_PAD, uw = barW - HR_BAR_PAD * 2;
+        const arrowY = staffY + HR_STAFF_H + 11;
+        for (let b = 0; b < vb; b++) {
+          const ch = hrStrumChar(b, strumMode, strumPattern);
+          if (!ch) continue;
+          const ax = ul + (b / vb) * uw;
+          svg += `<text x="${ax}" y="${arrowY}" font-size="9" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${ch}</text>`;
+        }
+      }
 
       const blX = barLeft + barW;
       if (isVeryLast) {

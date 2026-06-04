@@ -2803,6 +2803,19 @@ Tempo: 130
         <button class="outline" id="btnToHybrid" style="width:100%">&#8594; Scaffold Hybrid Blocks</button>
       </div>
       <div class="field">
+        <label>Strum Arrows</label>
+        <select id="setStrumMode">
+          <option value="none" selected>None</option>
+          <option value="down">&#8595;&#8595; All down</option>
+          <option value="alt">&#8595;&#8593; Alternating</option>
+          <option value="custom">Custom&#8230;</option>
+        </select>
+      </div>
+      <div class="field" id="strumPatternField" style="display:none">
+        <label>Custom Strum (D U X -)</label>
+        <input type="text" id="setStrumPattern" placeholder="e.g. D U D U" />
+      </div>
+      <div class="field">
         <label>Major 7th Style <button class="info-btn" onclick="openFeatureInfo('major7Style')" title="About Major 7th Style">ⓘ</button></label>
         <select id="setMaj7Style">
           <option value="ma" selected>ma7 (default)</option>
@@ -3965,6 +3978,23 @@ document.getElementById('btnToHybrid').addEventListener('click', () => {
   updatePreview();
   setStatus('Hybrid blocks scaffolded (' + preset + ' pattern). Hybrid mode enabled. Edit bN: lines to customise.');
 });
+function _syncStrumPatternVis(){
+  const pf = document.getElementById('strumPatternField');
+  if (pf) pf.style.display = (fbSettings.strumMode === 'custom') ? '' : 'none';
+}
+document.getElementById('setStrumMode').addEventListener('change', (e) => {
+  fbSettings.strumMode = e.target.value || 'none';
+  _syncStrumPatternVis();
+  saveFBSettings();
+  updatePreview();
+});
+document.getElementById('setStrumPattern').addEventListener('input', debounce(() => {
+  const el = document.getElementById('setStrumPattern');
+  fbSettings.strumPattern = el ? el.value : '';
+  saveFBSettings();
+  updatePreview();
+}, 300));
+_syncStrumPatternVis();
 
 /* debounce — see utils.js */
 
