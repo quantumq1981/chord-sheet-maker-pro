@@ -872,6 +872,165 @@ function renderHybridDoc(sourceText) {
   return `<div class="hybridSvgWrap"><div class="hybridModeChip">Hybrid Rhythm Guitar v1</div>${svg}</div>`;
 }
 
+// ── MusicXML export (unified engine) ─────────────────────────────────────────
+// Self-contained so it survives retirement of the slash-notation panel. Driven
+// by the same unified model as renderHybridDoc (parseHybridChartFromCSMPN), it
+// emits a Real-Book-style slash chart: chord symbols + one slash notehead per
+// visual beat, with repeat barlines, volta endings, and section rehearsal marks.
+
+// Chord quality → MusicXML <kind>. Mirrors chordKind() in the slash panel.
+function hrChordKind(quality) {
+  if (!quality) return 'major';
+  const q = quality.toLowerCase();
+  if (q.startsWith('ø') || q === 'm7♭5' || q === 'm7b5') return 'half-diminished';
+  if (q.startsWith('maj') || q.startsWith('ma') || q.startsWith('δ')) return 'major-seventh';
+  if (q.startsWith('°7') || q.startsWith('dim7') || q.startsWith('o7')) return 'diminished-seventh';
+  if (q.startsWith('°') || q.startsWith('dim') || q === 'o' || q.startsWith('o ')) return 'diminished';
+  if (q.startsWith('+7') || q.startsWith('aug7') || q.startsWith('7#5') || q.startsWith('7♯5')) return 'augmented-seventh';
+  if (q === '+' || q.startsWith('aug')) return 'augmented';
+  if (q === 'm' || q === 'min' || q === 'mi' || q === '−') return 'minor';
+  if (q.startsWith('m7') || q.startsWith('min7') || q.startsWith('mi7') || q.startsWith('−7')) return 'minor-seventh';
+  if (q.startsWith('m') && /\d/.test(q)) return 'minor-seventh';
+  if (q.startsWith('−') && /\d/.test(q)) return 'minor-seventh';
+  if (q === '6' || q.startsWith('6/9')) return 'major-sixth';
+  if (q === '7') return 'dominant';
+  if (/^[79]/.test(q) || q.startsWith('13') || q.startsWith('11')) return 'dominant';
+  if (q.startsWith('sus4') || q === 'sus') return 'suspended-fourth';
+  if (q.startsWith('sus2')) return 'suspended-second';
+  return 'major';
+}
+
+// Major vs minor mode from the key string (minor keys map to an 'm' entry).
+function hrKeyMode(keyStr) {
+  const s = String(keyStr || '').trim()
+    .replace(/♭/g, 'b').replace(/♯/g, '#')
+    .replace(/\s*(major|maj)\s*$/i, '')
+    .replace(/\s*(minor|min)\s*$/i, 'm');
+  if (!s) return 'major';
+  const norm = s[0].toUpperCase() + s.slice(1);
+  return (norm.endsWith('m') && HR_KEY_SIG_DATA[norm] !== undefined) ? 'minor' : 'major';
+}
+
+// One <harmony> per chord in a bar token (split on '_'); offset spaces multiple
+// chords across the measure.
+function hrHarmonyXml(chordToken, beats, divisions) {
+  const parts = String(chordToken || '').replace(/[!~]$/, '').trim().split('_').map((s) => s.trim()).filter(Boolean);
+  let xml = '';
+  parts.forEach((text, ci) => {
+    const root = text.match(/^([A-G])(♭|♯|b|#)?/);
+    if (!root) return;
+    const rootStep = root[1];
+    const accStr = root[2] || '';
+    const rootAlter = (accStr === '♭' || accStr === 'b') ? -1 : (accStr === '♯' || accStr === '#') ? 1 : 0;
+    const afterRoot = text.slice(root[0].length);
+    const qualRaw = afterRoot.replace(/\/.*$/, '').trim();
+    const bassMatch = afterRoot.match(/\/([A-G])(♭|♯|b|#)?$/);
+    const bassStep = bassMatch ? bassMatch[1] : '';
+    const bassAcc = bassMatch ? (bassMatch[2] || '') : '';
+    const bassAlter = (bassAcc === '♭' || bassAcc === 'b') ? -1 : (bassAcc === '♯' || bassAcc === '#') ? 1 : 0;
+    const alterTag = rootAlter !== 0 ? `<alter>${rootAlter}</alter>` : '';
+    const bassXml = bassStep ? `<bass><bass-step>${escapeHtml(bassStep)}</bass-step>${bassAlter !== 0 ? `<bass-alter>${bassAlter}</bass-alter>` : ''}</bass>` : '';
+    const offset = Math.round((ci / Math.max(parts.length, 1)) * beats * divisions);
+    const offsetTag = offset > 0 ? `<offset>${offset}</offset>` : '';
+    xml += `\n      <harmony>${offsetTag}<root><root-step>${escapeHtml(rootStep)}</root-step>${alterTag}</root><kind>${hrChordKind(qualRaw)}</kind>${bassXml}</harmony>`;
+  });
+  return xml;
+}
+
+function hrBuildMusicXml(sourceText) {
+  const hybrid = (typeof parseHybridChartFromCSMPN === 'function')
+    ? parseHybridChartFromCSMPN(sourceText || '') : null;
+  if (!hybrid || !Array.isArray(hybrid.sections) || hybrid.sections.length === 0) return null;
+
+  const timeSig = hybrid.time || '4/4';
+  const bpm = hrVisualBeats(timeSig);
+  const timeParts = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/) || ['4/4', '4', '4'];
+  const beats = timeParts[1];
+  const beatType = timeParts[2];
+  const divisions = 1;
+  const keySig = hrKeySigFromKey(hybrid.key);
+  const keyMode = hrKeyMode(hybrid.key);
+  const title = escapeHtml(hybrid.title || 'Untitled');
+  const composer = escapeHtml(hybrid.composer || '');
+
+  let measureXml = '';
+  let num = 0;
+  let prevEnding = null;
+
+  for (const sec of hybrid.sections) {
+    const label = sec.label || '';
+    const isNav = HR_NAV_RE.test(label);
+    for (let bi = 0; bi < sec.bars.length; bi++) {
+      const bar = sec.bars[bi];
+      num++;
+
+      let attrs = '';
+      if (num === 1) {
+        attrs = `\n      <attributes><divisions>${divisions}</divisions>` +
+          `<key><fifths>${keySig}</fifths><mode>${keyMode}</mode></key>` +
+          `<time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>` +
+          `<clef><sign>G</sign><line>2</line></clef>` +
+          `<measure-style><slash type="start" use-stems="no"/></measure-style></attributes>`;
+        if (hybrid.tempo) {
+          attrs += `\n      <direction placement="above"><direction-type><metronome parentheses="no">` +
+            `<beat-unit>quarter</beat-unit><per-minute>${escapeHtml(String(hybrid.tempo))}</per-minute>` +
+            `</metronome></direction-type><sound tempo="${escapeHtml(String(hybrid.tempo))}"/></direction>`;
+        }
+      }
+
+      let rehearsalXml = '';
+      if (bi === 0 && label && !isNav) {
+        const enclosure = (sec.markerType === ':' || sec.markerType === '=') ? 'square' : 'none';
+        rehearsalXml = `\n      <direction placement="above"><direction-type>` +
+          `<rehearsal enclosure="${enclosure}" default-y="40">${escapeHtml(label)}</rehearsal>` +
+          `</direction-type></direction>`;
+      }
+
+      const harmonyXml = hrHarmonyXml(bar.chordToken, parseInt(beats, 10), divisions);
+
+      let notesXml = '';
+      for (let b = 0; b < bpm; b++)
+        notesXml += `\n      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divisions}</duration><type>quarter</type><notehead>slash</notehead></note>`;
+
+      // Repeat barlines + volta endings
+      const curEl = bar.endingLabel || null;
+      const nextEl = bi + 1 < sec.bars.length ? (sec.bars[bi + 1].endingLabel || null) : null;
+      const lBar = bar.leftBar || 'single';
+      const rBar = bar.rightBar || 'single';
+      const endStart = (curEl && curEl !== prevEnding) ? hrEndingNumber(curEl) : null;
+      const endStop = (curEl && nextEl !== curEl) ? hrEndingNumber(curEl) : null;
+
+      let leftBl = '';
+      if (lBar === 'repeat-start')
+        leftBl += '\n      <barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>';
+      if (endStart)
+        leftBl += `\n      <barline location="left"><ending number="${endStart}" type="start"/></barline>`;
+
+      let rightBl = '';
+      if (endStop || rBar === 'repeat-end') {
+        const bStyle = rBar === 'repeat-end' ? '<bar-style>light-heavy</bar-style>' : '';
+        const endXml = endStop ? `<ending number="${endStop}" type="stop"/>` : '';
+        const repXml = rBar === 'repeat-end' ? '<repeat direction="backward"/>' : '';
+        rightBl = `\n      <barline location="right">${bStyle}${endXml}${repXml}</barline>`;
+      }
+      prevEnding = curEl;
+
+      measureXml += `\n    <measure number="${num}">${leftBl}${attrs}${rehearsalXml}${harmonyXml}${notesXml}${rightBl}\n    </measure>`;
+    }
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <movement-title>${title}</movement-title>${composer ? `\n  <identification><creator type="composer">${composer}</creator></identification>` : ''}
+  <part-list>
+    <score-part id="P1"><part-name>Rhythm Guitar</part-name></score-part>
+  </part-list>
+  <part id="P1">${measureXml}
+  </part>
+</score-partwise>`;
+}
+
 function updatePreview(){
   // Determine the text to render. When the user has disabled lyrics via settings,
   // filter out comment lines starting with ';'. Otherwise use the raw source.

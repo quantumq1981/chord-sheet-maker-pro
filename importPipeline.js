@@ -2734,11 +2734,11 @@ function countBarsInDocBlock(block){
 function buildDocSectionMap(text, _doc){
   const doc = _doc || parseCSMPN(text || '');
   const sections = [];
-  let current = { label: 'Main', bars: [] };
+  let current = { label: 'Main', bars: [], markerType: '-' };
   for (const block of doc.blocks || []){
     if (block.type === 'marker' && ['-', ':', '='].includes(block.marker)){
       if (current.bars.length || sections.length === 0) sections.push(current);
-      current = { label: block.text || 'Section', bars: [] };
+      current = { label: block.text || 'Section', bars: [], markerType: block.marker };
       continue;
     }
     if (block.type !== 'bars') continue;
@@ -2889,6 +2889,7 @@ function parseHybridChartFromCSMPN(text){
     bars: sec.bars.map((bar) => ({ ...bar, events: [], tabEvents: [], cueText: '', pm: { bar: false, spans: [] }, chordToken: bar.chordToken || '' })),
     cueText: '',
     navText: sec.navText || null,
+    markerType: sec.markerType || '-',
   }));
   let activeHybrid = null;
   let targetSection = -1;

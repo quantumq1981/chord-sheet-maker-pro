@@ -254,3 +254,58 @@ test('strum arrows suppressed on rows that have a tab lane', () => {
   const out = ctx.renderHybridDoc('- Verse\n| G |\n{hybrid\nb1: 1:q(G)\ntab1: 3,2,0,0,0,3 @ 1\n}');
   assert.equal(downs(out), 0, 'no strum arrows over a tab lane');
 });
+
+// ── 16.2d: MusicXML export from the unified model ───────────────────────────
+test('hrBuildMusicXml emits a score-partwise document with title', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('Title: Demo\n\n- Verse\n| C | Am | F | G |\n');
+  assert.ok(xml.includes('<score-partwise version="4.0">'));
+  assert.ok(xml.includes('<movement-title>Demo</movement-title>'));
+  assert.ok(xml.includes('<measure-style><slash type="start" use-stems="no"/></measure-style>'));
+});
+
+test('empty chart exports null', () => {
+  const ctx = loadRenderer();
+  assert.equal(ctx.hrBuildMusicXml(''), null);
+});
+
+test('key signature fifths + mode are emitted (G major -> 1, Am -> minor)', () => {
+  const ctx = loadRenderer();
+  const g = ctx.hrBuildMusicXml('Key: G\n\n- Verse\n| G |\n');
+  assert.ok(g.includes('<fifths>1</fifths><mode>major</mode>'));
+  const am = ctx.hrBuildMusicXml('Key: Am\n\n- Verse\n| Am |\n');
+  assert.ok(am.includes('<fifths>0</fifths><mode>minor</mode>'));
+});
+
+test('harmony root, kind, and slash-chord bass are emitted', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('- Verse\n| Am7 | D/F# |\n');
+  assert.ok(xml.includes('<root-step>A</root-step>'));
+  assert.ok(xml.includes('<kind>minor-seventh</kind>'));
+  assert.ok(xml.includes('<bass><bass-step>F</bass-step><bass-alter>1</bass-alter></bass>'));
+});
+
+test('one slash notehead note per visual beat (4/4 -> 4, 12/8 -> 4)', () => {
+  const ctx = loadRenderer();
+  const four = ctx.hrBuildMusicXml('Time: 4/4\n\n- Verse\n| C |\n');
+  assert.equal((four.match(/<notehead>slash<\/notehead>/g) || []).length, 4);
+  const twelve = ctx.hrBuildMusicXml('Time: 12/8\n\n- Verse\n| C |\n');
+  assert.equal((twelve.match(/<notehead>slash<\/notehead>/g) || []).length, 4);
+});
+
+test('repeat barlines and volta endings round-trip into MusicXML', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('- Verse\n|: 1. C | Am :| 2. F | G |\n');
+  assert.ok(xml.includes('<repeat direction="forward"/>'), 'repeat start');
+  assert.ok(xml.includes('<repeat direction="backward"/>'), 'repeat end');
+  assert.ok(xml.includes('<ending number="1" type="start"/>'));
+  assert.ok(xml.includes('<ending number="2" type="start"/>'));
+});
+
+test('section markers become rehearsal marks (= square, - none); nav suppressed', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('= Intro\n| C |\n- Verse\n| G |\n- D.C. al Fine\n');
+  assert.ok(xml.includes('<rehearsal enclosure="square" default-y="40">Intro</rehearsal>'));
+  assert.ok(xml.includes('<rehearsal enclosure="none" default-y="40">Verse</rehearsal>'));
+  assert.ok(!xml.includes('D.C. al Fine'), 'nav marker is not a rehearsal mark');
+});
