@@ -1075,3 +1075,62 @@ Total: **677 tests** (306 `npm test` + 371 `test:parsers`)
 - When hybrid mode ON: calls `toHybridText()` → CSMPN with beat-positioned `{hybrid}` blocks
 - When hybrid mode OFF: existing `toCsmpn()` path unchanged
 - Status message distinguishes the two paths
+
+## Sprint 16 — Slash / Hybrid Engine Unification (In Progress)
+
+**Goal:** collapse the two overlapping SVG slash renderers — the slash-notation panel
+engine (`index.html` IIFE) and the hybrid rhythm engine (`renderer.js`) — into a
+single engine where **plain even slashes are the zero-rhythm case of the hybrid model**.
+
+| # | Task | Status |
+|---|------|--------|
+| 16.1 | Unified render routing: plain charts render through the hybrid SVG engine | ✅ DONE |
+| 16.2 | Port slash-panel-only features (key sig, clef, `visualBeats` compound meter, strum, capo, endings, nav markers, MusicXML export) into the unified engine | ⬜ TODO |
+| 16.3 | Retire the slash-notation panel engine once feature parity is reached | ⬜ TODO |
+
+### Hybrid Scaffolder (previously undocumented — added ~PR #215)
+- `importPipeline.js` → `toHybridCSMPN(text, preset)` + `HYBRID_PRESET_PATTERNS`
+  (7 presets: `quarter`, `eighth`, `swing`, `funk-16`, `bossa`, `waltz`, `slow-blues`;
+  each maps `4/4 3/4 2/4 12/8 6/8 9/8` → an event pattern string).
+- Wired in `index.html`: `#setHybridScaffoldPreset` selector + `#btnToHybrid`
+  ("→ Scaffold Hybrid Blocks") — injects a `{hybrid}` block per section using the
+  chosen preset, then auto-enables rhythm mode.
+- Tested by `tests/hybridScaffolder.test.mjs` (uses `parseCSMPN`/`buildDocSectionMap`
+  for exact bar counts; never double-inserts when a `{hybrid}` block already exists).
+
+### SPRINT 16 CHANGES — Phase 1 (Unified render routing)
+
+**Root cause of "hybrid does nothing":** `renderHybridDoc()` bailed to the fake-book
+HTML renderer whenever `parseHybridChartFromCSMPN().active` was false (i.e. no
+`{hybrid}` blocks), and `updatePreview()` only routed to it when the source already
+contained `{hybrid}`. So toggling **Hybrid Rhythm Guitar Mode** on a plain chart did
+nothing visible, and the scaffolder's default `quarter` preset produced output
+indistinguishable from the older slash-notation panel.
+
+**Key insight:** `parseHybridChartFromCSMPN()` *already* builds a full section model
+(bars carry `chordToken`, with empty `events[]`) for plain charts, and `hrBar()`
+*already* renders an empty-events bar as even slash noteheads. The engine was already
+a superset — only the routing prevented it from rendering plain charts.
+
+**`renderer.js`**
+- `renderHybridDoc()` — fallback condition changed from `!hybrid.active` to
+  `!hybrid.sections.length`. Plain charts now render through the SVG slash/rhythm
+  engine (even slashes per beat + chord labels); fake-book fallback only fires when
+  there is no chart content at all.
+- `updatePreview()` — routing gate relaxed from
+  `fbSettings.hybridRhythmMode && /\{hybrid\b/i.test(text)` to just
+  `fbSettings.hybridRhythmMode`. Rhythm mode now renders every chart through one
+  engine; `{hybrid}` blocks add notated rhythm on top of the slash baseline.
+
+**`index.html`** — rhythm-mode hint updated to reflect that the chart renders
+immediately (scaffolding/`bN:` editing now *adds* rhythm rather than being required).
+
+**`tests/hybridRenderer.test.mjs`** (new, 4 tests; added to `npm test`)
+- plain chart (no `{hybrid}`) renders `<svg>` + slash noteheads + chord labels
+- `{hybrid}` chart still renders notated rhythm through the same engine
+- empty source falls back to the fake-book renderer (no `<svg>`)
+- simple (space-separated) chart produces exactly one `<svg>` document
+
+Known follow-up (16.2): `hrBar()`'s no-events path draws one slash per time-sig
+numerator beat; compound meters (6/8, 9/8, 12/8) need the slash-panel's `visualBeats()`
+grouping ported over to avoid over-dense bars.

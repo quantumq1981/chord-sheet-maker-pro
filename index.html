@@ -3928,7 +3928,7 @@ document.getElementById('setHybridRhythmMode').addEventListener('change', (e) =>
   updatePreview();
   // Hint when mode is on but source has no {hybrid} blocks yet
   if (fbSettings.hybridRhythmMode && !/\{hybrid\b/i.test(sourceEl.value || '')) {
-    setStatus('Hybrid mode ON — press "→ Scaffold Hybrid Blocks" to add rhythm patterns, or paste a chart that already has {hybrid} blocks.', 'info');
+    setStatus('Rhythm mode ON — chart now renders as slash notation. Press "→ Scaffold Hybrid Blocks" or edit bN: lines to add notated rhythm.', 'info');
   }
 });
 document.getElementById('setHybridPreset').addEventListener('change', (e) => {
