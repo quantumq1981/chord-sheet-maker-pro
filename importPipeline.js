@@ -2914,10 +2914,15 @@ function parseHybridChartFromCSMPN(text){
             warnings.push(`[${section.label}] bar${mBar[1]} does not exist.`);
             continue;
           }
-          const prevToken = section.bars[barIndex].chordToken;
+          const prevBar = section.bars[barIndex];
           const prevWarnLen = warnings.length;
-          section.bars[barIndex] = parseHybridBarLine(mBar[2], section.bars[barIndex].timeSig || '4/4', warnings);
-          section.bars[barIndex].chordToken = prevToken || '';
+          section.bars[barIndex] = parseHybridBarLine(mBar[2], prevBar.timeSig || '4/4', warnings);
+          // Preserve structural fields from the source bar (events replace only the
+          // rhythm content, not the chord text / repeat barlines / volta endings).
+          section.bars[barIndex].chordToken = prevBar.chordToken || '';
+          section.bars[barIndex].endingLabel = prevBar.endingLabel || null;
+          section.bars[barIndex].leftBar = prevBar.leftBar || 'single';
+          section.bars[barIndex].rightBar = prevBar.rightBar || 'single';
           for (let wi = prevWarnLen; wi < warnings.length; wi++) {
             warnings[wi] = `[${section.label} bar ${mBar[1]}] ${warnings[wi]}`;
           }
