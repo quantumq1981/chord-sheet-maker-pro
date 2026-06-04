@@ -4053,6 +4053,72 @@ const _debouncedPreview = debounce(() => {
 sourceEl.addEventListener('input', _debouncedPreview);
 
 /* =========================================================
+   Chord Sheet Maker → Pro handoff receiver
+   (additive; see chord-sheet-maker/docs/HANDOFF-CONTRACT.md)
+
+   Inert on every normal load. Only acts when the page is opened
+   with ?import=handoff: it reads the shared localStorage envelope
+   ONCE (same GitHub Pages origin → shared storage), loads the chart
+   using Pro's own import functions, then strips the query param so a
+   manual refresh is a clean normal load. Wrapped in try/catch so a
+   missing or malformed payload can never break boot. Adds no new
+   trigger and touches no existing feature.
+========================================================= */
+(function consumeCsmHandoff(){
+  try {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('import') !== 'handoff') return;
+
+    var raw = localStorage.getItem('csm:handoff:v1');
+    localStorage.removeItem('csm:handoff:v1'); // one-shot: clear before use so a refresh can't re-import
+    if (!raw) return;
+
+    var env = JSON.parse(raw);
+    if (!env || env.v !== 1 || !env.formats) return;
+    var f = env.formats;
+
+    // Turn a CSMPN string into the live chart, mirroring the file-import handlers.
+    function loadCsmpn(csmpn){
+      if (!csmpn) return false;
+      var finalCsmpn = (typeof filterLyricsLines === 'function') ? filterLyricsLines(csmpn) : csmpn;
+      sourceEl.value = finalCsmpn;
+      if (typeof extractHeaderFromText === 'function') extractHeaderFromText(finalCsmpn);
+      if (typeof updatePreview === 'function') updatePreview();
+      return true;
+    }
+
+    var loaded = false;
+
+    // Priority: CSMPN (Pro's native source) → ChordPro → MusicXML.
+    if (f.csmpn) {
+      loaded = loadCsmpn(f.csmpn);
+    }
+    if (!loaded && f.chordpro && typeof importChordPro === 'function') {
+      loaded = loadCsmpn(importChordPro(f.chordpro)); // importChordPro returns CSMPN text
+    }
+    if (!loaded && f.musicxml && typeof importMusicXML === 'function') {
+      var song = importMusicXML(f.musicxml); // importMusicXML returns a SongModel
+      if (song && typeof song.toCSMPN === 'function') {
+        var bpr = (typeof fbSettings === 'object' && fbSettings && fbSettings.barsPerRow) ? fbSettings.barsPerRow : 4;
+        loaded = loadCsmpn(song.toCSMPN({ barsPerRow: bpr }));
+      }
+    }
+
+    if (loaded && typeof setStatus === 'function') {
+      setStatus('Imported from Chord Sheet Maker' + (env.title ? ' — ' + env.title : '') + '.');
+    }
+
+    // Strip the query param so a manual refresh is a clean, normal load.
+    if (window.history && typeof history.replaceState === 'function') {
+      history.replaceState(null, '', window.location.pathname);
+    }
+  } catch (e) {
+    // Never let a handoff problem break a normal load.
+    console.warn('CSM handoff skipped:', e);
+  }
+})();
+
+/* =========================================================
    CSMPN parsing
 ========================================================= */
 /* detectNotationPreferenceFromKeyOrText, NOTE_INDEX, NOTES_SHARP, NOTES_FLAT, transposeNote — see chordProcessing.js */
