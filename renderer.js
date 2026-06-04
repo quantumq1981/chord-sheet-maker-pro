@@ -911,37 +911,85 @@ function hrKeyMode(keyStr) {
   return (norm.endsWith('m') && HR_KEY_SIG_DATA[norm] !== undefined) ? 'minor' : 'major';
 }
 
+// One <harmony> element for a single chord text at a given division offset.
+function hrHarmonyOne(text, offsetDivs) {
+  const root = String(text || '').match(/^([A-G])(♭|♯|b|#)?/);
+  if (!root) return '';
+  const rootStep = root[1];
+  const accStr = root[2] || '';
+  const rootAlter = (accStr === '♭' || accStr === 'b') ? -1 : (accStr === '♯' || accStr === '#') ? 1 : 0;
+  const afterRoot = text.slice(root[0].length);
+  const qualRaw = afterRoot.replace(/\/.*$/, '').trim();
+  const bassMatch = afterRoot.match(/\/([A-G])(♭|♯|b|#)?$/);
+  const bassStep = bassMatch ? bassMatch[1] : '';
+  const bassAcc = bassMatch ? (bassMatch[2] || '') : '';
+  const bassAlter = (bassAcc === '♭' || bassAcc === 'b') ? -1 : (bassAcc === '♯' || bassAcc === '#') ? 1 : 0;
+  const alterTag = rootAlter !== 0 ? `<alter>${rootAlter}</alter>` : '';
+  const bassXml = bassStep ? `<bass><bass-step>${escapeHtml(bassStep)}</bass-step>${bassAlter !== 0 ? `<bass-alter>${bassAlter}</bass-alter>` : ''}</bass>` : '';
+  const offsetTag = offsetDivs > 0 ? `<offset>${offsetDivs}</offset>` : '';
+  return `\n      <harmony>${offsetTag}<root><root-step>${escapeHtml(rootStep)}</root-step>${alterTag}</root><kind>${hrChordKind(qualRaw)}</kind>${bassXml}</harmony>`;
+}
+
 // One <harmony> per chord in a bar token (split on '_'); offset spaces multiple
-// chords across the measure.
+// chords evenly across the measure.
 function hrHarmonyXml(chordToken, beats, divisions) {
   const parts = String(chordToken || '').replace(/[!~]$/, '').trim().split('_').map((s) => s.trim()).filter(Boolean);
   let xml = '';
   parts.forEach((text, ci) => {
-    const root = text.match(/^([A-G])(♭|♯|b|#)?/);
-    if (!root) return;
-    const rootStep = root[1];
-    const accStr = root[2] || '';
-    const rootAlter = (accStr === '♭' || accStr === 'b') ? -1 : (accStr === '♯' || accStr === '#') ? 1 : 0;
-    const afterRoot = text.slice(root[0].length);
-    const qualRaw = afterRoot.replace(/\/.*$/, '').trim();
-    const bassMatch = afterRoot.match(/\/([A-G])(♭|♯|b|#)?$/);
-    const bassStep = bassMatch ? bassMatch[1] : '';
-    const bassAcc = bassMatch ? (bassMatch[2] || '') : '';
-    const bassAlter = (bassAcc === '♭' || bassAcc === 'b') ? -1 : (bassAcc === '♯' || bassAcc === '#') ? 1 : 0;
-    const alterTag = rootAlter !== 0 ? `<alter>${rootAlter}</alter>` : '';
-    const bassXml = bassStep ? `<bass><bass-step>${escapeHtml(bassStep)}</bass-step>${bassAlter !== 0 ? `<bass-alter>${bassAlter}</bass-alter>` : ''}</bass>` : '';
     const offset = Math.round((ci / Math.max(parts.length, 1)) * beats * divisions);
-    const offsetTag = offset > 0 ? `<offset>${offset}</offset>` : '';
-    xml += `\n      <harmony>${offsetTag}<root><root-step>${escapeHtml(rootStep)}</root-step>${alterTag}</root><kind>${hrChordKind(qualRaw)}</kind>${bassXml}</harmony>`;
+    xml += hrHarmonyOne(text, offset);
   });
   return xml;
+}
+
+// MusicXML 4.0 score wrapper shared by the slash and hybrid builders.
+function hrMusicXmlDoc(title, composer, measureXml) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <movement-title>${escapeHtml(title || 'Untitled')}</movement-title>${composer ? `\n  <identification><creator type="composer">${escapeHtml(composer)}</creator></identification>` : ''}
+  <part-list>
+    <score-part id="P1"><part-name>Rhythm Guitar</part-name></score-part>
+  </part-list>
+  <part id="P1">${measureXml}
+  </part>
+</score-partwise>`;
+}
+
+// Repeat barlines + volta endings for a bar, derived from leftBar/rightBar/endingLabel.
+// Returns { left, right }; mutates the caller's volta tracker via the returned nextPrev.
+function hrBarlineXml(bar, prevEnding, nextEl) {
+  const curEl = bar.endingLabel || null;
+  const lBar = bar.leftBar || 'single';
+  const rBar = bar.rightBar || 'single';
+  const endStart = (curEl && curEl !== prevEnding) ? hrEndingNumber(curEl) : null;
+  const endStop = (curEl && nextEl !== curEl) ? hrEndingNumber(curEl) : null;
+  let left = '';
+  if (lBar === 'repeat-start')
+    left += '\n      <barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>';
+  if (endStart)
+    left += `\n      <barline location="left"><ending number="${endStart}" type="start"/></barline>`;
+  let right = '';
+  if (endStop || rBar === 'repeat-end') {
+    const bStyle = rBar === 'repeat-end' ? '<bar-style>light-heavy</bar-style>' : '';
+    const endXml = endStop ? `<ending number="${endStop}" type="stop"/>` : '';
+    const repXml = rBar === 'repeat-end' ? '<repeat direction="backward"/>' : '';
+    right = `\n      <barline location="right">${bStyle}${endXml}${repXml}</barline>`;
+  }
+  return { left, right, nextPrev: curEl };
 }
 
 function hrBuildMusicXml(sourceText) {
   const hybrid = (typeof parseHybridChartFromCSMPN === 'function')
     ? parseHybridChartFromCSMPN(sourceText || '') : null;
   if (!hybrid || !Array.isArray(hybrid.sections) || hybrid.sections.length === 0) return null;
+  // Duration-aware path when the chart has notated rhythm; otherwise the generic
+  // one-slash-per-beat lead-sheet export.
+  return hybrid.active ? hrBuildHybridMusicXml(hybrid) : hrBuildSlashMusicXml(hybrid);
+}
 
+// Generic slash chart: one quarter slash notehead per visual beat (divisions=1).
+function hrBuildSlashMusicXml(hybrid) {
   const timeSig = hybrid.time || '4/4';
   const bpm = hrVisualBeats(timeSig);
   const timeParts = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/) || ['4/4', '4', '4'];
@@ -950,8 +998,6 @@ function hrBuildMusicXml(sourceText) {
   const divisions = 1;
   const keySig = hrKeySigFromKey(hybrid.key);
   const keyMode = hrKeyMode(hybrid.key);
-  const title = escapeHtml(hybrid.title || 'Untitled');
-  const composer = escapeHtml(hybrid.composer || '');
 
   let measureXml = '';
   let num = 0;
@@ -992,43 +1038,133 @@ function hrBuildMusicXml(sourceText) {
       for (let b = 0; b < bpm; b++)
         notesXml += `\n      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divisions}</duration><type>quarter</type><notehead>slash</notehead></note>`;
 
-      // Repeat barlines + volta endings
-      const curEl = bar.endingLabel || null;
       const nextEl = bi + 1 < sec.bars.length ? (sec.bars[bi + 1].endingLabel || null) : null;
-      const lBar = bar.leftBar || 'single';
-      const rBar = bar.rightBar || 'single';
-      const endStart = (curEl && curEl !== prevEnding) ? hrEndingNumber(curEl) : null;
-      const endStop = (curEl && nextEl !== curEl) ? hrEndingNumber(curEl) : null;
+      const { left, right, nextPrev } = hrBarlineXml(bar, prevEnding, nextEl);
+      prevEnding = nextPrev;
 
-      let leftBl = '';
-      if (lBar === 'repeat-start')
-        leftBl += '\n      <barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>';
-      if (endStart)
-        leftBl += `\n      <barline location="left"><ending number="${endStart}" type="start"/></barline>`;
-
-      let rightBl = '';
-      if (endStop || rBar === 'repeat-end') {
-        const bStyle = rBar === 'repeat-end' ? '<bar-style>light-heavy</bar-style>' : '';
-        const endXml = endStop ? `<ending number="${endStop}" type="stop"/>` : '';
-        const repXml = rBar === 'repeat-end' ? '<repeat direction="backward"/>' : '';
-        rightBl = `\n      <barline location="right">${bStyle}${endXml}${repXml}</barline>`;
-      }
-      prevEnding = curEl;
-
-      measureXml += `\n    <measure number="${num}">${leftBl}${attrs}${rehearsalXml}${harmonyXml}${notesXml}${rightBl}\n    </measure>`;
+      measureXml += `\n    <measure number="${num}">${left}${attrs}${rehearsalXml}${harmonyXml}${notesXml}${right}\n    </measure>`;
     }
   }
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
-<score-partwise version="4.0">
-  <movement-title>${title}</movement-title>${composer ? `\n  <identification><creator type="composer">${composer}</creator></identification>` : ''}
-  <part-list>
-    <score-part id="P1"><part-name>Rhythm Guitar</part-name></score-part>
-  </part-list>
-  <part id="P1">${measureXml}
-  </part>
-</score-partwise>`;
+  return hrMusicXmlDoc(hybrid.title, hybrid.composer, measureXml);
+}
+
+// Duration-aware export: encodes hybrid event durations (w/h/q/e/s + rests),
+// accents and muted noteheads at 16th-note resolution (divisions=4). Fixes the
+// slash panel's buildHybridMusicXml, which read a non-existent ev.durCode field
+// and so emitted every event as a plain quarter slash.
+function hrBuildHybridMusicXml(hybrid) {
+  const divisions = 4; // 1 quarter = 4 divisions (16th resolution)
+  const timeSig = hybrid.time || '4/4';
+  const tp = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/) || ['', '4', '4'];
+  const tsBeats = parseInt(tp[1] || '4', 10);
+  const tsBeatType = parseInt(tp[2] || '4', 10);
+  const totalDivs = Math.round((tsBeats * 16) / tsBeatType);
+  const keySig = hrKeySigFromKey(hybrid.key);
+  const keyMode = hrKeyMode(hybrid.key);
+
+  const DUR_DIVS = { w: 16, h: 8, q: 4, e: 2, s: 1 };
+  const DUR_TYPE = { w: 'whole', h: 'half', q: 'quarter', e: 'eighth', s: '16th' };
+  const beatDiv = (beat) => Math.round(((beat - 1) * 16) / tsBeatType);
+  const restFill = (rem) => {
+    const vals = [16, 8, 4, 2, 1];
+    const types = ['whole', 'half', 'quarter', 'eighth', '16th'];
+    let xml = '';
+    while (rem > 0) {
+      let i = 0;
+      while (i < vals.length - 1 && vals[i] > rem) i++;
+      xml += `\n      <note><rest/><duration>${vals[i]}</duration><type>${types[i]}</type></note>`;
+      rem -= vals[i];
+    }
+    return xml;
+  };
+  const beatNoteType = tsBeatType === 8 ? 'eighth' : tsBeatType === 2 ? 'half' : tsBeatType === 1 ? 'whole' : 'quarter';
+  const beatNoteDiv = Math.round(16 / tsBeatType);
+
+  let measureXml = '';
+  let num = 0;
+  let prevEnding = null;
+
+  for (const sec of hybrid.sections) {
+    const label = sec.label || '';
+    const isNav = HR_NAV_RE.test(label);
+    for (let bi = 0; bi < sec.bars.length; bi++) {
+      const bar = sec.bars[bi];
+      num++;
+
+      let attrs = '';
+      if (num === 1) {
+        attrs = `\n      <attributes><divisions>${divisions}</divisions>` +
+          `<key><fifths>${keySig}</fifths><mode>${keyMode}</mode></key>` +
+          `<time><beats>${tsBeats}</beats><beat-type>${tsBeatType}</beat-type></time>` +
+          `<clef><sign>G</sign><line>2</line></clef>` +
+          `<measure-style><slash type="start" use-stems="yes"/></measure-style></attributes>`;
+        if (hybrid.tempo) {
+          attrs += `\n      <direction placement="above"><direction-type><metronome parentheses="no">` +
+            `<beat-unit>quarter</beat-unit><per-minute>${escapeHtml(String(hybrid.tempo))}</per-minute>` +
+            `</metronome></direction-type><sound tempo="${escapeHtml(String(hybrid.tempo))}"/></direction>`;
+        }
+      }
+
+      let directionsXml = '';
+      if (bi === 0 && label && !isNav) {
+        const enclosure = (sec.markerType === ':' || sec.markerType === '=') ? 'square' : 'none';
+        directionsXml += `\n      <direction placement="above"><direction-type>` +
+          `<rehearsal enclosure="${enclosure}" default-y="40">${escapeHtml(label)}</rehearsal>` +
+          `</direction-type></direction>`;
+      }
+      if (bi === 0 && sec.cueText)
+        directionsXml += `\n      <direction placement="above"><direction-type><words font-style="italic">${escapeHtml(sec.cueText)}</words></direction-type></direction>`;
+      if (bar.cueText)
+        directionsXml += `\n      <direction placement="below"><direction-type><words font-style="italic" font-size="9">${escapeHtml(bar.cueText)}</words></direction-type></direction>`;
+
+      let harmonyXml = '';
+      let notesXml = '';
+      const evs = [...(bar.events || [])].sort((a, b) => a.beat - b.beat);
+
+      if (evs.length > 0) {
+        let lastChord = null;
+        for (const ev of evs) {
+          const chord = ev.chord ? ev.chord.replace(/[!^~x]+$/, '').trim() : null;
+          if (chord && chord !== lastChord) {
+            harmonyXml += hrHarmonyOne(chord, beatDiv(ev.beat));
+            lastChord = chord;
+          }
+        }
+        if (!harmonyXml && bar.chordToken)
+          harmonyXml = hrHarmonyXml(bar.chordToken, tsBeats, divisions);
+
+        let pos = 0;
+        for (const ev of evs) {
+          const evDiv = beatDiv(ev.beat);
+          if (evDiv > pos) { notesXml += restFill(evDiv - pos); pos = evDiv; }
+          const divs = DUR_DIVS[ev.duration] || 4;
+          const type = DUR_TYPE[ev.duration] || 'quarter';
+          if (ev.type === 'rest') {
+            notesXml += `\n      <note><rest/><duration>${divs}</duration><type>${type}</type></note>`;
+          } else {
+            const head = ev.muted ? 'x' : 'slash';
+            const accent = ev.accent ? '<notations><articulations><accent/></articulations></notations>' : '';
+            notesXml += `\n      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divs}</duration><type>${type}</type><notehead>${head}</notehead>${accent}</note>`;
+          }
+          pos = Math.max(pos, evDiv) + divs;
+        }
+        if (pos < totalDivs) notesXml += restFill(totalDivs - pos);
+      } else {
+        if (bar.chordToken) harmonyXml = hrHarmonyXml(bar.chordToken, tsBeats, divisions);
+        for (let b = 0; b < tsBeats; b++)
+          notesXml += `\n      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${beatNoteDiv}</duration><type>${beatNoteType}</type><notehead>slash</notehead></note>`;
+      }
+
+      const nextEl = bi + 1 < sec.bars.length ? (sec.bars[bi + 1].endingLabel || null) : null;
+      const { left, right, nextPrev } = hrBarlineXml(bar, prevEnding, nextEl);
+      prevEnding = nextPrev;
+
+      measureXml += `\n    <measure number="${num}">${left}${attrs}${directionsXml}${harmonyXml}${notesXml}${right}\n    </measure>`;
+    }
+  }
+
+  return hrMusicXmlDoc(hybrid.title, hybrid.composer, measureXml);
 }
 
 function updatePreview(){

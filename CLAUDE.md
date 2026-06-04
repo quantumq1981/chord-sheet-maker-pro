@@ -1092,7 +1092,7 @@ single engine where **plain even slashes are the zero-rhythm case of the hybrid 
 | 16.2c-2 | Ending brackets + bar-model refactor (`endingLabel`/`leftBar`/`rightBar`) | ✅ DONE |
 | 16.2c-3 | Strum arrows (Fake Book Settings UI config) | ✅ DONE |
 | 16.2d | MusicXML export from the unified engine (generic slash) | ✅ DONE |
-| 16.2d-2 | MusicXML export of hybrid rhythm durations (parity with `buildHybridMusicXml`) | ⬜ TODO |
+| 16.2d-2 | MusicXML export of hybrid rhythm durations | ✅ DONE |
 | 16.3 | Retire the slash-notation panel engine once feature parity is reached | ⬜ TODO |
 
 ### Hybrid Scaffolder (previously undocumented — added ~PR #215)
@@ -1293,3 +1293,33 @@ Note (16.2d-2): this emits the generic one-slash-per-beat chart (parity with the
 `buildMusicXml`). The panel additionally has `buildHybridMusicXml` which encodes hybrid
 event durations; porting that is the remaining step before the panel's `↓ MusicXML` can
 be removed in 16.3.
+
+### SPRINT 16 CHANGES — Phase 2d-2 (Hybrid rhythm durations in MusicXML)
+
+**`renderer.js`**
+- `hrBuildMusicXml()` is now a dispatcher: `hybrid.active` → `hrBuildHybridMusicXml`
+  (duration-aware), else `hrBuildSlashMusicXml` (the generic one-slash-per-beat path).
+- Shared helpers factored out: `hrHarmonyOne(text, offsetDivs)` (single `<harmony>`),
+  `hrMusicXmlDoc(title, composer, measureXml)` (score wrapper), `hrBarlineXml(bar,
+  prevEnding, nextEl)` (repeat barlines + voltas).
+- `hrBuildHybridMusicXml()` — divisions=4 (16th resolution); maps `w/h/q/e/s` + rests to
+  `<type>`/`<duration>`; muted → `x` notehead; accents → `<accent/>`; harmony placed at
+  each event's beat offset; section + bar cue text → `<words>`; rest-fills gaps and the
+  measure tail; includes repeat barlines + voltas (which the panel's hybrid export omitted).
+- **Fixes the slash panel's `buildHybridMusicXml` bug**: it read a non-existent
+  `ev.durCode` field (the model uses `ev.duration` + `ev.type==='rest'`), so it emitted
+  every event as a plain quarter slash and never encoded rests. The unified exporter uses
+  the real fields, so it is strictly more correct.
+
+**`importPipeline.js`**
+- `parseHybridChartFromCSMPN()` now preserves `endingLabel`/`leftBar`/`rightBar` (not just
+  `chordToken`) when a `bN:` event line replaces a bar's structure — so repeat barlines
+  and voltas survive on bars that also carry hybrid rhythm.
+
+**`tests/hybridRenderer.test.mjs`** — 6 new tests (41 total): divisions=4 + stemmed
+slashes; duration→type mapping (q/e/h); rests as `<rest>`; muted `x` + `<accent/>`;
+harmony at event-beat offset; repeats + voltas survive in the hybrid path.
+
+The unified engine now matches (and exceeds) the slash panel's MusicXML export — the last
+functional dependency. **16.3** (audit `↓ SVG`/`↓ PNG`/`⎙ Print` parity, then remove the
+slash-panel IIFE) is now unblocked.

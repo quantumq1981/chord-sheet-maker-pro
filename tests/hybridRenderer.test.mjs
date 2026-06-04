@@ -309,3 +309,51 @@ test('section markers become rehearsal marks (= square, - none); nav suppressed'
   assert.ok(xml.includes('<rehearsal enclosure="none" default-y="40">Verse</rehearsal>'));
   assert.ok(!xml.includes('D.C. al Fine'), 'nav marker is not a rehearsal mark');
 });
+
+// ── 16.2d-2: hybrid rhythm durations in MusicXML ────────────────────────────
+test('hybrid chart exports at 16th-note resolution (divisions=4)', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:q(G) 2:e 2&:e 3:h\n}');
+  assert.ok(xml.includes('<divisions>4</divisions>'));
+  assert.ok(xml.includes('use-stems="yes"'), 'hybrid uses stemmed slashes');
+});
+
+test('event durations map to MusicXML note types', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:q(G) 2:e 2&:e 3:h\n}');
+  // quarter (4 divs), two eighths (2 divs), half (8 divs)
+  assert.ok(xml.includes('<duration>4</duration><type>quarter</type>'));
+  assert.ok(xml.includes('<duration>2</duration><type>eighth</type>'));
+  assert.ok(xml.includes('<duration>8</duration><type>half</type>'));
+});
+
+test('rest events export as <rest>, not slash noteheads', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:q(G) 2:rq 3:h\n}');
+  assert.ok(xml.includes('<note><rest/><duration>4</duration><type>quarter</type></note>'));
+});
+
+test('muted events use x notehead; accents emit <accent/>', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:q(G)x 2:q! 3:h\n}');
+  assert.ok(xml.includes('<notehead>x</notehead>'), 'muted → x notehead');
+  assert.ok(xml.includes('<articulations><accent/></articulations>'), 'accent notation');
+});
+
+test('hybrid harmony is placed at the event beat offset', () => {
+  const ctx = loadRenderer();
+  // chord change at beat 3 → offset (3-1)*4 = 8 divisions
+  const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:h(G) 3:h(C)\n}');
+  assert.ok(xml.includes('<root-step>G</root-step>'));
+  assert.ok(xml.includes('<offset>8</offset><root><root-step>C</root-step>'));
+});
+
+test('hybrid export still emits repeat barlines and voltas', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml(
+    '- Verse\n|: 1. C | Am :|\n{hybrid\nb1: 1:q(C) 2:q 3:q 4:q\nb2: 1:h(Am) 3:h\n}'
+  );
+  assert.ok(xml.includes('<repeat direction="forward"/>'));
+  assert.ok(xml.includes('<repeat direction="backward"/>'));
+  assert.ok(xml.includes('<ending number="1" type="start"/>'));
+});
