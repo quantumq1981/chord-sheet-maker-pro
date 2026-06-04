@@ -359,6 +359,44 @@ function hrKeySig(staffY, count, col) {
   return s;
 }
 
+// ── Navigation markers (D.C., D.S., Fine, Coda) ─────────────────────────────
+// Ported from the slash-notation panel for parity.
+const HR_NAV_RE = /\b(D\.C\.|D\.S\.|FINE|CODA|AL FINE|AL CODA|DAL SEGNO|DA CAPO|TO CODA|SEGNO)\b/i;
+
+function hrExtractNavText(label) {
+  return label && HR_NAV_RE.test(label) ? label : null;
+}
+
+// Substitute Segno/Coda words with their Unicode musical symbols, then escape.
+function hrFormatNavText(text) {
+  if (!text) return '';
+  const subst = String(text)
+    .replace(/\bDAL\s+SEGNO\b/gi, 'D.S.𝄋')
+    .replace(/\bDA\s+CAPO\b/gi, 'D.C.')
+    .replace(/\bD\.S\.(?=\s|$)/g, 'D.S.𝄋')
+    .replace(/\bSEGNO\b/gi, '𝄋')
+    .replace(/\bTO\s+CODA\b/gi, 'To 𝄌')
+    .replace(/\bAL\s+CODA\b/gi, 'al 𝄌')
+    .replace(/\bCODA\b/gi, '𝄌');
+  return escapeHtml(subst);
+}
+
+// Integer (1–15) → Roman numeral, for capo markers.
+function hrToRoman(n) {
+  const pairs = [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+  let s = '';
+  for (const [v, r] of pairs) { while (n >= v) { s += r; n -= v; } }
+  return s;
+}
+
+// Capo indicator below the T/A/B label on the first TAB row.
+function hrCapoMarker(capoNum, tabY, col) {
+  if (!capoNum || capoNum < 1) return '';
+  const cx = HR_MARGIN + HR_CLEF_W / 2;
+  const mid = HR_TAB_H / 2;
+  return `<text x="${cx}" y="${tabY + mid + 24}" font-size="7.5" font-weight="bold" font-style="italic" fill="${col}" text-anchor="middle" font-family='${_hrFont()}'>cap.${hrToRoman(capoNum)}</text>`;
+}
+
 function hrTabStaff(x, y, w, col) {
   let s = '';
   for (let i = 0; i < 6; i++) s += hrL(x, y + i * HR_TAB_LG, x + w, y + i * HR_TAB_LG, col, 0.8);
@@ -630,6 +668,7 @@ function renderHybridDoc(sourceText) {
       const rowBars = sec.bars.slice(i, i + bpr);
       systems.push({
         sec, rowBars, firstRow,
+        lastRow:   i + bpr >= sec.bars.length,
         hasTab:    rowBars.some((b) => b.tabEvents?.length > 0),
         hasPM:     rowBars.some((b) => b.pm?.bar || b.pm?.spans?.length > 0),
         hasCue:    rowBars.some((b) => b.cueText),
@@ -657,8 +696,9 @@ function renderHybridDoc(sourceText) {
     ? Math.ceil(allVoicings.size / diagMaxPerRow) * HR_DIAG_OUTER_H + 12
     : 0;
 
-  const { title, composer, key, time: docTime, tempo, style } = hybrid;
+  const { title, composer, key, time: docTime, tempo, style, capo } = hybrid;
   const keySigCount = hrKeySigFromKey(key);
+  let firstTabDone = false;
   let curY = 12 + diagAreaH;
   if (title) curY += 30;
   if (composer || key || docTime || tempo || style) curY += 20;
@@ -730,6 +770,7 @@ function renderHybridDoc(sourceText) {
     if (sys.hasTab) {
       svg += hrTabStaff(staffX, tabY, staffW, fg);
       svg += hrTabLabel(HR_MARGIN, tabY, fg);
+      if (!firstTabDone && capo > 0) { svg += hrCapoMarker(capo, tabY, fg); firstTabDone = true; }
     }
 
     sys.rowBars.forEach((bar, bi) => {
@@ -749,6 +790,13 @@ function renderHybridDoc(sourceText) {
       if (bar.cueText)
         svg += `<text x="${barLeft + barW / 2}" y="${blBot + HR_CUE_H - 2}" font-size="9" font-style="italic" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${escapeHtml(bar.cueText)}</text>`;
     });
+
+    // Navigation text (D.C. al Fine, Coda, …) at the bottom-right of the section's last row
+    if (sys.lastRow) {
+      const navText = hrExtractNavText(sys.sec.label) || sys.sec.navText;
+      if (navText)
+        svg += `<text x="${staffX + staffW}" y="${blBot + 16}" font-size="12" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family='Noto Serif, ${_hrFont()}'>${hrFormatNavText(navText)}</text>`;
+    }
   }
 
   svg += `</svg>`;

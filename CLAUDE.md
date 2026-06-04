@@ -1088,7 +1088,9 @@ single engine where **plain even slashes are the zero-rhythm case of the hybrid 
 | 16.2 | Port slash-panel-only features into the unified engine | 🚧 IN PROGRESS |
 | 16.2a | `visualBeats` compound-meter slash count (6/8→2, 9/8→3, 12/8→4) | ✅ DONE |
 | 16.2b | Treble clef + key signature on the unified staff | ✅ DONE |
-| 16.2c | Strum arrows, capo, ending brackets, nav markers | ⬜ TODO |
+| 16.2c | Nav markers (D.C./D.S./Fine/Coda) + capo on the unified staff | ✅ DONE |
+| 16.2c-2 | Ending brackets (needs bar-model refactor for `endingLabel`) | ⬜ TODO |
+| 16.2c-3 | Strum arrows (pending config-source decision) | ⬜ TODO |
 | 16.2d | MusicXML export from the unified engine | ⬜ TODO |
 | 16.3 | Retire the slash-notation panel engine once feature parity is reached | ⬜ TODO |
 
@@ -1173,3 +1175,30 @@ grouping ported over to avoid over-dense bars.
 **`tests/hybridRenderer.test.mjs`** — 6 new tests (14 total)
 - treble clef glyph present; G→1♯, D→2♯, F→1♭, Eb→3♭, C/none→0; Em & "G major"
   normalize to 1♯; key sig appears once per section first row (not every row).
+
+### SPRINT 16 CHANGES — Phase 2c (Nav markers + capo)
+
+**`renderer.js`**
+- Ported nav helpers: `HR_NAV_RE`, `hrExtractNavText(label)`, `hrFormatNavText(text)`
+  (substitutes Segno/Coda/D.S. words → Unicode musical symbols 𝄋 𝄌 before escaping).
+- `hrToRoman(n)` + `hrCapoMarker(capoNum, tabY, col)` — capo indicator below the
+  T/A/B label on the first TAB row.
+- `renderHybridDoc()`: systems gain a `lastRow` flag; nav text (from
+  `hrExtractNavText(sec.label) || sec.navText`) renders bottom-right of each section's
+  last row; capo (from `hybrid.capo`) renders once on the first row that has a tab lane.
+
+**`importPipeline.js`**
+- `buildDocSectionMap()`: standalone navigation markers (a `- D.C. al Fine` line with
+  no bars, dropped by the bars>0 filter) now carry their text onto the previous
+  bar-bearing section as `navText` (additive field; counts unchanged).
+- `parseHybridChartFromCSMPN()`: section models carry `navText`; return object adds
+  `capo: doc.capo || 0`.
+
+**`tests/hybridRenderer.test.mjs`** — 6 new tests (20 total): standalone nav carry,
+nav-in-label detection, Coda→𝄌 substitution, no-nav charts stay clean, capo Roman
+numeral on tab lane, capo suppressed without a tab lane.
+
+Deferred: ending brackets (16.2c-2) need a `buildDocSectionMap` refactor to source bars
+from `parseBarStructures` (captures `endingLabel`/`leftBar`/`rightBar` and fixes the
+volta-prefix-in-chord leak + multi-token bar mis-split). Strum arrows (16.2c-3) need a
+config source decision (no panel controls exist in the main-preview context).

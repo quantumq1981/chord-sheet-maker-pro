@@ -150,3 +150,43 @@ test('key signature appears once per section first row, not on every row', () =>
   const out = ctx.renderHybridDoc('Key: G\n\n- Verse\n| G | D | Em | C | G | D | Em | C |\n');
   assert.equal(sharpCount(out), 1);
 });
+
+// ── 16.2c: navigation markers + capo ────────────────────────────────────────
+test('standalone nav marker is carried to the previous section and rendered', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('- Verse\n| G | D |\n- D.C. al Fine\n');
+  assert.ok(out.includes('D.C. al Fine'), 'nav text should render');
+  assert.ok(out.includes('text-anchor="end"'), 'nav text is right-aligned');
+});
+
+test('nav text in a section label is detected', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('- Outro Fine\n| G | C |\n');
+  assert.ok(out.includes('text-anchor="end"'));
+});
+
+test('Coda / Segno words convert to Unicode musical symbols', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('- Verse\n| G |\n- To Coda\n');
+  assert.ok(out.includes('𝄌'), 'Coda symbol rendered');
+});
+
+test('plain chart with no nav marker renders no right-aligned nav text', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('- Verse\n| G | D |\n');
+  assert.ok(!out.includes('text-anchor="end"'));
+});
+
+test('capo metadata renders a Roman-numeral capo marker on the tab lane', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc(
+    'Capo: 2\n\n- Verse\n| G |\n{hybrid\nb1: 1:q(G)\ntab1: 3,2,0,0,0,3 @ 1\n}'
+  );
+  assert.ok(out.includes('cap.II'), 'capo marker should show fret as Roman numeral');
+});
+
+test('capo marker is suppressed when the chart has no tab lane', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('Capo: 2\n\n- Verse\n| G | D |\n');
+  assert.ok(!out.includes('cap.'), 'no capo marker without a tab staff');
+});
