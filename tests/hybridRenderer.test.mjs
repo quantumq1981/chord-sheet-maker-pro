@@ -101,3 +101,52 @@ test('3/4 simple meter still draws 3 slashes (not collapsed)', () => {
   const out = ctx.renderHybridDoc('Time: 3/4\n\n- Verse\n| G |\n');
   assert.equal(slashCount(out), 3);
 });
+
+// ── 16.2b: treble clef + key signature ──────────────────────────────────────
+const sharpCount = (svg) => (svg.match(/♯/g) || []).length;
+const flatCount = (svg) => (svg.match(/♭/g) || []).length;
+
+test('renders a real treble clef glyph (U+1D11E)', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('- Verse\n| G |\n');
+  assert.ok(out.includes('&#x1D11E;'), 'should emit the treble clef glyph');
+});
+
+test('key of G renders one sharp; key of D renders two', () => {
+  const ctx = loadRenderer();
+  const g = ctx.renderHybridDoc('Key: G\n\n- Verse\n| G |\n');
+  const d = ctx.renderHybridDoc('Key: D\n\n- Verse\n| D |\n');
+  assert.equal(sharpCount(g), 1);
+  assert.equal(sharpCount(d), 2);
+});
+
+test('key of F renders one flat; key of Eb renders three', () => {
+  const ctx = loadRenderer();
+  const f = ctx.renderHybridDoc('Key: F\n\n- Verse\n| F |\n');
+  const eb = ctx.renderHybridDoc('Key: Eb\n\n- Verse\n| Eb |\n');
+  assert.equal(flatCount(f), 1);
+  assert.equal(flatCount(eb), 3);
+});
+
+test('key of C (and no key) renders no accidentals', () => {
+  const ctx = loadRenderer();
+  const c = ctx.renderHybridDoc('Key: C\n\n- Verse\n| C |\n');
+  const none = ctx.renderHybridDoc('- Verse\n| C |\n');
+  assert.equal(sharpCount(c) + flatCount(c), 0);
+  assert.equal(sharpCount(none) + flatCount(none), 0);
+});
+
+test('minor and worded keys normalize (Em -> 1 sharp, "G major" -> 1 sharp)', () => {
+  const ctx = loadRenderer();
+  const em = ctx.renderHybridDoc('Key: Em\n\n- Verse\n| Em |\n');
+  const gmaj = ctx.renderHybridDoc('Key: G major\n\n- Verse\n| G |\n');
+  assert.equal(sharpCount(em), 1);
+  assert.equal(sharpCount(gmaj), 1);
+});
+
+test('key signature appears once per section first row, not on every row', () => {
+  const ctx = loadRenderer();
+  // 8 bars at barsPerRow 4 = 2 rows, but one section → clef/keysig only on row 1
+  const out = ctx.renderHybridDoc('Key: G\n\n- Verse\n| G | D | Em | C | G | D | Em | C |\n');
+  assert.equal(sharpCount(out), 1);
+});
