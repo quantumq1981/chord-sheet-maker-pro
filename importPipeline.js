@@ -2743,28 +2743,47 @@ function buildDocSectionMap(text, _doc){
     }
     if (block.type !== 'bars') continue;
     const tokens = Array.isArray(block.tokens) ? block.tokens : [];
-    // Extract per-bar chord tokens (for chord-only fallback in hybrid renderer)
-    const barChords = [];
-    const hasBarlines = tokens.some((t) => isBarlineToken(t));
-    if (hasBarlines) {
-      let buf = [];
-      for (const t of tokens) {
-        if (isBarlineToken(t)) {
-          if (buf.length) { barChords.push(buf.join(' ')); buf = []; }
-        } else {
-          buf.push(t);
+    // Source bars from the canonical bar parser so each bar carries clean chord
+    // text plus volta endingLabel and repeat-barline state. (countBarsInDocBlock
+    // already used parseBarStructures, so bar counts are unchanged — this also
+    // fixes the prior "1." volta prefix leaking into the chord and multi-token
+    // bars being mis-joined.)
+    let bars = null;
+    if (typeof parseBarStructures === 'function') {
+      try { bars = parseBarStructures(tokens); } catch (_e) { bars = null; }
+    }
+    if (Array.isArray(bars) && bars.length) {
+      for (const b of bars) {
+        current.bars.push({
+          timeSig: doc.time || '4/4',
+          chordToken: b.token || '',
+          endingLabel: b.endingLabel || null,
+          leftBar: b.leftBar || 'single',
+          rightBar: b.rightBar || 'single',
+        });
+      }
+    } else {
+      // Fallback when parseBarStructures is unavailable: scan tokens directly.
+      const barChords = [];
+      const hasBarlines = tokens.some((t) => isBarlineToken(t));
+      if (hasBarlines) {
+        let buf = [];
+        for (const t of tokens) {
+          if (isBarlineToken(t)) {
+            if (buf.length) { barChords.push(buf.join(' ')); buf = []; }
+          } else {
+            buf.push(t);
+          }
+        }
+        if (buf.length) barChords.push(buf.join(' '));
+      } else {
+        for (const t of tokens) {
+          if (t && t.trim()) barChords.push(t);
         }
       }
-      if (buf.length) barChords.push(buf.join(' '));
-    } else {
-      // No barlines — each space-separated token is its own bar (standard CSMPN row)
-      for (const t of tokens) {
-        if (t && t.trim()) barChords.push(t);
+      for (const chord of barChords) {
+        current.bars.push({ timeSig: doc.time || '4/4', chordToken: chord || '' });
       }
-    }
-    const n = countBarsInDocBlock(block) || barChords.length;
-    for (let i = 0; i < n; i++) {
-      current.bars.push({ timeSig: doc.time || '4/4', chordToken: barChords[i] || '' });
     }
   }
   sections.push(current);

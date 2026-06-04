@@ -1089,8 +1089,8 @@ single engine where **plain even slashes are the zero-rhythm case of the hybrid 
 | 16.2a | `visualBeats` compound-meter slash count (6/8→2, 9/8→3, 12/8→4) | ✅ DONE |
 | 16.2b | Treble clef + key signature on the unified staff | ✅ DONE |
 | 16.2c | Nav markers (D.C./D.S./Fine/Coda) + capo on the unified staff | ✅ DONE |
-| 16.2c-2 | Ending brackets (needs bar-model refactor for `endingLabel`) | ⬜ TODO |
-| 16.2c-3 | Strum arrows (pending config-source decision) | ⬜ TODO |
+| 16.2c-2 | Ending brackets + bar-model refactor (`endingLabel`/`leftBar`/`rightBar`) | ✅ DONE |
+| 16.2c-3 | Strum arrows (Fake Book Settings UI config) | ⬜ TODO |
 | 16.2d | MusicXML export from the unified engine | ⬜ TODO |
 | 16.3 | Retire the slash-notation panel engine once feature parity is reached | ⬜ TODO |
 
@@ -1202,3 +1202,28 @@ Deferred: ending brackets (16.2c-2) need a `buildDocSectionMap` refactor to sour
 from `parseBarStructures` (captures `endingLabel`/`leftBar`/`rightBar` and fixes the
 volta-prefix-in-chord leak + multi-token bar mis-split). Strum arrows (16.2c-3) need a
 config source decision (no panel controls exist in the main-preview context).
+
+### SPRINT 16 CHANGES — Phase 2c-2 (Ending brackets + bar-model refactor)
+
+**`importPipeline.js` — `buildDocSectionMap()` refactor**
+- Per-block bars are now sourced from `parseBarStructures(tokens)` (with a legacy
+  token-scan fallback when it is unavailable). Each bar carries `chordToken`,
+  `endingLabel`, `leftBar`, `rightBar`. Bar counts are unchanged (`countBarsInDocBlock`
+  already used `parseBarStructures`).
+- Fixes two latent bugs: the `1.`/`2.` volta prefix leaking into the chord label, and
+  multiple tokens between barlines (`| C Am |`) being mis-joined into one bar.
+
+**`renderer.js`**
+- `hrEndingNumber(label)` — "1."/"[2]"/"1st"/"2nd" → "1"|"2"|null.
+- `HR_END_H = 16` — reserved band above the chord area when a row has endings;
+  added to row height and `staffY`.
+- `renderHybridDoc()`: systems gain a `hasEnding` flag; each run of consecutive bars
+  sharing the same volta `endingLabel` gets a bracket (left drop + top line + number;
+  right drop closed for 2nd endings, open for 1st).
+
+**`tests/hybridParser.test.mjs`** — mock `parseBarStructures` now returns token-bearing
+bars to match the new contract (`chordToken` is sourced from `bar.token`).
+
+**`tests/hybridRenderer.test.mjs`** — 3 new tests (23 total): 1st/2nd ending brackets
+render; volta prefix no longer leaks into the chord (refactor regression); non-volta
+charts render no brackets.

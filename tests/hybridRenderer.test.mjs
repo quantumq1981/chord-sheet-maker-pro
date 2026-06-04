@@ -190,3 +190,25 @@ test('capo marker is suppressed when the chart has no tab lane', () => {
   const out = ctx.renderHybridDoc('Capo: 2\n\n- Verse\n| G | D |\n');
   assert.ok(!out.includes('cap.'), 'no capo marker without a tab staff');
 });
+
+// ── 16.2c-2: ending brackets + bar-model refactor ───────────────────────────
+test('volta chart renders 1st and 2nd ending brackets', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('- Verse\n| 1. C | Am | 2. F | G |\n');
+  assert.ok(out.includes('>1.</text>'), 'first ending label rendered');
+  assert.ok(out.includes('>2.</text>'), 'second ending label rendered');
+});
+
+test('volta prefix no longer leaks into the chord label (refactor regression)', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('- Verse\n| 1. C | Am |\n');
+  assert.ok(out.includes('>C</text>'), 'chord renders as C');
+  assert.ok(!out.includes('1. C'), 'volta prefix is not part of the chord text');
+});
+
+test('chart without voltas renders no ending brackets', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('- Verse\n| C | Am | F | G |\n');
+  assert.ok(!out.includes('>1.</text>'));
+  assert.ok(!out.includes('>2.</text>'));
+});

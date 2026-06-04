@@ -226,6 +226,7 @@ const HR_SYS_BOT   = 22;
 const HR_SLBL_H    = 20;
 const HR_CUE_H     = 14;
 const HR_TUPLET_H  = 14;
+const HR_END_H     = 16; // reserved band above the chord area for 1st/2nd ending brackets
 
 const HR_DIAG_STRING_GAP = 9;
 const HR_DIAG_FRET_GAP   = 10;
@@ -379,6 +380,17 @@ function hrFormatNavText(text) {
     .replace(/\bAL\s+CODA\b/gi, 'al 𝄌')
     .replace(/\bCODA\b/gi, '𝄌');
   return escapeHtml(subst);
+}
+
+// 1st/2nd ending label → "1" | "2" | null. Matches "1.", "[2]", "1st", "2nd".
+function hrEndingNumber(label) {
+  if (!label) return null;
+  const s = String(label).trim();
+  const m = s.match(/^[\[(]?\s*([12])\s*[.)]/);
+  if (m) return m[1];
+  if (/^1\s*st\b/i.test(s)) return '1';
+  if (/^2\s*nd\b/i.test(s)) return '2';
+  return null;
 }
 
 // Integer (1–15) → Roman numeral, for capo markers.
@@ -673,6 +685,7 @@ function renderHybridDoc(sourceText) {
         hasPM:     rowBars.some((b) => b.pm?.bar || b.pm?.spans?.length > 0),
         hasCue:    rowBars.some((b) => b.cueText),
         hasTuplet: rowBars.some((b) => b.events?.some((e) => e.tuplet > 0)),
+        hasEnding: rowBars.some((b) => hrEndingNumber(b.endingLabel)),
         secCue: firstRow ? sec.cueText : '',
       });
       firstRow = false;
@@ -713,6 +726,7 @@ function renderHybridDoc(sourceText) {
     if (sys.hasTab)    h += HR_TAB_SEP + HR_TAB_H;
     if (sys.hasCue)    h += HR_CUE_H;
     if (sys.hasTuplet) h += HR_TUPLET_H;
+    if (sys.hasEnding) h += HR_END_H;
     sys.h = h;
     curY += h;
   }
@@ -756,7 +770,7 @@ function renderHybridDoc(sourceText) {
       y += HR_CUE_H;
     }
 
-    const staffY = y + HR_CHORD_H + (sys.hasPM ? HR_PM_H : 0) + (sys.hasTuplet ? HR_TUPLET_H : 0);
+    const staffY = y + HR_CHORD_H + (sys.hasPM ? HR_PM_H : 0) + (sys.hasTuplet ? HR_TUPLET_H : 0) + (sys.hasEnding ? HR_END_H : 0);
     const tabY   = staffY + HR_STAFF_H + HR_TAB_SEP;
     const blBot  = sys.hasTab ? tabY + HR_TAB_H : staffY + HR_STAFF_H;
 
@@ -764,6 +778,28 @@ function renderHybridDoc(sourceText) {
       svg += hrClef(HR_MARGIN, staffY, fg);
       svg += hrKeySig(staffY, keySigCount, fg);
     }
+
+    // 1st/2nd ending brackets above the chord area, over each run of bars
+    // sharing the same volta endingLabel.
+    if (sys.hasEnding) {
+      const eb = staffY - HR_CHORD_H - HR_END_H + 4;
+      let bi = 0;
+      while (bi < sys.rowBars.length) {
+        const lbl = sys.rowBars[bi].endingLabel;
+        const num = hrEndingNumber(lbl);
+        if (!num) { bi++; continue; }
+        let bj = bi + 1;
+        while (bj < sys.rowBars.length && sys.rowBars[bj].endingLabel === lbl) bj++;
+        const x1 = staffX + bi * barW;
+        const x2 = staffX + bj * barW;
+        svg += hrL(x1, eb, x1, eb + 12, fg, 1.2);                       // left drop
+        svg += hrL(x1, eb, x2 + (num === '1' ? 4 : 0), eb, fg, 1.2);    // top line
+        if (num !== '1') svg += hrL(x2, eb, x2, eb + 12, fg, 1.2);      // right drop (closed for 2nd)
+        svg += `<text x="${x1 + 5}" y="${eb + 11}" font-size="11" font-weight="bold" fill="${fg}" font-family='${_hrFont()}'>${num}.</text>`;
+        bi = bj;
+      }
+    }
+
     svg += hrStaff(staffX, staffY, staffW, fg);
     svg += hrL(staffX, staffY, staffX, blBot, fg, 2);
 
