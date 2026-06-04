@@ -552,7 +552,13 @@ function renderHybridDoc(sourceText) {
     typeof parseHybridChartFromCSMPN === 'function'
       ? parseHybridChartFromCSMPN(sourceText || '')
       : null;
-  if (!hybrid || !hybrid.active) return renderDoc(parseCSMPN(sourceText || ''));
+  // Unified slash/rhythm engine: a plain chart (no {hybrid} blocks) renders as the
+  // zero-rhythm case — even slash noteheads per beat with chord labels — through the
+  // same SVG path that draws full rhythm charts. `hrBar()` already handles the
+  // no-events bar. Only fall back to the fake-book HTML renderer when there is no
+  // chart content at all (e.g. empty source or a parse that yields no sections).
+  if (!hybrid || !Array.isArray(hybrid.sections) || hybrid.sections.length === 0)
+    return renderDoc(parseCSMPN(sourceText || ''));
 
   validationWarnings = [];
   rehearsalLetterIndex = 0;
@@ -704,7 +710,11 @@ function updatePreview(){
   notationPreference = detectNotationPreferenceFromKeyOrText(key, text);
 
   _vtBlockId = 0; // reset notation block counter before render
-  if (fbSettings.hybridRhythmMode && /\{hybrid\b/i.test(text)){
+  // Unified engine: when rhythm mode is on, render every chart through the SVG
+  // slash/rhythm engine. Charts with {hybrid} blocks show notated rhythm; plain
+  // charts show even slash noteheads (the zero-rhythm case). renderHybridDoc()
+  // falls back to the fake-book renderer only when there is no chart content.
+  if (fbSettings.hybridRhythmMode){
     previewEl.innerHTML = renderHybridDoc(text);
   } else {
     const doc = parseCSMPN(text);
