@@ -1085,7 +1085,11 @@ single engine where **plain even slashes are the zero-rhythm case of the hybrid 
 | # | Task | Status |
 |---|------|--------|
 | 16.1 | Unified render routing: plain charts render through the hybrid SVG engine | ✅ DONE |
-| 16.2 | Port slash-panel-only features (key sig, clef, `visualBeats` compound meter, strum, capo, endings, nav markers, MusicXML export) into the unified engine | ⬜ TODO |
+| 16.2 | Port slash-panel-only features into the unified engine | 🚧 IN PROGRESS |
+| 16.2a | `visualBeats` compound-meter slash count (6/8→2, 9/8→3, 12/8→4) | ✅ DONE |
+| 16.2b | Treble clef + key signature on the unified staff | ⬜ TODO |
+| 16.2c | Strum arrows, capo, ending brackets, nav markers | ⬜ TODO |
+| 16.2d | MusicXML export from the unified engine | ⬜ TODO |
 | 16.3 | Retire the slash-notation panel engine once feature parity is reached | ⬜ TODO |
 
 ### Hybrid Scaffolder (previously undocumented — added ~PR #215)
@@ -1134,3 +1138,18 @@ immediately (scaffolding/`bN:` editing now *adds* rhythm rather than being requi
 Known follow-up (16.2): `hrBar()`'s no-events path draws one slash per time-sig
 numerator beat; compound meters (6/8, 9/8, 12/8) need the slash-panel's `visualBeats()`
 grouping ported over to avoid over-dense bars.
+
+### SPRINT 16 CHANGES — Phase 2a (Compound-meter slash count)
+
+**`renderer.js`**
+- New `hrVisualBeats(timeSig)` helper — mirrors `visualBeats()` in the slash-notation
+  panel: compound meters collapse to dotted-quarter pulses (6/8→2, 9/8→3, 12/8→4);
+  simple meters use the numerator. Prevents the "solid black bar" artifact where a
+  12/8 bar rendered 12 packed slash noteheads.
+- `hrBar()` no-events (zero-rhythm) path now draws `hrVisualBeats(timeSig)` slashes,
+  evenly spaced across the bar (`ul + ((b-1)/vb) * uw`), instead of one per numerator
+  beat. Multi-chord token labels are positioned by even fraction (`pi/parts.length`),
+  unchanged in effect for simple meters.
+
+**`tests/hybridRenderer.test.mjs`** — 4 new tests (8 total)
+- 4/4 → 4 slashes (regression), 12/8 → 4 (not 12), 6/8 → 2, 9/8 → 3, 3/4 → 3
