@@ -1197,9 +1197,17 @@ function updatePreview(){
     sheetEl.style.background = fbSettings.bgColor || '#ffffff';
     sheetEl.style.color = fbSettings.fgColor || '#111111';
   }
+}
 
-  // Refresh slash notation panel if it is open
-  if (typeof updateSlashNotationIfOpen === 'function') updateSlashNotationIfOpen();
+// Render any CSMPN text to a standalone SVG string (used by the Setlist printer).
+// Built on the unified engine; returns just the <svg> without the screen-only
+// mode chip / wrapper. Replaces the slash-notation panel's renderCsmpnToSvg.
+if (typeof window !== 'undefined') {
+  window.renderCsmpnToSvg = function (csmpnText) {
+    const html = renderHybridDoc(csmpnText || '');
+    const m = html.match(/<svg[\s\S]*<\/svg>/);
+    return m ? m[0] : html;
+  };
 }
 
 /* =========================================================
