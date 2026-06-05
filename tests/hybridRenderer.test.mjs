@@ -329,26 +329,26 @@ test('section markers become rehearsal marks (= square, - none); nav suppressed'
 });
 
 // ── 16.2d-2: hybrid rhythm durations in MusicXML ────────────────────────────
-test('hybrid chart exports at 16th-note resolution (divisions=4)', () => {
+test('hybrid chart exports at triplet-friendly resolution (divisions=12)', () => {
   const ctx = loadRenderer();
   const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:q(G) 2:e 2&:e 3:h\n}');
-  assert.ok(xml.includes('<divisions>4</divisions>'));
+  assert.ok(xml.includes('<divisions>12</divisions>'));
   assert.ok(xml.includes('use-stems="yes"'), 'hybrid uses stemmed slashes');
 });
 
 test('event durations map to MusicXML note types', () => {
   const ctx = loadRenderer();
   const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:q(G) 2:e 2&:e 3:h\n}');
-  // quarter (4 divs), two eighths (2 divs), half (8 divs)
-  assert.ok(xml.includes('<duration>4</duration><type>quarter</type>'));
-  assert.ok(xml.includes('<duration>2</duration><type>eighth</type>'));
-  assert.ok(xml.includes('<duration>8</duration><type>half</type>'));
+  // quarter (12 divs), eighths (6 divs), half (24 divs) at divisions=12
+  assert.ok(xml.includes('<duration>12</duration><type>quarter</type>'));
+  assert.ok(xml.includes('<duration>6</duration><type>eighth</type>'));
+  assert.ok(xml.includes('<duration>24</duration><type>half</type>'));
 });
 
 test('rest events export as <rest>, not slash noteheads', () => {
   const ctx = loadRenderer();
   const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:q(G) 2:rq 3:h\n}');
-  assert.ok(xml.includes('<note><rest/><duration>4</duration><type>quarter</type></note>'));
+  assert.ok(xml.includes('<note><rest/><duration>12</duration><type>quarter</type></note>'));
 });
 
 test('muted events use x notehead; accents emit <accent/>', () => {
@@ -360,10 +360,47 @@ test('muted events use x notehead; accents emit <accent/>', () => {
 
 test('hybrid harmony is placed at the event beat offset', () => {
   const ctx = loadRenderer();
-  // chord change at beat 3 → offset (3-1)*4 = 8 divisions
+  // chord change at beat 3 → offset (3-1)*12 = 24 divisions
   const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:h(G) 3:h(C)\n}');
   assert.ok(xml.includes('<root-step>G</root-step>'));
-  assert.ok(xml.includes('<offset>8</offset><root><root-step>C</root-step>'));
+  assert.ok(xml.includes('<offset>24</offset><root><root-step>C</root-step>'));
+});
+
+// ── #3: tuplets in MusicXML (time-modification) ─────────────────────────────
+test('triplet events emit <time-modification> 3:2 and tuplet start/stop brackets', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:e(G)t3 1&:et3 2:et3 3:h\n}');
+  assert.equal(
+    (
+      xml.match(
+        /<time-modification><actual-notes>3<\/actual-notes><normal-notes>2<\/normal-notes><\/time-modification>/g
+      ) || []
+    ).length,
+    3,
+    'all three triplet notes carry 3:2 time-modification'
+  );
+  assert.ok(xml.includes('<tuplet type="start"/>'), 'tuplet bracket opens');
+  assert.ok(xml.includes('<tuplet type="stop"/>'), 'tuplet bracket closes');
+});
+
+test('triplet eighths are integer-exact and fill one beat (3 × 4 = 12 divs)', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:e(G)t3 1&:et3 2:et3 3:h\n}');
+  // triplet eighth at divisions=12 → 6 × 2/3 = 4 divs each; no spurious rests inside
+  assert.equal((xml.match(/<duration>4<\/duration><type>eighth<\/type>/g) || []).length, 3);
+  const durs = [...xml.matchAll(/<duration>(\d+)<\/duration>/g)].map((m) => +m[1]);
+  assert.equal(
+    durs.reduce((a, b) => a + b, 0),
+    48,
+    'measure fills exactly (48 divs at div=12, 4/4)'
+  );
+});
+
+test('non-tuplet events carry no time-modification', () => {
+  const ctx = loadRenderer();
+  const xml = ctx.hrBuildMusicXml('- Verse\n| G |\n{hybrid\nb1: 1:q(G) 2:q 3:q 4:q\n}');
+  assert.ok(!xml.includes('<time-modification>'));
+  assert.ok(!xml.includes('<tuplet'));
 });
 
 test('hybrid export still emits repeat barlines and voltas', () => {

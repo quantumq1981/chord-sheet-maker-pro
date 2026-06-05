@@ -1065,25 +1065,34 @@ function hrBuildSlashMusicXml(hybrid) {
   return hrMusicXmlDoc(hybrid.title, hybrid.composer, measureXml);
 }
 
+// Normal-notes count for an N-tuplet (largest power of 2 ≤ N): 3→2, 5→4, 6→4, 9→8.
+function hrTupletNormal(n) {
+  let p = 1;
+  while (p * 2 <= n) p *= 2;
+  return p;
+}
+
 // Duration-aware export: encodes hybrid event durations (w/h/q/e/s + rests),
-// accents and muted noteheads at 16th-note resolution (divisions=4). Fixes the
-// slash panel's buildHybridMusicXml, which read a non-existent ev.durCode field
-// and so emitted every event as a plain quarter slash.
+// accents, muted noteheads, and tuplets at divisions=12 (1 quarter = 12 divs),
+// which keeps triplet/sextuplet durations integer-exact. Fixes the slash panel's
+// buildHybridMusicXml, which read a non-existent ev.durCode field and so emitted
+// every event as a plain quarter slash with no tuplet/time-modification.
 function hrBuildHybridMusicXml(hybrid) {
-  const divisions = 4; // 1 quarter = 4 divisions (16th resolution)
+  const divisions = 12; // 1 quarter = 12 divisions (triplet-friendly)
+  const Q = divisions;  // divisions per quarter note
   const timeSig = hybrid.time || '4/4';
   const tp = timeSig.match(/^(\d+)\s*\/\s*(\d+)$/) || ['', '4', '4'];
   const tsBeats = parseInt(tp[1] || '4', 10);
   const tsBeatType = parseInt(tp[2] || '4', 10);
-  const totalDivs = Math.round((tsBeats * 16) / tsBeatType);
+  const totalDivs = Math.round((tsBeats * 4 * Q) / tsBeatType);
   const keySig = hrKeySigFromKey(hybrid.key);
   const keyMode = hrKeyMode(hybrid.key);
 
-  const DUR_DIVS = { w: 16, h: 8, q: 4, e: 2, s: 1 };
+  const DUR_DIVS = { w: 4 * Q, h: 2 * Q, q: Q, e: Q / 2, s: Q / 4 };
   const DUR_TYPE = { w: 'whole', h: 'half', q: 'quarter', e: 'eighth', s: '16th' };
-  const beatDiv = (beat) => Math.round(((beat - 1) * 16) / tsBeatType);
+  const beatDiv = (beat) => Math.round(((beat - 1) * 4 * Q) / tsBeatType);
   const restFill = (rem) => {
-    const vals = [16, 8, 4, 2, 1];
+    const vals = [4 * Q, 2 * Q, Q, Q / 2, Q / 4];
     const types = ['whole', 'half', 'quarter', 'eighth', '16th'];
     let xml = '';
     while (rem > 0) {
@@ -1095,7 +1104,7 @@ function hrBuildHybridMusicXml(hybrid) {
     return xml;
   };
   const beatNoteType = tsBeatType === 8 ? 'eighth' : tsBeatType === 2 ? 'half' : tsBeatType === 1 ? 'whole' : 'quarter';
-  const beatNoteDiv = Math.round(16 / tsBeatType);
+  const beatNoteDiv = Math.round((4 * Q) / tsBeatType);
 
   let measureXml = '';
   let num = 0;
@@ -1151,19 +1160,50 @@ function hrBuildHybridMusicXml(hybrid) {
           harmonyXml = hrHarmonyXml(bar.chordToken, tsBeats, divisions);
 
         let pos = 0;
-        for (const ev of evs) {
-          const evDiv = beatDiv(ev.beat);
-          if (evDiv > pos) { notesXml += restFill(evDiv - pos); pos = evDiv; }
-          const divs = DUR_DIVS[ev.duration] || 4;
+        let tIdx = 0;        // running position within the current tuplet group
+        let prevTuplet = 0;
+        for (let ei = 0; ei < evs.length; ei++) {
+          const ev = evs[ei];
           const type = DUR_TYPE[ev.duration] || 'quarter';
+          const baseDivs = DUR_DIVS[ev.duration] || Q;
+
+          // Tuplet: integer-exact at divisions=12; emit <time-modification> + brackets.
+          const N = ev.tuplet > 1 ? ev.tuplet : 0;
+          if (N && prevTuplet !== N) tIdx = 0;
+          const groupPos = N ? tIdx % N : 0;
+
+          // Align to the event's beat slot — except for mid-tuplet notes, whose
+          // beat slots (1, 1&, 2 …) don't represent true tuplet timing; those are
+          // placed contiguously after the group's first note.
+          if (!(N && groupPos !== 0)) {
+            const evDiv = beatDiv(ev.beat);
+            if (evDiv > pos) { notesXml += restFill(evDiv - pos); pos = evDiv; }
+          }
+
+          let divs = baseDivs;
+          let timeMod = '';
+          let tupletNot = '';
+          if (N) {
+            const normal = hrTupletNormal(N);
+            divs = Math.round((baseDivs * normal) / N);
+            timeMod = `<time-modification><actual-notes>${N}</actual-notes><normal-notes>${normal}</normal-notes></time-modification>`;
+            const nextEv = evs[ei + 1];
+            const nextSame = !!(nextEv && nextEv.tuplet === N);
+            if (groupPos === 0) tupletNot += '<tuplet type="start"/>';
+            if (groupPos === N - 1 || !nextSame) tupletNot += '<tuplet type="stop"/>';
+          }
+
           if (ev.type === 'rest') {
-            notesXml += `\n      <note><rest/><duration>${divs}</duration><type>${type}</type></note>`;
+            const notations = tupletNot ? `<notations>${tupletNot}</notations>` : '';
+            notesXml += `\n      <note><rest/><duration>${divs}</duration><type>${type}</type>${timeMod}${notations}</note>`;
           } else {
             const head = ev.muted ? 'x' : 'slash';
-            const accent = ev.accent ? '<notations><articulations><accent/></articulations></notations>' : '';
-            notesXml += `\n      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divs}</duration><type>${type}</type><notehead>${head}</notehead>${accent}</note>`;
+            const accent = ev.accent ? '<articulations><accent/></articulations>' : '';
+            const notations = (accent || tupletNot) ? `<notations>${accent}${tupletNot}</notations>` : '';
+            notesXml += `\n      <note><pitch><step>B</step><octave>4</octave></pitch><duration>${divs}</duration><type>${type}</type>${timeMod}<notehead>${head}</notehead>${notations}</note>`;
           }
-          pos = Math.max(pos, evDiv) + divs;
+          pos += divs; // alignment already advanced pos to the event's beat slot
+          if (N) { tIdx++; prevTuplet = N; } else { prevTuplet = 0; }
         }
         if (pos < totalDivs) notesXml += restFill(totalDivs - pos);
       } else {
