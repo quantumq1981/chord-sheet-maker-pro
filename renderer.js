@@ -869,7 +869,7 @@ function renderHybridDoc(sourceText) {
 
   svg += `</svg>`;
   if (validationWarnings.length) setStatus(validationWarnings.join('\n'), 'warning');
-  return `<div class="hybridSvgWrap"><div class="hybridModeChip">Hybrid Rhythm Guitar v1</div>${svg}</div>`;
+  return `<div class="hybridSvgWrap"><div class="hybridModeChip">Slash-Rhythm View</div>${svg}</div>`;
 }
 
 // ── MusicXML export (unified engine) ─────────────────────────────────────────

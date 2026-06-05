@@ -1945,7 +1945,7 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
           <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
           <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
-          <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Rhythm mode)">&#x2193; SVG</button>
+          <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
         </div>
         <div class="toolbar-sep"></div>
         <div class="toolbar-group">
@@ -2004,7 +2004,7 @@ body.exporting .sectionBlock{
             <ul>
               <li>Open the <strong>ChordSlashML</strong> editor for a live two-pane view: type on the left, see slash notation on the right.</li>
               <li>Uses <code>[Section]</code> labels and beat-slotted measures (<code>C _ _ _</code>, <code>Am _ G _</code>) with <code>|: :|</code> repeats.</li>
-              <li><strong>Load into Chart</strong> converts it to a CSMPN fake-book chart (or a Hybrid rhythm chart when Hybrid mode is on). <strong>⬆ From Source</strong> goes the other way.</li>
+              <li><strong>Load into Chart</strong> converts it to a CSMPN fake-book chart (or a notated rhythm chart when Slash-Rhythm View is on). <strong>⬆ From Source</strong> goes the other way.</li>
             </ul>
           </details>
 
@@ -2294,10 +2294,10 @@ Tempo: 120
 
       <div class="csml-editor-workflow-hint">
         <strong>Workflow:</strong> Import or paste a chart → <em>⬆ From Source</em> to convert it here → edit beat slots → <em>← Load into Chart</em> to render it.
-        SVG / MusicXML / Print export from the preview above. Hybrid mode (Settings) preserves exact beat positions when loading.
+        SVG / MusicXML / Print export from the preview above. Slash-Rhythm View (Settings) preserves exact beat positions when loading.
       </div>
       <div class="csml-editor-actions">
-        <button class="primary" id="btnCsmlLoad" title="Convert this ChordSlashML to CSMPN and render it in the main chart (or to CSMPN+hybrid if Hybrid mode is ON in Settings)">← Load into Chart</button>
+        <button class="primary" id="btnCsmlLoad" title="Convert this ChordSlashML to CSMPN and render it in the main chart (or to CSMPN+rhythm if Slash-Rhythm View is ON in Settings)">← Load into Chart</button>
         <button id="btnCsmlFromSource" title="Convert the current main chart to ChordSlashML and open it here for editing">⬆ From Source</button>
         <button id="btnCsmlSave" title="Download the ChordSlashML source as a .csml file">↓ Save .csml</button>
         <button id="btnCsmlDownloadSvg" title="Download the live preview as an SVG file">↓ SVG</button>
@@ -2519,17 +2519,17 @@ Tempo: 130
         </select>
       </div>
       <div class="field">
-        <label>Hybrid Rhythm Guitar Mode</label>
+        <label>Slash-Rhythm View</label>
         <select id="setHybridRhythmMode">
           <option value="false" selected>Off (default)</option>
           <option value="true">On</option>
         </select>
       </div>
       <div class="field">
-        <label>Hybrid Rhythm Preset</label>
+        <label>Slash-Rhythm Preset</label>
         <select id="setHybridPreset">
           <option value="default" selected>Default</option>
-          <option value="v1">Hybrid Rhythm Guitar v1</option>
+          <option value="v1">Slash-Rhythm v1</option>
         </select>
       </div>
       <div class="field">
@@ -2545,7 +2545,7 @@ Tempo: 130
         </select>
       </div>
       <div class="field">
-        <button class="outline" id="btnToHybrid" style="width:100%">&#8594; Scaffold Hybrid Blocks</button>
+        <button class="outline" id="btnToHybrid" style="width:100%">&#8594; Scaffold Rhythm Blocks</button>
       </div>
       <div class="field">
         <label>Strum Arrows</label>
@@ -3686,7 +3686,7 @@ document.getElementById('setHybridRhythmMode').addEventListener('change', (e) =>
   updatePreview();
   // Hint when mode is on but source has no {hybrid} blocks yet
   if (fbSettings.hybridRhythmMode && !/\{hybrid\b/i.test(sourceEl.value || '')) {
-    setStatus('Rhythm mode ON — chart now renders as slash notation. Press "→ Scaffold Hybrid Blocks" or edit bN: lines to add notated rhythm.', 'info');
+    setStatus('Slash-Rhythm View on — chart now renders as slash notation. Press "→ Scaffold Rhythm Blocks" or edit bN: lines to add notated rhythm.', 'info');
   }
 });
 document.getElementById('setHybridPreset').addEventListener('change', (e) => {
@@ -3721,7 +3721,7 @@ document.getElementById('btnToHybrid').addEventListener('click', () => {
     saveFBSettings();
   }
   updatePreview();
-  setStatus('Hybrid blocks scaffolded (' + preset + ' pattern). Hybrid mode enabled. Edit bN: lines to customise.');
+  setStatus('Rhythm blocks scaffolded (' + preset + ' pattern). Slash-Rhythm View enabled. Edit bN: lines to customise.');
 });
 function _syncStrumPatternVis(){
   const pf = document.getElementById('strumPatternField');
@@ -4508,7 +4508,7 @@ document.getElementById('btnExportSvg').addEventListener('click', () => {
   // Export the unified slash/rhythm SVG shown in the preview (Rhythm mode).
   const svgEl = previewEl ? previewEl.querySelector('svg') : null;
   if (!svgEl){
-    setStatus('Turn on Rhythm mode (Fake Book Settings) to render a slash/rhythm chart, then export SVG.', 'warning');
+    setStatus('Turn on Slash-Rhythm View (Fake Book Settings) to render a slash/rhythm chart, then export SVG.', 'warning');
     return;
   }
   try {
@@ -5459,7 +5459,7 @@ function csmpnToCsml(csmpnText) {
     if (typeof updatePreview === 'function') updatePreview();
     panel.classList.remove('open');
     setStatus(wantHybrid
-      ? 'Loaded with beat positions — Hybrid Rhythm mode active.'
+      ? 'Loaded with beat positions — Slash-Rhythm View active.'
       : 'ChordSlashML converted to CSMPN and loaded into chart.');
   });
 
