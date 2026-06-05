@@ -32,6 +32,7 @@ function loadRenderer() {
   vm.runInContext(read('chordProcessing.js'), context);
   vm.runInContext(read('csmpnParser.js'), context);
   vm.runInContext(read('importPipeline.js'), context);
+  vm.runInContext(read('musicXmlCore.js'), context);
   vm.runInContext(read('renderer.js'), context);
   return context;
 }
