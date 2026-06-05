@@ -1402,3 +1402,30 @@ GP/CSML import emit and existing users' saved settings.
 **Remaining recommendations (next):** #3 proper tuplets in MusicXML (`<time-modification>`);
 #4 collapse the three MusicXML emitters (`renderer.js` `hr*`, `chordSlashMLRenderer.js`
 `csml*`, `src/export/musicXmlExporter.ts`) into a shared core. Bigger bet: audio playback.
+
+### SPRINT 16 — #3: Tuplets in MusicXML export (time-modification)
+
+`hrBuildHybridMusicXml` previously emitted tuplet events at their base duration with no
+`<time-modification>`, so triplets didn't round-trip into notation apps. Fixed:
+
+**`renderer.js`**
+- Export resolution raised to **divisions=12** (1 quarter = 12 divs) so triplet/sextuplet
+  durations are integer-exact (triplet eighth = 6 × 2/3 = 4 divs). All duration/rest/offset
+  math rescaled via a `Q` constant.
+- `hrTupletNormal(n)` — normal-notes for an N-tuplet (largest power of 2 ≤ N: 3→2, 5→4, 9→8).
+- Tuplet events now emit `<time-modification><actual-notes>N</actual-notes><normal-notes>M
+  </normal-notes></time-modification>` plus `<tuplet type="start"/>` on the first and
+  `type="stop"` on the last note of each group.
+- Mid-tuplet notes are placed **contiguously** (their `1 1& 2` beat slots don't represent
+  true triplet timing — they're authored in regular slots + tagged `tN`); only the group's
+  first note aligns to its beat slot. This eliminates spurious inter-note rests and makes the
+  measure fill exactly (verified: a triplet + quarter-rest + half = 48 divs in 4/4).
+
+**`tests/hybridRenderer.test.mjs`** — updated 4 existing tests for divisions=12 (12/6/24 +
+offset 24); 3 new tuplet tests (46 total): 3:2 time-modification on all three triplet notes,
+start/stop brackets, integer-exact durations filling the bar, and no time-modification on
+straight rhythms.
+
+**Limitation:** non-3-based tuplets (5,7) at divisions=12 round their per-note duration
+(rare; triplets/sextuplets are exact). Remaining: #4 — collapse the three MusicXML emitters
+into a shared core.
