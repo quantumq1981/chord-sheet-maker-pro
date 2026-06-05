@@ -1094,7 +1094,7 @@ single engine where **plain even slashes are the zero-rhythm case of the hybrid 
 | 16.2d | MusicXML export from the unified engine (generic slash) | ✅ DONE |
 | 16.2d-2 | MusicXML export of hybrid rhythm durations | ✅ DONE |
 | 16.3a | SVG download parity on the main toolbar (export gap before retiring panel) | ✅ DONE |
-| 16.3b | Reimplement `renderCsmpnToSvg` on the unified engine + delete the slash-panel IIFE | ⬜ TODO |
+| 16.3b | Reimplement `renderCsmpnToSvg` on the unified engine + delete the slash-panel IIFE | ✅ DONE |
 
 ### Hybrid Scaffolder (previously undocumented — added ~PR #215)
 - `importPipeline.js` → `toHybridCSMPN(text, preset)` + `HYBRID_PRESET_PATTERNS`
@@ -1343,3 +1343,39 @@ inside the panel IIFE). 16.3b reimplements that on `renderHybridDoc` (extracting
 the panel IIFE (index.html ~5343–6852), its HTML (~2186–2287), the `btnSlashNotation`
 button, and the `.slashNotationPanel` CSS. The panel's `window.__*` font globals are
 already set independently by `applyFBSettings()` in settings.js, so they survive.
+
+### SPRINT 16 CHANGES — Phase 3b (Retire the slash-notation panel) ✅ SPRINT 16 COMPLETE
+
+The unified engine (`renderer.js`) now fully supersedes the legacy slash-notation panel,
+so the panel is removed. **index.html shrank by 1,773 lines.**
+
+**`renderer.js`**
+- `window.renderCsmpnToSvg(csmpnText)` reimplemented on the unified engine: calls
+  `renderHybridDoc()` and returns just the `<svg>…</svg>` (strips the screen-only mode
+  chip / wrapper). The Setlist printer (`printAll`) consumes this unchanged.
+- Removed the now-dead `updateSlashNotationIfOpen()` call at the end of `updatePreview()`.
+
+**`index.html`** — deleted:
+- The slash-notation panel IIFE (~1,516 lines): `renderSlashNotationHtml`, `renderRow`,
+  `buildSnSections`, `buildMusicXml`, `buildHybridMusicXml`, `download{Svg,Png,MusicXml}`,
+  `printSlashNotation`, `getSnRenderSettings`, `_snCfg`, all `sn*`/slash helpers, and the
+  panel's control + export event listeners.
+- The `#slashNotationPanel` HTML markup, the `𝄞 Slash Notation` toolbar button, and the
+  `.slashNotationPanel` / `.sn-*` / `#slashNotationOutput` CSS (incl. the print rule).
+
+**Preserved (verified):**
+- `window.__SLASH_FONT_FAMILY` / `__SN_NOTATION_FONT_FAMILY` / `__SLASH_FONT_PACK_ID` are
+  set independently by `applyFBSettings()` in settings.js (renderer.js reads the notation
+  font global), so font behavior is unchanged.
+- `parseChordToken` lives in chordProcessing.js (shared), not the panel.
+- Setlist still works via the new `renderCsmpnToSvg`.
+
+**Verification:** `npm run lint` · `npm run format:check` · `npm run build` (vite parses the
+inline script) · `npm run test:all` (380 + 484, 0 failures) all green; grep confirms zero
+orphaned references to panel ids/functions; a vm probe confirms `renderCsmpnToSvg` returns a
+bare `<svg>`.
+
+**Sprint 16 outcome:** one SVG slash/rhythm engine. Plain charts render as even slashes
+(zero-rhythm case); `{hybrid}` blocks add notated rhythm; full feature set (compound-meter
+slash count, clef, key sig, nav markers, capo, ending brackets, strum arrows) and all
+exports (SVG/PNG/PDF/Print/MusicXML, generic + hybrid-duration) live on the unified engine.
