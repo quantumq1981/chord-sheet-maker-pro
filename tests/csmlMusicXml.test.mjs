@@ -66,3 +66,36 @@ test('header-only input still yields a well-formed score with no harmonies', () 
   assert.ok(xml.includes('<score-partwise version="4.0">'));
   assert.equal((xml.match(/<harmony>/g) || []).length, 0);
 });
+
+// ── Compound-meter augmentation dots in the CSML SVG editor ─────────────────
+const SVG_OPTS = {
+  fgColor: '#111',
+  bgColor: '#fff',
+  chordColor: '#04c',
+  chordFont: 'serif',
+  chordFontSize: 13,
+  stems: true,
+  rawChords: false,
+  chordAlign: 'center',
+  mpr: 4,
+  keySig: '',
+};
+const dotCount = (svg) => (svg.match(/<circle /g) || []).length;
+
+test('12/8 renders 4 dotted-quarter slashes (augmentation dots) in the CSML editor', () => {
+  const csml = loadCsml();
+  assert.equal(dotCount(csml.toSvg('Time: 12/8\n\n[V]\n| Dm7 _ _ _ |\n', SVG_OPTS)), 4);
+});
+
+test('6/8 -> 2 dots, 9/8 -> 3 dots; padded measures are dotted too', () => {
+  const csml = loadCsml();
+  assert.equal(dotCount(csml.toSvg('Time: 6/8\n\n[V]\n| Dm7 _ |\n', SVG_OPTS)), 2);
+  assert.equal(dotCount(csml.toSvg('Time: 9/8\n\n[V]\n| Dm7 _ _ |\n', SVG_OPTS)), 3);
+  assert.equal(dotCount(csml.toSvg('Time: 12/8\n\n[V]\n| Dm7 |\n', SVG_OPTS)), 4);
+});
+
+test('simple meters render no augmentation dots', () => {
+  const csml = loadCsml();
+  assert.equal(dotCount(csml.toSvg('Time: 4/4\n\n[V]\n| Dm7 _ _ _ |\n', SVG_OPTS)), 0);
+  assert.equal(dotCount(csml.toSvg('Time: 3/4\n\n[V]\n| Dm7 _ _ |\n', SVG_OPTS)), 0);
+});
