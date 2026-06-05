@@ -1480,3 +1480,26 @@ the browser CSML exporter had **no** prior test. `chordSlashMLRenderer.js` added
 `chordSlashMLRenderer.js` `csml*`) now share one core (`musicXmlCore.js`) — the chord-kind /
 key-sig / harmony / score logic exists once, ending the drift. (The tests-only
 `src/export/musicXmlExporter.ts` was intentionally left out of scope.)
+
+### Post-Sprint 16 — ChordSlashML 12/8 compound-meter augmentation dots
+
+**Bug:** the ChordSlashML editor rendered compound meters (6/8, 9/8, 12/8) as plain
+slashes — `beatsPerMeasure('12/8')`=4 dotted-quarter pulses, but with no augmentation
+dot, so a 12/8 bar looked identical to 4/4. (The Slash-Rhythm View already got dots in
+SPRINT 16 #2; the CSML editor was the inconsistent one.)
+
+**`chordSlashMLRenderer.js`**
+- `csmlIsCompound(time)` (den===8 && num%3===0 && num>=6) + `augDot(cx, cy, col)`
+  (small filled circle right of the slash notehead).
+- `renderBeatNoteheads()` gains a `dotted` param; chord/slash beats draw a dot when set.
+  Sub-noteheads inside compound/tuplet groups are not dotted (only the top-level pulse).
+- Both `csmlToSvgDoc()` and `csmlToSvgPages()` compute `dotted = csmlIsCompound(doc.time)`
+  and pass it through the explicit-beat path and the padding-slash loop.
+
+**`tests/csmlMusicXml.test.mjs`** — 3 new tests (7 total): 12/8→4 dots, 6/8→2 / 9/8→3 /
+padded→4, simple meters→0.
+
+Known follow-up (not in this change): the CSML beat-slot model needs the slot count to
+match the meter's pulse count (12/8→4 slots, 6/8→2, 9/8→3); writing more slots than the
+pulse count overflows the measure. A future change could clamp `beatSpacing` to
+`max(bpm, beats.length)` so over-filled measures don't run past the barline.

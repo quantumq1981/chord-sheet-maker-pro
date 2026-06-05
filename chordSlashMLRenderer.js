@@ -309,6 +309,19 @@
     return svgLine(cx+SN_LEAN/2+4, cy-SN_H/2, cx+SN_LEAN/2+4, cy-22, col, 1.5);
   }
 
+  // Compound meters (6/8, 9/8, 12/8): each visual beat is a dotted quarter.
+  function csmlIsCompound(time) {
+    const m = /^(\d+)\/(\d+)$/.exec(time || '');
+    if (!m) return false;
+    const num = parseInt(m[1], 10), den = parseInt(m[2], 10);
+    return den === 8 && num >= 6 && num % 3 === 0;
+  }
+
+  // Augmentation dot to the right of a slash notehead.
+  function augDot(cx, cy, col) {
+    return `<circle cx="${cx + SN_W / 2 + SN_LEAN + 3}" cy="${cy}" r="1.6" fill="${col}"/>`;
+  }
+
   function staffLinesEl(x, y, w, col) {
     const out = [];
     for (let i = 0; i < STAFF_LINES; i++) out.push(svgLine(x, y+i*LINE_GAP, x+w, y+i*LINE_GAP, col, 1));
@@ -383,13 +396,14 @@
     return rows;
   }
 
-  function renderBeatNoteheads(beat, cx, cy, subSpacing, fg, withStem, out, depth) {
+  function renderBeatNoteheads(beat, cx, cy, subSpacing, fg, withStem, out, depth, dotted) {
     if (depth > 3) return;
     switch (beat.kind) {
       case 'chord':
       case 'slash':
         out.push(slashHead(cx, cy, fg));
         if (withStem) out.push(noteStem(cx, cy, fg));
+        if (dotted) out.push(augDot(cx, cy, fg));
         break;
       case 'rest':
         out.push(`<rect x="${cx-5}" y="${cy-2}" width="10" height="4" fill="${fg}"/>`);
@@ -426,6 +440,7 @@
     const { fgColor: fg, bgColor: bg, chordColor: cc } = o;
     const rows = buildRows(doc, mpr);
     const bpm = beatsPerMeasure(doc.time);
+    const dotted = csmlIsCompound(doc.time);
 
     let totalH = TITLE_AREA_H;
     for (const row of rows) {
@@ -485,13 +500,14 @@
             parts.push(`<text x="${cx}" y="${staffY-10}" font-size="${o.chordFontSize}" font-family="${svgEsc(o.chordFont)}" fill="${cc}" text-anchor="${anchor}">${svgEsc(dispTxt)}</text>`);
           }
           const nh = [];
-          renderBeatNoteheads(beat, bx, noteCy, beatSpacing*0.4, fg, o.stems, nh, 0);
+          renderBeatNoteheads(beat, bx, noteCy, beatSpacing*0.4, fg, o.stems, nh, 0, dotted);
           parts.push(...nh);
         }
         for (let bi = measure.beats.length; bi < bpm; bi++) {
           const bx = measLeft + beatSpacing*bi + beatSpacing*0.5;
           parts.push(slashHead(bx, noteCy, fg));
           if (o.stems) parts.push(noteStem(bx, noteCy, fg));
+          if (dotted) parts.push(augDot(bx, noteCy, fg));
         }
         mx = measRight;
         const isLast = mi === row.measures.length - 1;
@@ -524,6 +540,7 @@
     const o = Object.assign({ measuresPerRow:4, fgColor:'#000', bgColor:'#fff', chordColor:'#000', chordFontSize:14, chordFont:'Georgia,serif', labelFont:'Arial,sans-serif', stems:false, keySig:'', rawChords:false, chordAlign:'center', paperSize:'letter', printMargin:'0.5in' }, opts || {});
     const rows = buildRows(doc, o.measuresPerRow);
     const bpm  = beatsPerMeasure(doc.time);
+    const dotted = csmlIsCompound(doc.time);
     const { fgColor: fg, bgColor: bg, chordColor: cc } = o;
 
     const budget = (PAGE_HEIGHTS[o.paperSize] || PAGE_HEIGHTS['letter'])[o.printMargin] || 1014;
@@ -604,13 +621,14 @@
               parts.push(`<text x="${cx}" y="${staffY-10}" font-size="${o.chordFontSize}" font-family="${svgEsc(o.chordFont)}" fill="${cc}" text-anchor="${anchor}">${svgEsc(dispTxt)}</text>`);
             }
             const nh = [];
-            renderBeatNoteheads(beat, bx, noteCy, beatSpacing*0.4, fg, o.stems, nh, 0);
+            renderBeatNoteheads(beat, bx, noteCy, beatSpacing*0.4, fg, o.stems, nh, 0, dotted);
             parts.push(...nh);
           }
           for (let bi = measure.beats.length; bi < bpm; bi++) {
             const bx = measLeft + beatSpacing*bi + beatSpacing*0.5;
             parts.push(slashHead(bx, noteCy, fg));
             if (o.stems) parts.push(noteStem(bx, noteCy, fg));
+            if (dotted) parts.push(augDot(bx, noteCy, fg));
           }
           mx = measRight;
           const isLast = mi === row.measures.length - 1;
