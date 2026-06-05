@@ -16,8 +16,9 @@
  * not inherit the page's stylesheet.
  *
  * Font: Noto Music, Copyright 2022 The Noto Project Authors
- * (https://github.com/notofonts/music), licensed under SIL OFL 1.1.
- * Subset to the glyphs above; no other modifications.
+ * (https://github.com/notofonts/music), licensed under SIL OFL 1.1 — full license
+ * text bundled at licenses/NotoMusic-OFL.txt. Subset to the glyphs above; no other
+ * modifications.
  */
 (function () {
   var FAMILY = 'CSMPN Music';

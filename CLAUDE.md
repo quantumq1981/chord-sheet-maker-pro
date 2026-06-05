@@ -1545,3 +1545,50 @@ the `@font-face` and lead the clef/accidental font-family with `CSMPN Music`.
 Total npm tests 398 → 402.
 
 Font: Noto Music © The Noto Project Authors (github.com/notofonts/music), SIL OFL 1.1.
+
+### Post-Sprint 16 — Font packs made reliable + honest (finishing the font work)
+
+**Problem:** the `CHORD_FONT_PACK_MAP` packs led with commercial fonts (Pori/Norfolk
+"ASC", and a `FreeSerif`/`Segoe UI Symbol`/`Noto Music` chain) that the app never
+loads. So every pack silently collapsed to the same system fallback — the packs were
+indistinguishable, the advertised angled-slash-chord feature never worked, and there
+was no guarantee the ♭/♯ accidentals in chord symbols (`B♭`, `F♯m`, `7♭9`) rendered.
+
+**Key finding:** the Pori & Norfolk ASC/ASL fonts are **SIL Open Font License** (free
+to install/embed) but are distributed through Notation Central's store, not a stable
+CDN/GitHub URL — so they can't be bundled. The fix instead makes the packs *honest and
+reliable* without depending on them.
+
+**`settings.js` — rebuilt `CHORD_FONT_PACK_MAP`:**
+- Every stack now ends in a guaranteed font: `"EB Garamond"` (loaded via Google Fonts,
+  engraved serif) or system Helvetica/Arial (sans), plus `"CSMPN Music"` (the embedded
+  music-glyph font from `musicFont.js`) appended **last** so per-glyph CSS fallback
+  always renders ♭/♯ even when the text font lacks them.
+- The commercial font names stay **first** (honoured when a user installs them on-device
+  → real angled slash chords via `ss01`), harmlessly skipped otherwise.
+- Result: `default` follows the Body Font selector; `pori`/`norfolk` are reliable
+  EB Garamond serif that upgrade to angled slash chords if the font is installed;
+  `norfolksans` is a reliable Helvetica sans. No pack can collapse to an undefined font.
+- `applyFBSettings()` now appends `"CSMPN Music"` to `--fb-chord-font` on **both** paths
+  (ASC packs and the body-font default), so accidentals are covered everywhere.
+
+**`index.html`** — `--fb-chord-font` CSS default changed from the phantom
+`FreeSerif`/`Segoe UI Symbol`/`Noto Music` chain to `"EB Garamond", Georgia,
+"Times New Roman", "CSMPN Music", serif`. Font-pack `<select>` options relabelled to be
+honest (`Default (follows Body Font)`, `Serif + Pori slash chords*`, `… Norfolk …*`,
+`Sans-serif*`) with a tooltip explaining the `*` = install the free SIL-OFL font for
+angled slash chords.
+
+**`renderer.js`** — `_hrFont()` fallback gains `"CSMPN Music"` so SVG notation chord
+labels render accidentals even before `applyFBSettings` sets the pack global.
+
+**Note:** `window.__SLASH_FONT_FAMILY` is set by `applyFBSettings` but **never read**
+(only `__SN_NOTATION_FONT_FAMILY` and `--fb-chord-font`/`--fb-chord-features` are live);
+left in place for backward-compat.
+
+**`tests/chordFontPacks.test.mjs`** (new, 6 tests): every stack ends with the music
+font; no phantom-font references remain; every stack has a real EB Garamond/Helvetica
+base; Pori/Norfolk packs lead with their installable font; sans vs serif classification;
+`applyFBSettings` appends the music font to `--fb-chord-font`.
+
+Total npm tests 402 → 408.

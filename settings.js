@@ -56,26 +56,48 @@ const BODY_FONT_MAP = {
   freesans: '"FreeSans", Helvetica, Arial, sans-serif',
   freeserif: '"FreeSerif", Georgia, serif',
 };
+/* Chord/notation font packs.
+ *
+ * Every stack ends in a font that is GUARANTEED to be present so a pack can never
+ * silently collapse to an undefined system fallback:
+ *   - "EB Garamond" is loaded from Google Fonts (engraved Real-Book serif).
+ *   - Helvetica/Arial is a system sans, always available.
+ *   - "CSMPN Music" is the embedded music-glyph font (musicFont.js) — appended last
+ *     so the ♭/♯ accidentals in chord symbols (B♭, F♯m, 7♭9 …) always render even
+ *     if the chosen text font lacks them. CSS font fallback is per-glyph, so the
+ *     text font draws the letters and "CSMPN Music" only catches the accidentals.
+ *
+ * The leading commercial font names (Pori / Norfolk "ASC", SIL Open Font License)
+ * are honoured when a user has installed them on their device — that enables true
+ * angled slash chords via the `ss01` OpenType feature — and are harmlessly skipped
+ * otherwise, falling through to the guaranteed serif/sans base. So the `pori` /
+ * `norfolk` packs render as a clean engraved serif out of the box and upgrade to
+ * angled slash chords automatically once the font is installed; `norfolksans` is a
+ * reliable sans-serif look with or without the Norfolk Sans font. */
+const _CHORD_SERIF = '"EB Garamond", Georgia, "Times New Roman", serif';
+const _CHORD_SANS = 'Helvetica, Arial, "Helvetica Neue", sans-serif';
+const _CHORD_GLYPH = '"CSMPN Music"'; // embedded — covers ♭/♯ accidentals
+
 const CHORD_FONT_PACK_MAP = {
   default: {
-    fakeBookChordFont: '"FreeSerif", "Segoe UI Symbol", "Apple Symbols", "Noto Music", serif',
-    slashChordFont: 'Pori Chords ASC Std, Norfolk Chords ASC Std, "EB Garamond", Georgia, serif',
-    notationFont: '"EB Garamond", Georgia, "Times New Roman", serif',
+    fakeBookChordFont: `${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
+    slashChordFont: `${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
+    notationFont: `${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
   },
   pori: {
-    fakeBookChordFont: '"Pori Chords ASC Std", "Norfolk Chords ASC Std", "FreeSerif", "Noto Music", serif',
-    slashChordFont: 'Pori Chords ASC Std, Norfolk Chords ASC Std, "EB Garamond", Georgia, serif',
-    notationFont: '"Pori Text ASL Std", "Pori Text ASC Std", "EB Garamond", Georgia, "Times New Roman", serif',
+    fakeBookChordFont: `"Pori Chords ASC Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
+    slashChordFont: `"Pori Chords ASC Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
+    notationFont: `"Pori Text ASL Std", "Pori Text ASC Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
   },
   norfolk: {
-    fakeBookChordFont: '"Norfolk Chords ASC Std", "Pori Chords ASC Std", "FreeSerif", "Noto Music", serif',
-    slashChordFont: 'Norfolk Chords ASC Std, Pori Chords ASC Std, "EB Garamond", Georgia, serif',
-    notationFont: '"Norfolk Text ASC Std", "Norfolk Text ASL Std", "EB Garamond", Georgia, "Times New Roman", serif',
+    fakeBookChordFont: `"Norfolk Chords ASC Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
+    slashChordFont: `"Norfolk Chords ASC Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
+    notationFont: `"Norfolk Text ASC Std", "Norfolk Text ASL Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
   },
   norfolksans: {
-    fakeBookChordFont: '"Norfolk Chords Sans ASC Std", "Norfolk Chords ASC Std", "Pori Chords ASC Std", "FreeSerif", sans-serif',
-    slashChordFont: 'Norfolk Chords Sans ASC Std, Norfolk Chords ASC Std, Pori Chords ASC Std, sans-serif',
-    notationFont: '"Norfolk Text Sans ASC Std", "Norfolk Text ASC Std", "Norfolk Text ASL Std", Arial, sans-serif',
+    fakeBookChordFont: `"Norfolk Chords Sans ASC Std", ${_CHORD_SANS}, ${_CHORD_GLYPH}`,
+    slashChordFont: `"Norfolk Chords Sans ASC Std", ${_CHORD_SANS}, ${_CHORD_GLYPH}`,
+    notationFont: `"Norfolk Text Sans ASC Std", ${_CHORD_SANS}, ${_CHORD_GLYPH}`,
   },
 };
 
@@ -138,7 +160,12 @@ function applyFBSettings(){
   // For licensed ASC/ASL packs: use the pack's chord font.
   // For the default (free) pack: wire --fb-chord-font to the Body/Chord Font selector
   // so the user's font choice actually affects chord rendering.
-  root.style.setProperty('--fb-chord-font', isAscPack ? chordPack.fakeBookChordFont : bodyFontStr);
+  // Always append the embedded music-glyph font so ♭/♯ accidentals render even when
+  // the chord font is the user-selected body font (the non-ASC default path).
+  root.style.setProperty(
+    '--fb-chord-font',
+    (isAscPack ? chordPack.fakeBookChordFont : bodyFontStr) + ', ' + _CHORD_GLYPH,
+  );
   window.__SLASH_FONT_FAMILY = chordPack.slashChordFont;
   window.__SN_NOTATION_FONT_FAMILY = chordPack.notationFont;
   window.__SLASH_FONT_PACK_ID = fbSettings.chordFontPack;

@@ -70,7 +70,7 @@
     --fb-chord-color:#0044cc;
     --fb-headline-font: "Patrick Hand SC", Georgia, cursive;
     --fb-body-font: Helvetica, Arial, "Helvetica Neue", sans-serif;
-    --fb-chord-font: "FreeSerif", "Segoe UI Symbol", "Apple Symbols", "Noto Music", serif;
+    --fb-chord-font: "EB Garamond", Georgia, "Times New Roman", "CSMPN Music", serif;
   }
 
   *{ box-sizing:border-box; }
@@ -2503,11 +2503,11 @@ Tempo: 130
       </div>
       <div class="field power-only">
         <label>Music/Chord Font Pack</label>
-        <select id="setChordFontPack">
-          <option value="default" selected>Default</option>
-          <option value="pori">Pori ASC/ASL</option>
-          <option value="norfolk">Norfolk ASC/ASL</option>
-          <option value="norfolksans">Norfolk Sans ASC/ASL</option>
+        <select id="setChordFontPack" title="Default uses your Body Font for chords. The Serif and Sans-serif packs always render (EB Garamond / Helvetica). Pori/Norfolk additionally show angled slash chords (D/F♯) if you install the free SIL-OFL font on your device — otherwise they look like the Serif pack.">
+          <option value="default" selected>Default (follows Body Font)</option>
+          <option value="pori">Serif + Pori slash chords*</option>
+          <option value="norfolk">Serif + Norfolk slash chords*</option>
+          <option value="norfolksans">Sans-serif*</option>
         </select>
       </div>
       <!-- Option: include or hide lyrics comment lines in CSMPN output -->
