@@ -163,7 +163,6 @@ function applyFBSettings(){
     (isAscPack ? chordPack.fakeBookChordFont : bodyFontStr) + ', ' + _CHORD_GLYPH,
   );
   window.__SN_NOTATION_FONT_FAMILY = chordPack.notationFont;
-  window.__SLASH_FONT_PACK_ID = fbSettings.chordFontPack;
   root.style.setProperty('--fb-chord-features', isAscPack ? '"ss01" 1' : 'normal');
   // Apply custom colors to the sheet
   const sheetEl = document.querySelector('.sheet');

@@ -1604,3 +1604,11 @@ Follow-up cleanup to the font-pack work. `window.__SLASH_FONT_FAMILY` was set by
 two live outputs (`fakeBookChordFont` → `--fb-chord-font`, `notationFont` →
 `__SN_NOTATION_FONT_FAMILY`) are untouched. (`__SLASH_FONT_PACK_ID` is likewise set and
 never read, but left in place as it is a pack-id string, not a font family.)
+
+### Post-Sprint 16 — Remove the dead `__SLASH_FONT_PACK_ID` global
+
+Final font-global cleanup. `window.__SLASH_FONT_PACK_ID` was set by `applyFBSettings()`
+but never read anywhere — removed the assignment in `settings.js`. With this and the
+earlier `__SLASH_FONT_FAMILY` removal, the only live font outputs of `applyFBSettings`
+are `--fb-chord-font`, `--fb-chord-features`, and `__SN_NOTATION_FONT_FAMILY`. No
+behavior change.
