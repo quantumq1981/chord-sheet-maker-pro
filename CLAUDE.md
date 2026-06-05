@@ -1429,3 +1429,28 @@ straight rhythms.
 **Limitation:** non-3-based tuplets (5,7) at divisions=12 round their per-note duration
 (rare; triplets/sextuplets are exact). Remaining: #4 — collapse the three MusicXML emitters
 into a shared core.
+
+### SPRINT 16 — #4 (step 1): shared MusicXML core + renderer.js migration
+
+First step of consolidating the browser MusicXML emitters (which had begun to drift — e.g.
+`hrChordKind` matched `o7` by prefix while `csmlChordKind` matched it exactly).
+
+**New `musicXmlCore.js`** (browser global + `window.MusicXmlCore`): single source of truth for
+the low-level primitives — `mxEsc`, `mxChordKind` (merged superset of the hr/csml maps),
+`mxKeyFifths` (major+minor table), `mxKeyMode`, `mxHarmony` (one `<harmony>`), `mxScoreDoc`
+(score-partwise wrapper). Plain function declarations so it works in classic scripts and the
+Node `vm` test context.
+
+**`renderer.js`** — `hrChordKind`/`hrKeyMode`/`hrHarmonyOne`/`hrMusicXmlDoc`/`hrKeySigFromKey`
+are now thin delegations to the core; `hrHarmonyXml` calls `mxHarmony`. Removed the duplicated
+`HR_KEY_SIG_DATA` table and chord/harmony/score bodies (the visual `HR_SHARP_Y`/`HR_FLAT_Y`
+offset tables stay).
+
+**`index.html`** — loads `musicXmlCore.js` before `renderer.js`.
+**`.github/workflows/ci.yml`** — `musicXmlCore.js` added to the root-JS `node --check` list and
+the static-file deploy `cp` (so GitHub Pages serves it; `verify-deploy-assets.mjs` confirms).
+**Tests** — new `tests/musicXmlCore.test.mjs` (6 tests, direct unit coverage); `hybridRenderer`
+test harness loads the core; total npm tests 385 → 391.
+
+Step 2 (next): migrate `chordSlashMLRenderer.js`'s `csml*` MusicXML functions to the core (with a
+new vm test for `csmlToMusicXml`), removing the last duplication.
