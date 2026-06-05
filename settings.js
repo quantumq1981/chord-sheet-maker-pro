@@ -81,22 +81,18 @@ const _CHORD_GLYPH = '"CSMPN Music"'; // embedded — covers ♭/♯ accidentals
 const CHORD_FONT_PACK_MAP = {
   default: {
     fakeBookChordFont: `${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
-    slashChordFont: `${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
     notationFont: `${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
   },
   pori: {
     fakeBookChordFont: `"Pori Chords ASC Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
-    slashChordFont: `"Pori Chords ASC Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
     notationFont: `"Pori Text ASL Std", "Pori Text ASC Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
   },
   norfolk: {
     fakeBookChordFont: `"Norfolk Chords ASC Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
-    slashChordFont: `"Norfolk Chords ASC Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
     notationFont: `"Norfolk Text ASC Std", "Norfolk Text ASL Std", ${_CHORD_SERIF}, ${_CHORD_GLYPH}`,
   },
   norfolksans: {
     fakeBookChordFont: `"Norfolk Chords Sans ASC Std", ${_CHORD_SANS}, ${_CHORD_GLYPH}`,
-    slashChordFont: `"Norfolk Chords Sans ASC Std", ${_CHORD_SANS}, ${_CHORD_GLYPH}`,
     notationFont: `"Norfolk Text Sans ASC Std", ${_CHORD_SANS}, ${_CHORD_GLYPH}`,
   },
 };
@@ -166,7 +162,6 @@ function applyFBSettings(){
     '--fb-chord-font',
     (isAscPack ? chordPack.fakeBookChordFont : bodyFontStr) + ', ' + _CHORD_GLYPH,
   );
-  window.__SLASH_FONT_FAMILY = chordPack.slashChordFont;
   window.__SN_NOTATION_FONT_FAMILY = chordPack.notationFont;
   window.__SLASH_FONT_PACK_ID = fbSettings.chordFontPack;
   root.style.setProperty('--fb-chord-features', isAscPack ? '"ss01" 1' : 'normal');
