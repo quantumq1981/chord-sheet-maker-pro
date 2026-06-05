@@ -1379,3 +1379,26 @@ bare `<svg>`.
 (zero-rhythm case); `{hybrid}` blocks add notated rhythm; full feature set (compound-meter
 slash count, clef, key sig, nav markers, capo, ending brackets, strum arrows) and all
 exports (SVG/PNG/PDF/Print/MusicXML, generic + hybrid-duration) live on the unified engine.
+
+### SPRINT 16 — Post-unification polish (Slash-Rhythm View)
+
+**UI rename:** "Hybrid Rhythm Guitar Mode" → **Slash-Rhythm View** across all user-facing
+strings (labels, mode chip, status messages, help/tooltips). Internal identifiers
+(`fbSettings.hybridRhythmMode`, `renderHybridDoc`, the `{hybrid}` block syntax, CSS
+classes, localStorage key) are unchanged — preserves the documented `{hybrid}` format that
+GP/CSML import emit and existing users' saved settings.
+
+**Polish (#1 + #2):**
+- **Retired the vestigial `hybridPreset` "Slash-Rhythm Preset" (Default/v1) control.** Post-
+  unification the `v1` option only re-enabled the view + capped bars/row (already covered by
+  the on/off toggle). Removed the field, listener, and `fbSettings.hybridPreset` plumbing in
+  `index.html` + `settings.js`.
+- **Augmentation dots on compound-meter slashes.** `hrIsCompoundMeter(timeSig)` +
+  `hrAugDot(cx, cy, col)` in renderer.js; the zero-rhythm slash loop now draws a dot per
+  slash in 6/8, 9/8, 12/8 (each visual beat is a dotted quarter). Simple meters unchanged.
+- `tests/hybridRenderer.test.mjs` — 2 new tests (43 total): compound meters add one dot per
+  slash (12/8→4, 6/8→2); simple meters add none.
+
+**Remaining recommendations (next):** #3 proper tuplets in MusicXML (`<time-modification>`);
+#4 collapse the three MusicXML emitters (`renderer.js` `hr*`, `chordSlashMLRenderer.js`
+`csml*`, `src/export/musicXmlExporter.ts`) into a shared core. Bigger bet: audio playback.

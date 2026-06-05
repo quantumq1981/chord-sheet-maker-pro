@@ -515,6 +515,20 @@ function hrVisualBeats(timeSig) {
   return Math.max(1, num);
 }
 
+// Compound meters (6/8, 9/8, 12/8): each visual beat is a dotted quarter.
+function hrIsCompoundMeter(timeSig) {
+  const m = String(timeSig || '4/4').match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (!m) return false;
+  const num = parseInt(m[1], 10);
+  const den = parseInt(m[2], 10);
+  return den === 8 && num >= 6 && num % 3 === 0;
+}
+
+// Augmentation dot to the right of a slash notehead (dotted-quarter pulse).
+function hrAugDot(cx, cy, col) {
+  return `<circle cx="${cx + 12}" cy="${cy}" r="1.6" fill="${col}"/>`;
+}
+
 function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
   const events  = Array.isArray(bar?.events) ? bar.events : [];
   const tabs    = Array.isArray(bar?.tabEvents) ? bar.tabEvents : [];
@@ -530,6 +544,7 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
     // Zero-rhythm case: one slash per visual beat. Compound meters collapse to
     // dotted-quarter pulses via hrVisualBeats() so 12/8 draws 4 slashes, not 12.
     const vb = hrVisualBeats(timeSig);
+    const dotted = hrIsCompoundMeter(timeSig);
     if (bar.chordToken) {
       const parts = String(bar.chordToken).replace(/[!~]$/, '').trim().split('_').map(p => p.trim()).filter(Boolean);
       parts.forEach((chord, pi) => {
@@ -540,6 +555,7 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
         const ex = ul + ((b - 1) / vb) * uw;
         s += hrHead(ex, cy, 'q', fg);
         s += hrStem(ex, staffY, fg);
+        if (dotted) s += hrAugDot(ex, cy, fg);
       }
     } else {
       s += hrRest(barLeft + barW / 2, cy, 'w', fg);
