@@ -235,7 +235,10 @@ const HR_DIAG_FRETS      = 4;
 const HR_DIAG_W          = (HR_DIAG_STRINGS - 1) * HR_DIAG_STRING_GAP;
 
 function _hrFont() {
-  return window.__SN_NOTATION_FONT_FAMILY || '"EB Garamond", Georgia, "Times New Roman", serif';
+  return (
+    window.__SN_NOTATION_FONT_FAMILY ||
+    '"EB Garamond", Georgia, "Times New Roman", "CSMPN Music", serif'
+  );
 }
 // Embedded music-glyph font (clef, accidentals, segno/coda). Leads the stack so
 // these glyphs always render; falls back to the notation font for everything else.
