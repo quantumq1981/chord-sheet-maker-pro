@@ -2526,13 +2526,6 @@ Tempo: 130
         </select>
       </div>
       <div class="field">
-        <label>Slash-Rhythm Preset</label>
-        <select id="setHybridPreset">
-          <option value="default" selected>Default</option>
-          <option value="v1">Slash-Rhythm v1</option>
-        </select>
-      </div>
-      <div class="field">
         <label>Rhythm Pattern</label>
         <select id="setHybridScaffoldPreset">
           <option value="quarter" selected>Quarter hits (straight)</option>
@@ -3688,21 +3681,6 @@ document.getElementById('setHybridRhythmMode').addEventListener('change', (e) =>
   if (fbSettings.hybridRhythmMode && !/\{hybrid\b/i.test(sourceEl.value || '')) {
     setStatus('Slash-Rhythm View on — chart now renders as slash notation. Press "→ Scaffold Rhythm Blocks" or edit bN: lines to add notated rhythm.', 'info');
   }
-});
-document.getElementById('setHybridPreset').addEventListener('change', (e) => {
-  fbSettings.hybridPreset = e.target.value || 'default';
-  if (fbSettings.hybridPreset === 'v1'){
-    fbSettings.hybridRhythmMode = true;
-    const modeEl = document.getElementById('setHybridRhythmMode');
-    if (modeEl) modeEl.value = 'true';
-    if (Number(fbSettings.barsPerRow) > 4){
-      fbSettings.barsPerRow = 4;
-      const barsEl = document.getElementById('setBarsPerRow');
-      if (barsEl) barsEl.value = '4';
-    }
-  }
-  saveFBSettings();
-  updatePreview();
 });
 document.getElementById('setHybridScaffoldPreset').addEventListener('change', (e) => {
   fbSettings.hybridScaffoldPreset = e.target.value || 'quarter';

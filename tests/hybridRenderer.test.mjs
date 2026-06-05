@@ -96,6 +96,24 @@ test('6/8 bar draws 2 slashes; 9/8 draws 3', () => {
   assert.equal(slashCount(out98), 3);
 });
 
+const dotCount = (svg) => (svg.match(/<circle /g) || []).length;
+
+test('compound meters add an augmentation dot per slash (12/8 -> 4 dots, 6/8 -> 2)', () => {
+  const ctx = loadRenderer();
+  const out128 = ctx.renderHybridDoc('Time: 12/8\n\n- Verse\n| G |\n');
+  const out68 = ctx.renderHybridDoc('Time: 6/8\n\n- Verse\n| G |\n');
+  assert.equal(dotCount(out128), 4);
+  assert.equal(dotCount(out68), 2);
+});
+
+test('simple meters draw no augmentation dots', () => {
+  const ctx = loadRenderer();
+  const out44 = ctx.renderHybridDoc('Time: 4/4\n\n- Verse\n| G |\n');
+  const out34 = ctx.renderHybridDoc('Time: 3/4\n\n- Verse\n| G |\n');
+  assert.equal(dotCount(out44), 0);
+  assert.equal(dotCount(out34), 0);
+});
+
 test('3/4 simple meter still draws 3 slashes (not collapsed)', () => {
   const ctx = loadRenderer();
   const out = ctx.renderHybridDoc('Time: 3/4\n\n- Verse\n| G |\n');

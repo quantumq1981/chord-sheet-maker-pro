@@ -28,7 +28,6 @@ const fbSettings = {
   // True = keep lyrics as comment lines; False = omit lyrics completely.
   includeLyrics: true,
   hybridRhythmMode: false,
-  hybridPreset: 'default',
   hybridScaffoldPreset: 'quarter',
   // Strum direction arrows below the staff: 'none' | 'down' | 'alt' | 'custom'
   strumMode: 'none',
@@ -117,7 +116,6 @@ function loadFBSettings(){
       setEl('setBodyFont', fbSettings.bodyFont);
       setEl('setIncludeLyrics', String(fbSettings.includeLyrics));
       setEl('setHybridRhythmMode', String(fbSettings.hybridRhythmMode));
-      setEl('setHybridPreset', fbSettings.hybridPreset || 'default');
       setEl('setHybridScaffoldPreset', fbSettings.hybridScaffoldPreset || 'quarter');
       setEl('setStrumMode', fbSettings.strumMode || 'none');
       setEl('setStrumPattern', fbSettings.strumPattern || '');
