@@ -1454,3 +1454,29 @@ test harness loads the core; total npm tests 385 → 391.
 
 Step 2 (next): migrate `chordSlashMLRenderer.js`'s `csml*` MusicXML functions to the core (with a
 new vm test for `csmlToMusicXml`), removing the last duplication.
+
+### SPRINT 16 — #4 (step 2): migrate chordSlashMLRenderer.js to the shared core ✅ #4 COMPLETE
+
+Second/final step of consolidating the browser MusicXML emitters.
+
+**`chordSlashMLRenderer.js`**
+- Deleted the duplicated `csmlChordKind`, `csmlKeySigFifths`, `csmlKeyMode`, and
+  `csmlHarmonyXml`; their call sites now use the shared core (`mxChordKind` indirectly via
+  `mxHarmony`, plus `mxKeyFifths` / `mxKeyMode` / `mxHarmony`).
+- The score-partwise return delegates to `mxScoreDoc(doc.title, doc.composer, measureXml)`
+  (passes raw title/composer — the core escapes once, no double-escape). The local
+  pre-escaped `title`/`composer` vars were removed; `xmlEsc` stays for section-label/tempo.
+- musicXmlCore.js loads before chordSlashMLRenderer.js in index.html (verified).
+
+**Verification:** captured `csml.toMusicXml(sample)` output **before and after** the migration
+and diffed — **byte-identical**. So the refactor is provably behavior-preserving.
+
+**Tests** — new `tests/csmlMusicXml.test.mjs` (4 tests) loads the core + CSML bundle in a vm
+and asserts score-partwise, key fifths/mode, chord kinds, harmony count, and repeat barlines —
+the browser CSML exporter had **no** prior test. `chordSlashMLRenderer.js` added to CI
+`node --check`. Total npm tests 391 → 395.
+
+**#4 outcome:** both live browser MusicXML emitters (`renderer.js` `hr*`,
+`chordSlashMLRenderer.js` `csml*`) now share one core (`musicXmlCore.js`) — the chord-kind /
+key-sig / harmony / score logic exists once, ending the drift. (The tests-only
+`src/export/musicXmlExporter.ts` was intentionally left out of scope.)
