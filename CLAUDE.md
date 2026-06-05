@@ -1592,3 +1592,15 @@ base; Pori/Norfolk packs lead with their installable font; sans vs serif classif
 `applyFBSettings` appends the music font to `--fb-chord-font`.
 
 Total npm tests 402 → 408.
+
+### Post-Sprint 16 — Remove the dead `__SLASH_FONT_FAMILY` global
+
+Follow-up cleanup to the font-pack work. `window.__SLASH_FONT_FAMILY` was set by
+`applyFBSettings()` but never read anywhere (only `__SN_NOTATION_FONT_FAMILY` and the
+`--fb-chord-font`/`--fb-chord-features` CSS vars are live). Removed the assignment in
+`settings.js` and the now-orphaned `slashChordFont` field from all four packs in
+`CHORD_FONT_PACK_MAP` (it existed solely to populate that global). `tests/chordFontPacks.test.mjs`
+`FIELDS` updated to `['fakeBookChordFont', 'notationFont']`. No behavior change — the
+two live outputs (`fakeBookChordFont` → `--fb-chord-font`, `notationFont` →
+`__SN_NOTATION_FONT_FAMILY`) are untouched. (`__SLASH_FONT_PACK_ID` is likewise set and
+never read, but left in place as it is a pack-id string, not a font family.)

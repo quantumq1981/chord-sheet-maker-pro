@@ -46,7 +46,7 @@ function loadSettings() {
 }
 
 const PACKS = ['default', 'pori', 'norfolk', 'norfolksans'];
-const FIELDS = ['fakeBookChordFont', 'slashChordFont', 'notationFont'];
+const FIELDS = ['fakeBookChordFont', 'notationFont'];
 
 test('every font pack ends each stack with the embedded music-glyph font (♭/♯ always render)', () => {
   const { ctx } = loadSettings();
