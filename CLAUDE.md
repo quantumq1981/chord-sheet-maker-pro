@@ -1503,3 +1503,45 @@ Known follow-up (not in this change): the CSML beat-slot model needs the slot co
 match the meter's pulse count (12/8→4 slots, 6/8→2, 9/8→3); writing more slots than the
 pulse count overflows the measure. A future change could clamp `beatSpacing` to
 `max(bpm, beats.length)` so over-filled measures don't run past the barline.
+
+### Post-Sprint 16 — Embedded music-glyph font (notation renders on iOS)
+
+**Bug:** the SVG renderers emit Unicode music glyphs — treble clef (U+1D11E),
+sharp/flat (U+266F/266D), segno/coda (U+1D10B/1D10C), double accidentals
+(U+1D12A/1D12B), note heads (U+2669/266A) — but the only text font the app loads
+is EB Garamond, which contains **none** of them. On iOS Safari they fell back to
+system fonts with spotty coverage (tofu / wrong glyphs). The clef/accidentals
+named `Noto Music`/`FreeSerif` in the font stacks were never actually loaded.
+
+**Fix — embed a real music font (`musicFont.js`, new root module):**
+- A 3.8 KB subset of **Noto Music** (SIL OFL 1.1), covering exactly the 11 glyphs
+  above, inlined as a `data:font/woff2;base64,…` URI — no binary asset, no CSP
+  change (`font-src` already allows `data:`), no Vite/base-path risk.
+- On load it injects an `@font-face` (`family: 'CSMPN Music'`) into `document.head`
+  (for the live preview) and exposes `window.MUSIC_FONT_FACE` (raw CSS) +
+  `window.MUSIC_FONT_FAMILY`.
+- **Each generated `<svg>` carries the `@font-face` inside a `<defs><style>`** so the
+  font travels with SVG downloads and the iOS **print-to-PDF** popup (a fresh
+  document that does not inherit the page stylesheet) — the primary export path.
+
+**`renderer.js`** — `_hrMusicFont()` (leads the family stack with `"CSMPN Music"`) +
+`_hrMusicFontStyle()` (the embedded `<defs><style>`, empty if the module isn't
+loaded → graceful degradation). Clef, key-sig accidentals, and nav (segno/coda)
+text now use the music family; the SVG embeds the face. `renderCsmpnToSvg` (Setlist
+printer) keeps it (it's inside the `<svg>`).
+
+**`chordSlashMLRenderer.js`** — `musicFontFamily()` + `musicFontDefs()`; the clef and
+key-sig sharps/flats use the music family; both `csmlToSvgDoc` and `csmlToSvgPages`
+inject the face into the `<svg>`.
+
+**`index.html`** — loads `musicFont.js` before `musicXmlCore.js`/`renderer.js`.
+**`.github/workflows/ci.yml`** — `musicFont.js` added to the root-JS `node --check`
+list and the static-file deploy `cp` (`verify-deploy-assets` confirms it's served).
+
+**`tests/musicFont.test.mjs`** (new, 4 tests): module exposes family/faceCss/woff2
+data URI (real `wOF2` signature) + single head injection; both render engines embed
+the `@font-face` and lead the clef/accidental font-family with `CSMPN Music`.
+
+Total npm tests 398 → 402.
+
+Font: Noto Music © The Noto Project Authors (github.com/notofonts/music), SIL OFL 1.1.
