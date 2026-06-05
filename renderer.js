@@ -237,6 +237,19 @@ const HR_DIAG_W          = (HR_DIAG_STRINGS - 1) * HR_DIAG_STRING_GAP;
 function _hrFont() {
   return window.__SN_NOTATION_FONT_FAMILY || '"EB Garamond", Georgia, "Times New Roman", serif';
 }
+// Embedded music-glyph font (clef, accidentals, segno/coda). Leads the stack so
+// these glyphs always render; falls back to the notation font for everything else.
+function _hrMusicFont() {
+  const fam = (typeof window !== 'undefined' && window.MUSIC_FONT_FAMILY) || 'CSMPN Music';
+  return '"' + fam + '", ' + _hrFont();
+}
+// <style> carrying the embedded @font-face, injected into each generated <svg>
+// so the font travels with downloads + the iOS print-to-PDF popup (a fresh
+// document that does not inherit the page stylesheet). Empty if not loaded.
+function _hrMusicFontStyle() {
+  const css = typeof window !== 'undefined' && window.MUSIC_FONT_FACE;
+  return css ? `<defs><style type="text/css">${css}</style></defs>` : '';
+}
 const HR_DIAG_H          = HR_DIAG_FRETS * HR_DIAG_FRET_GAP;
 const HR_DIAG_OUTER_W    = HR_DIAG_W + 22;
 const HR_DIAG_OUTER_H    = HR_DIAG_H + 46;
@@ -320,7 +333,7 @@ function hrClef(x, y, col) {
   // Treble clef glyph (U+1D11E), matching the slash-notation panel for visual
   // parity. Single-quoted attribute so the inner double-quoted families from
   // _hrFont() stay valid.
-  return `<text x="${x}" y="${y + HR_STAFF_H * 0.82}" font-size="40" fill="${col}" font-family='Noto Serif, ${_hrFont()}' letter-spacing="-1">&#x1D11E;</text>`;
+  return `<text x="${x}" y="${y + HR_STAFF_H * 0.82}" font-size="40" fill="${col}" font-family='${_hrMusicFont()}' letter-spacing="-1">&#x1D11E;</text>`;
 }
 
 // ── Key signature ───────────────────────────────────────────────────────────
@@ -343,7 +356,7 @@ function hrKeySig(staffY, count, col) {
   let s = '';
   const x0 = HR_MARGIN + 24; // just right of the clef glyph
   for (let i = 0; i < n; i++)
-    s += `<text x="${x0 + i * 6}" y="${staffY + yOff[i] + 7}" font-size="9" font-weight="bold" fill="${col}" font-family='${_hrFont()}'>${sym}</text>`;
+    s += `<text x="${x0 + i * 6}" y="${staffY + yOff[i] + 7}" font-size="9" font-weight="bold" fill="${col}" font-family='${_hrMusicFont()}'>${sym}</text>`;
   return s;
 }
 
@@ -757,6 +770,7 @@ function renderHybridDoc(sourceText) {
   let svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${HR_PAGE_W}" height="${svgH}" viewBox="0 0 ${HR_PAGE_W} ${svgH}"` +
     ` class="hybridSvgOut" style="max-width:100%;display:block;">`;
+  svg += _hrMusicFontStyle();
   svg += `<rect width="${HR_PAGE_W}" height="${svgH}" fill="${bg}"/>`;
 
   if (hasDiagrams) {
@@ -866,7 +880,7 @@ function renderHybridDoc(sourceText) {
     if (sys.lastRow) {
       const navText = hrExtractNavText(sys.sec.label) || sys.sec.navText;
       if (navText)
-        svg += `<text x="${staffX + staffW}" y="${blBot + 16}" font-size="12" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family='Noto Serif, ${_hrFont()}'>${hrFormatNavText(navText)}</text>`;
+        svg += `<text x="${staffX + staffW}" y="${blBot + 16}" font-size="12" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family='${_hrMusicFont()}'>${hrFormatNavText(navText)}</text>`;
     }
   }
 

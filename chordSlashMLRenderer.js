@@ -299,6 +299,19 @@
     return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${w||1}"/>`;
   }
 
+  // Embedded music-glyph font (clef + accidentals). Leads the stack so these
+  // glyphs always render; serif fallback for everything else.
+  function musicFontFamily() {
+    const fam = (typeof window !== 'undefined' && window.MUSIC_FONT_FAMILY) || 'CSMPN Music';
+    return '"' + fam + '", serif';
+  }
+  // <defs><style> carrying the embedded @font-face, injected into each <svg> so
+  // the font travels with SVG downloads + the iOS print-to-PDF popup.
+  function musicFontDefs() {
+    const css = typeof window !== 'undefined' && window.MUSIC_FONT_FACE;
+    return css ? `<defs><style type="text/css">${css}</style></defs>` : '';
+  }
+
   function slashHead(cx, cy, col) {
     const x1=cx-SN_W/2, y1=cy+SN_H/2, x2=cx+SN_W/2, y2=cy+SN_H/2;
     const x3=cx+SN_W/2+SN_LEAN, y3=cy-SN_H/2, x4=cx-SN_W/2+SN_LEAN, y4=cy-SN_H/2;
@@ -329,7 +342,7 @@
   }
 
   function trebleClefEl(x, y, col) {
-    return `<text x="${x}" y="${y+STAFF_H+4}" font-size="40" font-family="serif" fill="${col}" dominant-baseline="bottom">𝄞</text>`;
+    return `<text x="${x}" y="${y+STAFF_H+4}" font-size="40" font-family='${musicFontFamily()}' fill="${col}" dominant-baseline="bottom">𝄞</text>`;
   }
 
   function keySigEl(x, staffY, keySig, col) {
@@ -337,14 +350,14 @@
       const count = SHARP_KEY_COUNT[keySig];
       const parts = [];
       for (let i = 0; i < count; i++)
-        parts.push(`<text x="${x+i*8}" y="${staffY+SHARP_Y_OFFSETS[i]-4}" font-size="14" font-family="serif" fill="${col}" dominant-baseline="hanging">♯</text>`);
+        parts.push(`<text x="${x+i*8}" y="${staffY+SHARP_Y_OFFSETS[i]-4}" font-size="14" font-family='${musicFontFamily()}' fill="${col}" dominant-baseline="hanging">♯</text>`);
       return { svg: parts.join(''), width: count*8+4 };
     }
     if (FLAT_KEY_COUNT[keySig] !== undefined) {
       const count = FLAT_KEY_COUNT[keySig];
       const parts = [];
       for (let i = 0; i < count; i++)
-        parts.push(`<text x="${x+i*8}" y="${staffY+FLAT_Y_OFFSETS[i]-8}" font-size="14" font-family="serif" fill="${col}" dominant-baseline="hanging">♭</text>`);
+        parts.push(`<text x="${x+i*8}" y="${staffY+FLAT_Y_OFFSETS[i]-8}" font-size="14" font-family='${musicFontFamily()}' fill="${col}" dominant-baseline="hanging">♭</text>`);
       return { svg: parts.join(''), width: count*8+4 };
     }
     return { svg: '', width: 0 };
@@ -517,7 +530,7 @@
       }
       curY += SYSTEM_ROW_H;
     }
-    return [`<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${totalH}" viewBox="0 0 ${PAGE_W} ${totalH}">`, ...parts, '</svg>'].join('\n');
+    return [`<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${totalH}" viewBox="0 0 ${PAGE_W} ${totalH}">`, musicFontDefs(), ...parts, '</svg>'].join('\n');
   }
 
   function csmlToSvg(text, opts) {
@@ -638,7 +651,7 @@
         }
         curY += SYSTEM_ROW_H;
       }
-      return [`<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${totalH}" viewBox="0 0 ${PAGE_W} ${totalH}">`, ...parts, '</svg>'].join('\n');
+      return [`<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${totalH}" viewBox="0 0 ${PAGE_W} ${totalH}">`, musicFontDefs(), ...parts, '</svg>'].join('\n');
     });
   }
 
