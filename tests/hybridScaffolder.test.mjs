@@ -61,6 +61,46 @@ test('selects slow-blues pattern for 12/8 time signature', () => {
   assert.ok(out.includes('1:q 4:q 7:q 10:q'));
 });
 
+test('no preset pattern overflows its bar in any meter (durations fit the bar length)', () => {
+  const { HYBRID_PRESET_PATTERNS } = loadScaffolder();
+  const DUR = { w: 4, h: 2, q: 1, e: 0.5, s: 0.25 };
+  // Bar capacity in quarter-units: simple = num*(4/den); compound (×/8) = eighths/2.
+  const CAP = { '4/4': 4, '3/4': 3, '2/4': 2, '12/8': 6, '6/8': 3, '9/8': 4.5 };
+  for (const [preset, map] of Object.entries(HYBRID_PRESET_PATTERNS)) {
+    for (const [meter, pat] of Object.entries(map)) {
+      const sum = pat
+        .split(/\s+/)
+        .map((tok) => tok.split(':')[1])
+        .filter(Boolean)
+        .reduce((a, d) => a + (DUR[d.replace(/[!~x]/g, '').replace(/^r/, '')] || 0), 0);
+      assert.ok(
+        sum <= CAP[meter] + 1e-9,
+        `${preset} ${meter} overflows: durations sum to ${sum} > bar capacity ${CAP[meter]}`
+      );
+    }
+  }
+});
+
+test('eighth preset fills a 12/8 bar with 12 even eighths (no overflow)', () => {
+  const { HYBRID_PRESET_PATTERNS } = loadScaffolder();
+  assert.equal(
+    HYBRID_PRESET_PATTERNS.eighth['12/8'],
+    '1:e 2:e 3:e 4:e 5:e 6:e 7:e 8:e 9:e 10:e 11:e 12:e'
+  );
+});
+
+test('{hybrid} block is inserted AFTER a bar line that ends in a repeat barline (:|)', () => {
+  const { toHybridCSMPN } = loadScaffolder();
+  // The closing bar line "Eb7 F7 :|" contains a colon (from `:|`); it must still be
+  // recognized as the section's last bar so the block lands after it, not mid-section.
+  const csmpn = 'Time: 12/8\n\n- Intro\n|: Bb7 D7\nEb7 F7 :|\n';
+  const out = toHybridCSMPN(csmpn, 'quarter');
+  const lines = out.split('\n');
+  const lastBarIdx = lines.findIndex((l) => l.includes('Eb7 F7 :|'));
+  assert.ok(lastBarIdx >= 0, 'last bar line present');
+  assert.equal(lines[lastBarIdx + 1], '{hybrid', '{hybrid} must immediately follow the last bar');
+});
+
 test('counts bars correctly across multiple bar lines in the same section', () => {
   const { toHybridCSMPN } = loadScaffolder();
   const csmpn = '- Verse\n| G | D |\n| Em | C |\n';

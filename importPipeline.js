@@ -2995,9 +2995,9 @@ if (typeof window !== 'undefined'){
 
 const HYBRID_PRESET_PATTERNS = {
   quarter:      { '4/4':'1:q 2:q 3:q 4:q',              '3/4':'1:q 2:q 3:q',                 '2/4':'1:q 2:q',       '12/8':'1:q 4:q 7:q 10:q',                                              '6/8':'1:q 4:q',             '9/8':'1:q 4:q 7:q'              },
-  eighth:       { '4/4':'1:q 2:e 2&:e 3:q 4:e 4&:e',    '3/4':'1:q 2:e 2&:e 3:e 3&:e',       '2/4':'1:q 2:e 2&:e', '12/8':'1:q 2:e 3:e 4:q 5:e 6:e 7:q 8:e 9:e 10:q 11:e 12:e',          '6/8':'1:q 2:e 3:e 4:q 5:e 6:e','9/8':'1:q 2:e 3:e 4:q 5:e 6:e 7:q 8:e 9:e' },
+  eighth:       { '4/4':'1:q 2:e 2&:e 3:q 4:e 4&:e',    '3/4':'1:q 2:e 2&:e 3:e 3&:e',       '2/4':'1:q 2:e 2&:e', '12/8':'1:e 2:e 3:e 4:e 5:e 6:e 7:e 8:e 9:e 10:e 11:e 12:e',          '6/8':'1:e 2:e 3:e 4:e 5:e 6:e','9/8':'1:e 2:e 3:e 4:e 5:e 6:e 7:e 8:e 9:e' },
   swing:        { '4/4':'1:q! 2:e 2&:e 3:q! 4:e 4&:e',  '3/4':'1:q! 2:e 2&:e 3:q!',          '2/4':'1:q! 2:e 2&:e','12/8':'1:q! 4:q 7:q! 10:q',                                            '6/8':'1:q! 4:q',            '9/8':'1:q! 4:q 7:q!'            },
-  'funk-16':    { '4/4':'1:q! 2:e 2&:e 3:e 3&:e 4:q',   '3/4':'1:q! 2:e 2&:e 3:e 3&:e',      '2/4':'1:q! 2:e 2&:e','12/8':'1:q! 2:e 3:e 4:q 7:q! 8:e 9:e 10:q',                           '6/8':'1:q! 2:e 3:e 4:q',    '9/8':'1:q! 2:e 3:e 4:q 7:q! 8:e 9:e' },
+  'funk-16':    { '4/4':'1:q! 2:e 2&:e 3:e 3&:e 4:q',   '3/4':'1:q! 2:e 2&:e 3:e 3&:e',      '2/4':'1:q! 2:e 2&:e','12/8':'1:e! 2:e 3:e 4:e! 5:e 6:e 7:e! 8:e 9:e 10:e! 11:e 12:e',                           '6/8':'1:e! 2:e 3:e 4:e! 5:e 6:e',    '9/8':'1:e! 2:e 3:e 4:e! 5:e 6:e 7:e! 8:e 9:e' },
   bossa:        { '4/4':'1:q 2&:e 3:q 4&:e',             '3/4':'1:q 2&:e 3:q',                '2/4':'1:q 2&:e',     '12/8':'1:q 3:e 4:q 7:q 9:e 10:q',                                      '6/8':'1:q 3:e 4:q',         '9/8':'1:q 3:e 4:q 7:q 9:e'     },
   waltz:        { '4/4':'1:q! 2:q 3:q 4:q',              '3/4':'1:q! 2:q 3:q',                '2/4':'1:q! 2:q',     '12/8':'1:q! 4:q 7:q 10:q',                                             '6/8':'1:q! 4:q',            '9/8':'1:q! 4:q 7:q'             },
   'slow-blues': { '4/4':'1:q 2:e 2&:e 3:q 4:e',         '3/4':'1:q 2:q 3:e',                 '2/4':'1:q 2:e',      '12/8':'1:q 4:q 7:q 10:q',                                              '6/8':'1:q 4:q',             '9/8':'1:q 4:q 7:q'              },
@@ -3057,8 +3057,13 @@ function toHybridCSMPN(text, preset, _opts) {
     if (t.startsWith('{tab'))    { if (!t.endsWith('}')) tabSkip = true; continue; }
     if (t.startsWith('{vt'))     { continue; }
     if (t && MARKER_CHARS.has(t[0])) { flush(); continue; }
-    // Track last bar-content line (insertion point); counting is handled by docSections
-    if (t.startsWith('|') || (t && !t.includes(':') && /^[A-G]/.test(t))) {
+    // Track last bar-content line (insertion point); counting is handled by docSections.
+    // A bar line may end in a repeat barline (`:|`) which contains a colon, so we
+    // exclude only `Field: value` metadata lines — not every line with a colon —
+    // otherwise the closing `… :|` bar of a section is missed and the {hybrid} block
+    // gets inserted mid-section.
+    const isMetaLine = /^[A-Za-z][A-Za-z ]*:\s/.test(t);
+    if (t.startsWith('|') || (t && /^[A-G]/.test(t) && !isMetaLine)) {
       lastBarLine = i;
     }
   }

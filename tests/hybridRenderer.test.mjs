@@ -413,3 +413,34 @@ test('hybrid export still emits repeat barlines and voltas', () => {
   assert.ok(xml.includes('<repeat direction="backward"/>'));
   assert.ok(xml.includes('<ending number="1" type="start"/>'));
 });
+
+const svgHeight = (svg) => {
+  const m = svg.match(/<svg[^>]*\bheight="([\d.]+)"/);
+  return m ? parseFloat(m[1]) : 0;
+};
+
+test('compound meters get an auto-roomier layout (fewer bars per row than simple meters)', () => {
+  const ctx = loadRenderer();
+  // Same 8 bars in one section: 4/4 fits 4/row (2 rows); 12/8 is capped to 2/row (4 rows),
+  // so the compound-meter chart must render taller.
+  const bars = '| C | C | C | C | C | C | C | C |';
+  const h44 = svgHeight(ctx.renderHybridDoc(`Time: 4/4\n\n- V\n${bars}\n`));
+  const h128 = svgHeight(ctx.renderHybridDoc(`Time: 12/8\n\n- V\n${bars}\n`));
+  assert.ok(h44 > 0 && h128 > 0, 'both render an <svg> with a height');
+  assert.ok(
+    h128 > h44,
+    `12/8 should render taller (fewer bars/row) than 4/4: got 12/8=${h128}, 4/4=${h44}`
+  );
+});
+
+test('dense eighth scaffold in 12/8 renders evenly without overflowing the bar', () => {
+  const ctx = loadRenderer();
+  const out = ctx.window.toHybridCSMPN('Time: 12/8\n\n- V\n| Bb7 | Eb7 |\n', 'eighth');
+  // No duration-overlap warnings should be raised for the corrected pattern.
+  const svg = ctx.renderHybridDoc(out);
+  assert.ok(svg.includes('<svg'), 'renders an svg');
+  assert.ok(
+    !ctx.validationWarnings.some((w) => /overlap/i.test(w)),
+    `no overlap warnings expected, got: ${JSON.stringify(ctx.validationWarnings)}`
+  );
+});

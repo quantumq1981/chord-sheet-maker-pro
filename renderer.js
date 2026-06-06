@@ -703,7 +703,15 @@ function renderHybridDoc(sourceText) {
   const fg  = fbSettings.fgColor    || '#111111';
   const bg  = fbSettings.bgColor    || '#ffffff';
   const cc  = fbSettings.chordColor || '#0044cc';
-  const bpr = Math.max(1, Math.min(8, Number(fbSettings.barsPerRow) || 4));
+  let bpr = Math.max(1, Math.min(8, Number(fbSettings.barsPerRow) || 4));
+  // Compound meters (6/8, 9/8, 12/8) pack 2–4× the subdivisions of a simple-meter
+  // bar, so dense scaffold rhythms cram together. Cap bars-per-row for compound
+  // meters so each bar gets breathing room (auto-roomier layout).
+  const _compound = /^(\d+)\/8$/.exec(hybrid.time || '');
+  if (_compound) {
+    const _num = parseInt(_compound[1], 10);
+    if (_num % 3 === 0 && _num >= 6) bpr = Math.min(bpr, _num >= 9 ? 2 : 3);
+  }
   const staffX = HR_MARGIN + HR_CLEF_W;
   const staffW = HR_PAGE_W - HR_MARGIN * 2 - HR_CLEF_W;
   const strumMode = fbSettings.strumMode || 'none';

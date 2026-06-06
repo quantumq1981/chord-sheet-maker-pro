@@ -1612,3 +1612,35 @@ but never read anywhere — removed the assignment in `settings.js`. With this a
 earlier `__SLASH_FONT_FAMILY` removal, the only live font outputs of `applyFBSettings`
 are `--fb-chord-font`, `--fb-chord-features`, and `__SN_NOTATION_FONT_FAMILY`. No
 behavior change.
+
+### Post-Sprint 16 — Fix Slash-Rhythm scaffold for compound meters (12/8 etc.)
+
+**Bug (user report, "Sin City Blues" default — 12/8):** "Scaffold Rhythm Blocks" with a
+dense preset produced an unreadable mess — overlapping noteheads beaming into black
+blobs and chord labels colliding into mush. Three root causes:
+
+1. **Compound-meter preset patterns overflowed the bar.** A 12/8 bar holds 12 eighths
+   (6 quarter-units), but `eighth`/`funk-16` patterns summed to 8 (12/8), 4 (6/8), 6
+   (9/8) quarter-units — 33%+ overflow — so events piled up. (`quarter`/`slow-blues`
+   happened to *under*-fill, which is why they looked fine.)
+2. **Scaffold inserted the `{hybrid}` block mid-section.** The bar-line detector in
+   `toHybridCSMPN` excluded any line containing a colon, so a closing `… :|` bar line
+   (which contains `:`) was missed and the block landed before it.
+3. **No layout headroom for compound meters** — 4 bars/row crammed 12/8's subdivisions.
+
+**Fixes:**
+- **`importPipeline.js` `HYBRID_PRESET_PATTERNS`:** `eighth` and `funk-16` compound-meter
+  cells (12/8, 9/8, 6/8) rewritten to bar-filling even eighths (`eighth` = plain,
+  `funk-16` = pulse-accented). Every preset×meter now fits its bar exactly (verified by
+  a new exhaustive overflow test).
+- **`importPipeline.js` `toHybridCSMPN`:** bar-line detection now excludes only
+  `Field: value` metadata lines (`/^[A-Za-z][A-Za-z ]*:\s/`), not lines that merely
+  contain a `:` — so `… :|` closing bars are recognized and the block lands after the
+  section's last bar.
+- **`renderer.js` `renderHybridDoc`:** auto-caps bars-per-row for compound meters
+  (12/8 & 9/8 → 2, 6/8 → 3) so dense rhythms get breathing room (auto-roomier layout).
+
+**Tests:** `tests/hybridScaffolder.test.mjs` +3 (exhaustive no-overflow guard across all
+preset×meter cells; eighth-12/8 = 12 even eighths; `{hybrid}` lands after a `:|` bar).
+`tests/hybridRenderer.test.mjs` +2 (compound meters render taller / fewer bars-per-row;
+dense 12/8 eighth scaffold renders without overlap warnings). npm tests 408 → 413.
