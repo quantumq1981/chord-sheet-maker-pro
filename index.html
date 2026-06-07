@@ -2424,12 +2424,15 @@ Tempo: 130
         <div class="setlist-header-actions">
           <button class="outline" id="btnSetlistAdd" title="Save current chart to setlist">+ Add Chart</button>
           <button class="outline" id="btnSetlistPrint" title="Print all charts as one PDF">&#x2399; Print All</button>
+          <button class="outline" id="btnSetlistBackup" title="Download a backup file of all your songs, setlists, and settings">&#x2B07; Backup</button>
+          <button class="outline" id="btnSetlistRestore" title="Restore your songs, setlists, and settings from a backup file">&#x2B06; Restore</button>
           <button class="outline" id="btnSetlistClear" style="color:#c00;" title="Remove all charts">&#x2715; Clear All</button>
           <button id="btnSetlistClose" title="Close">&#x2715;</button>
         </div>
       </div>
       <div id="setlistItems"></div>
     </div>
+    <input id="fileInputBackup" type="file" accept=".json,application/json" style="display:none" />
 
     <!-- Import Diagnostics Panel (collapsible, power-mode only) -->
     <div id="diagnosticsPanel" class="diagnosticsPanel power-only">
@@ -2692,6 +2695,7 @@ Tempo: 130
 <script src="musicXmlCore.js"></script>
 <script src="renderer.js"></script>
 <script src="importPipeline.js"></script>
+<script src="backupRestore.js"></script>
 <script>
 /* =========================================================
    Core constants / helpers
@@ -5758,6 +5762,9 @@ function csmpnToCsml(csmpnText) {
   const btnOpen  = document.getElementById('btnSetlist');
   const btnAdd   = document.getElementById('btnSetlistAdd');
   const btnPrint = document.getElementById('btnSetlistPrint');
+  const btnBackup  = document.getElementById('btnSetlistBackup');
+  const btnRestore = document.getElementById('btnSetlistRestore');
+  const fileBackup = document.getElementById('fileInputBackup');
   const btnClear = document.getElementById('btnSetlistClear');
   const btnClose = document.getElementById('btnSetlistClose');
 
@@ -5887,6 +5894,59 @@ function csmpnToCsml(csmpnText) {
   });
   if (btnAdd)   btnAdd.addEventListener('click', addCurrentChart);
   if (btnPrint) btnPrint.addEventListener('click', printAll);
+
+  // ── Whole-library backup / restore (window.BackupRestore) ────────────────
+  function doBackup() {
+    if (!window.BackupRestore) { setStatus('Backup module not loaded — reload and try again.', true); return; }
+    try {
+      const json = window.BackupRestore.serializeBackup(localStorage);
+      const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = window.BackupRestore.backupFilename();
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const sum = window.BackupRestore.backupSummary(window.BackupRestore.parseBackup(json).envelope);
+      setStatus(`Backup downloaded — ${sum.songs} song(s), ${sum.setlistCharts} setlist chart(s).`);
+    } catch (e) {
+      setStatus('Backup failed: ' + (e && e.message ? e.message : e), true);
+    }
+  }
+
+  function doRestoreFile(file) {
+    if (!window.BackupRestore) { setStatus('Backup module not loaded — reload and try again.', true); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = window.BackupRestore.parseBackup(String(reader.result || ''));
+      if (!res.ok) { setStatus('Restore failed: ' + res.error, true); return; }
+      const sum = window.BackupRestore.backupSummary(res.envelope);
+      const when = res.envelope.exportedAt ? new Date(res.envelope.exportedAt).toLocaleString() : 'unknown date';
+      const msg = `Restore this backup?\n\n` +
+        `• ${sum.songs} song(s)\n` +
+        `• ${sum.setlistCharts} setlist chart(s)\n` +
+        `• Settings: ${sum.hasSettings ? 'yes' : 'no'}\n` +
+        `• Saved: ${when}\n\n` +
+        `This REPLACES the songs, setlists, and settings currently on this device.`;
+      if (!confirm(msg)) return;
+      const n = window.BackupRestore.applyBackup(res.envelope, localStorage);
+      setStatus(`Restored ${n} item group(s). Reloading…`);
+      setTimeout(() => location.reload(), 600);
+    };
+    reader.onerror = () => setStatus('Could not read the backup file.', true);
+    reader.readAsText(file);
+  }
+
+  if (btnBackup)  btnBackup.addEventListener('click', doBackup);
+  if (btnRestore) btnRestore.addEventListener('click', () => fileBackup && fileBackup.click());
+  if (fileBackup) fileBackup.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) doRestoreFile(f);
+    e.target.value = ''; // allow re-importing the same file
+  });
+
   if (btnClear) btnClear.addEventListener('click', () => {
     if (!getSetlist().length) return;
     if (!confirm('Remove all charts from the setlist?')) return;

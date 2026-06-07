@@ -1644,3 +1644,32 @@ blobs and chord labels colliding into mush. Three root causes:
 preset×meter cells; eighth-12/8 = 12 even eighths; `{hybrid}` lands after a `:|` bar).
 `tests/hybridRenderer.test.mjs` +2 (compound meters render taller / fewer bars-per-row;
 dense 12/8 eighth scaffold renders without overlap warnings). npm tests 408 → 413.
+
+### Enhancement — Whole-library Backup & Restore (data safety)
+
+**Why:** the app keeps everything (song library `csmpn_library`, setlists `csmp_setlist_v1`,
+Fake Book settings, CSML editor style, UI mode, current draft) in localStorage, which iOS
+Safari silently evicts (7-day inactivity), clears ("Clear Website Data"), or loses on a
+device change — with no escape hatch. A gigging musician could lose their whole book.
+
+**`backupRestore.js`** (new root module, `window.BackupRestore`): pure, unit-tested
+functions that take a `storage` interface so they test without a real localStorage.
+- `buildBackup` / `serializeBackup` — read a whitelist of user-data keys into a versioned
+  envelope `{ app, version, exportedAt, data }`. Excludes the power-mode PIN and the
+  transient handoff key.
+- `parseBackup` — validates the envelope (`app === 'chord-sheet-maker-pro'`).
+- `applyBackup` — writes back **only whitelisted keys** (injection guard: an imported file
+  can't inject arbitrary localStorage entries, and can't restore the PIN).
+- `backupSummary` (song/setlist counts for the confirm dialog), `backupFilename` (date-stamped).
+
+**`index.html`** — Setlist/Songbook panel gains **⬇ Backup** and **⬆ Restore** buttons +
+a hidden `.json` file input. Backup downloads `chord-sheet-backup-YYYY-MM-DD.json`; Restore
+parses, shows a confirm with counts + save date, applies, and reloads. Loaded via
+`<script src="backupRestore.js">` before the inline script.
+
+**CI** — `backupRestore.js` added to the root-JS `node --check` list and the deploy `cp`
+(verify-deploy-assets confirms it's served).
+
+**`tests/backupRestore.test.mjs`** (new, 6 tests): whitelist capture, summary counts,
+parse validation (rejects non-JSON / foreign files), serialize→restore round-trip, the
+injection guard (arbitrary + PIN keys ignored), date-stamped filename. npm tests 413 → 419.
