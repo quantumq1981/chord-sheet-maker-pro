@@ -1920,6 +1920,13 @@ body.exporting .sectionBlock{
 
         <div class="toolbar-sep"></div>
 
+        <!-- Playback — hear the chart -->
+        <div class="toolbar-group">
+          <button class="secondary" id="btnPlay" title="Play the chart — hear the chords and rhythm">&#9654; Play</button>
+        </div>
+
+        <div class="toolbar-sep"></div>
+
         <!-- Print / PDF — primary CTA -->
         <div class="toolbar-group">
           <button class="accent cta" id="btnPrint">⎙ Print / PDF</button>
@@ -2696,6 +2703,7 @@ Tempo: 130
 <script src="renderer.js"></script>
 <script src="importPipeline.js"></script>
 <script src="backupRestore.js"></script>
+<script src="audioPlayback.js"></script>
 <script>
 /* =========================================================
    Core constants / helpers
@@ -4264,6 +4272,45 @@ fileInput.addEventListener('change', async () => {
 document.getElementById('btnTransposeDown').addEventListener('click', () => doTranspose(-1));
 document.getElementById('btnTransposeUp').addEventListener('click', () => doTranspose(1));
 document.getElementById('btnTransposeReset').addEventListener('click', () => { currentTranspose = 0; updatePreview(); setStatus('Transpose reset.'); });
+
+// ── Audio playback — "hear your chart" (window.AudioPlayback) ───────────────
+(function(){
+  const btnPlay = document.getElementById('btnPlay');
+  if (!btnPlay) return;
+  let player = null;
+  let playing = false;
+
+  function setLabel(isPlaying){
+    playing = isPlaying;
+    btnPlay.innerHTML = isPlaying ? '&#9632; Stop' : '&#9654; Play';
+    btnPlay.classList.toggle('accent', isPlaying);
+  }
+
+  function stop(){
+    if (player) player.stop();
+    setLabel(false);
+  }
+
+  btnPlay.addEventListener('click', () => {
+    if (!window.AudioPlayback){ setStatus('Audio module not loaded — reload and try again.', true); return; }
+    if (playing){ stop(); setStatus('Stopped.'); return; }
+    let schedule;
+    try { schedule = window.AudioPlayback.buildSchedule(sourceEl.value); }
+    catch(e){ setStatus('Could not build playback: ' + (e && e.message ? e.message : e), true); return; }
+    if (!schedule.strikes.length){ setStatus('Nothing to play — add some chords first.', true); return; }
+    if (!player) player = window.AudioPlayback.createPlayer();
+    // createPlayer().play() resumes the AudioContext from this user gesture (iOS-safe)
+    const ok = player.play(schedule, () => { setLabel(false); setStatus('Playback finished.'); });
+    if (ok === false){ setStatus('Audio is not available in this browser.', true); return; }
+    setLabel(true);
+    setStatus(`Playing — ${schedule.strikes.length} hits at ${schedule.tempo} BPM.`);
+  });
+
+  // Stop audio if the chart changes underneath us.
+  if (typeof sourceEl !== 'undefined' && sourceEl){
+    sourceEl.addEventListener('input', () => { if (playing) stop(); });
+  }
+})();
 
 function doTranspose(delta){
   currentTranspose += delta;

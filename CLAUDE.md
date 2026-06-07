@@ -1673,3 +1673,35 @@ parses, shows a confirm with counts + save date, applies, and reloads. Loaded vi
 **`tests/backupRestore.test.mjs`** (new, 6 tests): whitelist capture, summary counts,
 parse validation (rejects non-JSON / foreign files), serialize→restore round-trip, the
 injection guard (arbitrary + PIN keys ignored), date-stamped filename. npm tests 413 → 419.
+
+### Enhancement — Audio playback ("hear your chart")
+
+**Why:** the app could only ever be *seen*, never *heard* — no way to verify chord
+changes or a rhythm by ear. A ▶ Play button now sounds the chart.
+
+**`audioPlayback.js`** (new root module, `window.AudioPlayback`):
+- Built-in **Web Audio synth** (triangle-osc + gain envelope, ~14 ms strum stagger) —
+  100% offline, zero downloads, no CSP/network changes (iOS/stage-safe).
+- Pure, unit-tested core: `chordToMidi(token)` parses raw qualities (own regex, NOT the
+  display-formatted `parseChordToken`) → MIDI voicing (bass + triad/7th/6th/ext, slash
+  bass at the bottom; `%`/`N.C.` → silent); `buildSchedule(source)` uses the SAME
+  `parseHybridChartFromCSMPN` model as the renderer, so audio matches the page.
+- **Plays chord changes in time AND follows the notated `{hybrid}` rhythm**: bars with
+  events strike the chord on each hit (q/e/h durations at tempo, accents louder); plain
+  bars play the chord changes (multi-chord `A_B` split evenly); `%` holds the previous
+  chord; compound-meter bar length honored (12/8 → 6 quarter-units/bar).
+- `createPlayer()` — browser-only runtime; `play()` resumes the AudioContext from the
+  click gesture (iOS requirement); `stop()` kills all voices.
+
+**`index.html`** — ▶ Play button on the **primary** toolbar row (all users), toggles to
+■ Stop; builds the schedule from `sourceEl.value`, plays, and stops on chart edits.
+Loaded via `<script src="audioPlayback.js">` before the inline script.
+
+**CI** — added to root-JS `node --check` + deploy `cp` (verify-deploy-assets confirms).
+
+**`tests/audioPlayback.test.mjs`** (new, 7 tests): chord voicings (maj/min/7/maj7/half-dim,
+slash bass, non-pitched → empty), chord-changes timing, hybrid-rhythm timing, `%` hold,
+compound-meter bar length. (Cross-realm arrays normalized via `Array.from`.) npm 419 → 426.
+
+**Deferred (v2 ideas):** moving playhead over the SVG; per-event chords in multi-chord
+rhythm bars; optional richer/sampled instrument toggle; count-in + loop.
