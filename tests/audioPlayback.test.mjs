@@ -87,20 +87,47 @@ test('chordToMidi returns nothing for non-pitched tokens', () => {
   assert.equal(A.chordToMidi('').length, 0);
 });
 
-test('buildSchedule plays chord changes in time for a plain chart', () => {
+test('plain bars get a default groove (downbeat per bar carries the chord change)', () => {
   const A = loadStack();
   const s = A.buildSchedule('Tempo: 120\nTime: 4/4\n\n- V\n| C | Am | F | G |\n');
   assert.equal(s.tempo, 120);
-  assert.equal(s.strikes.length, 4);
-  // 120 BPM, 4/4 → 2s per bar; one chord per bar at 0,2,4,6
+  // Groove comps each bar, so there are many more strikes than one-per-bar.
+  assert.ok(s.strikes.length > 4, 'grooves rather than one held chord per bar');
+  // The accented downbeat (vel 1) of each bar lands at 0,2,4,6 with the bar's chord.
+  const downs = s.strikes.filter((k) => k.vel === 1);
   assert.deepEqual(
-    Array.from(s.strikes, (k) => Math.round(k.t * 100) / 100),
+    Array.from(downs, (k) => Math.round(k.t * 100) / 100),
     [0, 2, 4, 6]
   );
   assert.deepEqual(
-    Array.from(s.strikes, (k) => k.chord),
+    Array.from(downs, (k) => k.chord),
     ['C', 'Am', 'F', 'G']
   );
+});
+
+test('default groove is a beat pulse plus a softer off-beat (straight feel)', () => {
+  const A = loadStack();
+  const s = A.buildSchedule('Tempo: 120\nTime: 4/4\n\n- V\n| C |\n');
+  // 4 beats × (on + off) = 8 strikes; straight off-beats at .25/.75/etc.
+  assert.equal(s.strikes.length, 8);
+  const times = Array.from(s.strikes, (k) => Math.round(k.t * 1000) / 1000);
+  assert.deepEqual(times, [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75]);
+  // off-beats are softer than beats
+  assert.ok(s.strikes[1].vel < s.strikes[0].vel);
+});
+
+test('swing/blues and compound meters shuffle the off-beats', () => {
+  const A = loadStack();
+  const s = A.buildSchedule('Style: Slow Blues Swing\nTempo: 90\nTime: 12/8\n\n- V\n| Bb7 |\n');
+  // 4 dotted-quarter pulses at 0,1,2,3s; off-beats SWUNG to ~0.66 of the beat.
+  const onbeats = s.strikes.filter((k) => k.vel >= 0.8);
+  assert.deepEqual(
+    Array.from(onbeats, (k) => Math.round(k.t * 100) / 100),
+    [0, 1, 2, 3]
+  );
+  // first off-beat is at ~0.66s (swung), not 0.5s (straight)
+  const off = s.strikes.find((k) => k.vel < 0.6);
+  assert.ok(Math.abs(off.t - 0.66) < 0.03, `swung off-beat near 0.66s, got ${off.t}`);
 });
 
 test('buildSchedule follows the notated hybrid rhythm', () => {
@@ -122,8 +149,9 @@ test('buildSchedule follows the notated hybrid rhythm', () => {
 test('buildSchedule holds the previous chord through a % repeat bar', () => {
   const A = loadStack();
   const s = A.buildSchedule('Tempo: 120\nTime: 4/4\n\n- V\n| C | % |\n');
-  assert.equal(s.strikes.length, 2);
-  assert.equal(s.strikes[1].chord, 'C', '% bar repeats the previous chord');
+  const downs = s.strikes.filter((k) => k.vel === 1);
+  assert.equal(downs.length, 2, 'one accented downbeat per bar');
+  assert.equal(downs[1].chord, 'C', '% bar repeats the previous chord');
 });
 
 test('buildSchedule respects compound-meter bar length (12/8)', () => {
@@ -131,5 +159,8 @@ test('buildSchedule respects compound-meter bar length (12/8)', () => {
   // 12/8 at 120 BPM → 6 quarter-units/bar × 0.5s = 3s per bar; 2 bars → 6s total
   const s = A.buildSchedule('Tempo: 120\nTime: 12/8\n\n- V\n| Bb7 | Eb7 |\n');
   assert.equal(Math.round(s.duration * 100) / 100, 6);
-  assert.equal(Math.round(s.strikes[1].t * 100) / 100, 3);
+  // second bar's accented downbeat lands at the bar boundary (3s)
+  const downs = s.strikes.filter((k) => k.vel === 1);
+  assert.equal(Math.round(downs[1].t * 100) / 100, 3);
+  assert.equal(downs[1].chord, 'Eb7');
 });

@@ -138,6 +138,20 @@
     var mm = /^(\d+)\/(\d+)$/.exec(time || '4/4');
     return mm ? parseInt(mm[1], 10) : 4;
   }
+  // Felt pulses per bar (Real-Book convention): compound meters collapse to
+  // dotted-quarter beats (12/8→4, 9/8→3, 6/8→2), simple meters use the numerator.
+  function pulseCount(time) {
+    var mm = /^(\d+)\/(\d+)$/.exec(time || '4/4');
+    if (!mm) return 4;
+    var num = parseInt(mm[1], 10);
+    var den = parseInt(mm[2], 10);
+    if (den === 8 && num % 3 === 0 && num >= 6) return num / 3;
+    return num;
+  }
+  function isCompound(time) {
+    var mm = /^(\d+)\/(\d+)$/.exec(time || '');
+    return !!mm && parseInt(mm[2], 10) === 8 && parseInt(mm[1], 10) % 3 === 0 && parseInt(mm[1], 10) >= 6;
+  }
 
   function clampTempo(t) {
     t = parseInt(t, 10);
@@ -163,6 +177,14 @@
     var quPerBar = meterQuarterUnits(time);
     var quPerPos = quPerBar / meterNumerator(time);
     var barDur = quPerBar * spq;
+
+    // Default-groove feel: comp the chord on each beat pulse + a softer swung
+    // off-beat, so a plain chart flows instead of holding one chord per bar.
+    var pulses = pulseCount(time);
+    var pulseQu = quPerBar / pulses;
+    var compound = isCompound(time);
+    var swing = compound || /swing|shuffle|blues|jazz|boogie/i.test(hy.style || '');
+    var offFrac = swing ? 0.66 : 0.5; // where the off-beat lands within the beat
 
     var strikes = [];
     var t = 0;
@@ -208,19 +230,37 @@
                 midi: midi,
                 chord: chTok,
                 accent: !!e.accent,
+                vel: e.accent ? 1 : 0.82,
               });
           }
         } else if (chords.length) {
-          var share = barDur / chords.length;
-          for (var ci = 0; ci < chords.length; ci++) {
-            var mid = chordToMidi(chords[ci]);
-            if (mid.length)
+          // No notated rhythm → default groove: a strum on each beat pulse plus a
+          // softer, swung off-beat, picking up the chord active at that point.
+          var chordAtFrac = function (frac) {
+            return chords[Math.min(chords.length - 1, Math.floor(frac * chords.length))];
+          };
+          for (var p = 0; p < pulses; p++) {
+            var beatQu = p * pulseQu;
+            var onCh = chordAtFrac(quPerBar ? beatQu / quPerBar : 0);
+            var onMidi = chordToMidi(onCh);
+            if (onMidi.length)
               strikes.push({
-                t: t + ci * share,
-                dur: share,
-                midi: mid,
-                chord: chords[ci],
-                accent: false,
+                t: t + beatQu * spq,
+                dur: Math.max(0.12, pulseQu * offFrac * spq * 0.95),
+                midi: onMidi,
+                chord: onCh,
+                vel: p === 0 ? 1 : 0.8, // downbeat accent
+              });
+            var offQu = beatQu + pulseQu * offFrac;
+            var offCh = chordAtFrac(quPerBar ? offQu / quPerBar : 0);
+            var offMidi = chordToMidi(offCh);
+            if (offMidi.length)
+              strikes.push({
+                t: t + offQu * spq,
+                dur: Math.max(0.1, pulseQu * (1 - offFrac) * spq * 0.95),
+                midi: offMidi,
+                chord: offCh,
+                vel: 0.5, // softer off-beat → groove, not a metronome
               });
           }
         }
@@ -250,14 +290,13 @@
       return ctx;
     }
 
-    function voice(midi, startT, durT, accent) {
+    function voice(midi, startT, durT, vel) {
       var f = midiToFreq(midi);
       var osc = ctx.createOscillator();
       osc.type = 'triangle';
       osc.frequency.value = f;
-      // Soft second oscillator an octave up for body
       var g = ctx.createGain();
-      var peak = (accent ? 0.42 : 0.3) / 1;
+      var peak = 0.34 * (vel == null ? 0.8 : vel);
       var end = startT + durT;
       g.gain.setValueAtTime(0.0001, startT);
       g.gain.linearRampToValueAtTime(peak, startT + 0.012);
@@ -275,7 +314,8 @@
       var t0 = ctx.currentTime + 0.08;
       var strumStep = 0.014; // slight stagger → strum feel
       schedule.strikes.forEach(function (s) {
-        for (var i = 0; i < s.midi.length; i++) voice(s.midi[i], t0 + s.t + i * strumStep, s.dur, s.accent);
+        var vel = s.vel == null ? (s.accent ? 1 : 0.8) : s.vel;
+        for (var i = 0; i < s.midi.length; i++) voice(s.midi[i], t0 + s.t + i * strumStep, s.dur, vel);
       });
       if (onEnd) endTimer = setTimeout(onEnd, (schedule.duration + 0.4) * 1000);
       return true;
