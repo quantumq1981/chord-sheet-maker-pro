@@ -1705,3 +1705,26 @@ compound-meter bar length. (Cross-realm arrays normalized via `Array.from`.) npm
 
 **Deferred (v2 ideas):** moving playhead over the SVG; per-event chords in multi-chord
 rhythm bars; optional richer/sampled instrument toggle; count-in + loop.
+
+### Enhancement — Audio playback default groove (rhythm flow)
+
+**Feedback:** playback "sounds fine but it's stiff / not really doing anything" — on a
+plain chart (no `{hybrid}` block) it held one chord per bar (a dead pad). It only
+grooved when the user had manually scaffolded rhythm.
+
+**`audioPlayback.js` — `buildSchedule` no-event branch reworked into a default groove:**
+- Each bar without notated rhythm now comps the chord on every **beat pulse**
+  (meter-aware: `pulseCount` = compound 12/8→4, 9/8→3, 6/8→2; simple = numerator) plus a
+  softer **off-beat** → a gentle eighth-strum that flows instead of a held chord.
+- **Dynamics** via a new per-strike `vel` field: downbeat 1.0, other beats 0.8, off-beats
+  0.5 (groove, not a metronome). The synth `voice()` now scales gain by `vel`.
+- **Swing/shuffle**: off-beats are pushed to ~0.66 of the beat (triplet feel) when the
+  meter is compound **or** the chart `Style` matches `swing|shuffle|blues|jazz|boogie`;
+  straight (0.5) otherwise. So a 12/8 slow-blues plays a real shuffle.
+- Multi-chord bars: each pulse picks up the chord active at that fraction of the bar.
+- Event (`{hybrid}`) bars are unchanged — they keep their notated rhythm (now also carry
+  `vel`: accents 1.0 else 0.82).
+
+**`tests/audioPlayback.test.mjs`** — 3 existing tests updated for the groove (downbeat =
+`vel===1` markers), +2 new: straight 4/4 groove (8 strikes, even eighths, softer
+off-beats) and swing/compound shuffle (off-beat near 0.66s). npm tests 426 → 428.
