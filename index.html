@@ -2128,6 +2128,10 @@ Tempo: 100
       <div class="gpn-header">
         <h3>🎸 Guitar Tab / Notation View</h3>
         <div class="gpn-controls">
+          <label id="gpnTrackWrap" title="Choose which instrument to display" style="display:none">
+            Instrument:
+            <select id="gpnTrack"></select>
+          </label>
           <label title="Choose which staves to display">
             View:
             <select id="gpnStaveProfile">
@@ -5716,14 +5720,34 @@ function csmpnToCsml(csmpnText) {
   const btnClose    = document.getElementById('btnGpnClose');
   const btnPrint    = document.getElementById('btnGpnPrint');
   const staveSelEl  = document.getElementById('gpnStaveProfile');
+  const trackWrap   = document.getElementById('gpnTrackWrap');
+  const trackSelEl  = document.getElementById('gpnTrack');
   const container   = document.getElementById('gpNotationContainer');
 
   if (!panel || !btnOpen) return;
 
   let currentApi = null;
+  let selectedTrackIndex = 0;   // which instrument is shown
+  let lastRenderedSrc = null;   // reset the instrument when a new file loads
 
   function showLoading(msg) {
     container.innerHTML = '<div class="gpn-loading">' + escapeHtml(msg || 'Loading notation…') + '</div>';
+  }
+
+  // Populate the instrument picker; hidden when the file has a single track
+  // (most Power Tab files, single-guitar Guitar Pro files).
+  function populateTracks(trackList) {
+    if (!trackSelEl || !trackWrap) return;
+    if (!trackList || trackList.length <= 1) {
+      trackWrap.style.display = 'none';
+      trackSelEl.innerHTML = '';
+      return;
+    }
+    trackSelEl.innerHTML = trackList.map((name, i) =>
+      '<option value="' + i + '"' + (i === selectedTrackIndex ? ' selected' : '') + '>' +
+      escapeHtml(name) + '</option>'
+    ).join('');
+    trackWrap.style.display = '';
   }
 
   async function renderNotation() {
@@ -5736,6 +5760,10 @@ function csmpnToCsml(csmpnText) {
       container.innerHTML = '<div class="gpn-empty" style="color:#c00">Notation renderer not loaded — try refreshing.</div>';
       return;
     }
+    // A new file: start from its first instrument. Stave-profile changes reuse
+    // the same source, so the chosen instrument is preserved across those.
+    const curSrc = ptbTex || window._gpLastBytes;
+    if (curSrc !== lastRenderedSrc) { selectedTrackIndex = 0; lastRenderedSrc = curSrc; }
     showLoading('Loading AlphaTab and rendering notation…');
     let rendered = false;
     try {
@@ -5743,7 +5771,11 @@ function csmpnToCsml(csmpnText) {
       const renderOpts = {
         staveProfile: parseInt(staveSelEl.value, 10) || 1,
         layoutMode: 0,
-        onInfo: (kind) => { if (kind === 'rendered') rendered = true; },
+        trackIndex: selectedTrackIndex,
+        onInfo: (kind, data) => {
+          if (kind === 'rendered') rendered = true;
+          if (kind === 'loaded' && data) populateTracks(data.trackList);
+        },
         onError: (msg) => {
           container.innerHTML =
             '<div class="gpn-empty" style="color:#c00">Could not render this file: ' +
@@ -5785,6 +5817,18 @@ function csmpnToCsml(csmpnText) {
 
   if (staveSelEl) staveSelEl.addEventListener('change', () => {
     if (panel.classList.contains('open')) renderNotation();
+  });
+
+  // Switch instrument in place via AlphaTab's renderTracks — no reload, so the
+  // current view/print quality is preserved. Falls back to a full re-render.
+  if (trackSelEl) trackSelEl.addEventListener('change', () => {
+    selectedTrackIndex = parseInt(trackSelEl.value, 10) || 0;
+    const tracks = currentApi && currentApi.score && currentApi.score.tracks;
+    if (tracks && tracks[selectedTrackIndex] && typeof currentApi.renderTracks === 'function') {
+      try { currentApi.renderTracks([tracks[selectedTrackIndex]]); return; }
+      catch (_e) { /* fall through to full re-render */ }
+    }
+    renderNotation();
   });
 
   if (btnPrint) btnPrint.addEventListener('click', () => {

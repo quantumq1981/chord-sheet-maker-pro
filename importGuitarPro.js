@@ -700,11 +700,34 @@ if (typeof window !== 'undefined') {
       });
     }
     _wire(api.scoreLoaded, function (score) {
-      var tracks = (score && score.tracks && score.tracks.length) || 0;
-      if (tracks === 0 && typeof o.onError === 'function') {
+      // Collect every track name so the caller can offer an instrument picker.
+      var trackList = [];
+      if (score && score.tracks) {
+        for (var i = 0; i < score.tracks.length; i++) {
+          var t = score.tracks[i];
+          trackList.push(t && t.name ? t.name : 'Track ' + (i + 1));
+        }
+      }
+      if (trackList.length === 0 && typeof o.onError === 'function') {
         o.onError('The file parsed but contains no playable tracks.');
       } else if (typeof o.onInfo === 'function') {
-        o.onInfo('loaded', { tracks: tracks, title: score && score.title });
+        o.onInfo('loaded', {
+          tracks: trackList.length,
+          trackList: trackList,
+          title: score && score.title,
+        });
+      }
+      // Render a non-default track when one was requested (e.g. restoring the
+      // selected instrument after a stave-profile change).
+      if (
+        typeof o.trackIndex === 'number' &&
+        o.trackIndex > 0 &&
+        score &&
+        score.tracks &&
+        score.tracks[o.trackIndex] &&
+        typeof api.renderTracks === 'function'
+      ) {
+        try { api.renderTracks([score.tracks[o.trackIndex]]); } catch (_e) {}
       }
     });
     if (typeof o.onInfo === 'function') {
