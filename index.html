@@ -1788,8 +1788,32 @@ body.exporting .sectionBlock{
     margin-bottom:10px;
     gap:8px;
     flex-wrap:wrap;
+    position:relative;
   }
   .gpn-header h3{ margin:0; font-size:14px; font-weight:700; }
+  /* Print-instruments dialog (multi-select + layout mode) */
+  .gpn-print-dialog{
+    position:absolute;
+    top:100%;
+    right:0;
+    z-index:20;
+    margin-top:6px;
+    min-width:220px;
+    max-width:300px;
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    box-shadow:0 6px 24px rgba(0,0,0,0.18);
+    padding:12px;
+  }
+  .gpn-pd-title{ font-weight:700; font-size:13px; margin-bottom:8px; }
+  .gpn-pd-all{ display:block; font-size:13px; font-weight:600; margin-bottom:6px; }
+  .gpn-pd-list{ max-height:200px; overflow:auto; border-top:1px solid var(--border); border-bottom:1px solid var(--border); padding:6px 0; margin-bottom:8px; }
+  .gpn-pd-list label{ display:block; font-size:13px; padding:3px 0; }
+  .gpn-pd-list input, .gpn-pd-all input, .gpn-pd-mode input{ margin-right:6px; }
+  .gpn-pd-mode{ display:flex; flex-direction:column; gap:4px; font-size:13px; margin-bottom:10px; }
+  .gpn-pd-actions{ display:flex; gap:8px; justify-content:flex-end; }
+  .gpn-pd-actions button{ font-size:13px; padding:5px 12px; border-radius:8px; cursor:pointer; }
   .gpn-controls{
     display:flex;
     align-items:center;
@@ -2142,6 +2166,19 @@ Tempo: 100
           </label>
           <button id="btnGpnPrint" title="Print or save as PDF">⎙ Print</button>
           <button id="btnGpnClose" title="Close notation view">&#x2715;</button>
+        </div>
+        <div id="gpnPrintDialog" class="gpn-print-dialog" style="display:none" role="dialog" aria-label="Print instruments">
+          <div class="gpn-pd-title">Print instruments</div>
+          <label class="gpn-pd-all"><input type="checkbox" id="gpnPrintAll" checked> Select all</label>
+          <div id="gpnPrintList" class="gpn-pd-list"></div>
+          <div class="gpn-pd-mode">
+            <label><input type="radio" name="gpnPrintMode" value="separate" checked> Separate parts</label>
+            <label><input type="radio" name="gpnPrintMode" value="combined"> Combined score</label>
+          </div>
+          <div class="gpn-pd-actions">
+            <button id="gpnPrintGo" class="cta">⎙ Print</button>
+            <button id="gpnPrintCancel" class="outline">Cancel</button>
+          </div>
         </div>
       </div>
       <div id="gpNotationContainer" class="gpn-container">
@@ -5723,12 +5760,20 @@ function csmpnToCsml(csmpnText) {
   const trackWrap   = document.getElementById('gpnTrackWrap');
   const trackSelEl  = document.getElementById('gpnTrack');
   const container   = document.getElementById('gpNotationContainer');
+  const printDialog = document.getElementById('gpnPrintDialog');
+  const printListEl = document.getElementById('gpnPrintList');
+  const printAllEl  = document.getElementById('gpnPrintAll');
+  const btnPrintGo  = document.getElementById('gpnPrintGo');
+  const btnPrintCancel = document.getElementById('gpnPrintCancel');
 
   if (!panel || !btnOpen) return;
 
   let currentApi = null;
   let selectedTrackIndex = 0;   // which instrument is shown
   let lastRenderedSrc = null;   // reset the instrument when a new file loads
+  let currentTrackList = [];    // instrument names for the print picker
+
+  function closePrintDialog() { if (printDialog) printDialog.style.display = 'none'; }
 
   function showLoading(msg) {
     container.innerHTML = '<div class="gpn-loading">' + escapeHtml(msg || 'Loading notation…') + '</div>';
@@ -5737,6 +5782,7 @@ function csmpnToCsml(csmpnText) {
   // Populate the instrument picker; hidden when the file has a single track
   // (most Power Tab files, single-guitar Guitar Pro files).
   function populateTracks(trackList) {
+    currentTrackList = trackList || [];
     if (!trackSelEl || !trackWrap) return;
     if (!trackList || trackList.length <= 1) {
       trackWrap.style.display = 'none';
@@ -5764,6 +5810,7 @@ function csmpnToCsml(csmpnText) {
     // the same source, so the chosen instrument is preserved across those.
     const curSrc = ptbTex || window._gpLastBytes;
     if (curSrc !== lastRenderedSrc) { selectedTrackIndex = 0; lastRenderedSrc = curSrc; }
+    closePrintDialog();
     showLoading('Loading AlphaTab and rendering notation…');
     let rendered = false;
     try {
@@ -5831,11 +5878,58 @@ function csmpnToCsml(csmpnText) {
     renderNotation();
   });
 
-  if (btnPrint) btnPrint.addEventListener('click', () => {
-    if (currentApi && typeof currentApi.print === 'function') {
+  function openPrintDialog() {
+    if (!printListEl) return;
+    printListEl.innerHTML = currentTrackList.map((name, i) =>
+      '<label><input type="checkbox" class="gpn-pd-trk" value="' + i + '" checked> ' +
+      escapeHtml(name) + '</label>'
+    ).join('');
+    if (printAllEl) printAllEl.checked = true;
+    if (printDialog) printDialog.style.display = 'block';
+  }
+
+  if (btnPrint) btnPrint.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!currentApi) { setStatus('Nothing to print — render a file first.', 'err'); return; }
+    // Single-track files: print directly via AlphaTab's native print.
+    if (!currentTrackList || currentTrackList.length <= 1) {
+      closePrintDialog();
+      if (typeof currentApi.print === 'function') currentApi.print();
+      return;
+    }
+    // Multi-track: toggle the instrument print picker.
+    if (printDialog && printDialog.style.display === 'block') { closePrintDialog(); return; }
+    openPrintDialog();
+  });
+
+  if (printAllEl) printAllEl.addEventListener('change', () => {
+    printListEl.querySelectorAll('.gpn-pd-trk').forEach((cb) => { cb.checked = printAllEl.checked; });
+  });
+
+  if (btnPrintCancel) btnPrintCancel.addEventListener('click', closePrintDialog);
+
+  if (btnPrintGo) btnPrintGo.addEventListener('click', () => {
+    const indices = Array.from(printListEl.querySelectorAll('.gpn-pd-trk:checked'))
+      .map((cb) => parseInt(cb.value, 10));
+    if (!indices.length) { setStatus('Select at least one instrument to print.', 'err'); return; }
+    const modeEl = printDialog.querySelector('input[name="gpnPrintMode"]:checked');
+    const mode = modeEl ? modeEl.value : 'separate';
+    closePrintDialog();
+    if (typeof window.printGpTracks === 'function') {
+      const ok = window.printGpTracks(currentApi, indices, mode, {
+        staveProfile: parseInt(staveSelEl.value, 10) || 1,
+      });
+      if (!ok) setStatus('Could not open the print view — allow pop-ups for this site, then try again.', 'err');
+    } else if (typeof currentApi.print === 'function') {
       currentApi.print();
-    } else {
-      setStatus('Nothing to print — render a file first.', 'err');
+    }
+  });
+
+  // Close the picker on an outside click.
+  document.addEventListener('click', (e) => {
+    if (printDialog && printDialog.style.display === 'block' &&
+        !printDialog.contains(e.target) && e.target !== btnPrint) {
+      closePrintDialog();
     }
   });
 

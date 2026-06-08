@@ -18,6 +18,7 @@
 
 const _GP_AT_CDN =
   'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.1/dist/alphaTab.min.js';
+const _GP_FONT_CDN = 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.1/dist/font/';
 
 let _gpAtInstance = null;
 let _gpAtLoadPromise = null;
@@ -769,6 +770,134 @@ if (typeof window !== 'undefined') {
     api.tex(String(tex || ''));
     _nudgeRender(api);
     return api;
+  };
+
+  /**
+   * Print selected instrument tracks from an already-rendered score, without
+   * disturbing the on-screen view. Modeled on AlphaTab's own print() (a print
+   * popup + fresh AlphaTabApi), extended to choose tracks and layout:
+   *   mode 'combined' → one render with all selected tracks (stacked score)
+   *   mode 'separate' → one render per track, page-break between (parts)
+   *
+   * @param {object} api          the live AlphaTabApi (has .score)
+   * @param {number[]} trackIndices indices into api.score.tracks
+   * @param {'combined'|'separate'} mode
+   * @param {{staveProfile?:number}} [opts]
+   * @returns {boolean} false if it could not start (no score / popup blocked)
+   */
+  window.printGpTracks = function printGpTracks(api, trackIndices, mode, opts) {
+    var o = opts || {};
+    var at = window.alphaTab;
+    if (!at || !api || !api.score) return false;
+    var score = api.score;
+    var tracks = score.tracks || [];
+    var indices = (trackIndices || []).filter(function (i) {
+      return tracks[i];
+    });
+    if (indices.length === 0) return false;
+
+    var preview = window.open('', '', 'width=0,height=0');
+    if (!preview) return false; // popup blocked
+
+    preview.document.write(
+      '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
+        '.at-surface{width:auto !important;height:auto !important;}' +
+        '.at-surface > div{position:relative !important;left:auto !important;top:auto !important;break-inside:avoid;}' +
+        '.gptrk{break-after:page;page-break-after:always;}' +
+        '.gptrk:last-child{break-after:auto;page-break-after:auto;}' +
+        '.gptrk-title{font:bold 15px sans-serif;margin:6px 0 2px;}' +
+        '</style></head><body></body></html>'
+    );
+    preview.document.title =
+      score.title && score.artist
+        ? score.title + ' - ' + score.artist
+        : score.title || 'Score';
+
+    function makeSettings() {
+      var s = at.Settings ? new at.Settings() : new at.model.Settings();
+      if (s.core) {
+        s.core.useWorkers = false;
+        s.core.enableLazyLoading = false;
+        s.core.fontDirectory = _GP_FONT_CDN;
+        s.core.scriptFile = _GP_AT_CDN;
+      }
+      if (s.display) {
+        s.display.staveProfile = o.staveProfile !== undefined ? o.staveProfile : 1;
+        s.display.layoutMode = 0;
+        s.display.scale = 0.8;
+        s.display.stretchForce = 0.8;
+      }
+      if (s.player) {
+        try {
+          s.player.enablePlayer = false;
+          s.player.enableCursor = false;
+        } catch (_e) {}
+      }
+      return s;
+    }
+
+    var Api = at.AlphaTabApi || (at.model && at.model.AlphaTabApi);
+    if (!Api) {
+      try { preview.close(); } catch (_e) {}
+      return false;
+    }
+
+    var apis = [];
+    var pending = 0;
+    var printed = false;
+    function maybePrint() {
+      if (printed) return;
+      printed = true;
+      try { preview.focus(); preview.print(); } catch (_e) {}
+    }
+    function onOneDone() {
+      pending--;
+      if (pending <= 0) setTimeout(maybePrint, 150);
+    }
+    function wireDone(a) {
+      if (a.renderer && a.renderer.postRenderFinished && typeof a.renderer.postRenderFinished.on === 'function') {
+        a.renderer.postRenderFinished.on(onOneDone);
+      } else if (a.renderFinished && typeof a.renderFinished.on === 'function') {
+        a.renderFinished.on(onOneDone);
+      }
+    }
+
+    if (mode === 'combined') {
+      pending = 1;
+      var div = preview.document.createElement('div');
+      preview.document.body.appendChild(div);
+      var a = new Api(div, makeSettings());
+      apis.push(a);
+      wireDone(a);
+      a.renderScore(score, indices);
+    } else {
+      pending = indices.length;
+      indices.forEach(function (idx) {
+        var track = tracks[idx];
+        var wrap = preview.document.createElement('div');
+        wrap.className = 'gptrk';
+        var title = preview.document.createElement('div');
+        title.className = 'gptrk-title';
+        title.textContent = track && track.name ? track.name : 'Track ' + (idx + 1);
+        var d = preview.document.createElement('div');
+        wrap.appendChild(title);
+        wrap.appendChild(d);
+        preview.document.body.appendChild(wrap);
+        var ai = new Api(d, makeSettings());
+        apis.push(ai);
+        wireDone(ai);
+        ai.renderScore(score, [idx]);
+      });
+    }
+
+    // Safety net: if a render event never fires, print anyway after a delay.
+    setTimeout(maybePrint, 6000);
+    preview.onunload = function () {
+      apis.forEach(function (a) {
+        try { a.destroy(); } catch (_e) {}
+      });
+    };
+    return true;
   };
 }
 
