@@ -1813,6 +1813,8 @@ body.exporting .sectionBlock{
   .gpn-pd-list input, .gpn-pd-all input, .gpn-pd-mode input{ margin-right:6px; }
   .gpn-pd-mode{ display:flex; flex-direction:column; gap:4px; font-size:13px; margin-bottom:10px; }
   .gpn-pd-actions{ display:flex; gap:8px; justify-content:flex-end; }
+  .gpn-pd-paper{ display:block; font-size:13px; margin-bottom:10px; }
+  .gpn-pd-paper select{ margin-left:6px; }
   .gpn-pd-actions button{ font-size:13px; padding:5px 12px; border-radius:8px; cursor:pointer; }
   .gpn-controls{
     display:flex;
@@ -2175,6 +2177,13 @@ Tempo: 100
             <label><input type="radio" name="gpnPrintMode" value="separate" checked> Separate parts</label>
             <label><input type="radio" name="gpnPrintMode" value="combined"> Combined score</label>
           </div>
+          <label class="gpn-pd-paper">Paper:
+            <select id="gpnPrintPaper">
+              <option value="A3" selected>A3</option>
+              <option value="A4">A4</option>
+              <option value="Letter">Letter</option>
+            </select>
+          </label>
           <div class="gpn-pd-actions">
             <button id="gpnPrintGo" class="cta">⎙ Print</button>
             <button id="gpnPrintCancel" class="outline">Cancel</button>
@@ -5914,10 +5923,13 @@ function csmpnToCsml(csmpnText) {
     if (!indices.length) { setStatus('Select at least one instrument to print.', 'err'); return; }
     const modeEl = printDialog.querySelector('input[name="gpnPrintMode"]:checked');
     const mode = modeEl ? modeEl.value : 'separate';
+    const paperEl = document.getElementById('gpnPrintPaper');
+    const paperSize = paperEl ? paperEl.value : 'A3';
     closePrintDialog();
     if (typeof window.printGpTracks === 'function') {
       const ok = window.printGpTracks(currentApi, indices, mode, {
         staveProfile: parseInt(staveSelEl.value, 10) || 1,
+        paperSize: paperSize,
       });
       if (!ok) setStatus('Could not open the print view — allow pop-ups for this site, then try again.', 'err');
     } else if (typeof currentApi.print === 'function') {

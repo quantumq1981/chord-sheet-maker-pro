@@ -796,11 +796,22 @@ if (typeof window !== 'undefined') {
     });
     if (indices.length === 0) return false;
 
+    // Match the engraving width to the chosen sheet so it prints 1:1 (no OS
+    // downscaling) and the print dialog pre-selects the right paper size.
+    var PAPER = {
+      A3: { width: '297mm', css: 'A3' },
+      A4: { width: '210mm', css: 'A4' },
+      Letter: { width: '216mm', css: 'letter' },
+    };
+    var paper = PAPER[o.paperSize] || PAPER.A3;
+
     var preview = window.open('', '', 'width=0,height=0');
     if (!preview) return false; // popup blocked
 
     preview.document.write(
       '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
+        '@page{size:' + paper.css + ';margin:10mm;}' +
+        'body{margin:0;}' +
         '.at-surface{width:auto !important;height:auto !important;}' +
         '.at-surface > div{position:relative !important;left:auto !important;top:auto !important;break-inside:avoid;}' +
         '.gptrk{break-after:page;page-break-after:always;}' +
@@ -865,6 +876,7 @@ if (typeof window !== 'undefined') {
     if (mode === 'combined') {
       pending = 1;
       var div = preview.document.createElement('div');
+      div.style.width = paper.width;
       preview.document.body.appendChild(div);
       var a = new Api(div, makeSettings());
       apis.push(a);
@@ -880,6 +892,7 @@ if (typeof window !== 'undefined') {
         title.className = 'gptrk-title';
         title.textContent = track && track.name ? track.name : 'Track ' + (idx + 1);
         var d = preview.document.createElement('div');
+        d.style.width = paper.width;
         wrap.appendChild(title);
         wrap.appendChild(d);
         preview.document.body.appendChild(wrap);
