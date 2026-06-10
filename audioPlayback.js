@@ -276,6 +276,7 @@
     var master = null;
     var nodes = [];
     var endTimer = null;
+    var playToken = 0; // bumped by stop()/new play() to cancel a pending start
 
     function ensureCtx() {
       if (!ctx) {
@@ -285,8 +286,23 @@
         master = ctx.createGain();
         master.gain.value = 0.22;
         master.connect(ctx.destination);
+        // iOS Safari unlock: starting a 1-sample silent buffer from inside the
+        // user gesture is what actually lets the context produce output —
+        // resume() on its own is unreliable on iOS.
+        try {
+          var b = ctx.createBuffer(1, 1, 22050);
+          var s = ctx.createBufferSource();
+          s.buffer = b;
+          s.connect(ctx.destination);
+          if (s.start) s.start(0);
+          else if (s.noteOn) s.noteOn(0);
+        } catch (_e) {
+          /* unlock best-effort */
+        }
       }
-      if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
+      if (ctx.state === 'suspended' && ctx.resume) {
+        try { ctx.resume(); } catch (_e) {}
+      }
       return ctx;
     }
 
@@ -311,17 +327,37 @@
     function play(schedule, onEnd) {
       if (!ensureCtx()) return false;
       stop();
-      var t0 = ctx.currentTime + 0.08;
-      var strumStep = 0.014; // slight stagger → strum feel
-      schedule.strikes.forEach(function (s) {
-        var vel = s.vel == null ? (s.accent ? 1 : 0.8) : s.vel;
-        for (var i = 0; i < s.midi.length; i++) voice(s.midi[i], t0 + s.t + i * strumStep, s.dur, vel);
-      });
-      if (onEnd) endTimer = setTimeout(onEnd, (schedule.duration + 0.4) * 1000);
+      var myToken = ++playToken;
+      var started = false;
+
+      function startAll() {
+        if (started || myToken !== playToken) return; // superseded by stop()/replay
+        started = true;
+        // Compute t0 from the clock only once it is actually running — on iOS
+        // ctx.currentTime stays 0 while suspended, which would mis-time/drop notes.
+        var t0 = ctx.currentTime + 0.08;
+        var strumStep = 0.014; // slight stagger → strum feel
+        schedule.strikes.forEach(function (s) {
+          var vel = s.vel == null ? (s.accent ? 1 : 0.8) : s.vel;
+          for (var i = 0; i < s.midi.length; i++) {
+            voice(s.midi[i], t0 + s.t + i * strumStep, s.dur, vel);
+          }
+        });
+        if (onEnd) endTimer = setTimeout(onEnd, (schedule.duration + 0.4) * 1000);
+      }
+
+      if (ctx.state !== 'running' && ctx.resume) {
+        ctx.resume().then(startAll, startAll);
+        // Safety net if resume() never settles (some iOS builds): start anyway.
+        setTimeout(startAll, 350);
+      } else {
+        startAll();
+      }
       return true;
     }
 
     function stop() {
+      playToken++; // invalidate any pending startAll
       if (endTimer) {
         clearTimeout(endTimer);
         endTimer = null;
