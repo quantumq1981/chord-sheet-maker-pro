@@ -1928,6 +1928,8 @@ body.exporting .sectionBlock{
               <button class="import-item power-only" id="btnImportIRealPro" role="menuitem">iReal Pro</button>
               <button class="import-item power-only" id="btnImportGuitarPro" role="menuitem">Guitar Pro / Power Tab</button>
               <button class="import-item power-only" id="btnImportCsml" role="menuitem">ChordSlashML (.csml)</button>
+              <hr class="import-divider power-only">
+              <button class="import-item power-only" id="btnDecodeTab" role="menuitem">Decode tab → Tab Translator Pro ↗</button>
             </div>
           </div>
           <button class="info-btn" onclick="openFeatureInfo('import')" title="About Import">ⓘ</button>
@@ -2510,6 +2512,7 @@ Tempo: 130
     <input id="fileInputOpenLyrics" type="file" accept=".xml,.lyrics,text/xml,application/xml" style="display:none" />
     <input id="fileInputIRealPro" type="file" accept=".irealb,.txt,text/plain" style="display:none" />
     <input id="fileInputGuitarPro" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx,.ptb" style="display:none" />
+    <input id="fileInputDecode" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx,.ptb,.xml,.musicxml,.pdf" style="display:none" />
     <input id="fileInputCsml" type="file" accept=".csml,.csm,text/plain" style="display:none" />
   </div>
 
@@ -3453,6 +3456,44 @@ fileInputGuitarPro.addEventListener('change', async () => {
     console.error(err);
     setStatus(`Guitar Pro import failed: ${err?.message || err}`, 'error');
     updateDiagnosticsPanel();
+  }
+});
+
+// ── "Decode tab" — reverse handoff to Tab Translator Pro ────────────────────
+// Tab Translator Pro (sibling app, same GitHub Pages origin → shared localStorage)
+// has the strongest fret→chord + key engine. This hands a raw GP/MusicXML/Power
+// Tab/PDF file to it for recognition: base64 the bytes into `ttp:decode:v1`, then
+// navigate to `…/Tab-Translator-Pro/?import=decode` (mirror of the forward
+// `csm:handoff:v1` contract). Tab Translator decodes magic bytes itself, so no
+// format field is needed. Same-tab nav is mobile-popup-safe.
+const fileInputDecode = document.getElementById('fileInputDecode');
+document.getElementById('btnDecodeTab').addEventListener('click', () => {
+  fileInputDecode.value = '';
+  fileInputDecode.click();
+});
+fileInputDecode.addEventListener('change', async () => {
+  const file = fileInputDecode.files && fileInputDecode.files[0];
+  if (!file) return;
+  try {
+    setStatus(`Sending ${file.name} to Tab Translator Pro…`);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    // Chunked base64 — String.fromCharCode(...wholeFile) overflows the call stack.
+    let bin = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    const b64 = btoa(bin);
+    if (b64.length > 4500000) { // ~3.3 MB raw → keep inside the localStorage quota
+      setStatus('That file is too large to hand off (~3 MB max). Open it directly in Tab Translator Pro.', 'error');
+      return;
+    }
+    const env = { v: 1, source: 'chord-sheet-maker-pro', createdAt: new Date().toISOString(), filename: file.name, b64 };
+    localStorage.setItem('ttp:decode:v1', JSON.stringify(env));
+    window.location.assign(window.location.origin + '/Tab-Translator-Pro/?import=decode');
+  } catch (err) {
+    console.error(err);
+    setStatus(`Couldn't send to Tab Translator Pro: ${err?.message || err}`, 'error');
   }
 });
 

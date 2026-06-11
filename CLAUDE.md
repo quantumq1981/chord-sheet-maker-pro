@@ -1757,3 +1757,24 @@ round-tripping Tab Translator's exact `{tab}` voicings and decoded `{hybrid}`
 rhythm into Pro (it knows the real fingering + real onset timing), `Capo:`/tuning
 in the CSMPN header, and a reverse "Decode this tab" link from Pro back to Tab
 Translator.
+
+### Integration — "Decode tab → Tab Translator Pro" reverse handoff (2026-06-11)
+
+The handoff is now **bidirectional**. Beyond receiving charts from Tab Translator Pro,
+CSMP can send a raw tab file BACK to it for recognition with Tab Translator's stronger
+fret→chord + key engine (CSMP's own GP import uses a weaker inline table).
+
+**`index.html` (additive, isolated):**
+- Import menu: new `#btnDecodeTab` ("Decode tab → Tab Translator Pro ↗", power-only) +
+  hidden `#fileInputDecode` (accepts `.gp/.gp3/.gp4/.gp5/.gpx/.ptb/.xml/.musicxml/.pdf`).
+- Handler: reads the file, **chunked**-base64 (avoids the `String.fromCharCode(...whole)`
+  stack overflow), guards the localStorage quota (~3 MB), writes the
+  `ttp:decode:v1` envelope `{ v:1, source:'chord-sheet-maker-pro', createdAt, filename,
+  b64 }`, and same-tab-navigates to `${origin}/Tab-Translator-Pro/?import=decode`.
+- Mirror of the forward `csm:handoff:v1` contract; Tab Translator detects the format from
+  magic bytes, so no format field is sent. Touches no existing importer/feature.
+
+Validated by a headless byte-identical round-trip in the Tab Translator repo
+(`blue-sky.gp` → base64 → decode → `parseGuitarProOrXML` → 165 bars). CSMP gates green
+(lint · format · build · 484 tests). Contract documented in
+`chord-sheet-maker/docs/HANDOFF-CONTRACT.md`.
