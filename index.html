@@ -4865,7 +4865,10 @@ setStatus('Ready. v1.10.0 — iReal Pro (irealb://), MXL, OnSong, OpenSong, Open
     }
 
     if (loaded && typeof setStatus === 'function') {
-      setStatus('Imported from Chord Sheet Maker' + (env.title ? ' — ' + env.title : '') + '.');
+      // Source-aware credit: both Chord Sheet Maker and Tab Translator Pro send
+      // through this same envelope (see chord-sheet-maker/docs/HANDOFF-CONTRACT.md).
+      var srcName = env.source === 'tab-translator-pro' ? 'Tab Translator Pro' : 'Chord Sheet Maker';
+      setStatus('Imported from ' + srcName + (env.title ? ' — ' + env.title : '') + '.');
     }
 
     // Strip the query param so a manual refresh is a clean, normal load.
