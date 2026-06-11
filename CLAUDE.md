@@ -1728,3 +1728,32 @@ grooved when the user had manually scaffolded rhythm.
 **`tests/audioPlayback.test.mjs`** — 3 existing tests updated for the groove (downbeat =
 `vel===1` markers), +2 new: straight 4/4 groove (8 strikes, even eighths, softer
 off-beats) and swing/compound shuffle (off-beat near 0.66s). npm tests 426 → 428.
+
+### Integration — Tab Translator Pro is now a handoff sender (2026-06-11)
+
+**Context.** Tab Translator Pro (separate repo, same GitHub Pages origin) is the
+recognition front-end: it turns tab/PDF/Guitar Pro/MusicXML/Power Tab files into
+chord charts. It now exports **CSMPN** (Pro's native source) and pushes a chart
+straight into Pro with one tap, reusing **the receiver Pro already ships**
+(`consumeCsmHandoff` in `index.html`; contract in
+`chord-sheet-maker/docs/HANDOFF-CONTRACT.md`).
+
+**What changed in this repo (additive, 1 line of logic):**
+- `index.html` `consumeCsmHandoff` — the success `setStatus` is now **`source`-aware**:
+  `env.source === 'tab-translator-pro'` → "Imported from Tab Translator Pro — …",
+  else "Imported from Chord Sheet Maker". No behaviour change to the load path; the
+  receiver still keys off `formats` (priority `csmpn → chordpro → musicxml`) and is
+  inert unless opened with `?import=handoff`. PowerTab/slash/hybrid/fake-book/the
+  existing `chord-sheet-maker` sender are all unaffected.
+
+**Why no more was needed here.** The receiver, the `csm:handoff:v1` envelope, and
+the backup exclusion of that transient key were already in place (PR #288). Adding
+a new sender is a pure sender-side change in the other repo — the contract is
+explicitly designed so any same-origin app can write a v1 envelope and open Pro
+with `?import=handoff`. New senders just pick a unique `source` string.
+
+**Future ideas** (analysis in `Tab-Translator-Pro/docs/INTEGRATION-IDEAS.md`):
+round-tripping Tab Translator's exact `{tab}` voicings and decoded `{hybrid}`
+rhythm into Pro (it knows the real fingering + real onset timing), `Capo:`/tuning
+in the CSMPN header, and a reverse "Decode this tab" link from Pro back to Tab
+Translator.
