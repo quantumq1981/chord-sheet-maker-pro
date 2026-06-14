@@ -24,7 +24,7 @@ test('exposes the expected API surface', () => {
     'defaultAbcExample',
     'ensureAbcHeaders',
     'render',
-    'createSynthController',
+    'createPlayer',
     'abcjsReady',
   ]) {
     assert.equal(typeof A[fn], 'function', `${fn} is a function`);

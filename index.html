@@ -1487,8 +1487,10 @@ body.exporting .sectionBlock{
     background:#fff; padding:8px; overflow:auto;
   }
   .abc-preview-empty{ color:var(--muted,#999); font-style:italic; padding:16px; }
-  #abcTransport{ margin-top:10px; }
-  #abcTransport .abcjs-inline-audio{ border-radius:8px; }
+  .abc-transport{ margin-top:10px; display:flex; align-items:center; gap:10px; }
+  #btnAbcPlay{ padding:5px 14px; font-weight:600; }
+  #btnAbcPlay:disabled{ opacity:.5; }
+  #abcPlayHint{ font-size:.78rem; color:var(--muted,#888); }
   .abc-status{ font-size:.8rem; color:var(--muted,#777); margin-top:6px; min-height:1.1em; }
   .abc-status.err{ color:#c00; }
   .abc-controls{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; font-size:.85rem; }
@@ -2433,7 +2435,10 @@ Tempo: 120
           <div class="abc-preview-box" id="abcPreview">
             <div class="abc-preview-empty">Type or paste ABC to see notation…</div>
           </div>
-          <div id="abcTransport"></div>
+          <div id="abcTransport" class="abc-transport">
+            <button id="btnAbcPlay" type="button" disabled>▶ Play</button>
+            <span id="abcPlayHint"></span>
+          </div>
         </div>
       </div>
       <div class="abc-status" id="abcStatus"></div>
@@ -6304,8 +6309,13 @@ function csmpnToCsml(csmpnText) {
   const tabChk    = document.getElementById('abcGuitarTab');
   if (!panel || !btnOpen || !window.ABCSuite) return;
 
+  const btnPlay   = document.getElementById('btnAbcPlay');
+  const playHint  = document.getElementById('abcPlayHint');
+
   let lastVisual = null;
-  let synthCtrl  = null;
+  let abcPlayer  = null;
+  let playing    = false;
+  let playTimer  = null;
   let seeded     = false;
   let transpose  = 0;
 
@@ -6328,16 +6338,42 @@ function csmpnToCsml(csmpnText) {
 
   function curAbc() { return inputEl ? inputEl.value : ''; }
 
-  function refreshSynth() {
-    if (!window.ABCSuite.synthSupported() || !lastVisual) return;
+  function resetPlayBtn() {
+    playing = false;
+    if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+    if (btnPlay) btnPlay.textContent = '▶ Play';
+  }
+
+  // Rebuild our own CreateSynth-based player (no SynthController widget → no
+  // abcjs-audio.css dependency → no red "CSS required" warning).
+  function rebuildPlayer() {
+    if (abcPlayer) { try { abcPlayer.stop(); } catch (_) {} }
+    abcPlayer = null;
+    resetPlayBtn();
+    if (!btnPlay) return;
+    if (!window.ABCSuite.synthSupported() || !lastVisual) {
+      btnPlay.disabled = true;
+      if (playHint) playHint.textContent = window.ABCSuite.synthSupported() ? '' : 'audio unavailable';
+      return;
+    }
     try {
-      if (!synthCtrl) {
-        synthCtrl = window.ABCSuite.createSynthController(transport, lastVisual, { program: curProgram() });
-      } else {
-        const p = synthCtrl.setTune(lastVisual, false, { soundFontUrl: window.ABCSuite.SOUNDFONT_URL, program: curProgram() });
-        if (p && p.catch) p.catch(() => {});
-      }
-    } catch (_) { /* synth optional — render still works */ }
+      abcPlayer = window.ABCSuite.createPlayer(lastVisual, { program: curProgram() });
+      btnPlay.disabled = !abcPlayer;
+      if (playHint) playHint.textContent = '';
+    } catch (_) {
+      btnPlay.disabled = true;
+    }
+  }
+
+  function togglePlay() {
+    if (!abcPlayer) return;
+    if (playing) { abcPlayer.stop(); resetPlayBtn(); return; }
+    playing = true;
+    btnPlay.textContent = '⏹ Stop';
+    abcPlayer.play().catch(() => resetPlayBtn());
+    // Auto-reset the button when the tune finishes.
+    const ms = abcPlayer.durationMs || 0;
+    if (ms > 0) playTimer = setTimeout(resetPlayBtn, ms + 300);
   }
 
   function renderNow() {
@@ -6346,6 +6382,7 @@ function csmpnToCsml(csmpnText) {
       previewEl.innerHTML = '<div class="abc-preview-empty">Type or paste ABC to see notation…</div>';
       setAbcStatus('');
       lastVisual = null;
+      rebuildPlayer();
       return;
     }
     window.ABCSuite.ensureAbcjs().then(() => {
@@ -6357,7 +6394,7 @@ function csmpnToCsml(csmpnText) {
         setAbcStatus('Rendered “' + window.ABCSuite.extractAbcTitle(abc) + '”' + (bpm ? ' · ♩=' + bpm : '') +
           (transpose ? ' · transposed ' + (transpose > 0 ? '+' : '') + transpose : '') +
           (window.ABCSuite.synthSupported() ? '' : ' · (audio unavailable)'));
-        refreshSynth();
+        rebuildPlayer();
       } catch (err) {
         previewEl.innerHTML = '<div class="abc-preview-empty">Render error.</div>';
         setAbcStatus(String(err && err.message || err), true);
@@ -6393,8 +6430,14 @@ function csmpnToCsml(csmpnText) {
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
   }
 
-  btnOpen.addEventListener('click', () => panel.classList.contains('open') ? panel.classList.remove('open') : openPanel());
-  if (btnClose) btnClose.addEventListener('click', () => panel.classList.remove('open'));
+  function closePanel() {
+    if (abcPlayer) { try { abcPlayer.stop(); } catch (_) {} }
+    resetPlayBtn();
+    panel.classList.remove('open');
+  }
+  btnOpen.addEventListener('click', () => panel.classList.contains('open') ? closePanel() : openPanel());
+  if (btnClose) btnClose.addEventListener('click', closePanel);
+  if (btnPlay) btnPlay.addEventListener('click', togglePlay);
   if (inputEl) inputEl.addEventListener('input', renderDebounced);
 
   function setTranspose(n) {
@@ -6405,7 +6448,7 @@ function csmpnToCsml(csmpnText) {
   if (btnTrDown) btnTrDown.addEventListener('click', () => setTranspose(transpose - 1));
   if (btnTrUp) btnTrUp.addEventListener('click', () => setTranspose(transpose + 1));
   if (tabChk) tabChk.addEventListener('change', renderNow);
-  if (instSel) instSel.addEventListener('change', refreshSynth); // playback only — no re-render
+  if (instSel) instSel.addEventListener('change', rebuildPlayer); // playback only — no re-render
 
   if (btnFile && fileInput) {
     btnFile.addEventListener('click', () => fileInput.click());

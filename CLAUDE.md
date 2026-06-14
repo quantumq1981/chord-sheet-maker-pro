@@ -1858,3 +1858,25 @@ same category as the OSMD/Web-Audio glue).
 **Remaining (optional Tier-2/3 from the eval doc):** MIDI import (needs a MIDI parser —
 abcjs doesn't import MIDI), Tune Trainer (slow→fast loop over the synth), soundfont
 selection, multi-instrument tab tunings; PDF tunebooks / website export are out of scope.
+
+### Post-Sprint 17 — own ABC transport (drop SynthController) + family enharmonic default
+
+**ABC playback CSS warning fixed.** abcjs's `SynthController` inline widget demands
+`abcjs-audio.css`, which our CSP `style-src` won't load from the CDN — so it printed a
+red **"CSS required: load abcjs-audio.css"** box. Replaced it with our **own** transport
+built on the low-level `ABCJS.synth.CreateSynth`: `abcSuite.createPlayer(visualObj, opts)`
+returns `{ ready, play, pause, resume, stop, durationMs }` (play() resumes the
+AudioContext from the click for iOS), and the panel renders a single styled **▶ Play / ⏹
+Stop** button (`#btnAbcPlay`) — no abcjs-audio.css, no warning. `createSynthController`
+removed from the API.
+
+**Family enharmonic default — ALWAYS Bb · C# · Eb · F# · Ab** (never A#/Db/D#/Gb/G#).
+`chordProcessing.js` gains `NOTES_DEFAULT = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B']`
+(the same canonical table already in `fretToChord.ts` / `importGuitarPro.js`). `transposeNote`
+uses it whenever no explicit `'flat'`/`'sharp'` override is passed; `transposeWholeText` now
+passes the canonical default (no longer key-derived flat/sharp), so the ▲▼ transpose always
+spells chords + key with the family default. Explicit `'flat'`/`'sharp'` still force pure
+spelling for any caller that asks. Tests: +4 in `tests/chordProcessingUtils.test.mjs`
+(canonical default for the 5 black keys + a `transposeWholeText` no-Db/G#/A#/Gb assertion).
+Sibling repos (chord-sheet-maker `auto` map, Tab-Translator-Pro `NOTE_SHARP`) get the same
+default in their own PRs on this branch.

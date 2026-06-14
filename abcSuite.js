@@ -361,27 +361,72 @@
   }
 
   /**
-   * Build an abcjs SynthController bound to a transport element and load a tune.
-   * The controller renders its own play/loop/progress/tempo controls and handles
-   * the iOS audio-unlock on the user's click. Returns the controller (or null).
+   * Build our OWN transport on abcjs's low-level CreateSynth — deliberately NOT
+   * the SynthController inline widget, which demands abcjs-audio.css (blocked by
+   * our CSP style-src) and prints a red "CSS required" warning. This gives us a
+   * dependency-free Play/Stop the panel styles itself.
+   *
+   * Returns { ready, play(), pause(), resume(), stop(), durationMs } or null.
+   * play() resumes the AudioContext from the user gesture (iOS requirement).
    */
-  function createSynthController(transportEl, visualObj, opts) {
+  function createPlayer(visualObj, opts) {
     if (!synthSupported() || !visualObj) return null;
     var o = opts || {};
-    var controller = new window.ABCJS.synth.SynthController();
-    controller.load(transportEl, o.cursorControl || null, {
-      displayLoop: true,
-      displayRestart: true,
-      displayPlay: true,
-      displayProgress: true,
-      displayWarp: true,
-    });
-    var setTune = controller.setTune(visualObj, false, {
-      soundFontUrl: o.soundFontUrl || SOUNDFONT_URL,
-      program: typeof o.program === 'number' ? o.program : 0,
-    });
-    if (setTune && typeof setTune.catch === 'function') setTune.catch(function () {});
-    return controller;
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    var ac = o.audioContext || (Ctx ? new Ctx() : null);
+    var synth = new window.ABCJS.synth.CreateSynth();
+    var ready = synth
+      .init({
+        audioContext: ac || undefined,
+        visualObj: visualObj,
+        options: {
+          soundFontUrl: o.soundFontUrl || SOUNDFONT_URL,
+          program: typeof o.program === 'number' ? o.program : 0,
+        },
+      })
+      .then(function () {
+        return synth.prime();
+      });
+    var durationMs = 0;
+    try {
+      if (typeof visualObj.getTotalTime === 'function') {
+        durationMs = Math.round((visualObj.getTotalTime() || 0) * 1000);
+      }
+    } catch (_) {
+      /* getTotalTime not available pre-prime — fine */
+    }
+    return {
+      ready: ready,
+      durationMs: durationMs,
+      play: function () {
+        if (ac && ac.state === 'suspended' && ac.resume) ac.resume();
+        return ready.then(function () {
+          return synth.start();
+        });
+      },
+      pause: function () {
+        try {
+          synth.pause();
+        } catch (_) {
+          /* noop */
+        }
+      },
+      resume: function () {
+        if (ac && ac.state === 'suspended' && ac.resume) ac.resume();
+        try {
+          synth.resume();
+        } catch (_) {
+          /* noop */
+        }
+      },
+      stop: function () {
+        try {
+          synth.stop();
+        } catch (_) {
+          /* noop */
+        }
+      },
+    };
   }
 
   var api = {
@@ -401,7 +446,7 @@
     ensureAbcjs: ensureAbcjs,
     render: render,
     synthSupported: synthSupported,
-    createSynthController: createSynthController,
+    createPlayer: createPlayer,
   };
   if (typeof window !== 'undefined') window.ABCSuite = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

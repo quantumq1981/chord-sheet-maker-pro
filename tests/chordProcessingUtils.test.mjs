@@ -91,6 +91,30 @@ describe('transposeNote', () => {
   it('Ab up 0 semitones = Ab', () => {
     assert.equal(ctx.transposeNote('Ab', 0, 'flat'), 'Ab');
   });
+  // Family default (no/auto pref) ALWAYS spells Bb C# Eb F# Ab — never A#/Db/D#/Gb/G#.
+  it('default pref spells the 5 black keys canonically', () => {
+    assert.equal(ctx.transposeNote('C', 1, 'default'), 'C#'); // not Db
+    assert.equal(ctx.transposeNote('D', 1, 'default'), 'Eb'); // not D#
+    assert.equal(ctx.transposeNote('F', 1, 'default'), 'F#'); // not Gb
+    assert.equal(ctx.transposeNote('G', 1, 'default'), 'Ab'); // not G#
+    assert.equal(ctx.transposeNote('A', 1, 'default'), 'Bb'); // not A#
+  });
+  it('undefined pref also uses the canonical default', () => {
+    assert.equal(ctx.transposeNote('C', 1), 'C#');
+    assert.equal(ctx.transposeNote('A', 1), 'Bb');
+  });
+});
+
+describe('transposeWholeText (canonical default spelling)', () => {
+  it('transposes a chart with the family enharmonic default regardless of key', () => {
+    const src = 'Key: C\n\n- Verse\nC G A F';
+    const out = ctx.transposeWholeText(src, 1); // up a semitone
+    assert.ok(out.includes('C#'), out); // C → C#  (not Db)
+    assert.ok(out.includes('Ab'), out); // G → Ab  (not G#)
+    assert.ok(out.includes('Bb'), out); // A → Bb  (not A#)
+    assert.ok(out.includes('F#'), out); // F → F#  (not Gb)
+    assert.ok(!/Db|G#|A#|Gb/.test(out), out);
+  });
 });
 
 // ── transposeChordSimple ──────────────────────────────────────────────────────

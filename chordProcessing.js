@@ -35,6 +35,10 @@ const NOTE_INDEX = new Map([
 
 const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const NOTES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+// Family enharmonic DEFAULT (always): Bb, C#, Eb, F#, Ab — never A#/Db/D#/Gb/G#.
+// Used whenever no explicit 'flat'/'sharp' override is requested. Matches the
+// canonical spelling in fretToChord.ts / importGuitarPro.js across the family.
+const NOTES_DEFAULT = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
 
 function transposeNote(note, semis, pref){
   const n = normalizeAccidentals(note).toUpperCase().replace(/\s+/g,'');
@@ -42,7 +46,7 @@ function transposeNote(note, semis, pref){
   if (idx === undefined) return note;
 
   const t = (idx + (semis % 12) + 12) % 12;
-  const arr = (pref === 'flat') ? NOTES_FLAT : NOTES_SHARP;
+  const arr = (pref === 'flat') ? NOTES_FLAT : (pref === 'sharp') ? NOTES_SHARP : NOTES_DEFAULT;
   return arr[t];
 }
 
@@ -221,7 +225,9 @@ function transposeChordSimple(ch, semis, pref){
 function transposeWholeText(text, semis){
   const keyMatch = text.match(/^Key:\s*(.+)$/im);
   const key = keyMatch ? keyMatch[1].trim() : '';
-  const pref = detectNotationPreferenceFromKeyOrText(key, text);
+  // Family default: always spell with the canonical enharmonics (Bb C# Eb F# Ab),
+  // regardless of key. (detectNotationPreferenceFromKeyOrText kept for callers/tests.)
+  const pref = 'default';
 
   const lines = text.split(/\r?\n/);
   const out = [];
