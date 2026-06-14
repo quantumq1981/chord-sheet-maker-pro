@@ -132,6 +132,136 @@
     return out.concat(body).join('\n');
   }
 
+  // ── Phase C: CSMPN → ABC round-trip (pure; unit-tested) ────────────────────
+
+  /** ASCII-ify a chord token for an ABC "…" annotation (♯→#, ♭→b). */
+  function normalizeChordForAbc(tok) {
+    return String(tok || '')
+      .replace(/♯/g, '#')
+      .replace(/♭/g, 'b')
+      .replace(/[△Δ]/g, 'maj7')
+      .replace(/°/g, 'dim')
+      .replace(/ø/g, 'm7b5')
+      .replace(/"/g, '')
+      .trim();
+  }
+
+  /** Eighth-note units in one bar of the given time signature (L:1/8 base). */
+  function abcBarUnits(timeSig) {
+    var m = /^(\d+)\s*\/\s*(\d+)$/.exec(String(timeSig || '4/4').trim());
+    if (!m) return 8;
+    var num = parseInt(m[1], 10);
+    var den = parseInt(m[2], 10);
+    if (!num || !den) return 8;
+    return Math.max(1, Math.round((num * 8) / den));
+  }
+
+  /** Split `units` as evenly as possible into `n` integer durations (front-loaded). */
+  function splitUnits(units, n) {
+    if (n <= 1) return [units];
+    var base = Math.floor(units / n);
+    var rem = units - base * n;
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(Math.max(1, base + (i < rem ? 1 : 0)));
+    return out;
+  }
+
+  /**
+   * Convert a CSMPN chart to ABC, reusing the SAME section/bar model the renderer
+   * and audio use (parseHybridChartFromCSMPN), so the ABC matches the page: header
+   * from the chart meta; each bar becomes a measure of chord-annotated rests
+   * ("C" z8) — which abcjs renders as a chord chart AND plays as accompaniment.
+   * Repeat barlines, voltas, and section labels are carried through.
+   *
+   * `opts.parse` lets tests inject the parser; in the browser it falls back to the
+   * global `parseHybridChartFromCSMPN`. `opts.barsPerLine` defaults to 4.
+   */
+  function csmpnToAbc(csmpn, opts) {
+    opts = opts || {};
+    var parse =
+      opts.parse ||
+      (typeof parseHybridChartFromCSMPN !== 'undefined'
+        ? parseHybridChartFromCSMPN
+        : typeof window !== 'undefined' && window.parseHybridChartFromCSMPN);
+    if (typeof parse !== 'function') throw new Error('CSMPN parser unavailable');
+
+    var doc = parse(String(csmpn || '')) || {};
+    var time = doc.time || '4/4';
+    var units = abcBarUnits(time);
+    var barsPerLine = opts.barsPerLine || 4;
+
+    var header = ['X:1'];
+    if (doc.title) header.push('T:' + doc.title);
+    if (doc.composer) header.push('C:' + doc.composer);
+    header.push('M:' + time);
+    header.push('L:1/8');
+    if (doc.tempo) header.push('Q:1/4=' + parseInt(doc.tempo, 10));
+    header.push('K:' + (normalizeChordForAbc(doc.key) || 'C'));
+
+    // Flatten every bar across sections into a uniform model first, then engrave.
+    var flat = [];
+    var sections = doc.sections || [];
+    var prevChord = null;
+    for (var s = 0; s < sections.length; s++) {
+      var sec = sections[s];
+      var sbars = sec.bars || [];
+      var label = sec.label ? normalizeChordForAbc(String(sec.label).trim()) : '';
+      for (var b = 0; b < sbars.length; b++) {
+        var bar = sbars[b];
+        var measure = b === 0 && label ? '"^' + label + '" ' : '';
+        var rawTok = bar.chordToken == null ? '' : String(bar.chordToken).trim();
+        var chords = rawTok ? rawTok.split('_') : [];
+        if (!rawTok || rawTok === '%' || rawTok === '%%') {
+          measure += (prevChord ? '"' + prevChord + '"' : '') + 'z' + units; // sustain
+        } else if (/^N\.?C\.?$/i.test(rawTok)) {
+          measure += 'z' + units;
+          prevChord = null;
+        } else {
+          var durs = splitUnits(units, chords.length);
+          var parts = [];
+          for (var c = 0; c < chords.length; c++) {
+            var name = normalizeChordForAbc(chords[c]);
+            if (name) prevChord = name;
+            parts.push((name ? '"' + name + '"' : '') + 'z' + durs[c]);
+          }
+          measure += parts.join(' ');
+        }
+        flat.push({
+          measure: measure,
+          leftRepeat: bar.leftBar === 'repeat-start',
+          rightRepeat: bar.rightBar === 'repeat-end',
+          ending: bar.endingLabel ? String(bar.endingLabel).replace(/[^0-9]/g, '') : '',
+        });
+      }
+    }
+
+    if (!flat.length) return header.concat(['| z' + units + ' |]']).join('\n');
+
+    // Engrave with leading-barline reconciliation: a bar's left barline is the
+    // previous bar's close, upgraded to |: when this bar starts a repeat.
+    var n = flat.length;
+    var lines = [];
+    var cur = flat[0].leftRepeat ? '|:' : '|';
+    for (var i = 0; i < n; i++) {
+      var fb = flat[i];
+      if (fb.ending) cur += '[' + fb.ending;
+      cur += ' ' + fb.measure + ' ';
+      var close;
+      if (fb.rightRepeat) close = ':|';
+      else if (i === n - 1) close = '|]';
+      else if (flat[i + 1].leftRepeat) close = '|:';
+      else close = '|';
+      cur += close;
+      var atWrap = (i + 1) % barsPerLine === 0;
+      if (i === n - 1 || atWrap) {
+        lines.push(cur.replace(/\s+/g, ' ').trim());
+        cur = i === n - 1 ? '' : close === ':|' || close === '|]' ? (i + 1 < n && flat[i + 1].leftRepeat ? '|:' : '|') : '';
+      }
+    }
+
+    return header.concat(lines.filter(Boolean)).join('\n');
+  }
+
   // ── Runtime (browser-only: abcjs render + synth) ───────────────────────────
 
   function abcjsReady() {
@@ -219,6 +349,7 @@
     sniffIsAbc: sniffIsAbc,
     defaultAbcExample: defaultAbcExample,
     ensureAbcHeaders: ensureAbcHeaders,
+    csmpnToAbc: csmpnToAbc,
     // runtime
     abcjsReady: abcjsReady,
     ensureAbcjs: ensureAbcjs,

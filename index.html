@@ -2424,6 +2424,8 @@ Tempo: 120
       </div>
       <div class="abc-status" id="abcStatus"></div>
       <div class="abc-actions">
+        <button class="primary" id="btnAbcLoad" title="Convert this ABC to a chord chart and render it in the main app">← Load into Chart</button>
+        <button id="btnAbcFromSource" title="Convert the current main chart to ABC and open it here">⬆ From Source</button>
         <button id="btnAbcOpen" title="Open a .abc file into this panel">📂 Open .abc</button>
         <button id="btnAbcSave" title="Download the ABC source as a .abc file">↓ Save .abc</button>
         <button id="btnAbcSvg" title="Download the rendered notation as an SVG file">↓ SVG</button>
@@ -6275,6 +6277,8 @@ function csmpnToCsml(csmpnText) {
   const statusEl  = document.getElementById('abcStatus');
   const fileInput = document.getElementById('abcFileInput');
   const btnFile   = document.getElementById('btnAbcOpen');
+  const btnLoad   = document.getElementById('btnAbcLoad');
+  const btnFrom   = document.getElementById('btnAbcFromSource');
   const btnSave   = document.getElementById('btnAbcSave');
   const btnSvg    = document.getElementById('btnAbcSvg');
   const btnMidi   = document.getElementById('btnAbcMidi');
@@ -6372,6 +6376,41 @@ function csmpnToCsml(csmpnText) {
       e.target.value = '';
     });
   }
+
+  // ← Load into Chart: ABC → CSMPN via the same pipeline the .abc file import uses.
+  if (btnLoad) btnLoad.addEventListener('click', () => {
+    const abc = curAbc();
+    if (!abc.trim()) { setAbcStatus('Nothing to load.', true); return; }
+    if (typeof mineABCToSongModel !== 'function') { setAbcStatus('ABC importer unavailable.', true); return; }
+    try {
+      const song = mineABCToSongModel(abc);
+      let csmpn = song.toCSMPN({ barsPerRow: (window.fbSettings && fbSettings.barsPerRow) || 4 });
+      if (typeof filterLyricsLines === 'function') csmpn = filterLyricsLines(csmpn);
+      const srcEl = document.getElementById('source') || (typeof sourceEl !== 'undefined' && sourceEl);
+      if (!srcEl) { setAbcStatus('Chart source not found.', true); return; }
+      srcEl.value = csmpn;
+      if (typeof extractHeaderFromText === 'function') extractHeaderFromText(csmpn);
+      if (typeof updatePreview === 'function') updatePreview();
+      panel.classList.remove('open');
+      if (typeof setStatus === 'function') setStatus('Loaded ABC into chart.');
+    } catch (err) {
+      setAbcStatus('Load failed: ' + (err && err.message || err), true);
+    }
+  });
+
+  // ⬆ From Source: current CSMPN chart → ABC (reuses the renderer/audio model).
+  if (btnFrom) btnFrom.addEventListener('click', () => {
+    const srcEl = document.getElementById('source') || (typeof sourceEl !== 'undefined' && sourceEl);
+    const csmpn = srcEl ? srcEl.value : '';
+    if (!csmpn || !csmpn.trim()) { setAbcStatus('The main chart is empty.', true); return; }
+    try {
+      inputEl.value = window.ABCSuite.csmpnToAbc(csmpn, { barsPerLine: (window.fbSettings && fbSettings.barsPerRow) || 4 });
+      seeded = true;
+      if (!panel.classList.contains('open')) openPanel(); else renderNow();
+    } catch (err) {
+      setAbcStatus('Convert failed: ' + (err && err.message || err), true);
+    }
+  });
 
   if (btnSave) btnSave.addEventListener('click', () => {
     if (!curAbc().trim()) { setAbcStatus('Nothing to save.', true); return; }
