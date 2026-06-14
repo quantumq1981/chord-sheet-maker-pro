@@ -75,6 +75,49 @@ test('ensureAbcHeaders injects X:/M:/L:/K: for a bare body', () => {
   assert.equal(A.sniffIsAbc(out), true);
 });
 
+// ── Tier-2: render options (transpose / guitar tab / instruments) ─────────────
+
+test('clampSemitones rounds and clamps to ±24', () => {
+  assert.equal(A.clampSemitones(0), 0);
+  assert.equal(A.clampSemitones(2), 2);
+  assert.equal(A.clampSemitones(-2), -2);
+  assert.equal(A.clampSemitones(99), 24);
+  assert.equal(A.clampSemitones(-99), -24);
+  assert.equal(A.clampSemitones(1.6), 2);
+  assert.equal(A.clampSemitones('x'), 0);
+});
+
+test('buildRenderOptions omits visualTranspose at 0 and sets it otherwise', () => {
+  assert.equal(A.buildRenderOptions({}).visualTranspose, undefined);
+  assert.equal(A.buildRenderOptions({ transpose: 0 }).visualTranspose, undefined);
+  assert.equal(A.buildRenderOptions({ transpose: 3 }).visualTranspose, 3);
+  assert.equal(A.buildRenderOptions({ transpose: 99 }).visualTranspose, 24); // clamped
+});
+
+test('buildRenderOptions enables guitar tablature only when requested', () => {
+  assert.equal(A.buildRenderOptions({}).tablature, undefined);
+  const tab = A.buildRenderOptions({ guitarTab: true }).tablature;
+  // structural (not deepEqual) — vm-realm array prototype differs from this realm
+  assert.equal(tab.length, 1);
+  assert.equal(tab[0].instrument, 'guitar');
+});
+
+test('buildRenderOptions keeps base options and passes unknown keys through', () => {
+  const o = A.buildRenderOptions({ scale: 1.2 });
+  assert.equal(o.add_classes, true);
+  assert.equal(o.responsive, 'resize');
+  assert.equal(o.scale, 1.2); // passthrough
+});
+
+test('MELODY_INSTRUMENTS is a non-empty list of {name, program}', () => {
+  assert.ok(Array.isArray(A.MELODY_INSTRUMENTS) && A.MELODY_INSTRUMENTS.length >= 4);
+  for (const it of A.MELODY_INSTRUMENTS) {
+    assert.equal(typeof it.name, 'string');
+    assert.equal(typeof it.program, 'number');
+  }
+  assert.equal(A.MELODY_INSTRUMENTS[0].program, 0); // Piano default
+});
+
 // ── Phase C: csmpnToAbc round-trip (parser injected for a pure test) ──────────
 
 // Minimal stand-in for parseHybridChartFromCSMPN's output shape.
