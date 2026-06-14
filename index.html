@@ -1461,6 +1461,41 @@ body.exporting .sectionBlock{
   .try-it-btn:hover{ background:var(--accent); color:#fff; }
   .guide-divider{ border:none; border-top:1px solid var(--border); margin:8px 0 4px; }
 
+  /* ── ABC Notation Panel ──────────────────────────────────────── */
+  .abcPanel{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:12px;
+    display:none;
+  }
+  .abcPanel.open{ display:block; }
+  .abc-header{ display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .abc-header h3{ margin:0; font-size:1rem; }
+  .abc-panes{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px; }
+  @media (max-width:760px){ .abc-panes{ grid-template-columns:1fr; } }
+  .abc-pane-label{ font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted,#777); margin-bottom:4px; }
+  #abcInput{
+    width:100%; min-height:230px; box-sizing:border-box;
+    font-family:'Courier New',monospace; font-size:13px; line-height:1.45;
+    padding:8px; border:1px solid var(--border); border-radius:8px;
+    background:#fff; color:#111; resize:vertical;
+  }
+  .abc-preview-box{
+    min-height:230px; border:1px solid var(--border); border-radius:8px;
+    background:#fff; padding:8px; overflow:auto;
+  }
+  .abc-preview-empty{ color:var(--muted,#999); font-style:italic; padding:16px; }
+  #abcTransport{ margin-top:10px; }
+  #abcTransport .abcjs-inline-audio{ border-radius:8px; }
+  .abc-status{ font-size:.8rem; color:var(--muted,#777); margin-top:6px; min-height:1.1em; }
+  .abc-status.err{ color:#c00; }
+  .abc-actions{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  #btnAbcClose{ background:none; border:none; font-size:18px; cursor:pointer; line-height:1; padding:2px 6px; }
+  #btnAbcClose:hover{ background:#f0f0f0; border-radius:6px; }
+  @media print{ .abcPanel{ display:none !important; } }
+
   /* ── ChordSlashML Live Editor Panel ─────────────────────────── */
   .csmlEditorPanel{
     background:var(--card);
@@ -1987,6 +2022,7 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnCsmlHelp">♩ ChordSlashML Help</button>
           <button class="outline power-only" id="btnCsmlEditor">⊞ ChordSlashML Editor</button>
           <button class="outline power-only" id="btnCsmlGuide">★ CSML Quick Start</button>
+          <button class="outline power-only" id="btnAbcEditor" title="ABC notation: render &amp; play traditional/lead-sheet ABC">𝄞 ABC Notation</button>
           <button class="outline power-only" id="btnGpNotation" title="View Guitar Pro or Power Tab notation">🎸 Tab View</button>
           <button class="outline power-only" id="btnSetlist" title="Setlist / Songbook — save and print multiple charts">&#9776; Setlist<span class="setlist-badge" id="setlistBadge" style="display:none">0</span></button>
         </div>
@@ -2365,6 +2401,36 @@ Tempo: 120
         <button id="btnCsmlDownloadLy" title="Download a LilyPond .ly source file">↓ LilyPond (.ly)</button>
         <button id="btnCsmlPrint" title="Open a print-ready popup and print or save as PDF">⎙ Print</button>
       </div>
+    </div>
+
+    <!-- ABC Notation Panel (power-mode only) — render + playback -->
+    <div id="abcPanel" class="abcPanel power-only">
+      <div class="abc-header">
+        <h3>𝄞 ABC Notation — render &amp; play</h3>
+        <button id="btnAbcClose" title="Close ABC panel">&#x2715;</button>
+      </div>
+      <div class="abc-panes">
+        <div>
+          <div class="abc-pane-label">ABC Source</div>
+          <textarea id="abcInput" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+        </div>
+        <div>
+          <div class="abc-pane-label">Notation</div>
+          <div class="abc-preview-box" id="abcPreview">
+            <div class="abc-preview-empty">Type or paste ABC to see notation…</div>
+          </div>
+          <div id="abcTransport"></div>
+        </div>
+      </div>
+      <div class="abc-status" id="abcStatus"></div>
+      <div class="abc-actions">
+        <button id="btnAbcOpen" title="Open a .abc file into this panel">📂 Open .abc</button>
+        <button id="btnAbcSave" title="Download the ABC source as a .abc file">↓ Save .abc</button>
+        <button id="btnAbcSvg" title="Download the rendered notation as an SVG file">↓ SVG</button>
+        <button id="btnAbcMidi" title="Download a standard MIDI file of the tune">↓ MIDI</button>
+        <button id="btnAbcPrint" title="Open a print-ready popup and print or save as PDF">⎙ Print</button>
+      </div>
+      <input id="abcFileInput" type="file" accept=".abc,.abctxt,text/plain" style="display:none" />
     </div>
 
     <!-- ChordSlashML Quick Start Guide (power-mode only) -->
@@ -2757,6 +2823,7 @@ Tempo: 130
 <script src="importPipeline.js"></script>
 <script src="backupRestore.js"></script>
 <script src="audioPlayback.js"></script>
+<script src="abcSuite.js"></script>
 <script>
 /* =========================================================
    Core constants / helpers
@@ -6195,6 +6262,153 @@ function csmpnToCsml(csmpnText) {
     renderList();
   });
   if (btnClose) btnClose.addEventListener('click', () => panel && panel.classList.remove('open'));
+})();
+
+// ── ABC Notation Panel (render + playback, Phase A+B) ─────────────────
+(function () {
+  const panel     = document.getElementById('abcPanel');
+  const btnOpen   = document.getElementById('btnAbcEditor');
+  const btnClose  = document.getElementById('btnAbcClose');
+  const inputEl   = document.getElementById('abcInput');
+  const previewEl = document.getElementById('abcPreview');
+  const transport = document.getElementById('abcTransport');
+  const statusEl  = document.getElementById('abcStatus');
+  const fileInput = document.getElementById('abcFileInput');
+  const btnFile   = document.getElementById('btnAbcOpen');
+  const btnSave   = document.getElementById('btnAbcSave');
+  const btnSvg    = document.getElementById('btnAbcSvg');
+  const btnMidi   = document.getElementById('btnAbcMidi');
+  const btnPrint  = document.getElementById('btnAbcPrint');
+  if (!panel || !btnOpen || !window.ABCSuite) return;
+
+  let lastVisual = null;
+  let synthCtrl  = null;
+  let seeded     = false;
+
+  function setAbcStatus(msg, isErr) {
+    if (!statusEl) return;
+    statusEl.textContent = msg || '';
+    statusEl.className = 'abc-status' + (isErr ? ' err' : '');
+  }
+
+  function curAbc() { return inputEl ? inputEl.value : ''; }
+
+  function refreshSynth() {
+    if (!window.ABCSuite.synthSupported() || !lastVisual) return;
+    try {
+      if (!synthCtrl) {
+        synthCtrl = window.ABCSuite.createSynthController(transport, lastVisual);
+      } else {
+        const p = synthCtrl.setTune(lastVisual, false, { soundFontUrl: window.ABCSuite.SOUNDFONT_URL });
+        if (p && p.catch) p.catch(() => {});
+      }
+    } catch (_) { /* synth optional — render still works */ }
+  }
+
+  function renderNow() {
+    const abc = curAbc();
+    if (!abc.trim()) {
+      previewEl.innerHTML = '<div class="abc-preview-empty">Type or paste ABC to see notation…</div>';
+      setAbcStatus('');
+      lastVisual = null;
+      return;
+    }
+    window.ABCSuite.ensureAbcjs().then(() => {
+      try {
+        previewEl.innerHTML = '';
+        lastVisual = window.ABCSuite.render(previewEl, abc);
+        if (!lastVisual) { setAbcStatus('Could not render this ABC.', true); return; }
+        const bpm = window.ABCSuite.abcTempoBpm(abc);
+        setAbcStatus('Rendered “' + window.ABCSuite.extractAbcTitle(abc) + '”' + (bpm ? ' · ♩=' + bpm : '') +
+          (window.ABCSuite.synthSupported() ? '' : ' · (audio unavailable)'));
+        refreshSynth();
+      } catch (err) {
+        previewEl.innerHTML = '<div class="abc-preview-empty">Render error.</div>';
+        setAbcStatus(String(err && err.message || err), true);
+      }
+    }).catch(() => {
+      previewEl.innerHTML = '<div class="abc-preview-empty">abcjs failed to load.</div>';
+      setAbcStatus('abcjs failed to load (check your connection).', true);
+    });
+  }
+
+  const renderDebounced = (typeof debounce === 'function') ? debounce(renderNow, 350) : renderNow;
+
+  function openPanel() {
+    panel.classList.add('open');
+    if (!seeded && inputEl && !inputEl.value.trim()) {
+      inputEl.value = window.ABCSuite.defaultAbcExample();
+    }
+    seeded = true;
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    renderNow();
+  }
+
+  function safeName() {
+    const t = window.ABCSuite.extractAbcTitle(curAbc()) || 'tune';
+    return t.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'tune';
+  }
+  function downloadBlob(data, mime, ext) {
+    const blob = (data instanceof Blob) ? data : new Blob([data], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = safeName() + ext;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+  }
+
+  btnOpen.addEventListener('click', () => panel.classList.contains('open') ? panel.classList.remove('open') : openPanel());
+  if (btnClose) btnClose.addEventListener('click', () => panel.classList.remove('open'));
+  if (inputEl) inputEl.addEventListener('input', renderDebounced);
+
+  if (btnFile && fileInput) {
+    btnFile.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => { inputEl.value = String(reader.result || ''); seeded = true; renderNow(); };
+      reader.readAsText(f);
+      e.target.value = '';
+    });
+  }
+
+  if (btnSave) btnSave.addEventListener('click', () => {
+    if (!curAbc().trim()) { setAbcStatus('Nothing to save.', true); return; }
+    downloadBlob(curAbc(), 'text/plain;charset=utf-8', '.abc');
+  });
+
+  if (btnSvg) btnSvg.addEventListener('click', () => {
+    const svg = previewEl ? previewEl.querySelector('svg') : null;
+    if (!svg) { setAbcStatus('Render a tune first.', true); return; }
+    downloadBlob(new XMLSerializer().serializeToString(svg), 'image/svg+xml;charset=utf-8', '.svg');
+  });
+
+  if (btnMidi) btnMidi.addEventListener('click', () => {
+    if (!window.ABCSuite.abcjsReady() || !window.ABCJS.synth || !window.ABCJS.synth.getMidiFile) {
+      setAbcStatus('MIDI export unavailable.', true); return;
+    }
+    try {
+      const data = window.ABCJS.synth.getMidiFile(window.ABCSuite.ensureAbcHeaders(curAbc()), { midiOutputType: 'encoded' });
+      const a = document.createElement('a');
+      a.href = data; a.download = safeName() + '.mid';
+      document.body.appendChild(a); a.click();
+      setTimeout(() => document.body.removeChild(a), 1000);
+    } catch (err) { setAbcStatus('MIDI export failed: ' + (err && err.message || err), true); }
+  });
+
+  if (btnPrint) btnPrint.addEventListener('click', () => {
+    const svg = previewEl ? previewEl.querySelector('svg') : null;
+    if (!svg) { setAbcStatus('Render a tune first.', true); return; }
+    const w = window.open('', '_blank');
+    if (!w) { setAbcStatus('Pop-up blocked — allow pop-ups to print.', true); return; }
+    const title = escapeHtml(window.ABCSuite.extractAbcTitle(curAbc()));
+    w.document.write('<!doctype html><html><head><title>' + title + '</title>' +
+      '<style>@page{margin:0.5in;}body{margin:0;}svg{max-width:100%;height:auto;}</style></head><body>' +
+      new XMLSerializer().serializeToString(svg) +
+      '<scr' + 'ipt>window.onload=function(){window.print();}<\/scr' + 'ipt></body></html>');
+    w.document.close();
+  });
 })();
 
 </script>
