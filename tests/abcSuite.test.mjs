@@ -75,6 +75,103 @@ test('ensureAbcHeaders injects X:/M:/L:/K: for a bare body', () => {
   assert.equal(A.sniffIsAbc(out), true);
 });
 
+// ── Phase C: csmpnToAbc round-trip (parser injected for a pure test) ──────────
+
+// Minimal stand-in for parseHybridChartFromCSMPN's output shape.
+function fakeParse(model) {
+  return () => model;
+}
+
+test('csmpnToAbc builds a header from chart metadata', () => {
+  const abc = A.csmpnToAbc('ignored', {
+    parse: fakeParse({
+      title: 'Blue Bossa',
+      composer: 'Kenny Dorham',
+      key: 'Cm',
+      time: '4/4',
+      tempo: 140,
+      sections: [{ label: 'A', bars: [{ chordToken: 'Cm7' }] }],
+    }),
+  });
+  assert.ok(abc.includes('T:Blue Bossa'));
+  assert.ok(abc.includes('C:Kenny Dorham'));
+  assert.ok(abc.includes('M:4/4'));
+  assert.ok(abc.includes('L:1/8'));
+  assert.ok(abc.includes('Q:1/4=140'));
+  assert.ok(abc.includes('K:Cm'));
+  assert.equal(A.sniffIsAbc(abc), true); // round-trips back through the sniffer
+});
+
+test('csmpnToAbc emits one chord-annotated whole-bar rest per single-chord bar (4/4 = z8)', () => {
+  const abc = A.csmpnToAbc('x', {
+    parse: fakeParse({
+      time: '4/4',
+      sections: [{ label: '', bars: [{ chordToken: 'C' }, { chordToken: 'G' }] }],
+    }),
+  });
+  assert.ok(abc.includes('"C"z8'));
+  assert.ok(abc.includes('"G"z8'));
+});
+
+test('csmpnToAbc splits a multi-chord bar across the bar (C_G → "C"z4 "G"z4)', () => {
+  const abc = A.csmpnToAbc('x', {
+    parse: fakeParse({ time: '4/4', sections: [{ bars: [{ chordToken: 'C_G' }] }] }),
+  });
+  assert.ok(abc.includes('"C"z4 "G"z4'), abc);
+});
+
+test('csmpnToAbc renders the section label as an above-staff annotation', () => {
+  const abc = A.csmpnToAbc('x', {
+    parse: fakeParse({ sections: [{ label: 'Verse', bars: [{ chordToken: 'C' }] }] }),
+  });
+  assert.ok(abc.includes('"^Verse"'), abc);
+});
+
+test('csmpnToAbc carries repeat barlines and voltas', () => {
+  const abc = A.csmpnToAbc('x', {
+    parse: fakeParse({
+      time: '4/4',
+      sections: [
+        {
+          bars: [
+            { chordToken: 'C', leftBar: 'repeat-start' },
+            { chordToken: 'Am', endingLabel: '1', rightBar: 'repeat-end' },
+            { chordToken: 'F', endingLabel: '2' },
+          ],
+        },
+      ],
+    }),
+  });
+  assert.ok(abc.includes('|:'), abc); // repeat-start
+  assert.ok(abc.includes(':|'), abc); // repeat-end
+  assert.ok(/\[1/.test(abc), abc); // 1st ending
+  assert.ok(/\[2/.test(abc), abc); // 2nd ending
+});
+
+test('csmpnToAbc sustains the previous chord through a % simile bar', () => {
+  const abc = A.csmpnToAbc('x', {
+    parse: fakeParse({
+      time: '4/4',
+      sections: [{ bars: [{ chordToken: 'F' }, { chordToken: '%' }] }],
+    }),
+  });
+  // both bars carry an "F" chord (the % repeats it)
+  assert.equal((abc.match(/"F"z8/g) || []).length, 2, abc);
+});
+
+test('csmpnToAbc normalizes unicode accidentals and closes with a final barline', () => {
+  const abc = A.csmpnToAbc('x', {
+    parse: fakeParse({ time: '4/4', key: 'B♭', sections: [{ bars: [{ chordToken: 'B♭7' }] }] }),
+  });
+  assert.ok(abc.includes('K:Bb'));
+  assert.ok(abc.includes('"Bb7"'));
+  assert.ok(/\|\]\s*$/.test(abc), abc); // ends with a final barline
+});
+
+test('csmpnToAbc throws a clear error when no parser is available', () => {
+  assert.throws(() => A.csmpnToAbc('x', {}), /CSMPN parser unavailable/);
+});
+
 test('ensureAbcHeaders preserves present fields and only fills the gaps', () => {
   // Has T:, M:, body — but no X: and no K:
   const out = A.ensureAbcHeaders('T:Partial\nM:3/4\n"Am"A2c2e2');
@@ -85,4 +182,68 @@ test('ensureAbcHeaders preserves present fields and only fills the gaps', () => 
   const lines = out.split('\n');
   assert.equal(lines[lines.length - 1], '"Am"A2c2e2'); // body stays last
   assert.ok(lines[lines.length - 2].startsWith('K:')); // K: just above body
+});
+
+// ── Integration: csmpnToAbc against the REAL parseHybridChartFromCSMPN ─────────
+// Loads the actual CSMPN→model stack so the field-name contract (sections[].bars[]
+// .chordToken/leftBar/rightBar/endingLabel) is verified end-to-end, not just mocked.
+function loadAbcWithStack() {
+  const ctx = {
+    window: {},
+    console,
+    document: {
+      head: { appendChild() {} },
+      getElementById: () => null,
+      createElement: () => ({ style: {}, setAttribute() {} }),
+      querySelector: () => null,
+    },
+    fbSettings: { barsPerRow: 4 },
+    validationWarnings: [],
+    notationPreference: 'flat',
+    CustomEvent: class {
+      constructor(t) {
+        this.type = t;
+      }
+    },
+  };
+  ctx.window.document = ctx.document;
+  ctx.window.dispatchEvent = () => {};
+  ctx.window.addEventListener = () => {};
+  vm.createContext(ctx);
+  for (const f of [
+    'utils.js',
+    'chordProcessing.js',
+    'csmpnParser.js',
+    'musicXmlCore.js',
+    'renderer.js',
+    'importPipeline.js',
+    'abcSuite.js',
+  ])
+    vm.runInContext(read(f), ctx);
+  return ctx.window.ABCSuite;
+}
+
+test('csmpnToAbc converts a real CSMPN chart via the live parser', () => {
+  const AB = loadAbcWithStack();
+  const csmpn = [
+    'Title: Round Trip',
+    'Key: F',
+    'Time: 4/4',
+    'Tempo: 120',
+    '',
+    '- Verse',
+    '|: Dm7 | G7 | Cmaj7 | A7 :|',
+    '',
+    '- Chorus',
+    'F | Bb_C7 | F | F',
+  ].join('\n');
+  const abc = AB.csmpnToAbc(csmpn);
+  assert.ok(abc.includes('T:Round Trip'), abc);
+  assert.ok(abc.includes('M:4/4'));
+  assert.ok(abc.includes('K:F'));
+  assert.ok(abc.includes('"Dm7"z8'), abc); // chord-annotated whole-bar rest
+  assert.ok(abc.includes('"Bb"z4 "C7"z4'), abc); // split multi-chord bar
+  assert.ok(abc.includes('|:') && abc.includes(':|'), abc); // repeats survive
+  assert.ok(/\|\]\s*$/.test(abc), abc); // final barline
+  assert.equal(A.sniffIsAbc(abc), true); // the output is itself valid ABC
 });
