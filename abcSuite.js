@@ -24,6 +24,24 @@
 
   var HEADER_RE = /^[A-Za-z]:/; // an ABC information field line (X:, T:, K:, …)
 
+  // General-MIDI melody instruments offered in the playback picker (program #).
+  var MELODY_INSTRUMENTS = [
+    { name: 'Piano', program: 0 },
+    { name: 'Acoustic Guitar', program: 24 },
+    { name: 'Nylon Guitar', program: 25 },
+    { name: 'Electric Piano', program: 4 },
+    { name: 'Vibraphone', program: 11 },
+    { name: 'Accordion', program: 21 },
+    { name: 'Violin', program: 40 },
+    { name: 'Flute', program: 73 },
+  ];
+
+  /** Clamp a transpose amount to a sane ±2-octave range. */
+  function clampSemitones(n) {
+    n = Math.round(Number(n) || 0);
+    return Math.max(-24, Math.min(24, n));
+  }
+
   // ── Pure helpers (unit-tested; no DOM, no abcjs) ───────────────────────────
 
   /** First T: title in the tune, trimmed; falls back to 'Untitled'. */
@@ -294,16 +312,41 @@
   }
 
   /**
-   * Render ABC into `el` (a DOM node or selector). Returns the first tune's
-   * visualObj (needed by the synth) or null on failure.
+   * Build the abcjs renderAbc options object from semantic Tier-2 controls
+   * (`transpose` semitones, `guitarTab` toggle). Pure + unit-tested. Any other
+   * keys pass straight through to abcjs.
+   */
+  function buildRenderOptions(opts) {
+    opts = opts || {};
+    var o = { add_classes: true, responsive: 'resize', selectionColor: '#0044cc' };
+    if (typeof opts.transpose === 'number' && opts.transpose !== 0) {
+      o.visualTranspose = clampSemitones(opts.transpose);
+    }
+    if (opts.guitarTab) o.tablature = [{ instrument: 'guitar' }];
+    for (var k in opts) {
+      if (
+        k !== 'transpose' &&
+        k !== 'guitarTab' &&
+        Object.prototype.hasOwnProperty.call(opts, k)
+      ) {
+        o[k] = opts[k];
+      }
+    }
+    return o;
+  }
+
+  /**
+   * Render ABC into `el` (a DOM node or selector). `opts` accepts the semantic
+   * Tier-2 controls (transpose, guitarTab) via buildRenderOptions. Returns the
+   * first tune's visualObj (needed by the synth) or null on failure.
    */
   function render(el, abc, opts) {
     if (!abcjsReady()) return null;
-    var options = Object.assign(
-      { add_classes: true, responsive: 'resize', selectionColor: '#0044cc' },
-      opts || {}
+    var visualObjs = window.ABCJS.renderAbc(
+      el,
+      ensureAbcHeaders(abc),
+      buildRenderOptions(opts)
     );
-    var visualObjs = window.ABCJS.renderAbc(el, ensureAbcHeaders(abc), options);
     return visualObjs && visualObjs.length ? visualObjs[0] : null;
   }
 
@@ -343,7 +386,10 @@
 
   var api = {
     SOUNDFONT_URL: SOUNDFONT_URL,
+    MELODY_INSTRUMENTS: MELODY_INSTRUMENTS,
     // pure
+    clampSemitones: clampSemitones,
+    buildRenderOptions: buildRenderOptions,
     extractAbcTitle: extractAbcTitle,
     abcTempoBpm: abcTempoBpm,
     sniffIsAbc: sniffIsAbc,

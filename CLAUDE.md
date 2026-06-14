@@ -1802,3 +1802,59 @@ Validated by a headless byte-identical round-trip in the Tab Translator repo
 (`blue-sky.gp` → base64 → decode → `parseGuitarProOrXML` → 165 bars). CSMP gates green
 (lint · format · build · 484 tests). Contract documented in
 `chord-sheet-maker/docs/HANDOFF-CONTRACT.md`.
+
+## Sprint 17 — ABC Notation Suite (2026-06-14)
+
+Brings comprehensive **ABC notation** (render · edit · playback · export · round-trip)
+to the app, built on **abcjs** (already loaded, CSP-allowed) in the canonical
+`index.html` track. Full analysis + the RiffScore evaluation:
+`docs/ABC-NOTATION-INTEGRATION-EVALUATION.md`.
+
+| # | Phase | Status |
+|---|-------|--------|
+| 17.0 | App-family framing (3 repos) + ABC integration evaluation doc | ✅ PR #322 / CSM #235 / TTP #33 |
+| 17.A+B | ABC render (abcjs → SVG) + playback (ABCJS.synth transport) | ✅ PR #323 |
+| 17.C | CSMPN ⇄ ABC round-trip (`csmpnToAbc` + Load into Chart / From Source) | ✅ PR #324 |
+| 17.T2 | Tier-2: transpose, guitar tablature, playback instrument picker | ✅ (this entry) |
+
+**`abcSuite.js`** (new root module, `window.ABCSuite`) — pure, unit-tested core +
+browser runtime. Loaded via classic `<script>` after `audioPlayback.js`; lazy (zero
+idle cost until the ABC panel is first opened). Added to CI `node --check` + deploy
+`cp`; `verify-deploy-assets` confirms it ships.
+
+- **Pure core** (no DOM/abcjs, tested in `tests/abcSuite.test.mjs`):
+  - `ensureAbcHeaders(abc)` — guarantees a renderable `X:/M:/L:/K:` header (K: last)
+    so a bare body or partial paste never chokes abcjs; no-op on well-formed input.
+  - `extractAbcTitle`, `abcTempoBpm` (parses `Q:1/4=120` and `Q:120`), `sniffIsAbc`,
+    `defaultAbcExample`.
+  - `csmpnToAbc(csmpn, opts)` — reuses the SAME `parseHybridChartFromCSMPN` section/bar
+    model the renderer + audio use, so the ABC matches the page. Header from chart meta;
+    each bar → chord-annotated whole-bar rests (`"C"z8`) that abcjs renders as a chord
+    chart AND plays as accompaniment. Carries repeat barlines (`|: :|`), 1st/2nd voltas
+    (`[1`/`[2`), section labels (`"^Verse"`), multi-chord splits (`Bb_C7` → `"Bb"z4 "C7"z4`),
+    `%` simile (sustains prev chord), ASCII-normalized accidentals, final barline.
+  - `clampSemitones(n)` (±24), `buildRenderOptions({transpose, guitarTab})` → abcjs
+    `renderAbc` options (`visualTranspose`, `tablature:[{instrument:'guitar'}]`),
+    `MELODY_INSTRUMENTS` (GM picker list).
+- **Browser runtime**: `ensureAbcjs()` (await the deferred CDN script), `render()` →
+  SVG visualObj, `synthSupported()`, `createSynthController()` → `ABCJS.synth` transport
+  (play/loop/seek/tempo-warp, iOS audio-unlock on tap). `soundFontUrl` points at
+  **jsdelivr** (already CSP-allowed) → playback needs **no CSP change**.
+
+**`index.html` — "𝄞 ABC Notation" Power-Mode panel** (next to the CSML editor):
+ABC textarea + live notation (350 ms debounced) + transport + controls row
+(Transpose ▼/▲ with readout, playback instrument `<select>`, Guitar-tab checkbox) +
+actions (← Load into Chart, ⬆ From Source, Open/Save `.abc`, ↓ SVG, ↓ MIDI, ⎙ Print).
+Transpose/tab are abcjs render options (transpose also re-voices playback via the
+re-rendered visualObj); `← Load into Chart` reuses the existing `mineABCToSongModel`
+pipeline; `⬆ From Source` calls `csmpnToAbc(sourceEl.value)`.
+
+**Tests** — `tests/abcSuite.test.mjs` (22): pure-core coverage incl. a **real-stack
+integration test** that drives the live `parseHybridChartFromCSMPN` (verifies the
+`sections[].bars[].chordToken/leftBar/rightBar/endingLabel` contract end-to-end).
+npm test 428 → 450. The abcjs render/synth DOM glue is browser-only (smoke-test on iOS,
+same category as the OSMD/Web-Audio glue).
+
+**Remaining (optional Tier-2/3 from the eval doc):** MIDI import (needs a MIDI parser —
+abcjs doesn't import MIDI), Tune Trainer (slow→fast loop over the synth), soundfont
+selection, multi-instrument tab tunings; PDF tunebooks / website export are out of scope.
