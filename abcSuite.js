@@ -42,6 +42,41 @@
     return Math.max(-24, Math.min(24, n));
   }
 
+  /** Clamp a tempo percentage to a sane 10–400% range. */
+  function clampPercent(n) {
+    n = Math.round(Number(n) || 0);
+    if (!n) n = 100;
+    return Math.max(10, Math.min(400, n));
+  }
+
+  /**
+   * Tune Trainer schedule (pure, unit-tested): expand {startPercent, endPercent,
+   * incrementPercent, loopsPerStep} into the flat list of tempo percentages to
+   * play, each step repeated loopsPerStep times. Walks start→end by increment
+   * (capped at end); increment 0 just loops at the start tempo. Total entries are
+   * capped at 200 so a tiny increment can't produce a runaway schedule.
+   */
+  function buildTrainerSteps(opts) {
+    opts = opts || {};
+    var start = clampPercent(opts.startPercent != null ? opts.startPercent : 60);
+    var end = clampPercent(opts.endPercent != null ? opts.endPercent : 100);
+    if (end < start) end = start;
+    var inc = Math.max(0, Math.round(Number(opts.incrementPercent) || 0));
+    var loops = Math.max(1, Math.round(Number(opts.loopsPerStep) || 1));
+    var tempos = [];
+    if (inc === 0) {
+      tempos.push(start);
+    } else {
+      for (var p = start; p < end; p += inc) tempos.push(p);
+      tempos.push(end); // always finish exactly on the end tempo
+    }
+    var out = [];
+    for (var t = 0; t < tempos.length && out.length < 200; t++) {
+      for (var l = 0; l < loops && out.length < 200; l++) out.push(tempos[t]);
+    }
+    return out;
+  }
+
   // ── Pure helpers (unit-tested; no DOM, no abcjs) ───────────────────────────
 
   /** First T: title in the tune, trimmed; falls back to 'Untitled'. */
@@ -366,6 +401,8 @@
    * our CSP style-src) and prints a red "CSS required" warning. This gives us a
    * dependency-free Play/Stop the panel styles itself.
    *
+   * `opts.tempoPercent` (default 100) scales playback tempo via abcjs's
+   * `millisecondsPerMeasure` init override — used by the Tune Trainer.
    * Returns { ready, play(), pause(), resume(), stop(), durationMs } or null.
    * play() resumes the AudioContext from the user gesture (iOS requirement).
    */
@@ -374,23 +411,34 @@
     var o = opts || {};
     var Ctx = window.AudioContext || window.webkitAudioContext;
     var ac = o.audioContext || (Ctx ? new Ctx() : null);
+    var pct = clampPercent(o.tempoPercent || 100);
     var synth = new window.ABCJS.synth.CreateSynth();
-    var ready = synth
-      .init({
-        audioContext: ac || undefined,
-        visualObj: visualObj,
-        options: {
-          soundFontUrl: o.soundFontUrl || SOUNDFONT_URL,
-          program: typeof o.program === 'number' ? o.program : 0,
-        },
-      })
-      .then(function () {
-        return synth.prime();
-      });
+    var initOpts = {
+      audioContext: ac || undefined,
+      visualObj: visualObj,
+      options: {
+        soundFontUrl: o.soundFontUrl || SOUNDFONT_URL,
+        program: typeof o.program === 'number' ? o.program : 0,
+      },
+    };
+    var baseMsPerMeasure = 0;
+    try {
+      if (typeof visualObj.millisecondsPerMeasure === 'function') {
+        baseMsPerMeasure = visualObj.millisecondsPerMeasure() || 0;
+      }
+    } catch (_) {
+      /* not available — play at the tune's native tempo */
+    }
+    if (baseMsPerMeasure && pct !== 100) {
+      initOpts.millisecondsPerMeasure = Math.round((baseMsPerMeasure * 100) / pct);
+    }
+    var ready = synth.init(initOpts).then(function () {
+      return synth.prime();
+    });
     var durationMs = 0;
     try {
       if (typeof visualObj.getTotalTime === 'function') {
-        durationMs = Math.round((visualObj.getTotalTime() || 0) * 1000);
+        durationMs = Math.round(((visualObj.getTotalTime() || 0) * 1000 * 100) / pct);
       }
     } catch (_) {
       /* getTotalTime not available pre-prime — fine */
@@ -429,11 +477,82 @@
     };
   }
 
+  /**
+   * Tune Trainer runtime: chains createPlayer through the percentages from
+   * buildTrainerSteps, advancing on each step's (scaled) duration. Shares one
+   * AudioContext across steps. Browser-only. `opts.onStep(i, total, pct)` and
+   * `opts.onDone()` are progress callbacks. Returns { steps, start(), stop() }.
+   */
+  function createTrainer(visualObj, opts) {
+    if (!synthSupported() || !visualObj) return null;
+    var o = opts || {};
+    var steps = buildTrainerSteps(o);
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    var ac = o.audioContext || (Ctx ? new Ctx() : null);
+    var i = -1;
+    var stopped = false;
+    var cur = null;
+    var timer = null;
+    var onStep = typeof o.onStep === 'function' ? o.onStep : function () {};
+    var onDone = typeof o.onDone === 'function' ? o.onDone : function () {};
+
+    function advance() {
+      if (stopped) return;
+      i++;
+      if (i >= steps.length) {
+        onDone();
+        return;
+      }
+      var pct = steps[i];
+      onStep(i, steps.length, pct);
+      cur = createPlayer(visualObj, {
+        program: o.program,
+        soundFontUrl: o.soundFontUrl,
+        tempoPercent: pct,
+        audioContext: ac,
+      });
+      if (!cur) return;
+      cur
+        .play()
+        .then(function () {
+          timer = setTimeout(advance, (cur.durationMs || 0) + 250);
+        })
+        .catch(function () {
+          /* skip a failed step */
+        });
+    }
+
+    return {
+      steps: steps,
+      start: function () {
+        stopped = false;
+        i = -1;
+        advance();
+      },
+      stop: function () {
+        stopped = true;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        if (cur) {
+          try {
+            cur.stop();
+          } catch (_) {
+            /* noop */
+          }
+        }
+      },
+    };
+  }
+
   var api = {
     SOUNDFONT_URL: SOUNDFONT_URL,
     MELODY_INSTRUMENTS: MELODY_INSTRUMENTS,
     // pure
     clampSemitones: clampSemitones,
+    clampPercent: clampPercent,
+    buildTrainerSteps: buildTrainerSteps,
     buildRenderOptions: buildRenderOptions,
     extractAbcTitle: extractAbcTitle,
     abcTempoBpm: abcTempoBpm,
@@ -447,6 +566,7 @@
     render: render,
     synthSupported: synthSupported,
     createPlayer: createPlayer,
+    createTrainer: createTrainer,
   };
   if (typeof window !== 'undefined') window.ABCSuite = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

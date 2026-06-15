@@ -1880,3 +1880,22 @@ spelling for any caller that asks. Tests: +4 in `tests/chordProcessingUtils.test
 (canonical default for the 5 black keys + a `transposeWholeText` no-Db/G#/A#/Gb assertion).
 Sibling repos (chord-sheet-maker `auto` map, Tab-Translator-Pro `NOTE_SHARP`) get the same
 default in their own PRs on this branch.
+
+### Post-Sprint 17 — ABC Tune Trainer (slow→fast practice loop)
+
+Builds on the `createPlayer` transport. A **🐌 Tune Trainer** row in the ABC panel
+(Start % / End % / Step % / Loops + Start/Stop + progress readout) loops the tune,
+ramping tempo from start→end.
+
+- **`abcSuite.js` pure (tested):** `clampPercent(n)` (10–400, 0→100) and
+  `buildTrainerSteps({startPercent,endPercent,incrementPercent,loopsPerStep})` →
+  flat list of tempo %s (each repeated `loops`; walks start→end by `inc`, always ends
+  exactly on `end`; `inc:0` just loops the start tempo; capped at 200 entries).
+- **`abcSuite.js` runtime:** `createPlayer` gains `opts.tempoPercent` → scales playback
+  via abcjs's `millisecondsPerMeasure` init override (no re-render) + scaled `durationMs`.
+  `createTrainer(visualObj, opts)` chains `createPlayer` through the steps on one shared
+  AudioContext, advancing on each step's duration; `onStep(i,total,pct)` / `onDone()`
+  callbacks; `{ steps, start(), stop() }`. Browser-only.
+- `index.html`: trainer row + wiring; rebuild/close/Play all stop the trainer.
+- `tests/abcSuite.test.mjs` +6 (clampPercent, step schedules incl. runaway cap + end<start).
+  npm test 453 → 459.

@@ -1491,6 +1491,12 @@ body.exporting .sectionBlock{
   #btnAbcPlay{ padding:5px 14px; font-weight:600; }
   #btnAbcPlay:disabled{ opacity:.5; }
   #abcPlayHint{ font-size:.78rem; color:var(--muted,#888); }
+  .abc-trainer{ margin-top:10px; display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; font-size:.8rem; }
+  .abc-trainer input{ width:3.4em; padding:2px 4px; font-size:.8rem; }
+  .abc-trainer label{ display:inline-flex; align-items:center; gap:3px; }
+  #btnAbcTrain{ padding:4px 12px; font-weight:600; }
+  #btnAbcTrain:disabled{ opacity:.5; }
+  #abcTrProgress{ font-size:.78rem; color:var(--muted,#888); min-width:7em; }
   .abc-status{ font-size:.8rem; color:var(--muted,#777); margin-top:6px; min-height:1.1em; }
   .abc-status.err{ color:#c00; }
   .abc-controls{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; font-size:.85rem; }
@@ -2438,6 +2444,15 @@ Tempo: 120
           <div id="abcTransport" class="abc-transport">
             <button id="btnAbcPlay" type="button" disabled>▶ Play</button>
             <span id="abcPlayHint"></span>
+          </div>
+          <div id="abcTrainer" class="abc-trainer">
+            <strong>🐌 Tune Trainer</strong>
+            <label>Start <input id="abcTrStart" type="number" min="10" max="400" step="5" value="60">%</label>
+            <label>End <input id="abcTrEnd" type="number" min="10" max="400" step="5" value="100">%</label>
+            <label>Step <input id="abcTrInc" type="number" min="0" max="100" step="5" value="10">%</label>
+            <label>Loops <input id="abcTrLoops" type="number" min="1" max="16" value="2"></label>
+            <button id="btnAbcTrain" type="button" disabled>Start</button>
+            <span id="abcTrProgress"></span>
           </div>
         </div>
       </div>
@@ -6311,10 +6326,18 @@ function csmpnToCsml(csmpnText) {
 
   const btnPlay   = document.getElementById('btnAbcPlay');
   const playHint  = document.getElementById('abcPlayHint');
+  const trStart   = document.getElementById('abcTrStart');
+  const trEnd     = document.getElementById('abcTrEnd');
+  const trInc     = document.getElementById('abcTrInc');
+  const trLoops   = document.getElementById('abcTrLoops');
+  const btnTrain  = document.getElementById('btnAbcTrain');
+  const trProg    = document.getElementById('abcTrProgress');
 
   let lastVisual = null;
   let abcPlayer  = null;
+  let abcTrainer = null;
   let playing    = false;
+  let training   = false;
   let playTimer  = null;
   let seeded     = false;
   let transpose  = 0;
@@ -6344,14 +6367,25 @@ function csmpnToCsml(csmpnText) {
     if (btnPlay) btnPlay.textContent = '▶ Play';
   }
 
+  function stopTrainer() {
+    if (abcTrainer) { try { abcTrainer.stop(); } catch (_) {} }
+    abcTrainer = null;
+    training = false;
+    if (btnTrain) btnTrain.textContent = 'Start';
+  }
+
   // Rebuild our own CreateSynth-based player (no SynthController widget → no
   // abcjs-audio.css dependency → no red "CSS required" warning).
   function rebuildPlayer() {
     if (abcPlayer) { try { abcPlayer.stop(); } catch (_) {} }
     abcPlayer = null;
+    stopTrainer();
+    if (trProg) trProg.textContent = '';
     resetPlayBtn();
+    const ok = window.ABCSuite.synthSupported() && !!lastVisual;
+    if (btnTrain) btnTrain.disabled = !ok;
     if (!btnPlay) return;
-    if (!window.ABCSuite.synthSupported() || !lastVisual) {
+    if (!ok) {
       btnPlay.disabled = true;
       if (playHint) playHint.textContent = window.ABCSuite.synthSupported() ? '' : 'audio unavailable';
       return;
@@ -6367,6 +6401,7 @@ function csmpnToCsml(csmpnText) {
 
   function togglePlay() {
     if (!abcPlayer) return;
+    if (training) stopTrainer();
     if (playing) { abcPlayer.stop(); resetPlayBtn(); return; }
     playing = true;
     btnPlay.textContent = '⏹ Stop';
@@ -6374,6 +6409,25 @@ function csmpnToCsml(csmpnText) {
     // Auto-reset the button when the tune finishes.
     const ms = abcPlayer.durationMs || 0;
     if (ms > 0) playTimer = setTimeout(resetPlayBtn, ms + 300);
+  }
+
+  function toggleTrain() {
+    if (training) { stopTrainer(); if (trProg) trProg.textContent = 'stopped'; return; }
+    if (!window.ABCSuite.synthSupported() || !lastVisual) return;
+    if (playing && abcPlayer) { abcPlayer.stop(); resetPlayBtn(); }
+    abcTrainer = window.ABCSuite.createTrainer(lastVisual, {
+      program: curProgram(),
+      startPercent: trStart ? +trStart.value : 60,
+      endPercent: trEnd ? +trEnd.value : 100,
+      incrementPercent: trInc ? +trInc.value : 10,
+      loopsPerStep: trLoops ? +trLoops.value : 2,
+      onStep: (i, total, pct) => { if (trProg) trProg.textContent = 'Step ' + (i + 1) + '/' + total + ' · ' + pct + '%'; },
+      onDone: () => { stopTrainer(); if (trProg) trProg.textContent = 'done ✓'; },
+    });
+    if (!abcTrainer || !abcTrainer.steps.length) { if (trProg) trProg.textContent = 'nothing to play'; return; }
+    training = true;
+    btnTrain.textContent = '⏹ Stop';
+    abcTrainer.start();
   }
 
   function renderNow() {
@@ -6432,12 +6486,14 @@ function csmpnToCsml(csmpnText) {
 
   function closePanel() {
     if (abcPlayer) { try { abcPlayer.stop(); } catch (_) {} }
+    stopTrainer();
     resetPlayBtn();
     panel.classList.remove('open');
   }
   btnOpen.addEventListener('click', () => panel.classList.contains('open') ? closePanel() : openPanel());
   if (btnClose) btnClose.addEventListener('click', closePanel);
   if (btnPlay) btnPlay.addEventListener('click', togglePlay);
+  if (btnTrain) btnTrain.addEventListener('click', toggleTrain);
   if (inputEl) inputEl.addEventListener('input', renderDebounced);
 
   function setTranspose(n) {
