@@ -118,6 +118,92 @@ test('MELODY_INSTRUMENTS is a non-empty list of {name, program}', () => {
   assert.equal(A.MELODY_INSTRUMENTS[0].program, 0); // Piano default
 });
 
+test('SOUNDFONTS is a list of {name, url} all on the CSP-allowed jsdelivr host', () => {
+  assert.ok(Array.isArray(A.SOUNDFONTS) && A.SOUNDFONTS.length >= 2);
+  for (const sf of A.SOUNDFONTS) {
+    assert.equal(typeof sf.name, 'string');
+    assert.match(sf.url, /^https:\/\/cdn\.jsdelivr\.net\//);
+    assert.match(sf.url, /\/$/); // trailing slash (abcjs appends the instrument file)
+  }
+  assert.equal(A.SOUNDFONTS[0].url, A.SOUNDFONT_URL); // default is the first entry
+});
+
+// ── Tune Trainer schedule (pure) ──────────────────────────────────────────────
+
+test('clampPercent clamps to 10–400 and defaults 0 to 100', () => {
+  assert.equal(A.clampPercent(60), 60);
+  assert.equal(A.clampPercent(5), 10);
+  assert.equal(A.clampPercent(999), 400);
+  assert.equal(A.clampPercent(0), 100);
+  assert.equal(A.clampPercent('x'), 100);
+});
+
+test('buildTrainerSteps walks start→end by increment, ending exactly on end', () => {
+  assert.deepEqual(
+    Array.from(
+      A.buildTrainerSteps({
+        startPercent: 60,
+        endPercent: 100,
+        incrementPercent: 20,
+        loopsPerStep: 1,
+      })
+    ),
+    [60, 80, 100]
+  );
+});
+
+test('buildTrainerSteps repeats each tempo loopsPerStep times', () => {
+  assert.deepEqual(
+    Array.from(
+      A.buildTrainerSteps({
+        startPercent: 80,
+        endPercent: 100,
+        incrementPercent: 20,
+        loopsPerStep: 2,
+      })
+    ),
+    [80, 80, 100, 100]
+  );
+});
+
+test('buildTrainerSteps with increment 0 just loops at the start tempo', () => {
+  assert.deepEqual(
+    Array.from(
+      A.buildTrainerSteps({
+        startPercent: 70,
+        endPercent: 100,
+        incrementPercent: 0,
+        loopsPerStep: 3,
+      })
+    ),
+    [70, 70, 70]
+  );
+});
+
+test('buildTrainerSteps clamps a runaway schedule to 200 entries', () => {
+  const steps = A.buildTrainerSteps({
+    startPercent: 10,
+    endPercent: 400,
+    incrementPercent: 1,
+    loopsPerStep: 10,
+  });
+  assert.equal(steps.length, 200);
+});
+
+test('buildTrainerSteps treats end<start as a single-tempo loop', () => {
+  assert.deepEqual(
+    Array.from(
+      A.buildTrainerSteps({
+        startPercent: 100,
+        endPercent: 60,
+        incrementPercent: 10,
+        loopsPerStep: 1,
+      })
+    ),
+    [100]
+  );
+});
+
 // ── Phase C: csmpnToAbc round-trip (parser injected for a pure test) ──────────
 
 // Minimal stand-in for parseHybridChartFromCSMPN's output shape.
