@@ -1975,6 +1975,7 @@ body.exporting .sectionBlock{
               <button class="import-item power-only" id="btnImportOpenLyrics" role="menuitem">OpenLyrics XML</button>
               <button class="import-item power-only" id="btnImportIRealPro" role="menuitem">iReal Pro</button>
               <button class="import-item power-only" id="btnImportGuitarPro" role="menuitem">Guitar Pro / Power Tab</button>
+              <button class="import-item power-only" id="btnImportMidi" role="menuitem">MIDI (.mid)</button>
               <button class="import-item power-only" id="btnImportCsml" role="menuitem">ChordSlashML (.csml)</button>
               <hr class="import-divider power-only">
               <button class="import-item power-only" id="btnDecodeTab" role="menuitem">Decode tab → Tab Translator Pro ↗</button>
@@ -2604,7 +2605,7 @@ Tempo: 130
       </div>
     </div>
 
-    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx,.ptb,.csml,text/plain,application/pdf" style="display:none" />
+    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.mid,.midi,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx,.ptb,.csml,text/plain,application/pdf" style="display:none" />
     <!-- Dedicated hidden file inputs for each format -->
     <input id="fileInputMusicXML" type="file" accept=".musicxml,.xml,.mxl,text/xml,application/xml" style="display:none" />
     <input id="fileInputChordPro" type="file" accept=".pro,.chordpro,.cho,.chopro,.txt,text/plain" style="display:none" />
@@ -2861,6 +2862,7 @@ Tempo: 130
 <script src="backupRestore.js"></script>
 <script src="audioPlayback.js"></script>
 <script src="abcSuite.js"></script>
+<script src="midiImport.js"></script>
 <script>
 /* =========================================================
    Core constants / helpers
@@ -4079,6 +4081,9 @@ document.getElementById('btnImport').addEventListener('click', () => {
   document.addEventListener('scroll', closeMenu, { passive: true });
 })();
 
+const btnImportMidi = document.getElementById('btnImportMidi');
+if (btnImportMidi) btnImportMidi.addEventListener('click', () => { fileInput.value = ''; fileInput.click(); });
+
 fileInput.addEventListener('change', async () => {
   const file = fileInput.files && fileInput.files[0];
   if (!file) return;
@@ -4093,6 +4098,37 @@ fileInput.addEventListener('change', async () => {
     if (name.endsWith('.csml') || name.endsWith('.csm')) {
       const text = await readImportedTextFile(file);
       if (typeof window._openCsmlEditor === 'function') window._openCsmlEditor(text, file.name);
+      return;
+    }
+
+    // MIDI: parse the Standard MIDI File → chord-per-bar CSMPN
+    if (name.endsWith('.mid') || name.endsWith('.midi') || type.includes('audio/midi') || type.includes('audio/x-midi')){
+      importDiagnostics.miner = 'MIDI';
+      importDiagnostics.sourceFlavor = 'midi';
+      importDiagnostics.confidence = 'medium';
+      if (typeof window.MidiImport === 'undefined') {
+        setStatus('MIDI importer not loaded — try refreshing.', 'error');
+        return;
+      }
+      try {
+        const midiBytes = new Uint8Array(await file.arrayBuffer());
+        const title = file.name.replace(/\.[^.]+$/, '');
+        const csmpn = window.MidiImport.midiToCsmpn(midiBytes, { barsPerRow: fbSettings.barsPerRow, title });
+        const midiDoc = parseCSMPN(csmpn);
+        importDiagnostics.sections = 1;
+        importDiagnostics.bars = midiDoc.blocks
+          .filter(b => b.type === 'bars')
+          .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
+        importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+        sourceEl.value = csmpn;
+        extractHeaderFromText(csmpn);
+        updatePreview();
+        setStatus(`Imported MIDI (${importDiagnostics.bars} bars) — chords are auto-detected; review & edit.`);
+      } catch (midiErr) {
+        importDiagnostics.warnings.push('MIDI parse error: ' + (midiErr?.message || midiErr));
+        setStatus(`MIDI import failed: ${midiErr?.message || midiErr}`, 'error');
+      }
+      updateDiagnosticsPanel();
       return;
     }
 
