@@ -1899,3 +1899,12 @@ ramping tempo from start→end.
 - `index.html`: trainer row + wiring; rebuild/close/Play all stop the trainer.
 - `tests/abcSuite.test.mjs` +6 (clampPercent, step schedules incl. runaway cap + end<start).
   npm test 453 → 459.
+
+### Post-Sprint 17 — ABC soundfont selection
+
+A **Font** picker in the ABC panel chooses the playback soundfont. `abcSuite.SOUNDFONTS`
+lists three (all jsdelivr-hosted → CSP-clean): `Default (compact)` = the abcjs set,
+`FluidR3 (fuller)`, `MusyngKite (richest)`. The panel `curSoundfont()` feeds
+`soundFontUrl` into `createPlayer`/`createTrainer`; changing it rebuilds the player.
+`tests/abcSuite.test.mjs` +1 (list shape, all-jsdelivr, default = first = `SOUNDFONT_URL`).
+npm test 459 → 460.

@@ -2429,6 +2429,7 @@ Tempo: 120
         <button id="btnAbcTrUp" title="Transpose up a semitone">▲ +1</button>
         <span class="abc-ctl-sep"></span>
         <label title="Playback instrument">Sound <select id="abcInstrument"></select></label>
+        <label title="Soundfont (larger = fuller, more to download)">Font <select id="abcSoundfont"></select></label>
         <label title="Show guitar tablature below the staff"><input type="checkbox" id="abcGuitarTab"> Guitar tab</label>
       </div>
       <div class="abc-panes">
@@ -6321,6 +6322,7 @@ function csmpnToCsml(csmpnText) {
   const btnTrUp   = document.getElementById('btnAbcTrUp');
   const trReadout = document.getElementById('abcTrReadout');
   const instSel   = document.getElementById('abcInstrument');
+  const sfSel     = document.getElementById('abcSoundfont');
   const tabChk    = document.getElementById('abcGuitarTab');
   if (!panel || !btnOpen || !window.ABCSuite) return;
 
@@ -6350,7 +6352,16 @@ function csmpnToCsml(csmpnText) {
       instSel.appendChild(opt);
     });
   }
+  // Populate the soundfont picker from the shared list.
+  if (sfSel && !sfSel.options.length) {
+    window.ABCSuite.SOUNDFONTS.forEach((sf) => {
+      const opt = document.createElement('option');
+      opt.value = sf.url; opt.textContent = sf.name;
+      sfSel.appendChild(opt);
+    });
+  }
   function curProgram() { return instSel ? parseInt(instSel.value, 10) || 0 : 0; }
+  function curSoundfont() { return (sfSel && sfSel.value) || window.ABCSuite.SOUNDFONT_URL; }
   function curTab() { return !!(tabChk && tabChk.checked); }
 
   function setAbcStatus(msg, isErr) {
@@ -6391,7 +6402,7 @@ function csmpnToCsml(csmpnText) {
       return;
     }
     try {
-      abcPlayer = window.ABCSuite.createPlayer(lastVisual, { program: curProgram() });
+      abcPlayer = window.ABCSuite.createPlayer(lastVisual, { program: curProgram(), soundFontUrl: curSoundfont() });
       btnPlay.disabled = !abcPlayer;
       if (playHint) playHint.textContent = '';
     } catch (_) {
@@ -6417,6 +6428,7 @@ function csmpnToCsml(csmpnText) {
     if (playing && abcPlayer) { abcPlayer.stop(); resetPlayBtn(); }
     abcTrainer = window.ABCSuite.createTrainer(lastVisual, {
       program: curProgram(),
+      soundFontUrl: curSoundfont(),
       startPercent: trStart ? +trStart.value : 60,
       endPercent: trEnd ? +trEnd.value : 100,
       incrementPercent: trInc ? +trInc.value : 10,
@@ -6505,6 +6517,7 @@ function csmpnToCsml(csmpnText) {
   if (btnTrUp) btnTrUp.addEventListener('click', () => setTranspose(transpose + 1));
   if (tabChk) tabChk.addEventListener('change', renderNow);
   if (instSel) instSel.addEventListener('change', rebuildPlayer); // playback only — no re-render
+  if (sfSel) sfSel.addEventListener('change', rebuildPlayer); // re-init synth with the chosen soundfont
 
   if (btnFile && fileInput) {
     btnFile.addEventListener('click', () => fileInput.click());

@@ -19,8 +19,16 @@
   // abcjs's default soundfont host (paulrosen.github.io) is NOT in our CSP
   // connect-src. jsdelivr serves the same gh-pages content and IS allow-listed,
   // so playback works with zero CSP changes.
-  var SOUNDFONT_URL =
-    'https://cdn.jsdelivr.net/gh/paulrosen/midi-js-soundfonts@gh-pages/abcjs/';
+  var SOUNDFONT_BASE =
+    'https://cdn.jsdelivr.net/gh/paulrosen/midi-js-soundfonts@gh-pages/';
+  var SOUNDFONT_URL = SOUNDFONT_BASE + 'abcjs/'; // default (compact abcjs set)
+
+  // Selectable soundfonts (all jsdelivr-hosted → CSP-clean). Larger = fuller sound.
+  var SOUNDFONTS = [
+    { name: 'Default (compact)', url: SOUNDFONT_BASE + 'abcjs/' },
+    { name: 'FluidR3 (fuller)', url: SOUNDFONT_BASE + 'FluidR3_GM/' },
+    { name: 'MusyngKite (richest)', url: SOUNDFONT_BASE + 'MusyngKite/' },
+  ];
 
   var HEADER_RE = /^[A-Za-z]:/; // an ABC information field line (X:, T:, K:, …)
 
@@ -548,6 +556,7 @@
 
   var api = {
     SOUNDFONT_URL: SOUNDFONT_URL,
+    SOUNDFONTS: SOUNDFONTS,
     MELODY_INSTRUMENTS: MELODY_INSTRUMENTS,
     // pure
     clampSemitones: clampSemitones,

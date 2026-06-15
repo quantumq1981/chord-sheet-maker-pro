@@ -118,6 +118,16 @@ test('MELODY_INSTRUMENTS is a non-empty list of {name, program}', () => {
   assert.equal(A.MELODY_INSTRUMENTS[0].program, 0); // Piano default
 });
 
+test('SOUNDFONTS is a list of {name, url} all on the CSP-allowed jsdelivr host', () => {
+  assert.ok(Array.isArray(A.SOUNDFONTS) && A.SOUNDFONTS.length >= 2);
+  for (const sf of A.SOUNDFONTS) {
+    assert.equal(typeof sf.name, 'string');
+    assert.match(sf.url, /^https:\/\/cdn\.jsdelivr\.net\//);
+    assert.match(sf.url, /\/$/); // trailing slash (abcjs appends the instrument file)
+  }
+  assert.equal(A.SOUNDFONTS[0].url, A.SOUNDFONT_URL); // default is the first entry
+});
+
 // ── Tune Trainer schedule (pure) ──────────────────────────────────────────────
 
 test('clampPercent clamps to 10–400 and defaults 0 to 100', () => {
