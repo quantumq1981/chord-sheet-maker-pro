@@ -2432,6 +2432,7 @@ Tempo: 120
         <label title="Playback instrument">Sound <select id="abcInstrument"></select></label>
         <label title="Soundfont (larger = fuller, more to download)">Font <select id="abcSoundfont"></select></label>
         <label title="Show guitar tablature below the staff"><input type="checkbox" id="abcGuitarTab"> Guitar tab</label>
+        <label title="⬆ From Source: voice each chord as real staff notes + tab (not just the chord name)"><input type="checkbox" id="abcVoiceChords" checked> Voice chords</label>
       </div>
       <div class="abc-panes">
         <div>
@@ -6590,12 +6591,19 @@ function csmpnToCsml(csmpnText) {
   });
 
   // ⬆ From Source: current CSMPN chart → ABC (reuses the renderer/audio model).
+  const voiceChk = document.getElementById('abcVoiceChords');
   if (btnFrom) btnFrom.addEventListener('click', () => {
     const srcEl = document.getElementById('source') || (typeof sourceEl !== 'undefined' && sourceEl);
     const csmpn = srcEl ? srcEl.value : '';
     if (!csmpn || !csmpn.trim()) { setAbcStatus('The main chart is empty.', true); return; }
     try {
-      inputEl.value = window.ABCSuite.csmpnToAbc(csmpn, { barsPerLine: (window.fbSettings && fbSettings.barsPerRow) || 4 });
+      const voiced = !voiceChk || voiceChk.checked; // default on: real notes + tab
+      inputEl.value = window.ABCSuite.csmpnToAbc(csmpn, {
+        barsPerLine: (window.fbSettings && fbSettings.barsPerRow) || 4,
+        voiced,
+      });
+      // Voiced chords are meant to be seen on staff AND tab — turn the tab on too.
+      if (voiced && tabChk && !tabChk.checked) tabChk.checked = true;
       seeded = true;
       if (!panel.classList.contains('open')) openPanel(); else renderNow();
     } catch (err) {

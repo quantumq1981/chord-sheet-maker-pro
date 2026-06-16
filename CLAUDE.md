@@ -1990,3 +1990,30 @@ spelling change. Consolidated into **`chordTheory.js`** (new root module,
 - New `tests/chordTheory.test.mjs` (data shape/spelling) + `tests/chordTheoryParity.test.ts`
   (TS twin == browser source). CI `node --check` + deploy `cp` updated;
   `verify-deploy-assets` passes (21 refs). npm test 474 → 477; test:parsers +2.
+
+### Post-Sprint 17 — ABC voiced chords (real staff notation + guitar tab)
+
+**Problem:** `csmpnToAbc` emitted `"Bb7"z8` — the chord *name* over a whole-bar **rest**,
+so the rendered ABC showed chord symbols above empty bars (no noteheads, no tab). The
+ask: render each chord as actual notation **and** tablature, using the chord database.
+
+**Fix — voiced mode in `abcSuite.js` (pure, unit-tested):**
+- `chordTokenToMidis(token, patterns)` — parses a chord token (root + quality + slash
+  bass), looks the quality up in the shared `chordTheory.js` `CHORD_PATTERNS`, and
+  stacks MIDI pitches (root from C3; slash bass an octave below). Robust suffix
+  resolution (Δ/°/ø + aliases; unknown → major/minor triad fallback) so any chord voices.
+- `midiToAbcPitch(midi, names)` — MIDI → ABC pitch with an **explicit accidental**
+  (`^`/`_`/`=`) so the pitch is exact in any key; spelling uses the family `NOTE_NAMES`.
+- `chordToAbcChord(token)` → an ABC chord `[..]` (defaults to `window.ChordTheory`).
+- `csmpnToAbc(csmpn, { voiced:true })` emits `"Bb7"[_B,=D=F_A]8` instead of a rest —
+  abcjs renders stacked noteheads on the staff AND guitar tab (with the tablature
+  option). `%` sustains the previous chord's notes; `N.C.`/empty stay rests; default
+  (`voiced:false`) keeps the chord-symbol-over-rest chart unchanged.
+- `index.html`: **Voice chords** checkbox (default on) in the ABC panel; `⬆ From Source`
+  passes `voiced` and auto-enables Guitar tab so staff + tab show together.
+
+**Honest limit:** voicings are **pitch-correct** but use the family enharmonic spelling
+(e.g. Emaj7's 3rd/7th show as Ab/Eb, not G#/D#) — playback + tab (fret-based) are exact;
+per-chord *ideal* diatonic spelling is a separate, larger problem. `tests/abcSuite.test.mjs`
++8 (voicing pitch classes, slash bass, voiced/`%`/N.C. emission, default unchanged).
+npm test 477 → 484.
