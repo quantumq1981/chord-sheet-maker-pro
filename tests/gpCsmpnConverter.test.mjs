@@ -14,7 +14,6 @@ import vm from 'node:vm';
 // ── Load importGuitarPro.js into a sandboxed context ─────────────────────────
 
 function loadGpConverter() {
-  const src = readFileSync(new URL('../importGuitarPro.js', import.meta.url), 'utf8');
   const context = {
     window: {},
     document: {
@@ -23,7 +22,9 @@ function loadGpConverter() {
     },
   };
   vm.createContext(context);
-  vm.runInContext(src, context);
+  // chordTheory.js (window.ChordTheory) must load first — importGuitarPro reads it.
+  vm.runInContext(readFileSync(new URL('../chordTheory.js', import.meta.url), 'utf8'), context);
+  vm.runInContext(readFileSync(new URL('../importGuitarPro.js', import.meta.url), 'utf8'), context);
   return context._GP_TEST_EXPORTS;
 }
 

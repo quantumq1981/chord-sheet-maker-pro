@@ -9,6 +9,8 @@ const read = (f) => readFileSync(new URL(f, root), 'utf8');
 function loadMidi() {
   const ctx = { window: {}, console, module: { exports: {} } };
   vm.createContext(ctx);
+  // chordTheory.js (window.ChordTheory) must load first — midiImport reads it.
+  vm.runInContext(read('chordTheory.js'), ctx);
   vm.runInContext(read('midiImport.js'), ctx);
   return ctx.window.MidiImport;
 }

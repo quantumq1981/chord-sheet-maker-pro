@@ -16,33 +16,10 @@
 (function () {
   'use strict';
 
-  // Family canonical spelling — Bb C# Eb F# Ab (matches fretToChord / importGuitarPro).
-  var NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
-
-  // Chord templates (intervals above the root). Order matters for tie-breaks
-  // (earlier = more common). Mirrors importGuitarPro._CHORD_PATTERNS.
-  var CHORD_PATTERNS = [
-    { suffix: '', intervals: [0, 4, 7] },
-    { suffix: 'm', intervals: [0, 3, 7] },
-    { suffix: '7', intervals: [0, 4, 7, 10] },
-    { suffix: 'm7', intervals: [0, 3, 7, 10] },
-    { suffix: 'maj7', intervals: [0, 4, 7, 11] },
-    { suffix: '6', intervals: [0, 4, 7, 9] },
-    { suffix: 'm6', intervals: [0, 3, 7, 9] },
-    { suffix: 'sus4', intervals: [0, 5, 7] },
-    { suffix: 'sus2', intervals: [0, 2, 7] },
-    { suffix: 'm7b5', intervals: [0, 3, 6, 10] },
-    { suffix: 'dim7', intervals: [0, 3, 6, 9] },
-    { suffix: 'dim', intervals: [0, 3, 6] },
-    { suffix: 'aug', intervals: [0, 4, 8] },
-    { suffix: 'mM7', intervals: [0, 3, 7, 11] },
-    { suffix: 'add9', intervals: [0, 2, 4, 7] },
-    { suffix: '9', intervals: [0, 2, 4, 7, 10] },
-    { suffix: 'maj9', intervals: [0, 2, 4, 7, 11] },
-    { suffix: 'm9', intervals: [0, 2, 3, 7, 10] },
-    { suffix: '7sus4', intervals: [0, 5, 7, 10] },
-    { suffix: '5', intervals: [0, 7] },
-  ];
+  // Canonical note spelling + chord templates from the shared chordTheory.js
+  // (window.ChordTheory) — single source of truth, loaded before this module.
+  var NOTE_NAMES = window.ChordTheory.NOTE_NAMES;
+  var CHORD_PATTERNS = window.ChordTheory.CHORD_PATTERNS;
 
   function mod12(n) {
     return ((n % 12) + 12) % 12;
