@@ -354,6 +354,17 @@ test('chordToAbcChord puts the slash bass below the chord', () => {
   assert.match(chord, /^\[\^F,,/); // F#2 (two commas) is the lowest note
 });
 
+test('slash bass stays on/above the guitar low E (40) so it renders in tab', () => {
+  const patterns = [
+    { suffix: '', intervals: [0, 4, 7] },
+    { suffix: 'm', intervals: [0, 3, 7] },
+  ];
+  for (const t of ['Am/C', 'F/C', 'Dm/C', 'C/E']) {
+    const midis = A.chordTokenToMidis(t, patterns);
+    assert.ok(midis[0] >= 40, `${t} bass ${midis[0]} below guitar low E`);
+  }
+});
+
 test('csmpnToAbc voiced=true emits chord brackets (notation + tab) instead of rests', () => {
   const abc = A.csmpnToAbc('x', {
     voiced: true,
