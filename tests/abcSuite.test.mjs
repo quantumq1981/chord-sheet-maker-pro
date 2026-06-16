@@ -109,6 +109,24 @@ test('buildRenderOptions keeps base options and passes unknown keys through', ()
   assert.equal(o.scale, 1.2); // passthrough
 });
 
+test('buildRenderOptions does NOT emit program (it is a %%MIDI directive, not a render option)', () => {
+  assert.equal(A.buildRenderOptions({ program: 24 }).program, undefined);
+});
+
+test('withMidiProgram injects %%MIDI program after the header, before the body', () => {
+  const out = A.withMidiProgram('X:1\nT:Tune\nK:C\n"C"z8 |]', 24);
+  const lines = out.split('\n');
+  const kIdx = lines.findIndex((l) => l.startsWith('K:'));
+  assert.equal(lines[kIdx + 1], '%%MIDI program 24'); // right after K:, before the body
+  assert.ok(out.includes('"C"z8'));
+});
+
+test('withMidiProgram is a no-op when the tune already declares a program, and clamps 0–127', () => {
+  const has = 'X:1\nK:C\n%%MIDI program 5\nCDEF';
+  assert.equal(A.withMidiProgram(has, 24), has); // unchanged
+  assert.ok(A.withMidiProgram('X:1\nK:C\nCDEF', 999).includes('%%MIDI program 127'));
+});
+
 test('MELODY_INSTRUMENTS is a non-empty list of {name, program}', () => {
   assert.ok(Array.isArray(A.MELODY_INSTRUMENTS) && A.MELODY_INSTRUMENTS.length >= 4);
   for (const it of A.MELODY_INSTRUMENTS) {
