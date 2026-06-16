@@ -6,10 +6,12 @@ import vm from 'node:vm';
 const root = new URL('..', import.meta.url);
 const read = (f) => readFileSync(new URL(f, root), 'utf8');
 
-// abcSuite.js pure helpers need no DOM/abcjs.
+// abcSuite.js pure helpers need no DOM/abcjs. chordTheory.js is loaded first so the
+// chord-voicing helpers (chordToAbcChord / csmpnToAbc voiced) find window.ChordTheory.
 function loadAbc() {
   const ctx = { window: {}, console, module: { exports: {} } };
   vm.createContext(ctx);
+  vm.runInContext(read('chordTheory.js'), ctx);
   vm.runInContext(read('abcSuite.js'), ctx);
   return ctx.window.ABCSuite;
 }
@@ -317,6 +319,79 @@ test('csmpnToAbc normalizes unicode accidentals and closes with a final barline'
 
 test('csmpnToAbc throws a clear error when no parser is available', () => {
   assert.throws(() => A.csmpnToAbc('x', {}), /CSMPN parser unavailable/);
+});
+
+// ── Voiced chords: token → ABC [notes] (staff notation + guitar tab) ──────────
+
+test('chordTokenToMidis voices common qualities to the right pitch classes', () => {
+  const pcs = (midis) => Array.from(midis, (m) => ((m % 12) + 12) % 12);
+  const CT = {
+    CHORD_PATTERNS: [
+      { suffix: '', intervals: [0, 4, 7] },
+      { suffix: 'm', intervals: [0, 3, 7] },
+      { suffix: '7', intervals: [0, 4, 7, 10] },
+    ],
+  };
+  assert.deepEqual(pcs(A.chordTokenToMidis('C', CT.CHORD_PATTERNS)), [0, 4, 7]); // C E G
+  assert.deepEqual(pcs(A.chordTokenToMidis('Cm', CT.CHORD_PATTERNS)), [0, 3, 7]); // C Eb G
+  assert.deepEqual(
+    pcs(A.chordTokenToMidis('Bb7', CT.CHORD_PATTERNS)).sort((a, b) => a - b),
+    [2, 5, 8, 10]
+  ); // Bb D F Ab
+});
+
+test('chordToAbcChord renders an ABC chord bracket from the shared chord DB', () => {
+  // window.ChordTheory is loaded in the test context → no args needed.
+  assert.equal(A.chordToAbcChord('C'), '[=C,=E,=G,]');
+  assert.match(A.chordToAbcChord('Cm'), /_E/); // minor 3rd = Eb
+  assert.match(A.chordToAbcChord('Bb7'), /^\[_B/); // Bb is the lowest note
+  assert.equal(A.chordToAbcChord('N.C.'), null);
+  assert.equal(A.chordToAbcChord('%'), null);
+});
+
+test('chordToAbcChord puts the slash bass below the chord', () => {
+  const chord = A.chordToAbcChord('D/F#');
+  assert.match(chord, /^\[\^F,,/); // F#2 (two commas) is the lowest note
+});
+
+test('csmpnToAbc voiced=true emits chord brackets (notation + tab) instead of rests', () => {
+  const abc = A.csmpnToAbc('x', {
+    voiced: true,
+    parse: () => ({
+      time: '4/4',
+      sections: [{ bars: [{ chordToken: 'C' }, { chordToken: 'Bb7' }] }],
+    }),
+  });
+  assert.ok(abc.includes('"C"[=C,=E,=G,]8'), abc); // symbol above + voiced notehead chord
+  assert.ok(abc.includes('"Bb7"['), abc);
+  assert.ok(!/z8/.test(abc.split('K:')[1]), abc); // no whole-bar rests in the body
+});
+
+test('csmpnToAbc voiced default (false) still emits chord-symbol-over-rest', () => {
+  const abc = A.csmpnToAbc('x', {
+    parse: () => ({ time: '4/4', sections: [{ bars: [{ chordToken: 'C' }] }] }),
+  });
+  assert.ok(abc.includes('"C"z8'), abc); // unchanged chord-chart behaviour
+});
+
+test('csmpnToAbc voiced sustains the previous chord through % (with its notes)', () => {
+  const abc = A.csmpnToAbc('x', {
+    voiced: true,
+    parse: () => ({
+      time: '4/4',
+      sections: [{ bars: [{ chordToken: 'F' }, { chordToken: '%' }] }],
+    }),
+  });
+  const body = abc.split('K:')[1];
+  assert.equal((body.match(/"F"\[/g) || []).length, 2, body); // F voiced twice (the % repeats it)
+});
+
+test('csmpnToAbc voiced keeps N.C. bars as rests', () => {
+  const abc = A.csmpnToAbc('x', {
+    voiced: true,
+    parse: () => ({ time: '4/4', sections: [{ bars: [{ chordToken: 'N.C.' }] }] }),
+  });
+  assert.ok(/z8/.test(abc.split('K:')[1]), abc);
 });
 
 test('ensureAbcHeaders preserves present fields and only fills the gaps', () => {

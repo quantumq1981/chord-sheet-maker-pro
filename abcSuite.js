@@ -227,6 +227,120 @@
     return out;
   }
 
+  // ── Chord voicing: token → ABC chord [notes] (staff notation + guitar tab) ──
+
+  var LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+  function noteNameToPc(letter, acc) {
+    var base = LETTER_PC[String(letter || '').toUpperCase()];
+    if (base == null) return null;
+    if (acc === '#') base += 1;
+    else if (acc === 'b') base -= 1;
+    return ((base % 12) + 12) % 12;
+  }
+
+  // Resolve a chord-quality suffix to interval list using the shared chord DB.
+  function lookupIntervals(suffix, patterns) {
+    var s = String(suffix || '')
+      .replace(/[△Δ]/g, 'maj7')
+      .replace(/[°º]/g, 'dim')
+      .replace(/ø/g, 'm7b5')
+      .trim();
+    var map = {};
+    for (var i = 0; i < patterns.length; i++) map[patterns[i].suffix] = patterns[i].intervals;
+    if (s in map) return map[s];
+    var alias = {
+      M7: 'maj7', maj: '', major: '', min: 'm', minor: 'm', '-': 'm',
+      'm7-5': 'm7b5', o7: 'dim7', o: 'dim', '+': 'aug', '+7': 'aug7',
+      sus: 'sus4', '7sus': '7sus4', '6/9': '6add9',
+    };
+    if (alias[s] != null && alias[s] in map) return map[alias[s]];
+    // Fallback so any chord still voices: minor vs major triad.
+    return /^m(?!aj)/i.test(s) ? map['m'] : map[''];
+  }
+
+  /**
+   * Voice a chord token into sorted MIDI pitches using the shared chord DB
+   * (chordTheory.js CHORD_PATTERNS). Root stacked from C3; slash bass an octave
+   * below. Pure (patterns injected). Returns null for N.C./%/unparseable.
+   */
+  function chordTokenToMidis(token, patterns) {
+    if (!patterns || !patterns.length) return null;
+    var t = String(token == null ? '' : token).replace(/♭/g, 'b').replace(/♯/g, '#').trim();
+    if (!t || /^(N\.?C\.?|%+)$/i.test(t)) return null;
+    var upper = t;
+    var bassName = null;
+    var slash = t.lastIndexOf('/');
+    if (slash > 0) {
+      upper = t.slice(0, slash);
+      bassName = t.slice(slash + 1).trim();
+    }
+    var m = /^([A-Ga-g])([#b]?)(.*)$/.exec(upper.trim());
+    if (!m) return null;
+    var rootPc = noteNameToPc(m[1], m[2]);
+    if (rootPc == null) return null;
+    var intervals = lookupIntervals(m[3] || '', patterns);
+    if (!intervals) return null;
+    var rootMidi = 48 + rootPc; // C3..B3
+    var midis = [];
+    for (var k = 0; k < intervals.length; k++) midis.push(rootMidi + intervals[k]);
+    if (bassName) {
+      var bm = /^([A-Ga-g])([#b]?)/.exec(bassName);
+      if (bm) {
+        var bpc = noteNameToPc(bm[1], bm[2]);
+        if (bpc != null) midis.push(36 + bpc); // bass an octave below the root region
+      }
+    }
+    var seen = {};
+    var out = [];
+    midis
+      .sort(function (a, b) {
+        return a - b;
+      })
+      .forEach(function (x) {
+        if (!seen[x]) {
+          seen[x] = 1;
+          out.push(x);
+        }
+      });
+    return out.length ? out : null;
+  }
+
+  /** MIDI → ABC pitch token with an EXPLICIT accidental (^/_/=) so the rendered
+   *  pitch is exact in any key. Uses the family note spelling from chordTheory. */
+  function midiToAbcPitch(midi, names) {
+    var nm = names[((midi % 12) + 12) % 12];
+    var letter = nm[0];
+    var acc = nm.length > 1 ? (nm[1] === '#' ? '^' : '_') : '=';
+    var octave = Math.floor(midi / 12) - 1; // MIDI 60 → octave 4 → "C"
+    var tok;
+    if (octave >= 5) {
+      tok = acc + letter.toLowerCase();
+      for (var i = 5; i < octave; i++) tok += "'";
+    } else {
+      tok = acc + letter;
+      for (var j = octave; j < 4; j++) tok += ',';
+    }
+    return tok;
+  }
+
+  /**
+   * Chord token → an ABC chord `[notes]` (no duration), or null. `patterns` and
+   * `names` default to the shared chordTheory.js globals. abcjs renders the
+   * bracket as stacked noteheads on the staff AND as guitar tab (with the
+   * tablature render option). This is what turns a chord chart into real notation.
+   */
+  function chordToAbcChord(token, patterns, names) {
+    patterns = patterns || (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.CHORD_PATTERNS);
+    names = names || (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.NOTE_NAMES);
+    if (!patterns || !names) return null;
+    var midis = chordTokenToMidis(token, patterns);
+    if (!midis) return null;
+    var out = '';
+    for (var i = 0; i < midis.length; i++) out += midiToAbcPitch(midis[i], names);
+    return '[' + out + ']';
+  }
+
   /**
    * Convert a CSMPN chart to ABC, reusing the SAME section/bar model the renderer
    * and audio use (parseHybridChartFromCSMPN), so the ABC matches the page: header
@@ -250,6 +364,23 @@
     var time = doc.time || '4/4';
     var units = abcBarUnits(time);
     var barsPerLine = opts.barsPerLine || 4;
+    // Voiced mode: emit each chord's actual pitches as an ABC chord [..] so abcjs
+    // renders staff noteheads (+ guitar tab with the tablature option), not rests.
+    var voiced = !!opts.voiced;
+    var patterns =
+      opts.patterns ||
+      (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.CHORD_PATTERNS) ||
+      null;
+    var names =
+      (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.NOTE_NAMES) || null;
+    // Per-chord body: voiced chord bracket when possible, else a whole-bar rest.
+    function chordBody(rawTok, dur) {
+      if (voiced && patterns && names) {
+        var br = chordToAbcChord(rawTok, patterns, names);
+        if (br) return br + dur;
+      }
+      return 'z' + dur;
+    }
 
     var header = ['X:1'];
     if (doc.title) header.push('T:' + doc.title);
@@ -263,6 +394,7 @@
     var flat = [];
     var sections = doc.sections || [];
     var prevChord = null;
+    var prevRaw = null;
     for (var s = 0; s < sections.length; s++) {
       var sec = sections[s];
       var sbars = sec.bars || [];
@@ -273,17 +405,22 @@
         var rawTok = bar.chordToken == null ? '' : String(bar.chordToken).trim();
         var chords = rawTok ? rawTok.split('_') : [];
         if (!rawTok || rawTok === '%' || rawTok === '%%') {
-          measure += (prevChord ? '"' + prevChord + '"' : '') + 'z' + units; // sustain
+          // sustain: repeat the previous chord (symbol + voiced notes)
+          measure += (prevChord ? '"' + prevChord + '"' : '') + chordBody(prevRaw, units);
         } else if (/^N\.?C\.?$/i.test(rawTok)) {
           measure += 'z' + units;
           prevChord = null;
+          prevRaw = null;
         } else {
           var durs = splitUnits(units, chords.length);
           var parts = [];
           for (var c = 0; c < chords.length; c++) {
             var name = normalizeChordForAbc(chords[c]);
-            if (name) prevChord = name;
-            parts.push((name ? '"' + name + '"' : '') + 'z' + durs[c]);
+            if (name) {
+              prevChord = name;
+              prevRaw = chords[c];
+            }
+            parts.push((name ? '"' + name + '"' : '') + chordBody(chords[c], durs[c]));
           }
           measure += parts.join(' ');
         }
@@ -601,6 +738,8 @@
     defaultAbcExample: defaultAbcExample,
     ensureAbcHeaders: ensureAbcHeaders,
     csmpnToAbc: csmpnToAbc,
+    chordToAbcChord: chordToAbcChord,
+    chordTokenToMidis: chordTokenToMidis,
     // runtime
     abcjsReady: abcjsReady,
     ensureAbcjs: ensureAbcjs,
