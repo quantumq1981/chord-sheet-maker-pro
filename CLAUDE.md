@@ -2014,6 +2014,12 @@ ask: render each chord as actual notation **and** tablature, using the chord dat
 
 **Honest limit:** voicings are **pitch-correct** but use the family enharmonic spelling
 (e.g. Emaj7's 3rd/7th show as Ab/Eb, not G#/D#) — playback + tab (fret-based) are exact;
-per-chord *ideal* diatonic spelling is a separate, larger problem. `tests/abcSuite.test.mjs`
-+8 (voicing pitch classes, slash bass, voiced/`%`/N.C. emission, default unchanged).
-npm test 477 → 484.
+per-chord *ideal* diatonic spelling is a separate, larger problem. **(Confirmed correct
+for guitar by the user — flat-leaning spelling is the desired rendering, not a defect.)**
+
+**Polish:** slash-chord basses are clamped on/above the guitar low E (MIDI 40) —
+`Am/C`/`F/C` were voicing the bass at C2 (36), below the fretboard, so the tab couldn't
+place it; now `bassMidi += 12` when `< 40`, keeping it pitch-correct and renderable.
+(12/8 whole-bar chords emit `[..]12`, same duration as the rest version that already
+prints — no issue.) `tests/abcSuite.test.mjs` +9 total (voicing pitch classes, slash-bass
+range, voiced/`%`/N.C. emission, default unchanged). npm test 477 → 485.

@@ -288,7 +288,11 @@
       var bm = /^([A-Ga-g])([#b]?)/.exec(bassName);
       if (bm) {
         var bpc = noteNameToPc(bm[1], bm[2]);
-        if (bpc != null) midis.push(36 + bpc); // bass an octave below the root region
+        if (bpc != null) {
+          var bassMidi = 36 + bpc; // octave below the root region…
+          if (bassMidi < 40) bassMidi += 12; // …but keep it on/above the guitar low E (40)
+          midis.push(bassMidi);
+        }
       }
     }
     var seen = {};
