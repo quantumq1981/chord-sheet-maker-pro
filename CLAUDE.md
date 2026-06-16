@@ -1964,4 +1964,29 @@ no-op / clamp; `buildRenderOptions` no longer leaks `program`). npm test 471 →
 
 **Still needs a real-device pass:** the abcjs render/synth DOM glue is browser-only —
 smoke-test on iOS Safari (render, ▶ Play, transpose/tab redraw, soundfont + instrument
-change, Tune Trainer ramp, ↓ MIDI/SVG/Print, `.mid` import).
+change, Tune Trainer ramp, ↓ MIDI/SVG/Print, `.mid` import). **(Smoke-tested OK on iOS
+Safari, 2026-06-16.)**
+
+### Post-Sprint 17 — chordTheory.js: single source for chord-recognition data
+
+The canonical note spelling (`NOTE_NAMES`) and chord-template table (`CHORD_PATTERNS`)
+were copied into **three** files — `importGuitarPro.js`, `midiImport.js` (a divergent
+20-pattern subset), and `src/utils/fretToChord.ts` — a drift risk on every pattern add or
+spelling change. Consolidated into **`chordTheory.js`** (new root module,
+`window.ChordTheory`), following the `musicXmlCore.js` shared-browser-global precedent.
+
+- **`chordTheory.js`** exports `NOTE_NAMES` (family default Bb·C#·Eb·F#·Ab) + the full
+  26-entry `CHORD_PATTERNS` (fretToChord order; order is significant for exact-match +
+  tolerant-scorer tie-breaks). Loaded as a classic `<script>` after `utils.js` (before
+  `midiImport.js`, and before the deferred `importGuitarPro.js`).
+- `importGuitarPro.js` (`_CHORD_PATTERNS`/`_NOTE_NAMES`) and `midiImport.js`
+  (`CHORD_PATTERNS`/`NOTE_NAMES`) now read `window.ChordTheory` — local copies deleted.
+  midiImport's recogniser gains the full table (better coverage; clean triads still win
+  by score). The vm test harnesses load `chordTheory.js` into the context first.
+- `src/utils/fretToChord.ts` (the TS/React-track twin, can't consume a browser global at
+  runtime) keeps its literal table but now **`export`s** `NOTE_NAMES`/`CHORD_PATTERNS`
+  and is **pinned equal** to `chordTheory.js` by `tests/chordTheoryParity.test.ts` (a
+  drift guard — CI fails if either side is edited without the other).
+- New `tests/chordTheory.test.mjs` (data shape/spelling) + `tests/chordTheoryParity.test.ts`
+  (TS twin == browser source). CI `node --check` + deploy `cp` updated;
+  `verify-deploy-assets` passes (21 refs). npm test 474 → 477; test:parsers +2.

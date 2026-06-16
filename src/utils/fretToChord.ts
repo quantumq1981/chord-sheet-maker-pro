@@ -28,7 +28,13 @@
  * chord quality suffix.  Listed roughly from simplest to most complex so the
  * first match wins the most-common interpretation.
  */
-const CHORD_PATTERNS: ReadonlyArray<{ suffix: string; intervals: readonly number[] }> = [
+// NOTE: this TS table is the React/test-track twin of the browser-global
+// chordTheory.js (window.ChordTheory). They are pinned equal by
+// tests/chordTheoryParity.test.ts — update both together.
+export const CHORD_PATTERNS: ReadonlyArray<{
+  suffix: string;
+  intervals: readonly number[];
+}> = [
   { suffix: '', intervals: [0, 4, 7] }, // major
   { suffix: 'm', intervals: [0, 3, 7] }, // minor
   { suffix: '5', intervals: [0, 7] }, // power chord
@@ -59,7 +65,20 @@ const CHORD_PATTERNS: ReadonlyArray<{ suffix: string; intervals: readonly number
 
 // ─── Note names (sharps) ──────────────────────────────────────────────────────
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'] as const;
+export const NOTE_NAMES = [
+  'C',
+  'C#',
+  'D',
+  'Eb',
+  'E',
+  'F',
+  'F#',
+  'G',
+  'Ab',
+  'A',
+  'Bb',
+  'B',
+] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

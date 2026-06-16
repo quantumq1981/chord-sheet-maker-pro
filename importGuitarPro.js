@@ -99,36 +99,11 @@ function _loadScoreFromBytes(at, bytes) {
 /** Standard 6-string guitar open-string MIDI notes (index 0 = high-e). */
 var _STANDARD_TUNING = [64, 59, 55, 50, 45, 40];
 
-var _CHORD_PATTERNS = [
-  { suffix: '', intervals: [0, 4, 7] },
-  { suffix: 'm', intervals: [0, 3, 7] },
-  { suffix: '5', intervals: [0, 7] },
-  { suffix: '7', intervals: [0, 4, 7, 10] },
-  { suffix: 'maj7', intervals: [0, 4, 7, 11] },
-  { suffix: 'm7', intervals: [0, 3, 7, 10] },
-  { suffix: 'mM7', intervals: [0, 3, 7, 11] },
-  { suffix: 'm7b5', intervals: [0, 3, 6, 10] },
-  { suffix: 'dim7', intervals: [0, 3, 6, 9] },
-  { suffix: 'dim', intervals: [0, 3, 6] },
-  { suffix: 'aug', intervals: [0, 4, 8] },
-  { suffix: 'sus4', intervals: [0, 5, 7] },
-  { suffix: 'sus2', intervals: [0, 2, 7] },
-  { suffix: 'add9', intervals: [0, 2, 4, 7] },
-  { suffix: '6', intervals: [0, 4, 7, 9] },
-  { suffix: 'm6', intervals: [0, 3, 7, 9] },
-  { suffix: '9', intervals: [0, 2, 4, 7, 10] },
-  { suffix: '7sus4', intervals: [0, 5, 7, 10] },
-  { suffix: 'aug7', intervals: [0, 4, 8, 10] },
-  { suffix: '7b5', intervals: [0, 4, 6, 10] },
-  { suffix: '7#9', intervals: [0, 3, 4, 7, 10] },
-  { suffix: '7b9', intervals: [0, 1, 4, 7, 10] },
-  { suffix: 'maj9', intervals: [0, 2, 4, 7, 11] },
-  { suffix: 'm9', intervals: [0, 2, 3, 7, 10] },
-  { suffix: '9sus4', intervals: [0, 2, 5, 7, 10] },
-  { suffix: '6add9', intervals: [0, 2, 4, 7, 9] },
-];
+// Chord templates + canonical note spelling come from the shared chordTheory.js
+// (window.ChordTheory) — single source of truth, loaded before this module.
+var _CHORD_PATTERNS = window.ChordTheory.CHORD_PATTERNS;
 
-var _NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+var _NOTE_NAMES = window.ChordTheory.NOTE_NAMES;
 
 /**
  * Attempt to identify a chord name from fret/string positions.
