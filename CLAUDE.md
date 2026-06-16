@@ -1908,3 +1908,35 @@ lists three (all jsdelivr-hosted → CSP-clean): `Default (compact)` = the abcjs
 `soundFontUrl` into `createPlayer`/`createTrainer`; changing it rebuilds the player.
 `tests/abcSuite.test.mjs` +1 (list shape, all-jsdelivr, default = first = `SOUNDFONT_URL`).
 npm test 459 → 460.
+
+### Post-Sprint 17 — MIDI import (.mid/.midi → CSMPN)
+
+abcjs (and the other importers) can't read MIDI, so **`midiImport.js`** (new root
+module, `window.MidiImport`) is a zero-dep Standard MIDI File parser + a tolerant
+chord-per-bar recogniser. All pure (DOM-free) and unit-tested.
+
+- `readVLQ`, `parseMidi(bytes)` → `{ ppq, format, tempoBpm, timeSig, keySig, notes:[]}`
+  (absolute-tick note-on/off pairing, running status, meta tempo `FF51` / time-sig
+  `FF58` / key-sig `FF59`, sysex skip; **channel 10 / index 9 percussion dropped**;
+  SMPTE division → 480 ppq fallback).
+- `notesToBars(notes, ppq, timeSig)` slices into bars (`barTicks = num·ppq·4/den`),
+  keeps duration-weighted strong pitch classes (≥10% of the bar), bass = lowest
+  structural note; capped at 256 bars.
+- `recognizeChord(pcs, bassPc)` — tolerant scoring `inter − 0.8·extra − 1.2·missing`
+  over the shared chord-pattern table (same intervals as `importGuitarPro`), **family
+  spelling** (Bb C# Eb F# Ab), slash bass when bass≠root, one pc → bare note name,
+  weak match → `null`.
+- `midiToCsmpn(bytes|parsed, opts)` — header (Title/Key/Time/Tempo) + one chord per
+  bar, consecutive identical → `%`, empty → `N.C.`, `barsPerRow` per line.
+- `index.html`: Import-menu **MIDI (.mid)** item + `.mid`/`.midi` in the main file
+  input accept + a binary branch (reads `arrayBuffer()` → `midiToCsmpn` → `parseCSMPN`
+  for diagnostics → source). CI `node --check` + deploy `cp` updated; `verify-deploy-assets`
+  passes (20 refs).
+- `tests/midiImport.test.mjs` (11): VLQ, a hand-built minimal SMF round-trip
+  (header/tempo/4-4/notes), chord recognition (triads/7ths, flat roots, slash, single
+  note), `notesToBars`, `keyName`, and `midiToCsmpn` (full chart + `%` collapse).
+  npm test 460 → 471.
+
+**Honest limit (documented):** MIDI is raw polyphony with no chord symbols, so
+chord-per-bar is an approximation (passing tones / dense arrangements won't always match
+a lead sheet) — a starting chart to clean up, same spirit as the GP/PDF importers.

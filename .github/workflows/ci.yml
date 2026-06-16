@@ -65,7 +65,7 @@ jobs:
         run: npm run format:check
 
       - name: Syntax-check root JS files
-        run: node --check renderer.js importPipeline.js settings.js utils.js chordProcessing.js csmpnParser.js importGuitarPro.js powerTabImporter.js musicXmlCore.js musicFont.js backupRestore.js audioPlayback.js abcSuite.js chordSlashMLRenderer.js
+        run: node --check renderer.js importPipeline.js settings.js utils.js chordProcessing.js csmpnParser.js importGuitarPro.js powerTabImporter.js musicXmlCore.js musicFont.js backupRestore.js audioPlayback.js abcSuite.js midiImport.js chordSlashMLRenderer.js
 
   # ── Deploy to GitHub Pages ───────────────────────────────────────────────────
   deploy:
@@ -99,7 +99,7 @@ jobs:
           cp index.html settings.js renderer.js importPipeline.js \
              utils.js chordProcessing.js csmpnParser.js importGuitarPro.js \
              powerTabImporter.js chordSlashMLRenderer.js musicXmlCore.js \
-             musicFont.js backupRestore.js audioPlayback.js abcSuite.js ug-txt-importer.html dist/
+             musicFont.js backupRestore.js audioPlayback.js abcSuite.js midiImport.js ug-txt-importer.html dist/
 
       - name: Verify deploy assets (no referenced script is missing from dist)
         run: node scripts/verify-deploy-assets.mjs dist
