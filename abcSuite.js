@@ -356,8 +356,9 @@
 
   /**
    * Build the abcjs renderAbc options object from semantic Tier-2 controls
-   * (`transpose` semitones, `guitarTab` toggle). Pure + unit-tested. Any other
-   * keys pass straight through to abcjs.
+   * (`transpose` semitones, `guitarTab` toggle). Pure + unit-tested. `program`
+   * is NOT a render option (it's injected into the ABC as %%MIDI program — abcjs
+   * synth reads the instrument only from the tune, not from a synth option).
    */
   function buildRenderOptions(opts) {
     opts = opts || {};
@@ -370,6 +371,7 @@
       if (
         k !== 'transpose' &&
         k !== 'guitarTab' &&
+        k !== 'program' &&
         Object.prototype.hasOwnProperty.call(opts, k)
       ) {
         o[k] = opts[k];
@@ -379,17 +381,37 @@
   }
 
   /**
+   * Insert a `%%MIDI program N` directive so abcjs's synth plays the chosen GM
+   * instrument — the synth reads the program ONLY from the tune, never from a
+   * CreateSynth option, so the instrument is a render-time (visualObj) concern.
+   * No-op if the tune already declares a program. Pure + unit-tested.
+   */
+  function withMidiProgram(abc, program) {
+    var p = Math.max(0, Math.min(127, Math.round(Number(program) || 0)));
+    var src = String(abc == null ? '' : abc);
+    if (/(^|\n)%%MIDI\s+program\b/i.test(src)) return src;
+    var lines = src.split(/\r?\n/);
+    var insertAt = 0;
+    for (var i = 0; i < lines.length; i++) {
+      if (/^[A-Za-z]:/.test(lines[i])) insertAt = i + 1;
+      else if (lines[i].trim() !== '') break; // first body/non-field line
+    }
+    lines.splice(insertAt, 0, '%%MIDI program ' + p);
+    return lines.join('\n');
+  }
+
+  /**
    * Render ABC into `el` (a DOM node or selector). `opts` accepts the semantic
-   * Tier-2 controls (transpose, guitarTab) via buildRenderOptions. Returns the
-   * first tune's visualObj (needed by the synth) or null on failure.
+   * Tier-2 controls (transpose, guitarTab, program) — `program` is injected as a
+   * %%MIDI directive so playback uses the chosen instrument. Returns the first
+   * tune's visualObj (needed by the synth) or null on failure.
    */
   function render(el, abc, opts) {
     if (!abcjsReady()) return null;
-    var visualObjs = window.ABCJS.renderAbc(
-      el,
-      ensureAbcHeaders(abc),
-      buildRenderOptions(opts)
-    );
+    opts = opts || {};
+    var prepared = ensureAbcHeaders(abc);
+    if (typeof opts.program === 'number') prepared = withMidiProgram(prepared, opts.program);
+    var visualObjs = window.ABCJS.renderAbc(el, prepared, buildRenderOptions(opts));
     return visualObjs && visualObjs.length ? visualObjs[0] : null;
   }
 
@@ -440,23 +462,31 @@
     if (baseMsPerMeasure && pct !== 100) {
       initOpts.millisecondsPerMeasure = Math.round((baseMsPerMeasure * 100) / pct);
     }
-    var ready = synth.init(initOpts).then(function () {
-      return synth.prime();
-    });
-    var durationMs = 0;
+    var player = { ready: null, durationMs: 0 };
+    // Best-effort up-front duration (scaled); refined from prime() below.
     try {
       if (typeof visualObj.getTotalTime === 'function') {
-        durationMs = Math.round(((visualObj.getTotalTime() || 0) * 1000 * 100) / pct);
+        player.durationMs = Math.round(((visualObj.getTotalTime() || 0) * 1000 * 100) / pct);
       }
     } catch (_) {
       /* getTotalTime not available pre-prime — fine */
     }
-    return {
-      ready: ready,
-      durationMs: durationMs,
+    player.ready = synth
+      .init(initOpts)
+      .then(function () {
+        return synth.prime();
+      })
+      .then(function (res) {
+        // prime() resolves with { status, duration } (seconds) — the exact length.
+        if (res && typeof res.duration === 'number' && res.duration > 0) {
+          player.durationMs = Math.round((res.duration * 1000 * 100) / pct);
+        }
+        return res;
+      });
+    Object.assign(player, {
       play: function () {
         if (ac && ac.state === 'suspended' && ac.resume) ac.resume();
-        return ready.then(function () {
+        return player.ready.then(function () {
           return synth.start();
         });
       },
@@ -482,7 +512,8 @@
           /* noop */
         }
       },
-    };
+    });
+    return player;
   }
 
   /**
@@ -563,6 +594,7 @@
     clampPercent: clampPercent,
     buildTrainerSteps: buildTrainerSteps,
     buildRenderOptions: buildRenderOptions,
+    withMidiProgram: withMidiProgram,
     extractAbcTitle: extractAbcTitle,
     abcTempoBpm: abcTempoBpm,
     sniffIsAbc: sniffIsAbc,

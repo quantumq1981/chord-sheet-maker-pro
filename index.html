@@ -6490,7 +6490,7 @@ function csmpnToCsml(csmpnText) {
     window.ABCSuite.ensureAbcjs().then(() => {
       try {
         previewEl.innerHTML = '';
-        lastVisual = window.ABCSuite.render(previewEl, abc, { transpose: transpose, guitarTab: curTab() });
+        lastVisual = window.ABCSuite.render(previewEl, abc, { transpose: transpose, guitarTab: curTab(), program: curProgram() });
         if (!lastVisual) { setAbcStatus('Could not render this ABC.', true); return; }
         const bpm = window.ABCSuite.abcTempoBpm(abc);
         setAbcStatus('Rendered “' + window.ABCSuite.extractAbcTitle(abc) + '”' + (bpm ? ' · ♩=' + bpm : '') +
@@ -6552,8 +6552,8 @@ function csmpnToCsml(csmpnText) {
   if (btnTrDown) btnTrDown.addEventListener('click', () => setTranspose(transpose - 1));
   if (btnTrUp) btnTrUp.addEventListener('click', () => setTranspose(transpose + 1));
   if (tabChk) tabChk.addEventListener('change', renderNow);
-  if (instSel) instSel.addEventListener('change', rebuildPlayer); // playback only — no re-render
-  if (sfSel) sfSel.addEventListener('change', rebuildPlayer); // re-init synth with the chosen soundfont
+  if (instSel) instSel.addEventListener('change', renderNow); // instrument = %%MIDI program in the tune → must re-render
+  if (sfSel) sfSel.addEventListener('change', rebuildPlayer); // soundfont = synth init param → rebuild only
 
   if (btnFile && fileInput) {
     btnFile.addEventListener('click', () => fileInput.click());

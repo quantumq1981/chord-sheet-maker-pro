@@ -1940,3 +1940,28 @@ chord-per-bar recogniser. All pure (DOM-free) and unit-tested.
 **Honest limit (documented):** MIDI is raw polyphony with no chord symbols, so
 chord-per-bar is an approximation (passing tones / dense arrangements won't always match
 a lead sheet) — a starting chart to clean up, same spirit as the GP/PDF importers.
+
+### Post-Sprint 17 — abcjs-API verification pass + instrument-picker fix
+
+Verified the ABC suite's abcjs 6.2.2 API assumptions against the abcjs source/types
+(the browser-only glue had only its pure logic tested). Confirmed correct:
+`renderAbc` options `visualTranspose` + `tablature:[{instrument:'guitar'}]`;
+`CreateSynth.init` reads `soundFontUrl` from a **nested** `options` object but
+`millisecondsPerMeasure` from the **top level** (our `createPlayer` matches);
+`getMidiFile(abc,{midiOutputType:'encoded'})`, `synth.supportsAudio()`,
+`visualObj.getTotalTime()` / `millisecondsPerMeasure()` all exist.
+
+**Bug found + fixed — the instrument picker was a silent no-op.** abcjs's `CreateSynth`
+reads the melody instrument **only from the tune's `%%MIDI program` directive**, never
+from a synth `options.program`. So `abcSuite.render` now injects `%%MIDI program N`
+(via new pure `withMidiProgram(abc, program)`, no-op if the tune already has one, clamps
+0–127) when a program is chosen, and the instrument `<select>` change now triggers a
+**re-render** (instrument is a visualObj concern), not just a player rebuild. The
+soundfont `<select>` still only rebuilds the player (it *is* a synth init param).
+Also hardened `createPlayer.durationMs` to refine from `prime()`'s returned `duration`
+(reliable Play/Stop auto-reset). `tests/abcSuite.test.mjs` +3 (withMidiProgram inject /
+no-op / clamp; `buildRenderOptions` no longer leaks `program`). npm test 471 → 474.
+
+**Still needs a real-device pass:** the abcjs render/synth DOM glue is browser-only —
+smoke-test on iOS Safari (render, ▶ Play, transpose/tab redraw, soundfont + instrument
+change, Tune Trainer ramp, ↓ MIDI/SVG/Print, `.mid` import).
