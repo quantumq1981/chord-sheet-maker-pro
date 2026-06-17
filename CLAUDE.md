@@ -2023,3 +2023,37 @@ place it; now `bassMidi += 12` when `< 40`, keeping it pitch-correct and rendera
 (12/8 whole-bar chords emit `[..]12`, same duration as the rest version that already
 prints — no issue.) `tests/abcSuite.test.mjs` +9 total (voicing pitch classes, slash-bass
 range, voiced/`%`/N.C. emission, default unchanged). npm test 477 → 485.
+
+### Post-Sprint 17 — chordsheet.com fakebook PDF import
+
+**Problem:** a chordsheet.com PDF export is **not** plain-text "barline ASCII" as it
+looks — its PDF text layer uses a **private-use-area (PUA) music font** where
+accidentals, chord-quality superscripts, barlines, similes and the time signature are
+custom glyphs (e.g. `U+E10D`=♭, `U+E197`=⁷, `U+E190`=°, `U+E180`=MA/maj, `U+E030`=barline,
+`U+E500`=simile, `U+F587`=12/8). The UG-Pro PDF importer mangled them.
+
+**`chordsheetPdf.js`** (new root module, `window.ChordsheetPdf`) — zero-dep, all pure +
+unit-tested (codepoints via `String.fromCharCode` so the source stays ASCII):
+- `decodeChordsheetGlyphs(text)` — PUA glyph → text (`B♭⁷` → `Bb7`, `E°⁷` → `Eo7`,
+  `E♭ᴹᴬ⁷` → `Ebmaj7`).
+- `detectMeter` (time-sig glyph → `12/8`, default `4/4`), `isChordsheetText` (URL or the
+  barline glyph).
+- `groupItemsIntoText(items)` — reconstruct lines from pdfjs text items **gap-aware**, so
+  a chord split into `B`+`♭`+`7` runs re-joins into `Bb7` while real spaces stay spaces.
+- `chordsheetTextToCsmpn(text, opts)` — header (Title/Style/Time/Tempo) + per-section bars;
+  collapses barline-glyph runs to one `|`, joins multi-chord bars with `_`, similes → `%`,
+  section labels (Verse/Pre-Chorus/Chorus/Bridge/1st·2nd Ending/CODA), drops the bare
+  AABA rehearsal letters.
+- **`importPipeline.js`** `importUGProPDF`: a detection pass runs first — extracts pdfjs
+  items, groups to text, and if `isChordsheetText` returns CSMPN directly; otherwise falls
+  through to the UG-Pro geometry path (try/catch-guarded, zero risk to existing imports).
+- `tests/chordsheetPdf.test.mjs` (7) — glyph decode, meter, gap-aware item grouping, and a
+  **real-export fixture** (`tests/fixtures/chordsheet-sincityblues.txt`, "Got it wrong
+  blues") → asserts sections/bars/similes/endings and that the CSMPN parses cleanly through
+  `parseCSMPN` (14 sections, 83 tokens). CI `node --check` + deploy `cp`; verify-deploy
+  passes (22 refs). npm test 485 → 492.
+
+**Validated** end-to-end against the real 4-page PDF (Verse-1 similes, the bridge passing
+runs `B7 C7 Db7 D7` / `Eo7 Go7 Bbo7`, 1st/2nd endings, CODA `Bb B13`). The pdfjs
+item-grouping glue is browser-only → **iOS smoke-test pending** (upload the .pdf, confirm
+the chart loads).
