@@ -2055,5 +2055,5 @@ unit-tested (codepoints via `String.fromCharCode` so the source stays ASCII):
 
 **Validated** end-to-end against the real 4-page PDF (Verse-1 similes, the bridge passing
 runs `B7 C7 Db7 D7` / `Eo7 Go7 Bbo7`, 1st/2nd endings, CODA `Bb B13`). The pdfjs
-item-grouping glue is browser-only → **iOS smoke-test pending** (upload the .pdf, confirm
-the chart loads).
+item-grouping glue is browser-only → **smoke-tested OK on iOS Safari (2026-06-17)** — the
+real `.pdf` imports to the correct chart on-device, no gap-threshold tuning needed.
