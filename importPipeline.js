@@ -2328,6 +2328,34 @@ async function importUGProPDF(file){
   const loadingTask = pdfjsLib.getDocument(pdfOpts);
   const pdf = await loadingTask.promise;
 
+  // chordsheet.com fakebook PDFs use a private-use music font (not plain text) —
+  // detect and decode them directly into CSMPN before the UG-Pro geometry path.
+  if (window.ChordsheetPdf) {
+    try {
+      const csParts = [];
+      for (let cp = 1; cp <= pdf.numPages; cp++) {
+        const ctc = await (await pdf.getPage(cp)).getTextContent();
+        const cits = ctc.items.map((it) => ({
+          str: (it.str ?? "").toString(),
+          x: it.transform?.[4] ?? 0,
+          y: it.transform?.[5] ?? 0,
+          w: Math.abs(it.width ?? 0),
+          fontSize: Math.hypot(it.transform?.[0] ?? 12, it.transform?.[1] ?? 0) || 12,
+        }));
+        csParts.push(window.ChordsheetPdf.groupItemsIntoText(cits));
+      }
+      const csText = csParts.join("\n");
+      if (window.ChordsheetPdf.isChordsheetText(csText)) {
+        statusEl.textContent = "Importing chordsheet.com fakebook…";
+        return window.ChordsheetPdf.chordsheetTextToCsmpn(csText, {
+          barsPerRow: fbSettings.barsPerRow,
+        });
+      }
+    } catch (csErr) {
+      /* not a chordsheet.com PDF — fall through to the UG-Pro importer */
+    }
+  }
+
   const meta = { title:"", composer:"", style:"", tempo:"", time:"", key:"" };
   const bodyLines = [];
   const extractedTextLines = [];
