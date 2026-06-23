@@ -47,6 +47,54 @@ function _parseRoman(str){
 }
 
 /**
+ * Parse chordsheet.com three-column section text.
+ * Forms:
+ *   "lc <text>" / "cc <text>" / "rc <text>"  → place text in left/center/right column
+ *   "<a>  <b>  <c>" (two-or-more spaces)      → split into left / center / right
+ * Returns ['left','center','right'] or null for a plain single-label section name.
+ * @param {string} text
+ * @returns {?string[]}
+ */
+function parseColumnText(text){
+  const t = (text || '').trim();
+  if (!t) return null;
+  const kw = t.match(/^(lc|cc|rc)\b\s*(.*)$/i);
+  if (kw){
+    const code = kw[1].toLowerCase();
+    const body = kw[2].trim();
+    const cols = ['', '', ''];
+    cols[code === 'lc' ? 0 : code === 'cc' ? 1 : 2] = body;
+    return cols;
+  }
+  if (/\s{2,}/.test(t)){
+    const parts = t.split(/\s{2,}/).map(s => s.trim());
+    return [parts[0] || '', parts[1] || '', parts[2] || ''];
+  }
+  return null;
+}
+
+/**
+ * Parse a chordsheet.com chord-diagram definition body: "C7 x32310" or
+ * "C7 x32310032410" (frets + fingering). Strings are ordered low-E → high-e.
+ * @param {string} str
+ * @returns {?{name:string, frets:Array, fingers:?number[]}}
+ */
+function parseDiagramDefinition(str){
+  const m = (str || '').trim().match(/^(\S+)\s+([0-9xX]+)$/);
+  if (!m) return null;
+  const name = m[1];
+  const seq = m[2];
+  const fretsStr = seq.slice(0, 6);
+  if (fretsStr.length < 6) return null;
+  const frets = fretsStr.split('').map(c => (c === 'x' || c === 'X') ? 'x' : parseInt(c, 10));
+  let fingers = null;
+  if (seq.length >= 12){
+    fingers = seq.slice(6, 12).split('').map(c => parseInt(c, 10) || 0);
+  }
+  return { name, frets, fingers };
+}
+
+/**
  * Parse a CSMPN source text into a document object.
  *
  * Returns:
@@ -163,24 +211,63 @@ function parseCSMPN(text){
       continue;
     }
 
+    // Chord-diagram definition line: "// C7 x32310" (+ optional fingering digits)
+    if (line.startsWith('//')){
+      const def = parseDiagramDefinition(line.slice(2).trim());
+      if (def){
+        if (!doc.diagrams) doc.diagrams = {};
+        doc.diagrams[def.name] = { frets: def.frets, fingers: def.fingers };
+      }
+      continue;
+    }
+
+    // Double "==" section marker (chordsheet.com uses it for endings/strong
+    // delimiters, e.g. "== 1st Ending"). Treat as a boxed "=" section.
+    if (line.startsWith('==')){
+      const rest = line.slice(2).trim();
+      const block = { type:'marker', marker:'=', text: rest };
+      const cols = parseColumnText(rest);
+      if (cols) block.columns = cols;
+      doc.blocks.push(block);
+      continue;
+    }
+
     // marker lines
     const lead = line[0];
     if (lead === '-' || lead === ':' || lead === '=' || lead === ';' || lead === '#'){
-      doc.blocks.push({type:'marker', marker: lead, text: line.slice(1).trim()});
+      const rest = line.slice(1).trim();
+      const block = { type:'marker', marker: lead, text: rest };
+      // chordsheet.com three-column text: "- lc …", "- cc …", "- rc …",
+      // or two-or-more spaces to split into left / center / right columns.
+      if (lead === '-' || lead === ':' || lead === '='){
+        const cols = parseColumnText(rest);
+        if (cols) block.columns = cols;
+      }
+      doc.blocks.push(block);
       continue;
+    }
+
+    // chord line — a leading "." turns on chord diagrams for every chord on the line
+    let diagramsThroughout = false;
+    let workLine = line;
+    if (/^\.(?:\s|$)/.test(line)){
+      diagramsThroughout = true;
+      workLine = line.replace(/^\.\s*/, '');
     }
 
     // chord line — detect leading X for bar indentation
     let indentLevel = 0;
-    let chordLine = line0;
-    const indentMatch = line.match(/^(X+)\s*(.*)/);
+    let chordLine = workLine;
+    const indentMatch = workLine.match(/^(X+)\s*(.*)/);
     if (indentMatch){
       indentLevel = indentMatch[1].length;
       chordLine = indentMatch[2];
     }
     const tokens = tokenizeBars(chordLine);
     if (tokens.length){
-      doc.blocks.push({type:'bars', tokens, indent: indentLevel});
+      const block = { type:'bars', tokens, indent: indentLevel };
+      if (diagramsThroughout) block.diagrams = true;
+      doc.blocks.push(block);
     }
   }
 

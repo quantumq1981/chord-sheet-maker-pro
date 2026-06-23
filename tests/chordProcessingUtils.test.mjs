@@ -408,3 +408,102 @@ describe('formatChordQuality — alternate settings', () => {
     assert.equal(altCtx.formatChordQuality('dim7'), '°7');
   });
 });
+
+// ── chordsheet.com syntax: beat-level tokens ──────────────────────────────────
+
+describe('renderBeatContent — chordsheet.com tokens', () => {
+  it('§ renders the Segno glyph (𝄋)', () => {
+    assert.ok(ctx.renderBeatContent('§').includes('𝄋'));
+  });
+  it('$ still renders Segno (legacy alias)', () => {
+    assert.ok(ctx.renderBeatContent('$').includes('𝄋'));
+  });
+  it('r8 renders the eighth-note rest glyph (𝄾)', () => {
+    assert.ok(ctx.renderBeatContent('r8').includes('𝄾'));
+  });
+  it('r1/r2/r4 still render their rest glyphs', () => {
+    assert.ok(ctx.renderBeatContent('r1').includes('𝄻'));
+    assert.ok(ctx.renderBeatContent('r2').includes('𝄼'));
+    assert.ok(ctx.renderBeatContent('r4').includes('𝄽'));
+  });
+  it('optional chord A? wraps the chord in .optionalChord', () => {
+    const html = ctx.renderBeatContent('A?');
+    assert.ok(html.includes('optionalChord'));
+    assert.ok(html.includes('chord-root'));
+  });
+  it('N.C. is unaffected by the diagram/optional logic', () => {
+    const html = ctx.renderBeatContent('N.C.');
+    assert.ok(html.includes('N.C.'));
+    assert.ok(!html.includes('optionalChord'));
+    assert.ok(!html.includes('diagSvg'));
+  });
+});
+
+// ── chordsheet.com syntax: square brackets, time sigs, 3x repeats ─────────────
+
+describe('tokenizeBars / parseBarStructures — chordsheet.com bar structures', () => {
+  it('[A B_C] tokenizes as one bracket token', () => {
+    assert.deepEqual([...ctx.tokenizeBars('[A B_C] D')], ['[A B_C]', 'D']);
+  });
+  it('[A B_C] becomes one bar with underscore-joined beats', () => {
+    const bars = ctx.parseBarStructures(ctx.tokenizeBars('[A B_C] D'));
+    assert.equal(bars.length, 2);
+    assert.equal(bars[0].token, 'A_B_C');
+    assert.equal(bars[1].token, 'D');
+  });
+  it('per-bar time signature 2:4 attaches to the next bar', () => {
+    const bars = ctx.parseBarStructures(ctx.tokenizeBars('2:4 A 3:4 B C'));
+    assert.equal(bars[0].timeSig, '2/4');
+    assert.equal(bars[0].token, 'A');
+    assert.equal(bars[1].timeSig, '3/4');
+    assert.ok(!bars[2].timeSig); // time sig does not persist past one bar
+    assert.equal(bars[2].token, 'C');
+  });
+  it('(A B)3x repeats three times (number-before-x form)', () => {
+    const bars = ctx.parseBarStructures(ctx.tokenizeBars('(A B)3x'));
+    assert.equal(bars.length, 6);
+    assert.deepEqual(
+      [...bars].map((b) => b.token),
+      ['A', 'B', 'A', 'B', 'A', 'B']
+    );
+  });
+  it('(A B)x3 still repeats three times (x-before-number form)', () => {
+    const bars = ctx.parseBarStructures(ctx.tokenizeBars('(A B)x3'));
+    assert.equal(bars.length, 6);
+  });
+});
+
+describe('transposeChordToken — chordsheet.com tokens preserved', () => {
+  it('transposes chords inside [ ] groups and keeps the brackets', () => {
+    assert.equal(ctx.transposeChordToken('[A B_C]', 2, 'default'), '[B C#_D]');
+  });
+  it('passes a 2:4 time-signature token through unchanged', () => {
+    assert.equal(ctx.transposeChordToken('2:4', 2, 'default'), '2:4');
+  });
+  it('preserves a trailing ? optional marker', () => {
+    assert.equal(ctx.transposeChordToken('A7?', 2, 'default'), 'B7?');
+  });
+  it('preserves a trailing . diagram marker', () => {
+    assert.equal(ctx.transposeChordToken('A7.', 2, 'default'), 'B7.');
+  });
+});
+
+// ── chordsheet.com syntax: chord diagrams ─────────────────────────────────────
+
+describe('chord diagrams — lookup + render', () => {
+  it('built-in shapes resolve for common chords', () => {
+    assert.deepEqual([...ctx.lookupDiagramVoicing('C').frets], ['x', 3, 2, 0, 1, 0]);
+    assert.ok(ctx.lookupDiagramVoicing('G7').frets);
+  });
+  it('unknown chord without a definition returns null', () => {
+    assert.equal(ctx.lookupDiagramVoicing('Bb13b9'), null);
+  });
+  it('trailing . on a known chord renders an SVG fretbox', () => {
+    assert.ok(ctx.renderBeatContent('C.').includes('diagSvg'));
+  });
+  it('trailing . on a chord with no known diagram renders no fretbox (chord still shows)', () => {
+    const html = ctx.renderBeatContent('Bb13b9.');
+    assert.ok(!html.includes('diagSvg'));
+    assert.ok(html.includes('chord-root'));
+  });
+});
