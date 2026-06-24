@@ -102,6 +102,7 @@ function tokenizeBars(line){
   const out = [];
   let cur = '';
   let inQuote = false;
+  let inBracket = false; // chordsheet.com [A B_C] groups multiple chords into one bar
 
   for (let i=0;i<s.length;i++){
     const ch = s[i];
@@ -110,7 +111,9 @@ function tokenizeBars(line){
       cur += ch;
       continue;
     }
-    if (!inQuote && /\s/.test(ch)){
+    if (!inQuote && ch === '['){ inBracket = true; cur += ch; continue; }
+    if (!inQuote && ch === ']'){ inBracket = false; cur += ch; continue; }
+    if (!inQuote && !inBracket && /\s/.test(ch)){
       if (cur){
         out.push(cur);
         cur = '';
@@ -179,7 +182,18 @@ function transposeChordToken(tok, semis, pref){
   if (/^r[124]$/i.test(tok)) return tok; // rest tokens
   if (upper === 'FINE' || /^D\.?C\.?/i.test(tok) || /^D\.?S\.?/i.test(tok) || /^DACAPO/i.test(tok) || /^DALSEGNO/i.test(tok)) return tok;
   if (/^\d+\.$/.test(tok)) return tok; // endings marker token itself
+  if (/^\d+:\d+$/.test(tok)) return tok; // per-bar time signature token (2:4)
   if (tok.startsWith('"') && tok.endsWith('"')) return tok; // annotation token
+
+  // Square-bracket group [A B_C] — transpose the inner chords, keep the brackets + spacing.
+  if (tok.startsWith('[') && tok.endsWith(']')){
+    const inner = tok.slice(1, -1);
+    const tr = inner
+      .split(/(\s+)/)
+      .map((seg) => (/^\s+$/.test(seg) || seg === '' ? seg : transposeChordToken(seg, semis, pref)))
+      .join('');
+    return `[${tr}]`;
+  }
 
   // handle repeats: keep punctuation
   const mRepeat = tok.match(/^(\()?(.*?)(\))?(x\d+)?$/);
@@ -276,6 +290,21 @@ function parseBarStructures(tokens){
   let i = 0;
 
   let pendingLeft = null;
+  let pendingTimeSig = null; // chordsheet.com "2:4 A" → next bar gets a 2/4 time sig
+
+  // Build a bar object, consuming the pending left-barline + time-signature state.
+  const makeBar = (token, extra) => {
+    const bar = {
+      type: 'bar',
+      token,
+      leftBar: pendingLeft || 'single',
+      rightBar: 'single',
+    };
+    if (pendingTimeSig){ bar.timeSig = pendingTimeSig; pendingTimeSig = null; }
+    if (extra) Object.assign(bar, extra);
+    pendingLeft = null;
+    return bar;
+  };
 
   const setBoundary = (type) => {
     const prev = out[out.length - 1];
@@ -285,8 +314,9 @@ function parseBarStructures(tokens){
     pendingLeft = type === 'repeat-end' || type === 'final' ? null : type;
   };
 
+  // Repeat count: accepts both "x3" and the chordsheet.com "3x" order.
   const readTimes = (tok) => {
-    const m = (tok || '').match(/x(\d+)$/i);
+    const m = (tok || '').match(/x(\d+)$/i) || (tok || '').match(/(\d+)x$/i);
     return m ? parseInt(m[1],10) : null;
   };
 
@@ -306,9 +336,27 @@ function parseBarStructures(tokens){
       continue;
     }
 
+    // Per-bar time signature token: "2:4" → 2/4 on the next bar.
+    const tsMatch = tok.match(/^(\d+):(\d+)$/);
+    if (tsMatch){
+      pendingTimeSig = `${tsMatch[1]}/${tsMatch[2]}`;
+      i++;
+      continue;
+    }
+
     if (/^".*"$/.test(tok) && out.length){
       const prev = out[out.length - 1];
       prev.token = `${prev.token || ''} ${tok}`.trim();
+      i++;
+      continue;
+    }
+
+    // Square-bracket group: [A B_C] → ONE bar holding multiple chords (inner
+    // spaces become beat separators, like "_").
+    if (tok.startsWith('[')){
+      const inner = tok.replace(/^\[/, '').replace(/\]$/, '').trim();
+      const barTok = inner.split(/\s+/).filter(Boolean).join('_');
+      out.push(makeBar(barTok));
       i++;
       continue;
     }
@@ -320,14 +368,7 @@ function parseBarStructures(tokens){
       skipBarlines();
       if (i < tokens.length){
         const nextTok = tokens[i];
-        out.push({
-          type:'bar',
-          token: nextTok,
-          endingLabel,
-          leftBar: pendingLeft || 'single',
-          rightBar: 'single',
-        });
-        pendingLeft = null;
+        out.push(makeBar(nextTok, { endingLabel }));
         i++;
       }
       continue;
@@ -348,9 +389,9 @@ function parseBarStructures(tokens){
 
         if (isBarlineToken(t)){ i++; continue; }
 
-        if (t.endsWith(')') || /\)x\d+$/i.test(t)){
-          const before = t.replace(/\)x\d+$/i,'').replace(/\)$/,'');
-          const after = t.match(/\)x(\d+)$/i);
+        if (t.endsWith(')') || /\)(?:x\d+|\d+x)$/i.test(t)){
+          const before = t.replace(/\)(?:x\d+|\d+x)$/i,'').replace(/\)$/,'');
+          const after = t.match(/\)x(\d+)$/i) || t.match(/\)(\d+)x$/i);
           if (before) groupTokens.push(before);
           if (after) times = parseInt(after[1],10);
           const tIn = readTimes(before) || readTimes(t) || null;
@@ -370,25 +411,13 @@ function parseBarStructures(tokens){
 
       for (let rep=0; rep<times; rep++){
         for (const gt of groupTokens){
-          out.push({
-            type:'bar',
-            token: gt,
-            leftBar: pendingLeft || 'single',
-            rightBar: 'single',
-          });
-          pendingLeft = null;
+          out.push(makeBar(gt));
         }
       }
       continue;
     }
 
-    out.push({
-      type:'bar',
-      token: tok,
-      leftBar: pendingLeft || 'single',
-      rightBar: 'single',
-    });
-    pendingLeft = null;
+    out.push(makeBar(tok));
     i++;
   }
 
@@ -565,7 +594,10 @@ function renderBeatContent(rawBeat){
   const beatWithoutAnnotation = beat.replace(/"[^"]+"/g, '').trim();
 
   const renderSymbol = (symbol) => `<span class="musicSymbol">${symbol}</span>`;
+  // Navigation glyphs. chordsheet.com uses § for Segno and o/O for coda-from/coda-to;
+  // $ is kept as a legacy Segno alias for back-compat with earlier CSMPN charts.
   const symbolMap = {
+    '§': '𝄋',
     '$': '𝄋',
     'segno': '𝄋',
     'o': '𝄌',
@@ -587,9 +619,24 @@ function renderBeatContent(rawBeat){
     normalizedBeat = normalizedBeat.slice(1).trim();
   }
 
-  // --- Suffix detection: diamond(<>), fermata, stroke(,), tie(^) ---
+  // --- Suffix detection: diamond(<>), fermata, stroke(,), tie(^), optional(?) ---
   let suffixHtml = '';
+  let optional = false; // trailing ? → render the chord inside parentheses
   let chordPart = normalizedBeat;
+
+  // Optional chord: trailing ? (chordsheet.com "A?" / "B_C?")
+  if (chordPart.endsWith('?')){
+    chordPart = chordPart.slice(0, -1).trim();
+    optional = true;
+  }
+
+  // Chord-diagram trigger: a single trailing "." on a chord (chordsheet.com "B7.").
+  // Guard: only for chord-like tokens (no internal dots — excludes N.C./D.C./D.S.).
+  let wantDiagram = false;
+  if (/^[A-G][b#]?[^.\s]*\.$/.test(chordPart)){
+    chordPart = chordPart.slice(0, -1);
+    wantDiagram = true;
+  }
 
   // Diamond: "Cm7<>" or "Cm7 diamond"
   if (chordPart.endsWith('<>')){
@@ -627,8 +674,8 @@ function renderBeatContent(rawBeat){
   if (!normalizedBeat){
     chordHtml = `<span class="chord">&nbsp;</span>`;
   // --- Rests: r1 (whole), r2 (half), r4 (quarter) ---
-  } else if (/^r[124]$/i.test(normalizedBeat)){
-    const restMap = { 'r1': '𝄻', 'r2': '𝄼', 'r4': '𝄽' };
+  } else if (/^r[1248]$/i.test(normalizedBeat)){
+    const restMap = { 'r1': '𝄻', 'r2': '𝄼', 'r4': '𝄽', 'r8': '𝄾' };
     const restSym = restMap[normalizedBeat.toLowerCase()] || '𝄽';
     chordHtml = `<span class="musicSymbol restSymbol">${restSym}</span>`;
   } else if (normalizedBeat === '%'){
@@ -652,10 +699,102 @@ function renderBeatContent(rawBeat){
     chordHtml = `<span class="musicSymbol"><em>${escapeHtml(normalizedBeat)}</em></span>`;
   } else {
     chordHtml = renderChordToken(normalizedBeat);
+    // chordsheet.com chord diagram: trailing "." on the chord, or a "."-leading
+    // line that turns diagrams on throughout.
+    if (wantDiagram || _csDiagramThroughout){
+      const diag = renderChordDiagramHtml(normalizedBeat);
+      if (diag) chordHtml = diag + chordHtml;
+    }
+  }
+
+  if (optional){
+    chordHtml = `<span class="optionalChord">${chordHtml}</span>`;
   }
 
   const annotationHtml = annotation ? `<span class="beatAnnotation">${escapeHtml(annotation)}</span>` : '';
   return `<span class="beat">${annotationHtml}${pushHtml}${chordHtml}${suffixHtml}</span>`;
+}
+
+/* =========================================================
+   Chord diagrams (chordsheet.com "B7." / ". A B" / "// C7 x32310")
+   - _csDiagramDefs: explicit "//" definitions, set by renderDoc from doc.diagrams
+   - _csDiagramThroughout: true while rendering a "."-leading bars block
+   Frets are ordered low-E → high-e (standard chord-chart order).
+========================================================= */
+let _csDiagramDefs = {};
+let _csDiagramThroughout = false;
+
+// Built-in shapes for common open chords (low-E → high-e). Used when no explicit
+// "// Name frets" definition is supplied. 'x' = muted, 0 = open.
+const _CS_DIAGRAM_BUILTIN = {
+  C:['x',3,2,0,1,0], A:['x',0,2,2,2,0], G:[3,2,0,0,0,3], E:[0,2,2,1,0,0],
+  D:['x','x',0,2,3,2], F:[1,3,3,2,1,1], B:['x',2,4,4,4,2],
+  Am:['x',0,2,2,1,0], Em:[0,2,2,0,0,0], Dm:['x','x',0,2,3,1],
+  Bm:['x',2,4,4,3,2], 'F#m':[2,4,4,2,2,2],
+  A7:['x',0,2,0,2,0], B7:['x',2,1,2,0,2], C7:['x',3,2,3,1,0],
+  D7:['x','x',0,2,1,2], E7:[0,2,0,1,0,0], G7:[3,2,0,0,0,1],
+  Am7:['x',0,2,0,1,0], Dm7:['x','x',0,2,1,1], Em7:[0,2,2,0,3,0],
+  Cmaj7:['x',3,2,0,0,0], Fmaj7:['x','x',3,2,1,0], Gmaj7:[3,2,0,0,0,2],
+};
+
+function lookupDiagramVoicing(name){
+  const raw = (name || '').trim();
+  if (!raw) return null;
+  const norm = normalizeAccidentals(raw).trim();
+  const defs = _csDiagramDefs || {};
+  if (defs[raw]) return defs[raw];
+  if (defs[norm]) return defs[norm];
+  if (_CS_DIAGRAM_BUILTIN[norm]) return { frets: _CS_DIAGRAM_BUILTIN[norm], fingers: null };
+  return null;
+}
+
+// Compact inline SVG fretbox. currentColor follows the chord color.
+function chordDiagramSvgHtml(frets){
+  if (!frets || !frets.length) return '';
+  const SG = 7, FG = 8, STRINGS = 6, NF = 4, PADX = 6, PADTOP = 10, PADBOT = 3;
+  const w = (STRINGS - 1) * SG, h = NF * FG;
+  const W = w + PADX * 2, H = h + PADTOP + PADBOT;
+  const fretted = frets.filter((f) => typeof f === 'number' && f > 0);
+  const minF = fretted.length ? Math.min(...fretted) : 1;
+  const maxF = fretted.length ? Math.max(...fretted) : 1;
+  const base = maxF > NF ? minF : 1;
+  const x0 = PADX, y0 = PADTOP;
+  let s = `<svg class="diagSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`;
+  for (let i = 0; i < STRINGS; i++){
+    const x = x0 + i * SG;
+    s += `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y0 + h}" stroke="currentColor" stroke-width="0.7"/>`;
+  }
+  for (let j = 0; j <= NF; j++){
+    const y = y0 + j * FG;
+    const sw = (j === 0 && base === 1) ? 2 : 0.7;
+    s += `<line x1="${x0}" y1="${y}" x2="${x0 + w}" y2="${y}" stroke="currentColor" stroke-width="${sw}"/>`;
+  }
+  if (base > 1){
+    s += `<text x="${x0 - 2}" y="${y0 + FG - 1}" font-size="6" text-anchor="end" fill="currentColor">${base}</text>`;
+  }
+  for (let i = 0; i < STRINGS; i++){
+    const f = frets[i];
+    const x = x0 + i * SG;
+    if (f === 'x'){
+      s += `<text x="${x}" y="${y0 - 3}" font-size="7" text-anchor="middle" fill="currentColor">×</text>`;
+    } else if (f === 0){
+      s += `<circle cx="${x}" cy="${y0 - 4}" r="2" fill="none" stroke="currentColor" stroke-width="0.7"/>`;
+    } else if (typeof f === 'number'){
+      const rel = f - base + 1;
+      if (rel >= 1 && rel <= NF){
+        const cy = y0 + (rel - 0.5) * FG;
+        s += `<circle cx="${x}" cy="${cy}" r="2.6" fill="currentColor"/>`;
+      }
+    }
+  }
+  s += `</svg>`;
+  return s;
+}
+
+function renderChordDiagramHtml(name){
+  const v = lookupDiagramVoicing(name);
+  if (!v || !v.frets) return '';
+  return `<span class="chordDiag">${chordDiagramSvgHtml(v.frets)}</span>`;
 }
 
 function renderBarline(type){

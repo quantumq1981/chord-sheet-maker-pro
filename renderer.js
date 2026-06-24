@@ -25,6 +25,9 @@ function renderTimeSig(timeStr){
 function renderDoc(doc){
   validationWarnings = [];
   rehearsalLetterIndex = 0;
+  // Publish chord-diagram definitions for the beat renderer (chordProcessing.js).
+  _csDiagramDefs = doc.diagrams || {};
+  _csDiagramThroughout = false;
 
   let html = '';
   if (doc.title || doc.style || doc.key || doc.time || doc.tempo || doc.composer){
@@ -61,7 +64,7 @@ function renderDoc(doc){
       continue;
     }
     if (block.type === 'bars'){
-      html += renderBars(block.tokens, block.indent || 0);
+      html += renderBars(block.tokens, block.indent || 0, block.diagrams || false);
       continue;
     }
     if (block.type === 'notation'){
@@ -99,6 +102,12 @@ function renderDoc(doc){
 
 function renderSectionMarker(block){
   const t = escapeHtml(block.text || '');
+
+  // chordsheet.com three-column text row (does not consume a rehearsal letter).
+  if (block.columns){
+    const [l, c, r] = block.columns.map((s) => escapeHtml(s || ''));
+    return `<div class="sectionColumns"><span class="colL">${l}</span><span class="colC">${c}</span><span class="colR">${r}</span></div>`;
+  }
 
   if (block.marker === '-' || block.marker === ':'){
     // Fake book style: show rehearsal letter + section name in label boxes
@@ -139,7 +148,8 @@ function buildGridTemplate(barsPerRow){
   return result;
 }
 
-function renderBars(tokens, indent){
+function renderBars(tokens, indent, diagrams){
+  _csDiagramThroughout = !!diagrams;
   const bars = parseBarStructures(tokens);
   const bpr = fbSettings.barsPerRow;
   const gridTemplate = buildGridTemplate(bpr);
@@ -182,7 +192,7 @@ function renderBars(tokens, indent){
     html += renderBarline(row[0]?.leftBar || 'single');
 
     row.forEach((bar) => {
-      html += renderMeasure(bar.token || '', alignClass);
+      html += renderMeasure(bar, alignClass);
       html += renderBarline(bar.rightBar || 'single');
     });
 
@@ -194,15 +204,28 @@ function renderBars(tokens, indent){
   return html;
 }
 
-function renderMeasure(measureText, alignClass){
+function renderMeasure(bar, alignClass){
   const cls = alignClass || '';
-  const raw = (measureText || '').trim();
+  // Accept either a bar object (with token/timeSig) or a plain string (back-compat).
+  const isObj = bar && typeof bar === 'object';
+  const raw = ((isObj ? bar.token : bar) || '').trim();
+  // chordsheet.com per-bar time signature ("2:4 A") renders before the chords.
+  const tsHtml = (isObj && bar.timeSig)
+    ? `<span class="measureTimeSig">${renderInlineTimeSig(bar.timeSig)}</span>`
+    : '';
   if(!raw){
-    return `<div class="measure${cls}"><div class="beats"><span class="beat"></span></div></div>`;
+    return `<div class="measure${cls}">${tsHtml}<div class="beats"><span class="beat"></span></div></div>`;
   }
   const beats = raw.split('_').map(s => s.trim()).filter(Boolean);
   const beatHtml = (beats.length ? beats : [raw]).map((b) => renderBeatContent(b)).join('');
-  return `<div class="measure${cls}"><div class="beats">${beatHtml}</div></div>`;
+  return `<div class="measure${cls}">${tsHtml}<div class="beats">${beatHtml}</div></div>`;
+}
+
+// Compact stacked numerator/denominator for a per-bar time signature.
+function renderInlineTimeSig(timeStr){
+  const m = (timeStr || '').match(/^(\d+)\/(\d+)$/);
+  if (!m) return escapeHtml(timeStr || '');
+  return `<span class="tsNum">${escapeHtml(m[1])}</span><span class="tsDen">${escapeHtml(m[2])}</span>`;
 }
 
 // ── Hybrid Rhythm Guitar Chart — SVG Renderer ────────────────────────────

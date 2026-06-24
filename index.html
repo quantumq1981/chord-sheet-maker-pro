@@ -698,6 +698,37 @@
     margin-right:1px;
   }
 
+  /* chordsheet.com optional chord: A? → parentheses around the chord */
+  .optionalChord{ display:inline-flex; align-items:baseline; }
+  .optionalChord::before{ content:"("; color:var(--fb-chord-color); font-weight:700;
+    font-size:calc(20px * var(--fb-font-scale)); }
+  .optionalChord::after{ content:")"; color:var(--fb-chord-color); font-weight:700;
+    font-size:calc(20px * var(--fb-font-scale)); }
+
+  /* chordsheet.com per-bar time signature: "2:4 A" */
+  .measureTimeSig{
+    display:inline-flex; flex-direction:column; align-items:center;
+    line-height:0.9; font-weight:700; margin-right:5px;
+    color:var(--fb-fg-color, #111);
+    font-size:calc(13px * var(--fb-font-scale));
+  }
+  .measureTimeSig .tsNum, .measureTimeSig .tsDen{ display:block; }
+
+  /* chordsheet.com three-column section text: "- lc / cc / rc" */
+  .sectionColumns{
+    display:flex; justify-content:space-between; align-items:baseline;
+    width:100%; margin:6px 0; gap:8px;
+    font-size:calc(13px * var(--fb-font-scale)); color:var(--fb-fg-color, #111);
+  }
+  .sectionColumns .colL{ flex:1 1 0; text-align:left; }
+  .sectionColumns .colC{ flex:1 1 0; text-align:center; }
+  .sectionColumns .colR{ flex:1 1 0; text-align:right; }
+
+  /* chordsheet.com chord diagrams: "B7." / ". A B C" / "// C7 x32310" */
+  .chordDiag{ display:inline-flex; color:var(--fb-chord-color); margin-bottom:1px; }
+  .chordDiag .diagSvg{ display:block; }
+  .beat .chordDiag + .chord{ margin-top:1px; }
+
   .musicSymbol{
     font-size:calc(22px * var(--fb-font-scale));
     font-family: var(--fb-body-font), "FreeSerif", "Segoe UI Symbol", "Apple Symbols", "Noto Music", serif;
@@ -2062,14 +2093,18 @@ body.exporting .sectionBlock{
           </details>
 
           <details>
-            <summary>Editing syntax — CSMPN Fake Book (the main editor)</summary>
+            <summary>Editing syntax — chordsheet.com format (the main editor)</summary>
+            <p style="margin:.3em 0 .6em">The editor uses the native <strong>chordsheet.com</strong> chart syntax. Just type chords separated by whitespace — no delimiters needed.</p>
             <ul>
               <li><strong>Header lines:</strong> <code>Title:</code> <code>Composer:</code> <code>Key:</code> <code>Time:</code> <code>Tempo:</code> <code>Capo:</code> — one per line.</li>
-              <li><strong>One chord = one bar.</strong> Split a bar with <code>_</code> → <code>Bb7_A7</code>. <code>%</code> repeats the previous bar; <code>N.C.</code> = no chord.</li>
-              <li><strong>Sections:</strong> <code>- Verse</code> (plain), <code>: Chorus</code> (boxed rehearsal mark), <code>= Bridge</code>. Add a rehearsal letter after the name if you like.</li>
-              <li><strong>Repeats &amp; endings:</strong> <code>|: … :|</code> or <code>(A B C D)x2</code>; first/second endings: <code>1. C D 2. E F</code>.</li>
-              <li><strong>Accents on a chord:</strong> <code>!</code> accent, <code>^</code> marcato, <code>.</code> staccato (e.g. <code>G!</code>).</li>
-              <li><strong>Lyrics / notes:</strong> lines starting with <code>;</code> are treated as lyric/comment lines.</li>
+              <li><strong>One chord = one bar.</strong> Put four chords on a line. <code>|</code> draws a barline; <code>||</code> a double bar; <code>|]</code> a final bar.</li>
+              <li><strong>Split bars:</strong> <code>_</code> → <code>Bb7_A7</code> (two chords), <code>A_C_D</code> (three). <code>[A B_C]</code> groups several chords into one bar.</li>
+              <li><strong>Sections:</strong> <code>- Verse</code> (plain), <code>: Chorus</code> / <code>= Bridge</code> / <code>== 1st&nbsp;Ending</code> (boxed). <code>; literal text</code> keeps spaces; <code># comment</code>; three columns: <code>- lc</code> / <code>- cc</code> / <code>- rc</code> (or two spaces between columns).</li>
+              <li><strong>Repeats &amp; endings:</strong> <code>(A B C D)x2</code> or <code>(A B)3x</code> or <code>|: … :|</code>; endings inside a repeat: <code>(A B 1. C D 2. E F)</code>.</li>
+              <li><strong>Chord qualities:</strong> <code>CMaj7</code>/<code>Cj7</code>, <code>Am</code>/<code>Ami</code>/<code>A-</code>/<code>a</code>, <code>Bm7b5</code>, <code>B+</code>, <code>Bdim7</code>, <code>Dsus</code>, <code>D/F#</code> (slash), <code>*</code> (invisible chord).</li>
+              <li><strong>Simile &amp; rests:</strong> <code>%</code> repeat one bar, <code>%%</code> two bars, <code>%1</code>/<code>%2</code> reprint; rests <code>r1 r2 r4 r8</code>.</li>
+              <li><strong>Per-chord marks:</strong> <code>2:4 A</code> bar time signature, <code>A?</code> optional (parentheses), <code>B7.</code> show a chord diagram, <code>. A B C</code> diagrams for the whole line, <code>// C7 x32310</code> defines one.</li>
+              <li><strong>Navigation:</strong> <code>§</code> Segno, <code>o</code> coda-from, <code>O</code> coda-to, plus <code>fermata</code>, <code>&lt;&gt;</code> diamond, <code>"text"</code> annotation, <code>A,,,</code> strokes, <code>+</code> page break.</li>
             </ul>
           </details>
 

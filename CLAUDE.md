@@ -2057,3 +2057,81 @@ unit-tested (codepoints via `String.fromCharCode` so the source stays ASCII):
 runs `B7 C7 Db7 D7` / `Eo7 Go7 Bbo7`, 1st/2nd endings, CODA `Bb B13`). The pdfjs
 item-grouping glue is browser-only → **iOS smoke-test pending** (upload the .pdf, confirm
 the chart loads).
+
+## Sprint 18 — chordsheet.com native-syntax parity (2026-06-23)
+
+**Goal:** make the main fake-book editor's authoring language an **exact superset of
+chordsheet.com's native chart syntax** — every construct in the chordsheet.com cheat
+sheet (v04) and in real `chordsheet.com/song/source` exports parses and renders
+correctly. Kept fully **backward-compatible** (the whole app family — GP/MIDI/ABC/PDF
+importers, the handoff contract, setlists — emits CSMPN, so this is additive, never a
+breaking replace). Audit found ~70% already supported; this sprint closed the gaps.
+
+### Gaps closed
+| Feature | chordsheet.com | Where |
+|---------|----------------|-------|
+| `§` Segno (kept `$` as legacy alias) | `§ Segno` | `chordProcessing.js` `renderBeatContent` symbolMap |
+| `r8` eighth-note rest (had r1/r2/r4) | `r8` | `renderBeatContent` restMap + `/^r[1248]$/` |
+| Optional chord → parentheses | `A?` / `B_C?` | `renderBeatContent` `optional` flag + `.optionalChord` CSS |
+| Square-bracket group → one bar | `[A B_C]` | `tokenizeBars` bracket-awareness + `parseBarStructures` |
+| Number-before-x repeat | `(A B)3x` | `parseBarStructures` `readTimes` + close-detection regex |
+| Per-bar time signature | `2:4 A` `3:4 B` | `parseBarStructures` `pendingTimeSig`/`makeBar` → `renderMeasure` `.measureTimeSig` |
+| Three-column section text | `- lc`/`- cc`/`- rc`, two-space cols | `csmpnParser.js` `parseColumnText` → `renderSectionMarker` `.sectionColumns` |
+| Chord diagrams (def + triggers) | `// C7 x32310[fingers]`, `B7.`, `. A B` | `csmpnParser.js` `parseDiagramDefinition`; `chordProcessing.js` diagram engine |
+| `==` double-equals section (endings) | `== 1st Ending` | `csmpnParser.js` marker pre-check |
+
+### `chordProcessing.js`
+- `renderBeatContent`: `§` Segno alias; `r8` eighth rest (`𝄾`); trailing `?` → `.optionalChord`
+  wrap; trailing `.` (chord-like only, guarded against `N.C.`/`D.C.`/`D.S.`) → inline chord
+  diagram. Diagram prepend honours `_csDiagramThroughout` (a `.`-leading line) or the
+  per-chord trigger.
+- `tokenizeBars`: bracket-aware (`inBracket`) so `[A B_C]` stays one token.
+- `parseBarStructures`: new `makeBar(token, extra)` helper consumes `pendingLeft` +
+  `pendingTimeSig`; handles `[A B_C]` (inner spaces → `_` beats, one bar), `N:D` time-sig
+  tokens (attach to next bar), and `(…)3x`/`(…)x3` repeats. All push sites refactored
+  through `makeBar`.
+- `transposeChordToken`: passes `N:D` time-sig tokens through; transposes chords **inside**
+  `[ ]` groups (preserving brackets + spacing); trailing `?`/`.` survive transpose.
+- New chord-diagram engine: `_csDiagramDefs` (from `doc.diagrams`), `_csDiagramThroughout`,
+  `_CS_DIAGRAM_BUILTIN` (24 common open-chord shapes, low-E→high-e), `lookupDiagramVoicing`,
+  `chordDiagramSvgHtml` (compact inline SVG fretbox; nut/fret-shift, ×/○ indicators,
+  finger dots; `currentColor`), `renderChordDiagramHtml`.
+
+### `csmpnParser.js`
+- `parseColumnText(text)` — `lc`/`cc`/`rc` keyword or two-or-more-space split → `[l,c,r]`;
+  plain single label → `null` (back-compat).
+- `parseDiagramDefinition(str)` — `Name frets[fingers]` → `{name, frets, fingers}`
+  (6 strings low-E→high-e; optional 6 finger digits).
+- `parseCSMPN`: `//` lines collect `doc.diagrams`; leading `.` lines set `block.diagrams=true`
+  (dot stripped); `-`/`:`/`=` markers parse `block.columns`; new `==` pre-check → boxed `=`
+  section (strips both `=`, e.g. `== 1st Ending`).
+
+### `renderer.js`
+- `renderDoc` publishes `_csDiagramDefs = doc.diagrams`; `renderBars(tokens, indent, diagrams)`
+  sets `_csDiagramThroughout`.
+- `renderMeasure(bar, alignClass)` now takes the bar object (string still accepted) and
+  renders a per-bar time signature via `renderInlineTimeSig`.
+- `renderSectionMarker` renders `block.columns` as a 3-column flex row (no rehearsal letter).
+
+### `index.html`
+- CSS: `.optionalChord` (parentheses via ::before/::after), `.measureTimeSig`/`.tsNum`/`.tsDen`,
+  `.sectionColumns`/`.colL`/`.colC`/`.colR`, `.chordDiag`/`.diagSvg`.
+- In-app **Editing syntax** help rewritten as the full chordsheet.com reference.
+
+### Validation — real "Sin City Blues" chordsheet.com source
+Parsed + rendered the exact native `chordsheet.com/song/source/339639` export verbatim
+(provided by the user as the reference chart): header meta, `=`/`==`/`"quoted"` section
+labels, multi-chord split bars (`Bb7_B7_C7_Db7_D7`), parenthesised extensions (`F7(13)`),
+`F♯9`, `%` similes, 1st/2nd endings, CODA — **zero warnings**.
+
+### Tests
+- `tests/chordProcessingUtils.test.mjs` — +5 suites: beat tokens (§/$/r8/optional/N.C.),
+  bar structures (`[ ]`/time-sig/`3x`/`x3`), transpose preservation, chord-diagram
+  lookup+render.
+- `tests/csmpnParserChordsheet.test.mjs` — **new** (loads `chordProcessing.js` +
+  `csmpnParser.js` in one vm): `parseColumnText`, `parseDiagramDefinition`, `parseCSMPN`
+  (diagrams / leading-`.` / columns / `==`), and the real Sin City Blues source as a
+  regression fixture. Added to the `npm test` script.
+- Gates green: `npm run lint` · `npm run format:check` · `npm run build` ·
+  `npm run test:all` (**528 npm-test + 486 test:parsers = 1014, 0 failures**;
+  npm-test 524→528, +new file).
