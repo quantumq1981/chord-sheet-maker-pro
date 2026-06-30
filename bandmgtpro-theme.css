@@ -2,11 +2,9 @@
  * bandmgtpro-theme.css — BandMgtPro family stage design tokens
  * ===========================================================================
  * VENDORED COPY. Canonical source:
- *   chord-sheet-maker/bandmgtpro-shared/bandmgtpro-theme.css
- * Keep in sync with the canonical file. Loaded here for token AVAILABILITY only
- * (Phase 2 foundation) — no [data-stage-theme] mode is set on this app yet, so
- * the file is inert: bare :root defines geometry/type tokens, color tokens apply
- * only under an explicit mode. Activating dark-venue is a later, iOS-verified step.
+ *   chord-sheet-maker/bandmgtpro-shared/bandmgtpro-theme.css — keep in sync.
+ * This app consumes --bmp-accent-ink for its UI accent (see index.html :root);
+ * the lighting-mode color blocks are still inert (no data-stage-theme is set).
  * ===========================================================================
  * ---------------------------------------------------------------------------
  * ONE token source for the three-app chord/tab family (Tab-Translator-Pro,
@@ -70,6 +68,19 @@
 
   /* Motion — honored but minimal on stage */
   --bmp-transition: 120ms ease;
+
+  /* Brand accent — MODE-INDEPENDENT (the family orange is the brand color in
+     both light and dark apps), so apps can unify their accent WITHOUT opting
+     into a stage lighting mode. The per-mode blocks below still override
+     --bmp-accent for stage views.
+       --bmp-accent      bright brand orange — use as a FILL on DARK backgrounds.
+       --bmp-accent-ink  deep burnt orange — legible as TEXT/border on LIGHT
+                         backgrounds AND as a fill with white text (≥4.5:1 both
+                         ways), so it's the right pick for the light fake-book apps.
+       --bmp-accent-contrast  text color to sit on an --bmp-accent-ink fill. */
+  --bmp-accent: #ff6b35;
+  --bmp-accent-ink: #b8350f;
+  --bmp-accent-contrast: #ffffff;
 }
 
 /* ===== Mode: dark-venue ==================================================== *

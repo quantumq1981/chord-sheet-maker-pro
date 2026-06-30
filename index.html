@@ -63,7 +63,10 @@
     --card:#ffffff;
     --ink:#111111;
     --muted:#5b5b5b;
-    --accent:#2563eb;
+    /* BandMgtPro family accent (was #2563eb blue). Deep family orange, legible
+       ≥4.5:1 on this light UI both as text and as a fill with white text. Drives
+       all 17 var(--accent) usages — buttons, focus, links, borders. */
+    --accent:var(--bmp-accent-ink);
     --accent2:#111827;
     --border:#d9d9d9;
     --radius:14px;
