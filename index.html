@@ -1426,7 +1426,6 @@ body.exporting .sectionBlock{
     padding-bottom:4px;
     border-bottom:1px solid var(--border);
   }
-  .hybridSvgWrap{ display:block; overflow:visible; }
   .hybridModeChip{
     display:inline-block;
     margin-bottom:6px;
@@ -1440,9 +1439,33 @@ body.exporting .sectionBlock{
     font-family:sans-serif;
     user-select:none;
   }
+  /* Slash-Rhythm View: one fixed-size printed page per .print-page-container,
+     matching the JS page constants (Letter @96dpi = 816x1056px = 8.5in x 11in).
+     Screen shows stacked page cards (WYSIWYG for the iOS print path); print
+     enforces the hard page break between them. */
+  .print-page-container{
+    width:8.5in;
+    height:11in;
+    box-sizing:border-box;
+    overflow:hidden;
+    margin:0 auto 12px;
+    background:#fff;
+    box-shadow:0 1px 4px rgba(0,0,0,0.15);
+  }
+  .print-page-container svg{ display:block; width:100%; height:100%; }
+  /* .sheet's own padding/max-width (sized for the fake-book HTML mode) would
+     double up with the page cards' own box model and overflow them — see the
+     classList.toggle('sheet--paginated', …) call in renderer.js updatePreview(). */
+  .sheet.sheet--paginated{ padding:0; max-width:none; background:transparent; box-shadow:none; }
   @media print{
-    .hybridSvgWrap{ break-inside:avoid; page-break-inside:avoid; }
-    .hybridSvgWrap svg{ width:100% !important; height:auto !important; }
+    .print-page-container{
+      margin:0;
+      box-shadow:none;
+      page-break-after:always;
+      break-after:page;
+    }
+    .print-page-container:last-child{ page-break-after:auto; break-after:auto; }
+    .sheet.sheet--paginated{ padding:0 !important; max-width:none !important; }
     .hybridModeChip{ display:none !important; }
     .csmlEditorPanel{ display:none !important; }
     .csmlGuidePanel{ display:none !important; }
@@ -3931,8 +3954,9 @@ document.getElementById('setIncludeLyrics').addEventListener('change', (e) => {
 });
 document.getElementById('setHybridRhythmMode').addEventListener('change', (e) => {
   fbSettings.hybridRhythmMode = (e.target.value === 'true');
-  saveFBSettings();
-  updatePreview();
+  // applyFBSettings() saves + re-renders the preview AND refreshes the @page
+  // print margin (Slash-Rhythm View's printed pages bake in their own margins).
+  applyFBSettings();
   // Hint when mode is on but source has no {hybrid} blocks yet
   if (fbSettings.hybridRhythmMode && !/\{hybrid\b/i.test(sourceEl.value || '')) {
     setStatus('Slash-Rhythm View on — chart now renders as slash notation. Press "→ Scaffold Rhythm Blocks" or edit bN: lines to add notated rhythm.', 'info');
@@ -3952,7 +3976,7 @@ document.getElementById('btnToHybrid').addEventListener('click', () => {
     fbSettings.hybridRhythmMode = true;
     const modeEl = document.getElementById('setHybridRhythmMode');
     if (modeEl) modeEl.value = 'true';
-    saveFBSettings();
+    applyFBSettings(); // refreshes the @page print margin for the new mode too
   }
   updatePreview();
   setStatus('Rhythm blocks scaffolded (' + preset + ' pattern). Slash-Rhythm View enabled. Edit bN: lines to customise.');
@@ -4602,6 +4626,25 @@ document.getElementById('btnPrint').addEventListener('click', () => {
   window.print();
 });
 
+// Rasterize an SVG string to a canvas at the given CSS-pixel viewBox size and
+// device scale. Uses a data: URL (not a blob: URL) — blob URLs taint the
+// canvas on iOS Safari (SecurityError on toDataURL/toBlob).
+function svgStringToCanvas(svgStr, vbW, vbH, scale, bgColor){
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(vbW * scale);
+    canvas.height = Math.round(vbH * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+    ctx.fillStyle = bgColor || '#ffffff';
+    ctx.fillRect(0, 0, vbW, vbH);
+    const img = new Image();
+    img.onload = () => { ctx.drawImage(img, 0, 0); resolve(canvas); };
+    img.onerror = () => reject(new Error('SVG rasterization failed'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+  });
+}
+
 /* =========================================================
    Q4 FIX: jsPDF Download Button for iOS One-Tap Export
 ========================================================= */
@@ -4609,6 +4652,30 @@ document.getElementById('btnDownloadPdf').addEventListener('click', async () => 
   try{
     document.body.classList.add('exporting');
     setStatus('Rendering PDF…');
+
+    // Slash-Rhythm View: one jsPDF page per already-paginated printed page —
+    // no arbitrary pixel slicing, so a staff can never be cut mid-system.
+    if (fbSettings.hybridRhythmMode && typeof renderHybridPageSvgs === 'function'){
+      const paginated = renderHybridPageSvgs(sourceEl.value || '');
+      if (!paginated || !paginated.svgs.length){
+        setStatus('Nothing to export — add a chart first.', 'warning');
+        return;
+      }
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [paginated.width, paginated.height] });
+      for (let i = 0; i < paginated.svgs.length; i++){
+        const canvas = await svgStringToCanvas(paginated.svgs[i], paginated.width, paginated.height, 2, fbSettings.bgColor || '#ffffff');
+        if (i > 0) pdf.addPage([paginated.width, paginated.height], 'portrait');
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, paginated.width, paginated.height);
+      }
+      const filename = safeFilename(hdr.title.value?.trim() || 'chart') + '.pdf';
+      const blob = pdf.output('blob');
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      const shared = await tryShareFile(file);
+      if(!shared) downloadBlob(blob, filename);
+      setStatus(shared ? `PDF ready (${paginated.svgs.length} page(s), shared).` : `PDF downloaded (${paginated.svgs.length} page(s)).`);
+      return;
+    }
 
     // Set the grid template for export so mobile overrides don't interfere
     const bpr = fbSettings.barsPerRow;
@@ -4696,14 +4763,28 @@ document.getElementById('btnPng').addEventListener('click', async () => {
   try{
     document.body.classList.add('exporting');
     setStatus('Rendering PNG...');
-    const bpr = fbSettings.barsPerRow;
-    const gridTemplate = buildGridTemplate(bpr);
-    document.documentElement.style.setProperty('--export-grid-template', gridTemplate);
-    await new Promise(r => setTimeout(r, 50));
-    const pngSheetEl = document.querySelector('.sheet');
-    const pngRenderWidth = pngSheetEl ? pngSheetEl.offsetWidth : previewEl.offsetWidth;
-    const canvas = await html2canvas(previewEl, {scale: 2, backgroundColor: fbSettings.bgColor || '#ffffff', width: pngRenderWidth, windowWidth: pngRenderWidth});
     const filename = safeFilename(hdr.title.value?.trim() || 'chordsheet') + '.png';
+
+    // Slash-Rhythm View: rasterize the continuous (unpaginated) SVG directly —
+    // byte-identical geometry to the pre-pagination export, independent of how
+    // many printed pages the live preview now spans.
+    let canvas;
+    if (fbSettings.hybridRhythmMode && typeof renderHybridContinuousSvg === 'function'){
+      const svgStr = renderHybridContinuousSvg(sourceEl.value || '');
+      if (!svgStr){ setStatus('Nothing to export — add a chart first.', 'warning'); return; }
+      const vbMatch = svgStr.match(/viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
+      const vbW = vbMatch ? parseFloat(vbMatch[1]) : 760;
+      const vbH = vbMatch ? parseFloat(vbMatch[2]) : 400;
+      canvas = await svgStringToCanvas(svgStr, vbW, vbH, 2, fbSettings.bgColor || '#ffffff');
+    } else {
+      const bpr = fbSettings.barsPerRow;
+      const gridTemplate = buildGridTemplate(bpr);
+      document.documentElement.style.setProperty('--export-grid-template', gridTemplate);
+      await new Promise(r => setTimeout(r, 50));
+      const pngSheetEl = document.querySelector('.sheet');
+      const pngRenderWidth = pngSheetEl ? pngSheetEl.offsetWidth : previewEl.offsetWidth;
+      canvas = await html2canvas(previewEl, {scale: 2, backgroundColor: fbSettings.bgColor || '#ffffff', width: pngRenderWidth, windowWidth: pngRenderWidth});
+    }
 
     await new Promise((resolve, reject) => {
       canvas.toBlob(async (blob) => {
@@ -4812,14 +4893,19 @@ document.getElementById('btnExportMusicXml').addEventListener('click', () => {
 });
 
 document.getElementById('btnExportSvg').addEventListener('click', () => {
-  // Export the unified slash/rhythm SVG shown in the preview (Rhythm mode).
-  const svgEl = previewEl ? previewEl.querySelector('svg') : null;
-  if (!svgEl){
+  // Export the unified slash/rhythm chart as one continuous (unpaginated) SVG —
+  // the live preview now shows print-sized page cards, so this is built fresh
+  // rather than grabbed from the DOM (which would only capture page 1).
+  if (!fbSettings.hybridRhythmMode || typeof renderHybridContinuousSvg !== 'function'){
+    setStatus('Turn on Slash-Rhythm View (Fake Book Settings) to render a slash/rhythm chart, then export SVG.', 'warning');
+    return;
+  }
+  const svgStr = renderHybridContinuousSvg(sourceEl.value || '');
+  if (!svgStr){
     setStatus('Turn on Slash-Rhythm View (Fake Book Settings) to render a slash/rhythm chart, then export SVG.', 'warning');
     return;
   }
   try {
-    const svgStr = new XMLSerializer().serializeToString(svgEl);
     const filename = safeFilename(hdr.title.value?.trim() || 'chart') + '.svg';
     const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
     downloadBlob(blob, filename);

@@ -422,10 +422,13 @@ const svgHeight = (svg) => {
 test('compound meters get an auto-roomier layout (fewer bars per row than simple meters)', () => {
   const ctx = loadRenderer();
   // Same 8 bars in one section: 4/4 fits 4/row (2 rows); 12/8 is capped to 2/row (4 rows),
-  // so the compound-meter chart must render taller.
+  // so the compound-meter chart must render taller. renderHybridDoc() now returns
+  // fixed-size printed pages (height is the physical page height, not content
+  // height), so this content-height comparison uses the continuous-SVG export
+  // path instead, which still reports true total content height.
   const bars = '| C | C | C | C | C | C | C | C |';
-  const h44 = svgHeight(ctx.renderHybridDoc(`Time: 4/4\n\n- V\n${bars}\n`));
-  const h128 = svgHeight(ctx.renderHybridDoc(`Time: 12/8\n\n- V\n${bars}\n`));
+  const h44 = svgHeight(ctx.renderHybridContinuousSvg(`Time: 4/4\n\n- V\n${bars}\n`));
+  const h128 = svgHeight(ctx.renderHybridContinuousSvg(`Time: 12/8\n\n- V\n${bars}\n`));
   assert.ok(h44 > 0 && h128 > 0, 'both render an <svg> with a height');
   assert.ok(
     h128 > h44,
@@ -443,4 +446,54 @@ test('dense eighth scaffold in 12/8 renders evenly without overflowing the bar',
     !ctx.validationWarnings.some((w) => /overlap/i.test(w)),
     `no overlap warnings expected, got: ${JSON.stringify(ctx.validationWarnings)}`
   );
+});
+
+// ── Pagination integration (Print/PDF) ──────────────────────────────────────
+const pageContainerCount = (html) => (html.match(/class="print-page-container"/g) || []).length;
+const clefCount = (html) => (html.match(/&#x1D11E;/g) || []).length;
+
+test('a short chart renders as exactly one print-page-container', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('Title: Demo\nKey: G\n\n- Verse\n| G | D | Em | C |\n');
+  assert.equal(pageContainerCount(out), 1);
+  assert.equal(clefCount(out), 1);
+});
+
+test('a long chart paginates into multiple print-page-container pages, each carrying a clef', () => {
+  const ctx = loadRenderer();
+  // Build many sections/rows so the chart spans several printed pages.
+  let src = 'Title: Long Chart\nKey: G\nTime: 4/4\n\n';
+  for (let i = 0; i < 30; i++) {
+    src += `- Section ${i}\n| G | D | Em | C | G | D | Em | C |\n`;
+  }
+  const out = ctx.renderHybridDoc(src);
+  const pages = pageContainerCount(out);
+  assert.ok(pages > 1, `expected multiple pages, got ${pages}`);
+  // Every individual page must show at least one clef (its own section-first
+  // row(s), or the synthetic continued-page header when a page starts
+  // mid-section) so no page is missing notation context.
+  const pageBodies = out.split('<div class="print-page-container">').slice(1);
+  assert.equal(pageBodies.length, pages);
+  for (const body of pageBodies) {
+    assert.ok(clefCount(body) >= 1, 'page is missing a clef');
+  }
+  // The whole document must show at least as many clefs as pages (one per
+  // page minimum; sections that start mid-page add more).
+  assert.ok(clefCount(out) >= pages);
+  assert.ok(out.includes('class="hybridModeChip"'), 'mode chip still present once');
+});
+
+test('SVG/PNG export (continuous SVG) is unaffected by how many printed pages the chart spans', () => {
+  const ctx = loadRenderer();
+  let src = 'Title: Long Chart\nKey: G\nTime: 4/4\n\n';
+  for (let i = 0; i < 30; i++) {
+    src += `- Section ${i}\n| G | D | Em | C | G | D | Em | C |\n`;
+  }
+  const svg = ctx.renderHybridContinuousSvg(src);
+  assert.ok(svg.includes('<svg'), 'renders a continuous svg');
+  assert.equal((svg.match(/<svg/g) || []).length, 1, 'exactly one continuous svg document');
+  assert.ok(!svg.includes('print-page-container'), 'continuous export has no page-card wrapper');
+  // Height should be much taller than a single printed page, confirming it is
+  // the full content height, not a paginated fixed page height.
+  assert.ok(svgHeight(svg) > 1200, `expected tall continuous svg, got height=${svgHeight(svg)}`);
 });

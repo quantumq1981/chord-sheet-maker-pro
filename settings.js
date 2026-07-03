@@ -170,10 +170,16 @@ function applyFBSettings(){
     sheetEl.style.background = fbSettings.bgColor || '#ffffff';
     sheetEl.style.color = fbSettings.fgColor || '#111111';
   }
-  // Apply page orientation to print style
+  // Apply page orientation to print style. Slash-Rhythm View's printed pages
+  // already bake their own margins into the SVG layout (see renderer.js
+  // HR_MARGIN_TOP/BOTTOM + .print-page-container's fixed 8.5in x 11in box), so
+  // an additional @page margin there would double-margin the content and push
+  // it past the printable area. Only the fake-book HTML mode needs the browser
+  // page margin.
   const orientStyle = document.getElementById('dynamicPageStyle');
   if (orientStyle){
-    orientStyle.textContent = `@media print { @page { size: letter ${fbSettings.pageOrientation || 'portrait'}; margin: 0.5in; } }`;
+    const pageMargin = fbSettings.hybridRhythmMode ? '0' : '0.5in';
+    orientStyle.textContent = `@media print { @page { size: letter ${fbSettings.pageOrientation || 'portrait'}; margin: ${pageMargin}; } }`;
   }
   _chordParseCache.clear(); // Invalidate cache when chord style settings change
   _chordStyleSig = null; // Force the cached chord-style signature to recompute

@@ -706,26 +706,135 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
   return s;
 }
 
-function renderHybridDoc(sourceText) {
+// ── Pagination (Print/PDF) ───────────────────────────────────────────────────
+// The engine is split into three concerns: (1) a producer that walks the parsed
+// hybrid doc and emits an ordered array of atomic, unbreakable vertical
+// LayoutUnits (each with a computed height and a draw closure authored at
+// local-zero origin); (2) a pure, headless, DOM-free paginateUnits() packer
+// that places units onto fixed-size pages; (3) two renderers that consume the
+// same units[] — buildContinuousSvg() (single tall SVG, for SVG/PNG downloads,
+// byte-identical to the pre-pagination output) and buildPaginatedSvgs()
+// (one <svg> per printed page, for the live preview + print/PDF).
+
+// Fixed 96dpi mm->px conversion — must match the .print-page-container CSS
+// exactly. devicePixelRatio is deliberately NOT used: it would desync px from
+// the CSS mm values and reintroduce fractional slicing.
+const MM_PX = 3.779527559055;
+const HR_PAGE_SIZES = {
+  letter: { w: Math.round(215.9 * MM_PX), h: Math.round(279.4 * MM_PX) }, // 816x1056
+  a4: { w: Math.round(210 * MM_PX), h: Math.round(297 * MM_PX) }, // 794x1123
+};
+const HR_MARGIN_TOP = 40;
+const HR_MARGIN_BOTTOM = 40;
+
+/**
+ * @typedef {Object} LayoutUnit
+ * @property {'meta'|'diagramBand'|'sectionLabel'|'system'|'pageHeader'} kind
+ * @property {number}  height         Exact vertical extent in px (same DPI as page consts).
+ * @property {number}  sectionIndex   Which section this unit belongs to.
+ * @property {boolean} sectionFirst   True if this unit begins a section (clef already drawn).
+ * @property {boolean} [keepWithNext] Do not orphan from the following unit (labels).
+ * @property {(originY:number)=>string} draw  Emits SVG placed at local-zero origin.
+ */
+
+/**
+ * Pure page packer. No DOM, no SVG side effects — only reads unit.height and
+ * calls draw closures the caller already built. 100% headless-testable.
+ * @param {LayoutUnit[]} units  Document order.
+ * @param {{pageWidth:number, pageHeight:number, marginTop:number, marginBottom:number,
+ *          makeHeader:(key:string, originY:number)=>{height:number, draw:(y:number)=>string},
+ *          contKey:string, warn?:(msg:string)=>void}} opts
+ * @returns {Array<{index:number, width:number, height:number, placed:Array<{unit:LayoutUnit, originY:number}>}>}
+ */
+function paginateUnits(units, opts) {
+  const { pageWidth, pageHeight, marginTop, marginBottom, makeHeader, contKey } = opts;
+  const usable = pageHeight - marginTop - marginBottom;
+  const warn = opts.warn || (() => {});
+  /** @type {Array<{index:number, width:number, height:number, placed:Array<{unit:LayoutUnit, originY:number}>}>} */
+  const pages = [];
+
+  let page = { index: 0, width: pageWidth, height: pageHeight, placed: [] };
+  let y = marginTop;
+  const hasContent = () => page.placed.length > 0;
+
+  const closePage = () => {
+    pages.push(page);
+    page = { index: pages.length, width: pageWidth, height: pageHeight, placed: [] };
+    y = marginTop;
+  };
+
+  const startContinuedPage = (sectionIndex) => {
+    closePage();
+    // Repeat clef + key-sig at the top of a page that begins mid-section.
+    const hdr = makeHeader(contKey, y);
+    page.placed.push({
+      unit: { kind: 'pageHeader', height: hdr.height, sectionIndex, sectionFirst: false, draw: hdr.draw },
+      originY: y,
+    });
+    y += hdr.height;
+  };
+
+  for (let i = 0; i < units.length; i++) {
+    const u = units[i];
+
+    // Degenerate: a single system taller than a whole usable page. Give it its
+    // own page, do not silently overflow onto a shared page.
+    if (u.kind === 'system' && u.height > usable) {
+      if (hasContent()) closePage();
+      warn(`unit exceeds usable page height (${u.height} > ${usable}px); isolated on page ${page.index}`);
+      page.placed.push({ unit: u, originY: y });
+      y += u.height;
+      continue;
+    }
+
+    // keepWithNext (e.g. section label + its first system): test the pair's combined height.
+    let needed = u.height;
+    if (u.keepWithNext && units[i + 1]) needed += units[i + 1].height;
+
+    const wouldOverflow = hasContent() && y + needed > marginTop + usable;
+    if (wouldOverflow) {
+      const midSection = u.sectionIndex != null && !u.sectionFirst && u.kind === 'system';
+      if (midSection) startContinuedPage(u.sectionIndex);
+      else closePage();
+    }
+
+    page.placed.push({ unit: u, originY: y });
+    y += u.height;
+  }
+
+  if (hasContent()) pages.push(page);
+  return pages;
+}
+
+// Repeated clef + key-sig header for a page that begins mid-section. Curried
+// on fg so it matches the fixed (key, originY) => {height, draw} signature
+// paginateUnits expects for opts.makeHeader.
+function _hrMakePageHeader(fg) {
+  return function hrPageHeader(key) {
+    const keySigCount = hrKeySigFromKey(key);
+    const height = HR_CHORD_H + HR_STAFF_H;
+    return {
+      height,
+      draw: () => {
+        const staffY = HR_CHORD_H;
+        return hrClef(HR_MARGIN, staffY, fg) + hrKeySig(staffY, keySigCount, fg);
+      },
+    };
+  };
+}
+
+// Assemble the CSMPN hybrid source into a LayoutUnit[] plus the shared render
+// context (fg/bg/key/etc). Returns null when there is no chart content (the
+// caller falls back to the fake-book HTML renderer). Pure: no DOM, no globals
+// mutated other than reading fbSettings.
+function _hybridBuildModel(sourceText) {
   const hybrid =
-    typeof parseHybridChartFromCSMPN === 'function'
-      ? parseHybridChartFromCSMPN(sourceText || '')
-      : null;
-  // Unified slash/rhythm engine: a plain chart (no {hybrid} blocks) renders as the
-  // zero-rhythm case — even slash noteheads per beat with chord labels — through the
-  // same SVG path that draws full rhythm charts. `hrBar()` already handles the
-  // no-events bar. Only fall back to the fake-book HTML renderer when there is no
-  // chart content at all (e.g. empty source or a parse that yields no sections).
-  if (!hybrid || !Array.isArray(hybrid.sections) || hybrid.sections.length === 0)
-    return renderDoc(parseCSMPN(sourceText || ''));
+    typeof parseHybridChartFromCSMPN === 'function' ? parseHybridChartFromCSMPN(sourceText || '') : null;
+  if (!hybrid || !Array.isArray(hybrid.sections) || hybrid.sections.length === 0) return null;
 
-  validationWarnings = [];
-  rehearsalLetterIndex = 0;
-  if (hybrid.warnings?.length) validationWarnings.push(...hybrid.warnings);
-
-  const fg  = fbSettings.fgColor    || '#111111';
-  const bg  = fbSettings.bgColor    || '#ffffff';
-  const cc  = fbSettings.chordColor || '#0044cc';
+  const fg = fbSettings.fgColor || '#111111';
+  const bg = fbSettings.bgColor || '#ffffff';
+  const cc = fbSettings.chordColor || '#0044cc';
   let bpr = Math.max(1, Math.min(8, Number(fbSettings.barsPerRow) || 4));
   // Compound meters (6/8, 9/8, 12/8) pack 2–4× the subdivisions of a simple-meter
   // bar, so dense scaffold rhythms cram together. Cap bars-per-row for compound
@@ -738,27 +847,33 @@ function renderHybridDoc(sourceText) {
   const staffX = HR_MARGIN + HR_CLEF_W;
   const staffW = HR_PAGE_W - HR_MARGIN * 2 - HR_CLEF_W;
   const strumMode = fbSettings.strumMode || 'none';
-  const strumPattern = (strumMode === 'custom' && fbSettings.strumPattern)
-    ? String(fbSettings.strumPattern).toUpperCase().split('').filter((c) => 'DUXV-'.includes(c))
-    : null;
+  const strumPattern =
+    strumMode === 'custom' && fbSettings.strumPattern
+      ? String(fbSettings.strumPattern)
+          .toUpperCase()
+          .split('')
+          .filter((c) => 'DUXV-'.includes(c))
+      : null;
 
   const systems = [];
+  let secIdx = 0;
   for (const sec of hybrid.sections) {
     let firstRow = true;
     for (let i = 0; i < sec.bars.length; i += bpr) {
       const rowBars = sec.bars.slice(i, i + bpr);
       systems.push({
-        sec, rowBars, firstRow,
-        lastRow:   i + bpr >= sec.bars.length,
-        hasTab:    rowBars.some((b) => b.tabEvents?.length > 0),
-        hasPM:     rowBars.some((b) => b.pm?.bar || b.pm?.spans?.length > 0),
-        hasCue:    rowBars.some((b) => b.cueText),
+        sec, rowBars, firstRow, secIdx,
+        lastRow: i + bpr >= sec.bars.length,
+        hasTab: rowBars.some((b) => b.tabEvents?.length > 0),
+        hasPM: rowBars.some((b) => b.pm?.bar || b.pm?.spans?.length > 0),
+        hasCue: rowBars.some((b) => b.cueText),
         hasTuplet: rowBars.some((b) => b.events?.some((e) => e.tuplet > 0)),
         hasEnding: rowBars.some((b) => hrEndingNumber(b.endingLabel)),
         secCue: firstRow ? sec.cueText : '',
       });
       firstRow = false;
     }
+    secIdx++;
   }
 
   // Collect unique voicings (chord name → voicing array) from all tab events
@@ -774,153 +889,301 @@ function renderHybridDoc(sourceText) {
   }
   const hasDiagrams = allVoicings.size > 0;
   const diagMaxPerRow = Math.max(1, Math.floor((HR_PAGE_W - HR_MARGIN * 2) / HR_DIAG_OUTER_W));
-  const diagAreaH = hasDiagrams
-    ? Math.ceil(allVoicings.size / diagMaxPerRow) * HR_DIAG_OUTER_H + 12
-    : 0;
+  const diagAreaH = hasDiagrams ? Math.ceil(allVoicings.size / diagMaxPerRow) * HR_DIAG_OUTER_H + 12 : 0;
 
   const { title, composer, key, time: docTime, tempo, style, capo } = hybrid;
   const keySigCount = hrKeySigFromKey(key);
-  let firstTabDone = false;
-  let curY = 12 + diagAreaH;
-  if (title) curY += 30;
-  if (composer || key || docTime || tempo || style) curY += 20;
-  if (title || composer) curY += 4;
+  const metaParts = [composer, key && `Key of ${key}`, docTime, tempo && `♪=${tempo}`, style]
+    .filter(Boolean)
+    .map(escapeHtml);
+  // Capo marker is shown once, globally, on the first tab-bearing system —
+  // precomputed here (not via mutable state during draw) so it stays correct
+  // whether draw() is invoked once (continuous) or per-page (paginated).
+  const firstTabSystemIdx = systems.findIndex((s) => s.hasTab);
 
-  for (const sys of systems) {
-    sys.y = curY;
-    let h = HR_CHORD_H + HR_STAFF_H + HR_SYS_BOT;
-    if (sys.firstRow)  h += HR_SLBL_H;
-    if (sys.secCue)    h += HR_CUE_H;
-    if (sys.hasPM)     h += HR_PM_H;
-    if (sys.hasTab)    h += HR_TAB_SEP + HR_TAB_H;
-    if (sys.hasCue)    h += HR_CUE_H;
-    if (sys.hasTuplet) h += HR_TUPLET_H;
-    if (sys.hasEnding) h += HR_END_H;
-    sys.h = h;
-    curY += h;
-  }
-
-  const svgH = curY + 10;
-  let svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${HR_PAGE_W}" height="${svgH}" viewBox="0 0 ${HR_PAGE_W} ${svgH}"` +
-    ` class="hybridSvgOut" style="max-width:100%;display:block;">`;
-  svg += _hrMusicFontStyle();
-  svg += `<rect width="${HR_PAGE_W}" height="${svgH}" fill="${bg}"/>`;
+  const units = [];
 
   if (hasDiagrams) {
-    const diagNames = [...allVoicings.keys()];
-    let dx = HR_MARGIN, dy = 10;
-    diagNames.forEach((nm, ni) => {
-      if (ni > 0 && ni % diagMaxPerRow === 0) { dx = HR_MARGIN; dy += HR_DIAG_OUTER_H; }
-      svg += hrChordDiagram(nm, allVoicings.get(nm), dx, dy, fg);
-      dx += HR_DIAG_OUTER_W;
+    units.push({
+      kind: 'diagramBand',
+      height: diagAreaH,
+      sectionIndex: null,
+      sectionFirst: false,
+      draw: () => {
+        const diagNames = [...allVoicings.keys()];
+        let dx = HR_MARGIN,
+          dy = 10,
+          s = '';
+        diagNames.forEach((nm, ni) => {
+          if (ni > 0 && ni % diagMaxPerRow === 0) {
+            dx = HR_MARGIN;
+            dy += HR_DIAG_OUTER_H;
+          }
+          s += hrChordDiagram(nm, allVoicings.get(nm), dx, dy, fg);
+          dx += HR_DIAG_OUTER_W;
+        });
+        return s;
+      },
     });
   }
 
-  let hy = 12 + diagAreaH;
-  if (title) {
-    svg += `<text x="${HR_PAGE_W/2}" y="${hy+22}" font-size="18" font-weight="bold" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${escapeHtml(title)}</text>`;
-    hy += 30;
-  }
-  const metaParts = [composer, key && `Key of ${key}`, docTime, tempo && `♪=${tempo}`, style]
-    .filter(Boolean).map(escapeHtml);
-  if (metaParts.length)
-    svg += `<text x="${HR_PAGE_W/2}" y="${hy+14}" font-size="11" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${metaParts.join('  ·  ')}</text>`;
-
-  for (const sys of systems) {
-    let y = sys.y;
-    const barW = staffW / sys.rowBars.length;
-
-    if (sys.firstRow) {
-      svg += `<text x="${HR_MARGIN}" y="${y+14}" font-size="12" font-weight="bold" font-style="italic" fill="${fg}" font-family='${_hrFont()}'>${escapeHtml(sys.sec.label || '')}</text>`;
-      y += HR_SLBL_H;
-    }
-    if (sys.secCue) {
-      svg += `<text x="${HR_MARGIN}" y="${y+11}" font-size="10" font-style="italic" fill="${fg}" font-family='${_hrFont()}'>${escapeHtml(sys.secCue)}</text>`;
-      y += HR_CUE_H;
-    }
-
-    const staffY = y + HR_CHORD_H + (sys.hasPM ? HR_PM_H : 0) + (sys.hasTuplet ? HR_TUPLET_H : 0) + (sys.hasEnding ? HR_END_H : 0);
-    const tabY   = staffY + HR_STAFF_H + HR_TAB_SEP;
-    const blBot  = sys.hasTab ? tabY + HR_TAB_H : staffY + HR_STAFF_H;
-
-    if (sys.firstRow) {
-      svg += hrClef(HR_MARGIN, staffY, fg);
-      svg += hrKeySig(staffY, keySigCount, fg);
-    }
-
-    // 1st/2nd ending brackets above the chord area, over each run of bars
-    // sharing the same volta endingLabel.
-    if (sys.hasEnding) {
-      const eb = staffY - HR_CHORD_H - HR_END_H + 4;
-      let bi = 0;
-      while (bi < sys.rowBars.length) {
-        const lbl = sys.rowBars[bi].endingLabel;
-        const num = hrEndingNumber(lbl);
-        if (!num) { bi++; continue; }
-        let bj = bi + 1;
-        while (bj < sys.rowBars.length && sys.rowBars[bj].endingLabel === lbl) bj++;
-        const x1 = staffX + bi * barW;
-        const x2 = staffX + bj * barW;
-        svg += hrL(x1, eb, x1, eb + 12, fg, 1.2);                       // left drop
-        svg += hrL(x1, eb, x2 + (num === '1' ? 4 : 0), eb, fg, 1.2);    // top line
-        if (num !== '1') svg += hrL(x2, eb, x2, eb + 12, fg, 1.2);      // right drop (closed for 2nd)
-        svg += `<text x="${x1 + 5}" y="${eb + 11}" font-size="11" font-weight="bold" fill="${fg}" font-family='${_hrFont()}'>${num}.</text>`;
-        bi = bj;
+  const metaHeight = 12 + (title ? 30 : 0) + (metaParts.length ? 20 : 0) + (title || composer ? 4 : 0);
+  units.push({
+    kind: 'meta',
+    height: metaHeight,
+    sectionIndex: null,
+    sectionFirst: false,
+    draw: () => {
+      let hy = 12,
+        s = '';
+      if (title) {
+        s += `<text x="${HR_PAGE_W / 2}" y="${hy + 22}" font-size="18" font-weight="bold" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${escapeHtml(title)}</text>`;
+        hy += 30;
       }
+      if (metaParts.length)
+        s += `<text x="${HR_PAGE_W / 2}" y="${hy + 14}" font-size="11" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${metaParts.join('  ·  ')}</text>`;
+      return s;
+    },
+  });
+
+  systems.forEach((sys) => {
+    if (sys.firstRow) {
+      units.push({
+        kind: 'sectionLabel',
+        height: HR_SLBL_H + (sys.secCue ? HR_CUE_H : 0),
+        sectionIndex: sys.secIdx,
+        sectionFirst: true,
+        keepWithNext: true,
+        draw: () => {
+          let s = `<text x="${HR_MARGIN}" y="14" font-size="12" font-weight="bold" font-style="italic" fill="${fg}" font-family='${_hrFont()}'>${escapeHtml(sys.sec.label || '')}</text>`;
+          if (sys.secCue)
+            s += `<text x="${HR_MARGIN}" y="${HR_SLBL_H + 11}" font-size="10" font-style="italic" fill="${fg}" font-family='${_hrFont()}'>${escapeHtml(sys.secCue)}</text>`;
+          return s;
+        },
+      });
     }
 
-    svg += hrStaff(staffX, staffY, staffW, fg);
-    svg += hrL(staffX, staffY, staffX, blBot, fg, 2);
+    const sysHeight =
+      HR_CHORD_H +
+      HR_STAFF_H +
+      HR_SYS_BOT +
+      (sys.hasPM ? HR_PM_H : 0) +
+      (sys.hasTab ? HR_TAB_SEP + HR_TAB_H : 0) +
+      (sys.hasCue ? HR_CUE_H : 0) +
+      (sys.hasTuplet ? HR_TUPLET_H : 0) +
+      (sys.hasEnding ? HR_END_H : 0);
 
-    if (sys.hasTab) {
-      svg += hrTabStaff(staffX, tabY, staffW, fg);
-      svg += hrTabLabel(HR_MARGIN, tabY, fg);
-      if (!firstTabDone && capo > 0) { svg += hrCapoMarker(capo, tabY, fg); firstTabDone = true; }
-    }
+    units.push({
+      kind: 'system',
+      height: sysHeight,
+      sectionIndex: sys.secIdx,
+      sectionFirst: sys.firstRow,
+      draw: () => {
+        let s = '';
+        const barW = staffW / sys.rowBars.length;
+        const staffY =
+          HR_CHORD_H + (sys.hasPM ? HR_PM_H : 0) + (sys.hasTuplet ? HR_TUPLET_H : 0) + (sys.hasEnding ? HR_END_H : 0);
+        const tabY = staffY + HR_STAFF_H + HR_TAB_SEP;
+        const blBot = sys.hasTab ? tabY + HR_TAB_H : staffY + HR_STAFF_H;
 
-    sys.rowBars.forEach((bar, bi) => {
-      const barLeft    = staffX + bi * barW;
-      const isVeryLast = bi === sys.rowBars.length - 1 && sys === systems[systems.length - 1];
-
-      svg += hrBar(bar, barLeft, staffY, barW, fg, cc, bg);
-
-      // Strum arrows below the staff (skipped on tab rows, where the lane is occupied)
-      if (strumMode !== 'none' && !sys.hasTab) {
-        const vb = hrVisualBeats(bar.timeSig || docTime);
-        const ul = barLeft + HR_BAR_PAD, uw = barW - HR_BAR_PAD * 2;
-        const arrowY = staffY + HR_STAFF_H + 11;
-        for (let b = 0; b < vb; b++) {
-          const ch = hrStrumChar(b, strumMode, strumPattern);
-          if (!ch) continue;
-          const ax = ul + (b / vb) * uw;
-          svg += `<text x="${ax}" y="${arrowY}" font-size="9" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${ch}</text>`;
+        if (sys.firstRow) {
+          s += hrClef(HR_MARGIN, staffY, fg);
+          s += hrKeySig(staffY, keySigCount, fg);
         }
-      }
 
-      const blX = barLeft + barW;
-      if (isVeryLast) {
-        svg += hrL(blX - 4, staffY, blX - 4, blBot, fg, 1);
-        svg += hrL(blX, staffY, blX, blBot, fg, 3.5);
-      } else {
-        svg += hrL(blX, staffY, blX, blBot, fg, 1);
-      }
+        // 1st/2nd ending brackets above the chord area, over each run of bars
+        // sharing the same volta endingLabel.
+        if (sys.hasEnding) {
+          const eb = staffY - HR_CHORD_H - HR_END_H + 4;
+          let bi = 0;
+          while (bi < sys.rowBars.length) {
+            const lbl = sys.rowBars[bi].endingLabel;
+            const num = hrEndingNumber(lbl);
+            if (!num) {
+              bi++;
+              continue;
+            }
+            let bj = bi + 1;
+            while (bj < sys.rowBars.length && sys.rowBars[bj].endingLabel === lbl) bj++;
+            const x1 = staffX + bi * barW;
+            const x2 = staffX + bj * barW;
+            s += hrL(x1, eb, x1, eb + 12, fg, 1.2); // left drop
+            s += hrL(x1, eb, x2 + (num === '1' ? 4 : 0), eb, fg, 1.2); // top line
+            if (num !== '1') s += hrL(x2, eb, x2, eb + 12, fg, 1.2); // right drop (closed for 2nd)
+            s += `<text x="${x1 + 5}" y="${eb + 11}" font-size="11" font-weight="bold" fill="${fg}" font-family='${_hrFont()}'>${num}.</text>`;
+            bi = bj;
+          }
+        }
 
-      if (bar.cueText)
-        svg += `<text x="${barLeft + barW / 2}" y="${blBot + HR_CUE_H - 2}" font-size="9" font-style="italic" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${escapeHtml(bar.cueText)}</text>`;
+        s += hrStaff(staffX, staffY, staffW, fg);
+        s += hrL(staffX, staffY, staffX, blBot, fg, 2);
+
+        if (sys.hasTab) {
+          s += hrTabStaff(staffX, tabY, staffW, fg);
+          s += hrTabLabel(HR_MARGIN, tabY, fg);
+          if (firstTabSystemIdx >= 0 && systems[firstTabSystemIdx] === sys && capo > 0)
+            s += hrCapoMarker(capo, tabY, fg);
+        }
+
+        sys.rowBars.forEach((bar, bi) => {
+          const barLeft = staffX + bi * barW;
+          const isVeryLast = bi === sys.rowBars.length - 1 && sys === systems[systems.length - 1];
+
+          s += hrBar(bar, barLeft, staffY, barW, fg, cc, bg);
+
+          // Strum arrows below the staff (skipped on tab rows, where the lane is occupied)
+          if (strumMode !== 'none' && !sys.hasTab) {
+            const vb = hrVisualBeats(bar.timeSig || docTime);
+            const ul = barLeft + HR_BAR_PAD,
+              uw = barW - HR_BAR_PAD * 2;
+            const arrowY = staffY + HR_STAFF_H + 11;
+            for (let b = 0; b < vb; b++) {
+              const ch = hrStrumChar(b, strumMode, strumPattern);
+              if (!ch) continue;
+              const ax = ul + (b / vb) * uw;
+              s += `<text x="${ax}" y="${arrowY}" font-size="9" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${ch}</text>`;
+            }
+          }
+
+          const blX = barLeft + barW;
+          if (isVeryLast) {
+            s += hrL(blX - 4, staffY, blX - 4, blBot, fg, 1);
+            s += hrL(blX, staffY, blX, blBot, fg, 3.5);
+          } else {
+            s += hrL(blX, staffY, blX, blBot, fg, 1);
+          }
+
+          if (bar.cueText)
+            s += `<text x="${barLeft + barW / 2}" y="${blBot + HR_CUE_H - 2}" font-size="9" font-style="italic" fill="${fg}" text-anchor="middle" font-family='${_hrFont()}'>${escapeHtml(bar.cueText)}</text>`;
+        });
+
+        // Navigation text (D.C. al Fine, Coda, …) at the bottom-right of the section's last row
+        if (sys.lastRow) {
+          const navText = hrExtractNavText(sys.sec.label) || sys.sec.navText;
+          if (navText)
+            s += `<text x="${staffX + staffW}" y="${blBot + 16}" font-size="12" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family='${_hrMusicFont()}'>${hrFormatNavText(navText)}</text>`;
+        }
+
+        return s;
+      },
     });
+  });
 
-    // Navigation text (D.C. al Fine, Coda, …) at the bottom-right of the section's last row
-    if (sys.lastRow) {
-      const navText = hrExtractNavText(sys.sec.label) || sys.sec.navText;
-      if (navText)
-        svg += `<text x="${staffX + staffW}" y="${blBot + 16}" font-size="12" font-style="italic" font-weight="bold" fill="${fg}" text-anchor="end" font-family='${_hrMusicFont()}'>${hrFormatNavText(navText)}</text>`;
-    }
+  return { hybrid, units, fg, bg };
+}
+
+// Consumer 1: single tall SVG stacking every unit back-to-back — the exact
+// pre-pagination output shape (xmlns/width/height/viewBox/class/style/defs/rect
+// unchanged). Used for SVG/PNG downloads and the Setlist printer so those stay
+// byte-identical across the pagination refactor.
+function buildContinuousSvg(units, bg) {
+  let curY = 0;
+  let body = '';
+  for (const u of units) {
+    body += `<g transform="translate(0, ${curY})">${u.draw(0)}</g>`;
+    curY += u.height;
   }
+  const svgH = curY + 10;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${HR_PAGE_W}" height="${svgH}" viewBox="0 0 ${HR_PAGE_W} ${svgH}"` +
+    ` class="hybridSvgOut" style="max-width:100%;display:block;">` +
+    _hrMusicFontStyle() +
+    `<rect width="${HR_PAGE_W}" height="${svgH}" fill="${bg}"/>` +
+    body +
+    `</svg>`
+  );
+}
 
-  svg += `</svg>`;
+// One bare <svg>...</svg> per printed page (no .print-page-container wrapper),
+// each sized to the physical page (Letter @96dpi by default). Content
+// (HR_PAGE_W=760) is horizontally centred within the wider physical page.
+// Shared by buildPaginatedSvgs() (live preview + native print) and the PDF
+// export path (one jsPDF page per rendered page — no arbitrary pixel slicing).
+function buildPaginatedSvgArray(pages, bg) {
+  const hOffset = (HR_PAGE_SIZES.letter.w - HR_PAGE_W) / 2;
+  return pages.map((page) => {
+    const inner = page.placed
+      .map((p) => `<g transform="translate(0, ${p.originY})">${p.unit.draw(0)}</g>`)
+      .join('');
+    const body = `<g transform="translate(${hOffset}, 0)">${inner}</g>`;
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${page.width}" height="${page.height}" viewBox="0 0 ${page.width} ${page.height}" class="hybridSvgPage">` +
+      _hrMusicFontStyle() +
+      `<rect width="${page.width}" height="${page.height}" fill="${bg}"/>` +
+      body +
+      `</svg>`
+    );
+  });
+}
+
+// Consumer 2: one <svg> per printed page, wrapped in .print-page-container for
+// the live preview (WYSIWYG page cards) and native browser print
+// (page-break-after).
+function buildPaginatedSvgs(pages, bg) {
+  return buildPaginatedSvgArray(pages, bg)
+    .map((svg) => `<div class="print-page-container">${svg}</div>`)
+    .join('');
+}
+
+function renderHybridDoc(sourceText) {
+  const model = _hybridBuildModel(sourceText);
+  // Unified slash/rhythm engine: a plain chart (no {hybrid} blocks) renders as the
+  // zero-rhythm case — even slash noteheads per beat with chord labels — through the
+  // same SVG path that draws full rhythm charts. `hrBar()` already handles the
+  // no-events bar. Only fall back to the fake-book HTML renderer when there is no
+  // chart content at all (e.g. empty source or a parse that yields no sections).
+  if (!model) return renderDoc(parseCSMPN(sourceText || ''));
+
+  validationWarnings = [];
+  rehearsalLetterIndex = 0;
+  if (model.hybrid.warnings?.length) validationWarnings.push(...model.hybrid.warnings);
+
+  const pg = HR_PAGE_SIZES.letter;
+  const pages = paginateUnits(model.units, {
+    pageWidth: pg.w,
+    pageHeight: pg.h,
+    marginTop: HR_MARGIN_TOP,
+    marginBottom: HR_MARGIN_BOTTOM,
+    makeHeader: _hrMakePageHeader(model.fg),
+    contKey: model.hybrid.key,
+    warn: (msg) => validationWarnings.push(msg),
+  });
+
+  const html = buildPaginatedSvgs(pages, model.bg);
   if (validationWarnings.length) setStatus(validationWarnings.join('\n'), 'warning');
-  return `<div class="hybridSvgWrap"><div class="hybridModeChip">Slash-Rhythm View</div>${svg}</div>`;
+  return `<div class="hybridModeChip">Slash-Rhythm View</div>${html}`;
+}
+
+// Continuous (single, unpaginated) SVG for the same source — used by SVG/PNG
+// downloads and the Setlist printer, which want one tall image per chart, not
+// print-sized page cards. No status/warning side effects (those belong to the
+// live-preview render above).
+function renderHybridContinuousSvg(sourceText) {
+  const model = _hybridBuildModel(sourceText);
+  if (!model) return null;
+  return buildContinuousSvg(model.units, model.bg);
+}
+
+// Bare per-page SVG strings (no .print-page-container wrapper) plus the
+// physical page pixel size — used by the PDF export path so it can rasterize
+// one canvas per printed page and add one jsPDF page each, instead of
+// screenshotting the whole preview and slicing it at an arbitrary pixel
+// height (which used to bisect staves). Returns null when there is no hybrid
+// chart content (caller falls back to the existing fake-book PDF path).
+function renderHybridPageSvgs(sourceText) {
+  const model = _hybridBuildModel(sourceText);
+  if (!model) return null;
+  const pg = HR_PAGE_SIZES.letter;
+  const pages = paginateUnits(model.units, {
+    pageWidth: pg.w,
+    pageHeight: pg.h,
+    marginTop: HR_MARGIN_TOP,
+    marginBottom: HR_MARGIN_BOTTOM,
+    makeHeader: _hrMakePageHeader(model.fg),
+    contKey: model.hybrid.key,
+    warn: () => {},
+  });
+  return { svgs: buildPaginatedSvgArray(pages, model.bg), width: pg.w, height: pg.h };
 }
 
 // ── MusicXML export (unified engine) ─────────────────────────────────────────
@@ -1227,17 +1490,24 @@ function updatePreview(){
   if (sheetEl){
     sheetEl.style.background = fbSettings.bgColor || '#ffffff';
     sheetEl.style.color = fbSettings.fgColor || '#111111';
+    // Slash-Rhythm View's printed pages (.print-page-container) are already
+    // exact physical-page boxes with their own card styling — .sheet's own
+    // padding/max-width (sized for the fake-book HTML mode) would double up
+    // and overflow them. Only applied when the render actually produced page
+    // cards (renderHybridDoc() falls back to the fake-book HTML renderer for
+    // an empty/invalid chart even when Slash-Rhythm View is on).
+    sheetEl.classList.toggle('sheet--paginated', previewEl.innerHTML.includes('print-page-container'));
   }
 }
 
 // Render any CSMPN text to a standalone SVG string (used by the Setlist printer).
 // Built on the unified engine; returns just the <svg> without the screen-only
-// mode chip / wrapper. Replaces the slash-notation panel's renderCsmpnToSvg.
+// mode chip / page-card wrapper. Falls back to the fake-book HTML when the
+// chart has no hybrid/slash content (mirrors renderHybridDoc's own fallback).
 if (typeof window !== 'undefined') {
   window.renderCsmpnToSvg = function (csmpnText) {
-    const html = renderHybridDoc(csmpnText || '');
-    const m = html.match(/<svg[\s\S]*<\/svg>/);
-    return m ? m[0] : html;
+    const svg = renderHybridContinuousSvg(csmpnText || '');
+    return svg || renderDoc(parseCSMPN(csmpnText || ''));
   };
 }
 
