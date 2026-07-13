@@ -2314,6 +2314,104 @@ function parseChordProGridLine(line) {
    - Prefers barline reconstruction when PDFs contain | / ‖ / ǁ
    - Falls back to spatial clustering for "floating chord glyph" PDFs
 ========================================================= */
+
+// ── Binary format sniffing ────────────────────────────────────────────────────
+// Files from the UG app / iOS share sheet sometimes arrive without a useful
+// extension. Identify the real format from magic bytes so the file input can
+// route them exactly as if they were named correctly.
+// Returns '.gp' | '.gp5' | '.gpx' | '.ptb' | '.mid' | '.mxl' | '.pdf' | '.xml' | ''.
+function sniffBinaryMusicExt(bytes){
+  if (!bytes || bytes.length < 4) return '';
+  const ascii = (start, len) => {
+    let s = '';
+    const end = Math.min(start + len, bytes.length);
+    for (let i = start; i < end; i++) s += String.fromCharCode(bytes[i]);
+    return s;
+  };
+  const head4 = ascii(0, 4);
+  if (head4 === 'BCFZ' || head4 === 'BCFS') return '.gpx'; // GP6 container
+  if (head4 === 'ptab') return '.ptb'; // Power Tab
+  if (head4 === 'MThd') return '.mid'; // Standard MIDI File
+  if (head4 === '%PDF') return '.pdf';
+  // GP3/4/5: a length-prefixed "FICHIER GUITAR PRO vX.XX" version string
+  if (ascii(1, 18) === 'FICHIER GUITAR PRO') return '.gp5';
+  if (head4.slice(0, 2) === 'PK'){
+    // ZIP container: GP7/8 (.gp) holds Content/score.gpif (stored first);
+    // compressed MusicXML (.mxl) must lead with META-INF/container.xml.
+    const probe = ascii(0, 65536);
+    if (probe.includes('score.gpif')) return '.gp';
+    if (probe.includes('container.xml') || probe.includes('META-INF')) return '.mxl';
+    return '';
+  }
+  const textHead = ascii(0, 256).replace(/^\xEF\xBB\xBF/, '').trimStart();
+  if (/^<\?xml|^<score-partwise|^<opus/i.test(textHead)) return '.xml';
+  return '';
+}
+
+// ── UG Pro (Guitar Pro–rendered) PDF pure helpers ────────────────────────────
+
+// SMuFL chord-symbol accidentals (the "csym" range MuseScore/UG Pro engraving
+// uses INSIDE chord symbol text — distinct from the staff accidentals at
+// U+E260-E262, which we leave alone so notation glyphs can't pollute chords).
+// "B" + U+ED60 is how a UG Pro PDF spells "Bb"; without this translation the
+// flat glyph is dropped and every Bb imports as a plain B.
+function translateChordSymbolGlyphs(s){
+  return (s ?? '')
+    .replace(/\uED60/g, 'b') // csym flat
+    .replace(/\uED61/g, '') // csym natural (chord "B-natural" -> "B")
+    .replace(/\uED62/g, '#') // csym sharp
+    .replace(/\uED63/g, '##') // csym double sharp
+    .replace(/\uED64/g, 'bb'); // csym double flat
+}
+
+// "[Verse 1]" / "[Pre-Chorus]" / "[First Solo]" section labels as UG Pro PDFs
+// print them. Returns the inner label, or null when the text isn't a bracketed
+// section (inline bracket chords like "[A7]" stay chords).
+function extractPdfSectionLabel(s){
+  const m = (s ?? '').trim().match(/^\[([A-Za-z][A-Za-z0-9 .'&\/-]{0,38})\]$/);
+  if (!m) return null;
+  const inner = m[1].trim();
+  if (!inner || isChordLikeToken(inner)) return null;
+  return inner;
+}
+
+// Metronome tempo marks: a metronome-note SMuFL glyph (e.g. U+ECA5) followed by
+// "= 149", or the "= 149" span alone. Returns the integer BPM string or null.
+function pdfTempoFromText(s){
+  const m = (s ?? '').trim().match(/^[\uE000-\uF8FF\s]*=\s*(\d{2,3})(?:\.\d+)?$/);
+  if (!m) return null;
+  const bpm = Number(m[1]);
+  return bpm >= 30 && bpm <= 300 ? String(bpm) : null;
+}
+
+// SMuFL time-signature digits (U+E080–E089) are stacked at the same x on the
+// staff. Group them into rows by y, read multi-digit rows left-to-right, and
+// return "num/den" from the top two rows (e.g. "4/4", "12/8") or null.
+function detectSmuflTimeSigFromItems(items){
+  const digits = [];
+  for (const it of items || []){
+    const t = (it.str ?? '').trim();
+    if (t.length !== 1) continue;
+    const c = t.codePointAt(0);
+    if (c >= 0xe080 && c <= 0xe089) digits.push({ d: c - 0xe080, x: it.x, y: it.y });
+  }
+  if (digits.length < 2) return null;
+  // Cluster into y-rows (±4 pt of the row's first digit)
+  digits.sort((a, b) => b.y - a.y);
+  const rows = [];
+  for (const g of digits){
+    const row = rows.length ? rows[rows.length - 1] : null;
+    if (!row || row.y - g.y > 4) rows.push({ y: g.y, digits: [g] });
+    else row.digits.push(g);
+  }
+  if (rows.length < 2) return null;
+  const readRow = (row) => Number(row.digits.sort((a, b) => a.x - b.x).map((g) => g.d).join(''));
+  const num = readRow(rows[0]);
+  const den = readRow(rows[1]);
+  if (!(num >= 1 && num <= 32)) return null;
+  if (![1, 2, 4, 8, 16, 32].includes(den)) return null;
+  return num + '/' + den;
+}
 async function importUGProPDF(file){
   if (!window.pdfjsLib) throw new Error("PDF.js not loaded.");
   statusEl.textContent = "Reading PDF…";
@@ -2364,6 +2462,10 @@ async function importUGProPDF(file){
   let usedSharedTextFallback = false;
   let inferredGrouping = false;
   let totalTextItems = 0;
+  // UG Pro (Guitar Pro–rendered) PDFs: state for title→artist capture and
+  // "this is really a tab PDF" guidance.
+  let awaitComposerLine = false;
+  let sawGpNotationGlyphs = false;
 
   const flushBars = () => {
     while (pendingBars.length){
@@ -2393,8 +2495,11 @@ async function importUGProPDF(file){
     if (!line) return false;
     if (chordCount > 0) return false;
     if (line.length > 48) return false;
+    // UG Pro PDFs bracket their markers: "[Verse 1]", "[Pre-Chorus]"
+    line = line.replace(/^\[(.+)\]$/, '$1').trim();
     // common section words or "Chorus1" style
     if (/^(intro|verse|chorus|bridge|solo|tag|ending|outro|interlude|pre[-\s]?chorus|turnaround)\b/i.test(line)) return true;
+    if (/\b(solo|breakdown|refrain|instrumental)\b/i.test(line) && line.length <= 32) return true;
     if (/^(chorus|verse|bridge|solo)\s*\d+$/i.test(line)) return true;
     // ALL CAPS markers like DOUBLE-TIME
     if (/^[A-Z][A-Z0-9\-\s]{3,}$/.test(line) && !/TITLE|COMPOSER|STYLE|TEMPO|TIME|KEY/.test(line)) return true;
@@ -2429,7 +2534,9 @@ async function importUGProPDF(file){
     const PDF_META_SKIP_RE = /^\s*(Tuning|Capo|Difficulty|Transcribed|Transcription|Author|Arranger|Engraved?r?)\s*[:\s]/i;
     const allPageItems = tc.items
       .map(it => ({
-        str: (it.str ?? "").toString(),
+        // Translate SMuFL chord-symbol accidentals up front so "B"+flat-glyph
+        // clusters into "Bb" instead of dropping the flat.
+        str: translateChordSymbolGlyphs((it.str ?? "").toString()),
         x: it.transform[4] ?? 0,
         y: it.transform[5] ?? 0,
         w: Math.abs(it.width ?? 0),
@@ -2439,8 +2546,44 @@ async function importUGProPDF(file){
     totalTextItems += allPageItems.length;
     pageBoundaries.push({ page: p, startLine: extractedTextLines.length });
 
-    // Strip metadata spans before clustering (tuning lines, capo lines, etc.)
-    const metaFiltered = allPageItems.filter(it => !PDF_META_SKIP_RE.test(it.str));
+    // Detect Guitar Pro–style engraving (clef / notehead SMuFL glyphs) so we
+    // can suggest importing the original .gp file instead of its printout.
+    if (!sawGpNotationGlyphs) {
+      sawGpNotationGlyphs = allPageItems.some(it => {
+        const c = it.str.trim().codePointAt(0);
+        return it.str.trim().length === 1 && c >= 0xe050 && c <= 0xe0ff;
+      });
+    }
+
+    // Metronome tempo marks ("<note-glyph> = 149") — first one wins.
+    for (const it of allPageItems) {
+      if (meta.tempo) break;
+      const bpm = pdfTempoFromText(it.str);
+      if (bpm) meta.tempo = bpm;
+    }
+
+    // SMuFL time-signature digits stacked on the staff (e.g. 4 over 4).
+    if (!meta.time) {
+      const ts = detectSmuflTimeSigFromItems(allPageItems);
+      if (ts) meta.time = ts;
+    }
+
+    // Strip metadata spans before clustering (tuning lines, capo lines, etc.),
+    // plus tempo marks so "= 149" never lands in a chord line.
+    const metaFiltered = allPageItems.filter(it =>
+      !PDF_META_SKIP_RE.test(it.str) && !pdfTempoFromText(it.str));
+
+    // Pull out "[Verse 1]"-style section labels before clustering — they sit
+    // on the same y-band as the first chords of their system, so they must be
+    // interleaved by position rather than parsed as text lines.
+    const pageSectionMarks = [];
+    const sectionFiltered = [];
+    for (const it of metaFiltered) {
+      const label = extractPdfSectionLabel(it.str);
+      if (label) pageSectionMarks.push({ y: it.y, label });
+      else sectionFiltered.push(it);
+    }
+    pageSectionMarks.sort((a, b) => b.y - a.y);
 
     // Detect and remove guitar tab string-label columns.
     // In tab PDFs the string names (e B G D A E) appear as a vertical column
@@ -2450,7 +2593,7 @@ async function importUGProPDF(file){
     // any 5 consecutive ones (by y) span ≤ 30 pt, treat that x as a string-
     // label column and remove its single-letter items.
     const _xBuckets = new Map();
-    for (const it of metaFiltered) {
+    for (const it of sectionFiltered) {
       const s = it.str.trim();
       if (s.length === 1 && /^[A-Ga-g]$/.test(s)) {
         const xk = Math.round(it.x / 10) * 10;
@@ -2466,17 +2609,18 @@ async function importUGProPDF(file){
       }
     }
     let items = _tabLabelXSet.size > 0
-      ? metaFiltered.filter(it => {
+      ? sectionFiltered.filter(it => {
           const s = it.str.trim();
           if (s.length !== 1 || !/^[A-Ga-g]$/.test(s)) return true;
           return !_tabLabelXSet.has(Math.round(it.x / 10) * 10);
         })
-      : metaFiltered;
+      : sectionFiltered;
 
     // Font-size floor: chord symbols are in a noticeably larger font than
     // measure numbers, fret numbers, and small annotations (fingerings, bowing
     // marks, etc.). Use 65% of the median 1-3-char chord-root span size as the
     // floor and discard everything below it.
+    let _medianRootSize = 0;
     {
       const _rootSamples = items.filter(it => {
         const s = it.str.trim();
@@ -2485,6 +2629,7 @@ async function importUGProPDF(file){
       if (_rootSamples.length >= 3) {
         const _sizes = _rootSamples.map(it => it.fontSize).sort((a, b) => a - b);
         const _median = _sizes[Math.floor(_sizes.length / 2)];
+        _medianRootSize = _median;
         const _floor = _median * 0.65;
         items = items.filter(it => it.fontSize >= _floor);
       }
@@ -2494,9 +2639,12 @@ async function importUGProPDF(file){
     // MuseScore chord symbols in the same staff system can sit at slightly
     // different heights (up to ~15 pt due to collision avoidance), causing
     // 0.5pt buckets to produce separate lines with wrong chord ordering.
-    // Group all spans within 20 pt of the first span in each group, then sort
-    // each group by x (left-to-right) for correct reading order.
-    const CHORD_Y_THRESHOLD = 20;
+    // Group all spans within the threshold of the first span in each group,
+    // then sort each group by x (left-to-right) for correct reading order.
+    // The threshold scales with the chord font: UG Pro exports render at a
+    // large user-unit scale (chord font ≈ 40) where collision-avoidance
+    // offsets exceed a fixed 20 pt and scramble the chord order.
+    const CHORD_Y_THRESHOLD = Math.max(20, _medianRootSize * 1.25);
     items.sort((a, b) => b.y - a.y); // descending: top of page first
     const lineGroups = [];
     for (const it of items) {
@@ -2507,7 +2655,22 @@ async function importUGProPDF(file){
       lineGroups[lineGroups.length - 1].items.push(it);
     }
 
+    let sectionMarkIdx = 0;
+    const flushSectionMarksAbove = (yLimit) => {
+      while (
+        sectionMarkIdx < pageSectionMarks.length &&
+        pageSectionMarks[sectionMarkIdx].y >= yLimit
+      ) {
+        flushBars();
+        bodyLines.push(`- ${pageSectionMarks[sectionMarkIdx].label}`);
+        sectionMarkIdx++;
+      }
+    };
+
     for (const lg of lineGroups) {
+      // Emit any section label sitting above (or within the band of) this
+      // line group before its chords, preserving chart order.
+      flushSectionMarksAbove(lg.refY - CHORD_Y_THRESHOLD);
       const lineItems = lg.items.slice().sort((a, b) => a.x - b.x);
 
       // Two-phase chord-fragment reconstruction:
@@ -2576,24 +2739,53 @@ async function importUGProPDF(file){
       const chordTokens = tokens.filter(t => isChordToken(t));
       const chordCount = chordTokens.length;
 
-      // If line has no chords: maybe title / section / ignore
+      // If line has no chords: maybe title / artist / section / ignore
       if (chordCount === 0){
         // candidate title line near top of doc
         if (!meta.title && line.length <= 80 && !line.includes(":") && !/^(page\s*\d+)/i.test(line)){
           meta.title = line;
+          // UG Pro layout puts the artist directly under the title on page 1.
+          awaitComposerLine = p === 1;
           continue;
         }
+        // "Words and Music by …" credit lines anywhere on page 1
+        if (!meta.composer && p === 1){
+          const credit = line.match(/^(?:words\s+(?:and|&)\s+music\s+by|music\s+by|written\s+by)\s+(.{2,60})$/i);
+          if (credit){
+            meta.composer = credit[1].trim();
+            awaitComposerLine = false;
+            continue;
+          }
+        }
         if (looksLikeSection(line, tokens, chordCount)){
+          awaitComposerLine = false;
           flushBars();
-          let label = line;
-          if (/^END([A-Z0-9\-]+)$/.test(line)){
-            label = "End " + line.replace(/^END/i,"").replace(/_/g," ");
+          let label = line.replace(/^\[(.+)\]$/, '$1').trim();
+          if (/^END([A-Z0-9\-]+)$/.test(label)){
+            label = "End " + label.replace(/^END/i,"").replace(/_/g," ");
           }
           bodyLines.push(`- ${label}`);
           continue;
         }
+        // The first plain line after the title on page 1 is the artist
+        // (UG Pro prints "Sultans Of Swing" / "Dire Straits" stacked).
+        if (awaitComposerLine){
+          awaitComposerLine = false;
+          if (
+            !meta.composer &&
+            line.length <= 60 &&
+            !line.includes(":") &&
+            !/^[\[=\d(]/.test(line) &&
+            !/^(page|http|www\.)/i.test(line) &&
+            /[A-Za-z]{2}/.test(line)
+          ){
+            meta.composer = line;
+          }
+          continue;
+        }
         continue;
       }
+      awaitComposerLine = false;
 
       // chord line: build bars
       let bars = [];
@@ -2624,10 +2816,41 @@ async function importUGProPDF(file){
         pendingBars.push(b);
       }
     }
+
+    // A section label at the very bottom of the page (bars continue on the
+    // next page) still needs to be emitted.
+    flushSectionMarksAbove(-Infinity);
   }
 
   flushBars();
   attachImportDiagnostics({ pagesProcessed: pdf.numPages });
+
+  // No key in the text layer (typical for tab PDFs): infer it from the chords.
+  if (!meta.key){
+    const keyChords = [];
+    for (const bl of bodyLines){
+      if (bl.startsWith('- ')) continue;
+      for (const tok of bl.split(/\s+/)){
+        for (const part of tok.split('_')){
+          if (part && part !== '%' && /^[A-G]/.test(part) && isChordToken(part)){
+            keyChords.push(normalizeAccidentals(part));
+          }
+        }
+      }
+    }
+    const CT = typeof window !== 'undefined' ? window.ChordTheory : null;
+    if (CT && typeof CT.inferKeyFromChords === 'function' && keyChords.length >= 4){
+      const inferredKey = CT.inferKeyFromChords(keyChords);
+      if (inferredKey) meta.key = inferredKey;
+    }
+  }
+
+  if (sawGpNotationGlyphs){
+    importDiagnostics.warnings.push(
+      'This PDF looks like a rendered Guitar Pro tab. Importing the original ' +
+      'Guitar Pro file (Import ▾ → Guitar Pro, .gp/.gpx) gives an exact conversion.'
+    );
+  }
 
   if (!totalTextItems || !extractedTextLines.length){
     attachImportDiagnostics({
@@ -2717,7 +2940,8 @@ async function importUGProPDF(file){
       importDiagnostics.warnings.push('Noisy PDF text layer detected; some lines were ignored during chord mining.');
     }
   }
-  statusEl.textContent = `PDF import: ${chordBars.length} bar(s) extracted from ${pdf.numPages} page(s).`;
+  statusEl.textContent = `PDF import: ${chordBars.length} bar(s) extracted from ${pdf.numPages} page(s).` +
+    (sawGpNotationGlyphs ? ' Tip: importing the original Guitar Pro file gives an exact conversion.' : '');
 
   return out.trim();
 }

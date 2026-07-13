@@ -55,3 +55,35 @@ test('the major triad is first (exact-match recognisers depend on order)', () =>
   assert.deepEqual(Array.from(CT.CHORD_PATTERNS[0].intervals), [0, 4, 7]);
   assert.equal(CT.CHORD_PATTERNS[0].suffix, '');
 });
+
+// ── inferKeyFromChords ────────────────────────────────────────────────────────
+
+test('inferKeyFromChords: Dm from the Sultans of Swing progression', () => {
+  // Verse loop: Dm C Bb A(7) F — every chord diatonic to D minor,
+  // A/A7 (harmonic-minor V) rules out the relative major F.
+  const chords = ['Dm', 'C', 'Bb', 'A', 'A7', 'Dm', 'C', 'Bb', 'F', 'C', 'A', 'Dm'];
+  assert.equal(CT.inferKeyFromChords(chords), 'Dm');
+});
+
+test('inferKeyFromChords: plain major key (G)', () => {
+  assert.equal(CT.inferKeyFromChords(['G', 'C', 'D', 'Em', 'C', 'D7', 'G']), 'G');
+});
+
+test('inferKeyFromChords: relative-minor tie broken by tonic chord (Am vs C)', () => {
+  assert.equal(CT.inferKeyFromChords(['Am', 'F', 'C', 'G', 'Am']), 'Am');
+  assert.equal(CT.inferKeyFromChords(['C', 'Am', 'F', 'G', 'C']), 'C');
+});
+
+test('inferKeyFromChords: flat keys use family spelling', () => {
+  assert.equal(CT.inferKeyFromChords(['Eb', 'Ab', 'Bb7', 'Cm', 'Eb']), 'Eb');
+});
+
+test('inferKeyFromChords: ignores non-chord tokens and slash basses', () => {
+  assert.equal(CT.inferKeyFromChords(['%', 'N.C.', 'D/F#', 'G', 'A7', 'D']), 'D');
+});
+
+test('inferKeyFromChords: null on empty or unparseable input', () => {
+  assert.equal(CT.inferKeyFromChords([]), null);
+  assert.equal(CT.inferKeyFromChords(['%', 'N.C.']), null);
+  assert.equal(CT.inferKeyFromChords(null), null);
+});
