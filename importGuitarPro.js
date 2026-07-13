@@ -384,9 +384,11 @@ function _buildCsmpnFromScore(score, opts) {
     var beats = _beatsFromBar(chordBars[mi]);
 
     var timeSigNum = (mb && mb.timeSignatureNumerator) || 4;
+    // GP authors bracket their markers ("[Verse 1]") — strip for clean labels.
     var sectionText = mb && mb.section && mb.section.text
-      ? mb.section.text.trim()
+      ? mb.section.text.trim().replace(/^\[(.*)\]$/, '$1').trim()
       : null;
+    if (sectionText === '') sectionText = null;
 
     // Collect chord changes within this bar
     var barChords = [];
@@ -504,13 +506,39 @@ function _buildCsmpnFromScore(score, opts) {
   // Key from first masterBar
   var keyStr = 'C';
   var timeStr = '4/4';
+  var keySigRaw = 0;
+  var keyTypeRaw = 0;
   if (masterBars.length > 0) {
     var mb0 = masterBars[0];
     if (typeof mb0.keySignature === 'number') {
-      keyStr = _gpKeyToStr(mb0.keySignature, mb0.keySignatureType || 0);
+      keySigRaw = mb0.keySignature;
+      keyTypeRaw = mb0.keySignatureType || 0;
+      keyStr = _gpKeyToStr(keySigRaw, keyTypeRaw);
     }
     if (mb0.timeSignatureNumerator && mb0.timeSignatureDenominator) {
       timeStr = mb0.timeSignatureNumerator + '/' + mb0.timeSignatureDenominator;
+    }
+  }
+
+  // GP files routinely ship with the key signature left at the editor default
+  // (0 accidentals / major = "C") regardless of the actual song key. When we
+  // see that untouched default, infer the key from the chart's chords instead
+  // (e.g. Sultans of Swing: Dm C Bb A7 → Dm, not C).
+  if (keySigRaw === 0 && keyTypeRaw === 0 &&
+      typeof window !== 'undefined' && window.ChordTheory &&
+      typeof window.ChordTheory.inferKeyFromChords === 'function') {
+    var keyChords = [];
+    for (var kmi = 0; kmi < measures.length; kmi++) {
+      var kbc = measures[kmi].barContent;
+      if (!kbc || kbc === '%' || kbc === 'N.C.') continue;
+      var kparts = kbc.split(/\s+/);
+      for (var kpi = 0; kpi < kparts.length; kpi++) {
+        if (/^[A-G]/.test(kparts[kpi])) keyChords.push(kparts[kpi]);
+      }
+    }
+    if (keyChords.length >= 4) {
+      var inferredKey = window.ChordTheory.inferKeyFromChords(keyChords);
+      if (inferredKey) keyStr = inferredKey;
     }
   }
 
@@ -518,7 +546,8 @@ function _buildCsmpnFromScore(score, opts) {
   if (artist) lines.push('Composer: ' + artist);
   lines.push('Key: ' + keyStr);
   lines.push('Time: ' + timeStr);
-  if (tempo > 0) lines.push('Tempo: ' + tempo);
+  // AlphaTab reports fractional BPMs for some GP8 files (148.999) — round.
+  if (tempo > 0) lines.push('Tempo: ' + Math.round(tempo));
   lines.push('');
 
   // ── Per-section output ────────────────────────────────────────────────────

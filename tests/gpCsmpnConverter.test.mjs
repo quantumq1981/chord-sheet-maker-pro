@@ -970,3 +970,42 @@ test('_fretsToChordName: no slash when root is the lowest note (C major)', () =>
   ];
   assert.equal(_fretsToChordName(STD, notes), 'C');
 });
+
+// ── Metadata polish: tempo rounding, bracket stripping, key inference ────────
+
+test('_buildCsmpnFromScore: fractional AlphaTab tempo is rounded (148.999 → 149)', () => {
+  const csmpn = _buildCsmpnFromScore(makeScore({ tempo: 148.999 }), {});
+  assert.ok(csmpn.includes('Tempo: 149'), csmpn);
+  assert.ok(!csmpn.includes('148.999'));
+});
+
+test('_buildCsmpnFromScore: strips [brackets] from GP section labels', () => {
+  const mbs = makeScore({}).masterBars;
+  mbs[0].section = { text: '[Verse 1]' };
+  const csmpn = _buildCsmpnFromScore(makeScore({ masterBars: mbs }), {});
+  assert.ok(csmpn.includes(': Verse 1'), csmpn);
+  assert.ok(!csmpn.includes('[Verse 1]'));
+});
+
+test('_buildCsmpnFromScore: infers minor key from chords when GP key sig is the untouched default', () => {
+  const prog = ['Dm', 'C', 'Bb', 'A7'];
+  const score = makeScore({});
+  score.tracks[0].staves[0].bars = prog.map((name) =>
+    makeMockBar([{ chord: { name, strings: [] }, duration: 4, dots: 0, isRest: false, notes: [] }])
+  );
+  const csmpn = _buildCsmpnFromScore(score, {});
+  assert.ok(csmpn.includes('Key: Dm'), csmpn);
+});
+
+test('_buildCsmpnFromScore: explicit GP key signature is trusted (no inference override)', () => {
+  const prog = ['Dm', 'C', 'Bb', 'A7'];
+  const score = makeScore({});
+  score.masterBars.forEach((mb) => {
+    mb.keySignature = 1;
+  }); // 1 sharp = G major, author-set
+  score.tracks[0].staves[0].bars = prog.map((name) =>
+    makeMockBar([{ chord: { name, strings: [] }, duration: 4, dots: 0, isRest: false, notes: [] }])
+  );
+  const csmpn = _buildCsmpnFromScore(score, {});
+  assert.ok(csmpn.includes('Key: G'), csmpn);
+});

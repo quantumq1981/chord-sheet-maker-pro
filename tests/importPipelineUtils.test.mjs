@@ -565,3 +565,113 @@ describe('importChordMarkToCSMPN', () => {
     assert.ok(out.includes(': Verse') || out.includes('- Verse'), `got: ${out}`);
   });
 });
+
+// ── sniffBinaryMusicExt (magic-byte format detection) ─────────────────────────
+
+describe('sniffBinaryMusicExt', () => {
+  const sniff = (arr) => ctx.sniffBinaryMusicExt(Uint8Array.from(arr));
+  const strBytes = (s) => Array.from(s, (c) => c.charCodeAt(0));
+
+  it('detects GP3/4/5 by the FICHIER GUITAR PRO version string', () => {
+    assert.equal(sniff([24, ...strBytes('FICHIER GUITAR PRO v5.10'), 0, 0]), '.gp5');
+  });
+
+  it('detects GPX (BCFZ/BCFS) containers', () => {
+    assert.equal(sniff(strBytes('BCFZ....')), '.gpx');
+    assert.equal(sniff(strBytes('BCFS....')), '.gpx');
+  });
+
+  it('detects GP7/8 zip containers via score.gpif', () => {
+    assert.equal(sniff(strBytes('PK........Content/score.gpif....')), '.gp');
+  });
+
+  it('detects compressed MusicXML zip via container.xml', () => {
+    assert.equal(sniff(strBytes('PK....META-INF/container.xml....')), '.mxl');
+  });
+
+  it('detects Power Tab, MIDI, PDF, and bare XML', () => {
+    assert.equal(sniff(strBytes('ptab....')), '.ptb');
+    assert.equal(sniff(strBytes('MThd....')), '.mid');
+    assert.equal(sniff(strBytes('%PDF-1.4')), '.pdf');
+    assert.equal(sniff(strBytes('<?xml version="1.0"?><score-partwise/>')), '.xml');
+  });
+
+  it('returns empty string for unknown or short content', () => {
+    assert.equal(sniff(strBytes('hello world this is text')), '');
+    assert.equal(sniff([1, 2]), '');
+  });
+});
+
+// ── UG Pro PDF pure helpers ───────────────────────────────────────────────────
+
+describe('translateChordSymbolGlyphs', () => {
+  it('maps SMuFL chord-symbol accidentals to ASCII', () => {
+    assert.equal(ctx.translateChordSymbolGlyphs('B\uED60'), 'Bb');
+    assert.equal(ctx.translateChordSymbolGlyphs('F\uED62'), 'F#');
+    assert.equal(ctx.translateChordSymbolGlyphs('B\uED61'), 'B'); // natural
+    assert.equal(ctx.translateChordSymbolGlyphs('B\uED607'), 'Bb7');
+  });
+
+  it('leaves plain text and staff accidentals (U+E260 range) untouched', () => {
+    assert.equal(ctx.translateChordSymbolGlyphs('Dm7'), 'Dm7');
+    assert.equal(ctx.translateChordSymbolGlyphs(''), '');
+    assert.equal(ctx.translateChordSymbolGlyphs('\uE262'), '\uE262');
+  });
+});
+
+describe('extractPdfSectionLabel', () => {
+  it('extracts UG Pro bracketed section labels', () => {
+    assert.equal(ctx.extractPdfSectionLabel('[Intro]'), 'Intro');
+    assert.equal(ctx.extractPdfSectionLabel('[Verse 1]'), 'Verse 1');
+    assert.equal(ctx.extractPdfSectionLabel('[Pre-Chorus]'), 'Pre-Chorus');
+    assert.equal(ctx.extractPdfSectionLabel(' [First Solo] '), 'First Solo');
+  });
+
+  it('rejects inline bracket chords and non-bracketed text', () => {
+    assert.equal(ctx.extractPdfSectionLabel('[A7]'), null);
+    assert.equal(ctx.extractPdfSectionLabel('[Bb]'), null);
+    assert.equal(ctx.extractPdfSectionLabel('Verse 1'), null);
+    assert.equal(ctx.extractPdfSectionLabel('[Verse 1] extra'), null);
+  });
+});
+
+describe('pdfTempoFromText', () => {
+  it('captures metronome tempo marks with or without the note glyph', () => {
+    assert.equal(ctx.pdfTempoFromText('= 149'), '149');
+    assert.equal(ctx.pdfTempoFromText('\uECA5 = 149'), '149');
+    assert.equal(ctx.pdfTempoFromText('=120'), '120');
+    assert.equal(ctx.pdfTempoFromText('= 148.999'), '148');
+  });
+
+  it('rejects non-tempo text and out-of-range BPM', () => {
+    assert.equal(ctx.pdfTempoFromText('Dm = good'), null);
+    assert.equal(ctx.pdfTempoFromText('= 20'), null);
+    assert.equal(ctx.pdfTempoFromText('x = 149'), null);
+    assert.equal(ctx.pdfTempoFromText(''), null);
+  });
+});
+
+describe('detectSmuflTimeSigFromItems', () => {
+  const dig = (d, x, y) => ({ str: String.fromCharCode(0xe080 + d), x, y });
+
+  it('reads a stacked 4/4', () => {
+    assert.equal(ctx.detectSmuflTimeSigFromItems([dig(4, 100, 500), dig(4, 100, 480)]), '4/4');
+  });
+
+  it('reads a multi-digit 12/8', () => {
+    assert.equal(
+      ctx.detectSmuflTimeSigFromItems([dig(1, 96, 500), dig(2, 104, 500), dig(8, 100, 480)]),
+      '12/8'
+    );
+  });
+
+  it('returns null without at least two stacked digit rows', () => {
+    assert.equal(ctx.detectSmuflTimeSigFromItems([dig(4, 100, 500)]), null);
+    assert.equal(ctx.detectSmuflTimeSigFromItems([{ str: 'Dm', x: 1, y: 1 }]), null);
+    assert.equal(ctx.detectSmuflTimeSigFromItems([]), null);
+  });
+
+  it('rejects impossible denominators', () => {
+    assert.equal(ctx.detectSmuflTimeSigFromItems([dig(4, 100, 500), dig(5, 100, 480)]), null);
+  });
+});
