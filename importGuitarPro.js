@@ -160,6 +160,101 @@ function _fretsToChordName(openMidi, notes) {
   return null;
 }
 
+// ── Cross-track harmony recovery ──────────────────────────────────────────────
+// The chord track goes melodic during intros and solos (< 3 sounding notes per
+// beat), which used to leave those bars as N.C. / %. The harmony is almost
+// always still in the file — in the rhythm guitar, keys, or bass track — so
+// when the chord track yields nothing for a bar, we harvest duration-weighted
+// pitch classes from EVERY non-percussion track and run tolerant recognition.
+
+/**
+ * Collect duration-weighted pitch classes sounding in bar `mi` across tracks.
+ * @param {{bars:object[], openMidi:number[]}[]} allTrackData
+ * @param {number} mi  Measure index
+ * @returns {{weights:Object<number,number>, bassPc:number|null}}
+ */
+function _harvestBarPcs(allTrackData, mi) {
+  var weights = Object.create(null);
+  var lowestMidi = Infinity;
+  for (var t = 0; t < allTrackData.length; t++) {
+    var td = allTrackData[t];
+    var bar = td.bars[mi];
+    if (!bar) continue;
+    var beats = _beatsFromBar(bar);
+    for (var bi = 0; bi < beats.length; bi++) {
+      var beat = beats[bi];
+      if (!beat || beat.isRest) continue;
+      var q = _gpDurToQuarters((beat.duration || 4), (beat.dots || 0));
+      var notes = beat.notes
+        ? (Array.from ? Array.from(beat.notes) : [].slice.call(beat.notes))
+        : [];
+      for (var ni = 0; ni < notes.length; ni++) {
+        var n = notes[ni];
+        if (n.isMute || n.isDead || typeof n.fret !== 'number') continue;
+        var open = td.openMidi[n.string - 1];
+        if (open === undefined) continue;
+        var midi = open + n.fret;
+        var pc = midi % 12;
+        weights[pc] = (weights[pc] || 0) + Math.max(q, 0.25);
+        if (midi < lowestMidi) lowestMidi = midi;
+      }
+    }
+  }
+  return { weights: weights, bassPc: lowestMidi === Infinity ? null : lowestMidi % 12 };
+}
+
+/**
+ * Tolerant chord recognition over weighted pitch classes.
+ * Scores every root × pattern as (matched − 0.8·extra − 1.2·missing), with a
+ * small bonus when the root is in the bass. Requires ≥ 2 structural pitch
+ * classes and a minimally convincing score — a lone melody note is not
+ * harmony, and weak fits stay null so genuine N.C. bars survive.
+ * No slash bass is emitted: the harvested "lowest note anywhere in the bar"
+ * is too often a passing note to make honest slash chords.
+ * @returns {string|null}
+ */
+function _recognizeChordFromPcs(pcWeights, bassPc) {
+  var pcs = Object.keys(pcWeights).map(Number);
+  if (!pcs.length) return null;
+  var total = 0;
+  for (var i = 0; i < pcs.length; i++) total += pcWeights[pcs[i]];
+  // Structural pitch classes: at least 10% of the bar's sounding weight.
+  var strong = pcs.filter(function (pc) {
+    return pcWeights[pc] >= total * 0.1;
+  });
+  if (strong.length < 2) return null;
+  var pcSet = Object.create(null);
+  for (var si = 0; si < strong.length; si++) pcSet[strong[si]] = true;
+
+  var bestName = null;
+  var bestScore = -Infinity;
+  for (var root = 0; root < 12; root++) {
+    for (var pi = 0; pi < _CHORD_PATTERNS.length; pi++) {
+      var pat = _CHORD_PATTERNS[pi];
+      var covered = Object.create(null);
+      var inter = 0;
+      var missing = 0;
+      for (var ii = 0; ii < pat.intervals.length; ii++) {
+        var pc = (root + pat.intervals[ii]) % 12;
+        covered[pc] = true;
+        if (pcSet[pc]) inter++;
+        else missing++;
+      }
+      var extra = 0;
+      for (var ei = 0; ei < strong.length; ei++) {
+        if (!covered[strong[ei]]) extra++;
+      }
+      var score = inter - 0.8 * extra - 1.2 * missing;
+      if (typeof bassPc === 'number' && root === bassPc) score += 0.3;
+      if (score > bestScore) {
+        bestScore = score;
+        bestName = _NOTE_NAMES[root] + pat.suffix;
+      }
+    }
+  }
+  return bestScore >= 1.5 ? bestName : null;
+}
+
 // ── Chord name normalization ──────────────────────────────────────────────────
 
 /**
@@ -370,6 +465,17 @@ function _buildCsmpnFromScore(score, opts) {
   var stringCount = openMidi.length;
   var chordBars = _barsFromTrack(chordTrack);
 
+  // All non-percussion tracks, for cross-track harmony recovery on bars where
+  // the chord track has no recognizable harmony (melodic intros, solos).
+  var allTrackData = [];
+  for (var ati = 0; ati < tracks.length; ati++) {
+    if (tracks[ati].isPercussion) continue;
+    allTrackData.push({
+      bars: _barsFromTrack(tracks[ati]),
+      openMidi: _staffTuning(tracks[ati]),
+    });
+  }
+
   // ── Per-measure data collection ──────────────────────────────────────────
 
   // voicings: Map<chordName → voicingString> (first seen wins)
@@ -456,7 +562,17 @@ function _buildCsmpnFromScore(score, opts) {
     // Bar content: chord symbols for this bar
     var barContent;
     if (barChords.length === 0) {
-      barContent = prevChordGlobal ? '%' : 'N.C.';
+      // Chord track went melodic — recover the harmony from all tracks.
+      var harvested = _harvestBarPcs(allTrackData, mi);
+      var recovered = _recognizeChordFromPcs(harvested.weights, harvested.bassPc);
+      if (recovered && recovered !== prevChordGlobal) {
+        barContent = recovered;
+        prevChordGlobal = recovered;
+      } else if (recovered) {
+        barContent = '%'; // same harmony as the previous bar → simile
+      } else {
+        barContent = prevChordGlobal ? '%' : 'N.C.';
+      }
     } else {
       barContent = barChords.join(' ');
       prevChordGlobal = barChords[barChords.length - 1];
@@ -923,6 +1039,8 @@ if (typeof window !== 'undefined') {
 var _GP_TEST_EXPORTS = {
   _gpKeyToStr: _gpKeyToStr,
   _fretsToChordName: _fretsToChordName,
+  _harvestBarPcs: _harvestBarPcs,
+  _recognizeChordFromPcs: _recognizeChordFromPcs,
   _buildCsmpnFromScore: _buildCsmpnFromScore,
   _extractVoicing: _extractVoicing,
   _cumQToHybridPos: _cumQToHybridPos,

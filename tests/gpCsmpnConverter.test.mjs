@@ -1009,3 +1009,124 @@ test('_buildCsmpnFromScore: explicit GP key signature is trusted (no inference o
   const csmpn = _buildCsmpnFromScore(score, {});
   assert.ok(csmpn.includes('Key: G'), csmpn);
 });
+
+// ── Cross-track harmony recovery (N.C. / % mitigation) ───────────────────────
+
+const { _harvestBarPcs, _recognizeChordFromPcs } = gp;
+
+test('_recognizeChordFromPcs: full triad is recognized', () => {
+  // A(9) C(0) E(4) = Am
+  assert.equal(_recognizeChordFromPcs({ 9: 4, 0: 3, 4: 3 }, 9), 'Am');
+});
+
+test('_recognizeChordFromPcs: triad with a light passing tone still resolves', () => {
+  // G B D + weak passing A (below the 10% structural floor)
+  assert.equal(_recognizeChordFromPcs({ 7: 4, 11: 3, 2: 3, 9: 0.3 }, 7), 'G');
+});
+
+test('_recognizeChordFromPcs: a lone melody note is not harmony', () => {
+  assert.equal(_recognizeChordFromPcs({ 2: 4 }, 2), null);
+  assert.equal(_recognizeChordFromPcs({}, null), null);
+});
+
+test('_recognizeChordFromPcs: two scale-adjacent melody notes stay null', () => {
+  // D + E — no coherent chord fit above the confidence floor
+  assert.equal(_recognizeChordFromPcs({ 2: 2, 4: 2 }, 2), null);
+});
+
+test('_harvestBarPcs: collects duration-weighted pitch classes across tracks', () => {
+  const trackData = [
+    {
+      openMidi: [64, 59, 55, 50, 45, 40],
+      bars: [
+        makeMockBar([
+          {
+            duration: 4,
+            dots: 0,
+            isRest: false,
+            notes: [
+              { string: 3, fret: 2, isMute: false, isDead: false }, // A (57)
+              { string: 2, fret: 1, isMute: false, isDead: false }, // C (60)
+              { string: 1, fret: 0, isMute: false, isDead: false }, // E (64)
+            ],
+          },
+        ]),
+      ],
+    },
+  ];
+  const { weights, bassPc } = _harvestBarPcs(trackData, 0);
+  assert.deepEqual(
+    Object.keys(weights)
+      .map(Number)
+      .sort((a, b) => a - b),
+    [0, 4, 9]
+  );
+  assert.equal(bassPc, 9); // A is the lowest sounding note
+});
+
+test('_buildCsmpnFromScore: melodic bars recover harmony from a second track', () => {
+  const score = makeScore({});
+  // Chord track: annotated G and C in bars 1-2 (keeps it the selected chord
+  // track), then two melodic single-note bars that previously collapsed to %.
+  const melodyBeat = (fret) => ({
+    duration: 4,
+    dots: 0,
+    isRest: false,
+    notes: [{ string: 1, fret, isMute: false, isDead: false }],
+  });
+  const annotated = (name, strings) => ({
+    chord: { name, strings },
+    duration: 4,
+    dots: 0,
+    isRest: false,
+    notes: [],
+  });
+  score.tracks[0].staves[0].bars = [
+    makeMockBar([annotated('G', [3, 2, 0, 0, 0, 3])]),
+    makeMockBar([annotated('C', [-1, 3, 2, 0, 1, 0])]),
+    makeMockBar([melodyBeat(0)]),
+    makeMockBar([melodyBeat(3)]),
+  ];
+  // Rhythm track: comps whole-note Am voicings under the melodic bars 3-4.
+  const amBeat = () => ({
+    duration: 1,
+    dots: 0,
+    isRest: false,
+    notes: [
+      { string: 3, fret: 2, isMute: false, isDead: false }, // A
+      { string: 2, fret: 1, isMute: false, isDead: false }, // C
+      { string: 1, fret: 0, isMute: false, isDead: false }, // E
+    ],
+  });
+  score.tracks.push({
+    isPercussion: false,
+    staves: [
+      {
+        tuning: [64, 59, 55, 50, 45, 40],
+        bars: [makeMockBar([]), makeMockBar([]), makeMockBar([amBeat()]), makeMockBar([amBeat()])],
+      },
+    ],
+  });
+  const csmpn = _buildCsmpnFromScore(score, {});
+  assert.ok(csmpn.includes('| G | C | Am | % |'), csmpn);
+});
+
+test('_buildCsmpnFromScore: truly silent bars still emit N.C. / %', () => {
+  const score = makeScore({});
+  score.tracks[0].staves[0].bars = [
+    makeMockBar([]),
+    makeMockBar([
+      {
+        chord: { name: 'C', strings: [-1, 3, 2, 0, 1, 0] },
+        duration: 4,
+        dots: 0,
+        isRest: false,
+        notes: [],
+      },
+    ]),
+    makeMockBar([]),
+    makeMockBar([]),
+  ];
+  const csmpn = _buildCsmpnFromScore(score, {});
+  assert.ok(csmpn.includes('| N.C. | C | % | % |'), csmpn);
+});
