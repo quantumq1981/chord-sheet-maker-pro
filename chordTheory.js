@@ -49,6 +49,167 @@
     { suffix: '6add9', intervals: [0, 2, 4, 7, 9] }, // major 6 add 9
   ];
 
+  // ── Key signatures & enharmonic spelling ──────────────────────────────────
+  // NOTE_NAMES is the family default (Bb C# Eb F# Ab), used when no key is
+  // known. When a chart's key IS known, chromatic pitch classes should be
+  // spelled for that key: pc 8 is G# in E major but Ab in C minor. The rule:
+  // sharp keys spell sharpward, flat keys flatward, 0-fifths keys use the
+  // family default. (Full scale-degree spelling is a future refinement; this
+  // covers the practical fake-book cases.)
+
+  var NOTE_NAMES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  var NOTE_NAMES_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+  var _MAJOR_FIFTHS = {
+    C: 0, G: 1, D: 2, A: 3, E: 4, B: 5, 'F#': 6, 'C#': 7,
+    F: -1, Bb: -2, Eb: -3, Ab: -4, Db: -5, Gb: -6, Cb: -7,
+  };
+  var _MINOR_FIFTHS = {
+    A: 0, E: 1, B: 2, 'F#': 3, 'C#': 4, 'G#': 5, 'D#': 6, 'A#': 7,
+    D: -1, G: -2, C: -3, F: -4, Bb: -5, Eb: -6, Ab: -7,
+  };
+
+  /**
+   * Circle-of-fifths position for a key string ('Dm', 'E', 'Bb major',
+   * 'F# minor', …). Returns an integer −7…7, or null when unparseable.
+   */
+  function keyFifths(keyStr) {
+    if (!keyStr) return null;
+    var s = String(keyStr).trim().replace(/[♭]/g, 'b').replace(/[♯]/g, '#');
+    var m = s.match(/^([A-G][b#]?)\s*(m\b|min\b|minor\b|-|maj\b|major\b)?/i);
+    if (!m) return null;
+    var root = m[1][0].toUpperCase() + m[1].slice(1);
+    var isMinor = /^(m|min|minor|-)$/i.test(m[2] || '');
+    var table = isMinor ? _MINOR_FIFTHS : _MAJOR_FIFTHS;
+    return table[root] !== undefined ? table[root] : null;
+  }
+
+  /**
+   * Spell a pitch class for a key: sharp keys → sharp names, flat keys →
+   * flat names, unknown/0-fifths → the family default NOTE_NAMES.
+   */
+  function spellPcForKey(pc, keyStr) {
+    var fifths = keyFifths(keyStr);
+    pc = ((pc % 12) + 12) % 12;
+    if (fifths === null || fifths === 0) return NOTE_NAMES[pc];
+    return fifths > 0 ? NOTE_NAMES_SHARP[pc] : NOTE_NAMES_FLAT[pc];
+  }
+
+  // ── Bass-priority chord recognition ───────────────────────────────────────
+  // Names a chord from a weighted pitch-class collection using the sequence:
+  //   1. isolate the bass note (the harmonic foundation)
+  //   2. measure intervals from candidate roots — the BASS-rooted reading is
+  //      preferred, so [C,E,G,A] with C in the bass is C6, with A it's Am7,
+  //      and Bb-triad-over-C names as C9sus4 (hybrid/upper-structure chords
+  //      fall out of the same rule)
+  //   3. tritone check — collections containing a root+3rd+b7 tritone bias
+  //      toward the dominant-family reading
+  //   4. contextual label — when a non-bass root wins decisively and the bass
+  //      is one of its chord tones, emit the inversion as a slash (C/E)
+  //
+  // Guardrails: at least 2 structural pitch classes (≥10% of the collection's
+  // weight) and a confidence floor, so lone melody notes and true silence
+  // never fabricate harmony.
+
+  /**
+   * @param {Object<number,number>} pcWeights  pitch class → sounding weight
+   * @param {number|null} bassPc               lowest sounding pitch class
+   * @param {object} [opts]
+   *   key   {string}   chart key for enharmonic spelling ('Em', 'Bb', …)
+   *   slash {boolean}  emit inversion slashes (default true)
+   * @returns {string|null}
+   */
+  function recognizeChordFromPcs(pcWeights, bassPc, opts) {
+    opts = opts || {};
+    var pcs = Object.keys(pcWeights || {}).map(Number);
+    if (!pcs.length) return null;
+    var total = 0;
+    for (var i = 0; i < pcs.length; i++) total += pcWeights[pcs[i]];
+    var strong = pcs.filter(function (pc) {
+      return pcWeights[pc] >= total * 0.1;
+    });
+    if (strong.length < 2) return null;
+    var pcSet = Object.create(null);
+    for (var si = 0; si < strong.length; si++) pcSet[strong[si]] = true;
+
+    // Bass logic only applies when the bass is itself structural — a brief
+    // low passing tone must not steer the naming.
+    var bassStructural = typeof bassPc === 'number' && pcSet[bassPc] ? bassPc : null;
+
+    var spell = function (pc) {
+      return opts.key ? spellPcForKey(pc, opts.key) : NOTE_NAMES[pc];
+    };
+
+    var scoreRootPattern = function (root, pat) {
+      var covered = Object.create(null);
+      var inter = 0;
+      var missing = 0;
+      for (var ii = 0; ii < pat.intervals.length; ii++) {
+        var pc = (root + pat.intervals[ii]) % 12;
+        covered[pc] = true;
+        if (pcSet[pc]) inter++;
+        else missing++;
+      }
+      var extra = 0;
+      for (var ei = 0; ei < strong.length; ei++) {
+        if (!covered[strong[ei]]) extra++;
+      }
+      var score = inter - 0.8 * extra - 1.2 * missing;
+      // Tritone rule: a sounding 3rd+b7 tritone flags dominant function —
+      // bias patterns that actually contain that tritone.
+      if (
+        pcSet[(root + 4) % 12] &&
+        pcSet[(root + 10) % 12] &&
+        pat.intervals.indexOf(4) >= 0 &&
+        pat.intervals.indexOf(10) >= 0
+      ) {
+        score += 0.4;
+      }
+      if (bassStructural !== null && root === bassStructural) score += 0.3;
+      return score;
+    };
+
+    var bestOverall = null;
+    var bestOverallScore = -Infinity;
+    var bestBass = null;
+    var bestBassScore = -Infinity;
+    for (var root = 0; root < 12; root++) {
+      for (var pi = 0; pi < CHORD_PATTERNS.length; pi++) {
+        var s = scoreRootPattern(root, CHORD_PATTERNS[pi]);
+        if (s > bestOverallScore) {
+          bestOverallScore = s;
+          bestOverall = { root: root, pat: CHORD_PATTERNS[pi] };
+        }
+        if (bassStructural !== null && root === bassStructural && s > bestBassScore) {
+          bestBassScore = s;
+          bestBass = { root: root, pat: CHORD_PATTERNS[pi] };
+        }
+      }
+    }
+
+    var FLOOR = 1.5;
+    // Bass-priority: the bass-rooted reading wins ties and near-ties (this is
+    // what turns [C,E,G,A]/C into C6 and Bb-triad/C into C9sus4). Only an
+    // overwhelmingly better non-bass reading overrides it.
+    if (bestBass && bestBassScore >= FLOOR && bestOverallScore - bestBassScore <= 1.5) {
+      return spell(bestBass.root) + bestBass.pat.suffix;
+    }
+    if (!bestOverall || bestOverallScore < FLOOR) return null;
+    var name = spell(bestOverall.root) + bestOverall.pat.suffix;
+    // Inversion labeling: structural chord-tone bass that isn't the root.
+    if (
+      opts.slash !== false &&
+      bassStructural !== null &&
+      bassStructural !== bestOverall.root
+    ) {
+      var isChordTone = bestOverall.pat.intervals.some(function (iv) {
+        return (bestOverall.root + iv) % 12 === bassStructural;
+      });
+      if (isChordTone) name += '/' + spell(bassStructural);
+    }
+    return name;
+  }
+
   // ── Chord-based key inference ─────────────────────────────────────────────
   // Many GP files ship with the key signature left at the default (C major /
   // 0 accidentals), and PDF text layers rarely carry a usable key at all. This
@@ -150,6 +311,9 @@
     NOTE_NAMES: NOTE_NAMES,
     CHORD_PATTERNS: CHORD_PATTERNS,
     inferKeyFromChords: inferKeyFromChords,
+    keyFifths: keyFifths,
+    spellPcForKey: spellPcForKey,
+    recognizeChordFromPcs: recognizeChordFromPcs,
   };
   if (typeof window !== 'undefined') window.ChordTheory = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
