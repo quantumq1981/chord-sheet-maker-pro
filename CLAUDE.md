@@ -49,8 +49,9 @@ The family is **recognize → normalize → finish**:
 | 4.2 | Print stylesheet hardening (slash notation SVG, section orphans) | ✅ DONE |
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
-## Current State (2026-05-17)
-- **484 tests passing** (`npm run test:all`) — 306 npm-test + 371 parser/exporter/utils; Sprint 13 Phase 3+4+5 + all ChordSlashML phases + Sprint 15 + PR #250 bug fixes complete
+## Current State (2026-07-15)
+- **1,068 tests passing** (`npm run test:all`) — 582 npm-test + 486 test:parsers; latest work: Sprint 19 import-quality arc (PRs #339/#340/#341 — UG Pro PDF recovery, cross-track harmony recovery, bass-priority chord analysis + key-aware spelling; see "SPRINT 19 CHANGES" below)
+- `chordTheory.js` is now the family's **harmonic analysis engine**, not just data: `inferKeyFromChords`, `recognizeChordFromPcs` (bass-priority + tritone bias + inversion slashes), `keyFifths`, `spellPcForKey`
 - `tests/gpCsmpnConverter.test.mjs` — 53 tests for GP→CSMPN pure helpers (flat names, new patterns, slash chords, tuplets, repeats, voltas)
 - `tests/musicXmlExport.test.ts` — 8 new repeat/volta tests (51 total); `musicXmlExporter.ts` now emits repeat barlines + ending brackets
 - `tests/chordProcessingUtils.test.mjs` — 4 new `parseBarStructures` volta tests
@@ -2135,3 +2136,128 @@ labels, multi-chord split bars (`Bb7_B7_C7_Db7_D7`), parenthesised extensions (`
 - Gates green: `npm run lint` · `npm run format:check` · `npm run build` ·
   `npm run test:all` (**528 npm-test + 486 test:parsers = 1014, 0 failures**;
   npm-test 524→528, +new file).
+
+## Sprint 19 — Import Quality Arc: PDF recovery, N.C. elimination, harmonic analysis ✅ COMPLETE (2026-07-15, PRs #339/#340/#341)
+
+Diagnosed against a real matched pair of files (Dire Straits "Sultans Of Swing"):
+the UG Pro PDF printout and the identical native `.gp` — the user's converted
+outputs showed the PDF path producing garbled, structureless charts and the GP
+path missing key/tempo polish.
+
+| # | Task | Status |
+|---|------|--------|
+| 19.1 | `inferKeyFromChords()` in chordTheory.js — chord-based key inference | ✅ PR #339 |
+| 19.2 | UG Pro PDF importer: flats, sections, artist, tempo, time sig, key, scale-aware clustering | ✅ PR #339 |
+| 19.3 | GP importer polish: tempo rounding, `[bracket]` strip, default-key inference | ✅ PR #339 |
+| 19.4 | `sniffBinaryMusicExt()` — magic-byte format routing for extensionless uploads | ✅ PR #339 |
+| 19.5 | Floating ⎙ Print button (visible when toolbar Print scrolled off-screen) | ✅ PR #339 |
+| 19.6 | Cross-track harmony recovery for N.C./% bars in GP import | ✅ PR #340 |
+| 19.7 | Bass-priority chord analysis engine + key-aware enharmonic spelling | ✅ PR #341 |
+
+### PR #339 — UG Pro PDF structure/metadata recovery + GP polish
+
+**Root causes found in the UG Pro (Guitar Pro–rendered, MuseScore-engraved) PDF text layer:**
+- Chord-symbol flats are the SMuFL **csym** glyph **U+ED60** (a separate text run
+  ~4pt after the root letter) — the importer dropped it, so every Bb imported as B.
+  (Naturals U+ED61, sharps U+ED62 likewise. STAFF accidentals are U+E260-range and
+  must be left alone.)
+- Section markers are bracketed single items (`[Intro]`, `[Verse 1]`) sharing a
+  y-band with the first chords of their system — line-level section detection
+  can never catch them.
+- Title/artist are the two largest-font lines on page 1; tempo is a metronome
+  mark (`U+ECA5` glyph + `= 149` span); time sig is stacked SMuFL digits
+  (U+E080–E089). All present, all previously ignored.
+- The fixed 20pt y-cluster threshold scrambled chord order — UG Pro engraves at a
+  large user-unit scale (chord font ≈ 40) where in-system collision-avoidance
+  offsets exceed 20pt.
+
+**`importPipeline.js` — `importUGProPDF` + new pure helpers (all unit-tested):**
+- `translateChordSymbolGlyphs(s)` — U+ED60–ED64 → `b`/``/`#`/`##`/`bb` at item ingestion
+- `extractPdfSectionLabel(s)` — `[Verse 1]`-style items pulled pre-clustering into
+  `pageSectionMarks`, interleaved by y-position via `flushSectionMarksAbove()` →
+  `- Verse 1` CSMPN markers (guard: `[A7]` bracket chords rejected)
+- `pdfTempoFromText(s)` — `♩= 149` marks → `Tempo:` header; tempo items filtered from chord lines
+- `detectSmuflTimeSigFromItems(items)` — stacked SMuFL digit rows → `Time:` (multi-digit, e.g. 12/8)
+- Title→artist capture: first no-chord line = title, next qualifying line on page 1 =
+  Composer; plus `Words and Music by …` credit lines
+- `CHORD_Y_THRESHOLD = max(20, medianChordFontSize × 1.25)` — scale-aware clustering
+- Key backfill via `inferKeyFromChords` when the text layer has no key
+- Rendered-tab detection (SMuFL clef/notehead glyphs) → diagnostics + status tip
+  "importing the original Guitar Pro file gives an exact conversion"
+
+**`chordTheory.js`** — `inferKeyFromChords(chords)`: 24-key diatonic scoring
+(major + harmonic-minor V), tonic first/last-chord bonuses, coherence floor.
+`Dm C Bb A7 → Dm` (not C or F).
+
+**`importGuitarPro.js`** — fractional AlphaTab tempos rounded (148.999 → 149);
+`[brackets]` stripped from GP section labels; key inference when the GP key sig is
+the untouched editor default (0 accidentals/major) — an explicitly authored key
+signature is always trusted.
+
+**`index.html`** — `sniffBinaryMusicExt(bytes)` (in importPipeline.js) routes
+extensionless/misnamed uploads by signature: GP3–5 (`FICHIER GUITAR PRO` length-
+prefixed string), GPX (`BCFZ`/`BCFS`), GP7/8 (zip containing `score.gpif`), Power
+Tab (`ptab`), MIDI (`MThd`), PDF, MXL (zip + `container.xml`), bare XML. Wired into
+the main `fileInput` handler (sniffs first 64KB when no known extension). Plus
+`#btnPrintFloat`: fixed bottom-right ⎙ mirror of toolbar Print, shown via
+IntersectionObserver only while the toolbar button is off-screen; hidden in print media.
+
+### PR #340 — Cross-track harmony recovery (the "N.C. problem")
+
+The converter read harmony from ONE selected chord track; when that track went
+melodic (intros, solos), bars collapsed to `N.C.`/`%` even though the harmony was
+in the other tracks. Now, when the chord track yields nothing for a bar:
+- `_harvestBarPcs(allTrackData, mi)` — duration-weighted pitch classes sounding in
+  that bar across **every non-percussion track**, plus the bar's lowest-note pc
+- `_recognizeChordFromPcs(weights, bassPc, opts)` — tolerant recognition (delegates
+  to chordTheory since PR #341); guardrails: ≥2 structural pcs (≥10% of bar weight)
+  + confidence floor, so lone melody notes / true silence stay honest `N.C.`/`%`
+- Recovered chord equal to the previous bar still collapses to `%` (simile)
+
+Sultans intro went from `Dm | % | % | % | % | % | % | %` to real recovered harmony;
+verses/solos now carry the full progression; exactly one honest N.C. remains (the
+silent pickup bar).
+
+### PR #341 — Bass-priority chord analysis + key-aware enharmonic spelling
+
+`chordTheory.js` is now the family's shared harmonic analysis engine implementing
+the functional-analysis sequence *isolate bass → intervals from candidate roots
+(bass-rooted reading preferred) → tritone check → contextual label*:
+
+- **`recognizeChordFromPcs(pcWeights, bassPc, opts)`** — Bass-Priority Rule: the
+  bass-rooted reading wins ties/near-ties (margin 1.5), so `[C,E,G,A]`/C = **C6**,
+  /A = **Am7**; `[Bb,D,F,G]`/Bb = **Bb6**, /G = **Gm7**. Hybrid upper-structures
+  fall out of the same rule (Bb triad over C bass → **C9sus4**, G triad over E →
+  **Em7**) — no hardcoded table. Tritone rule: +0.4 bias to dominant-family
+  patterns when root+3rd+b7 all sound (`{C,E,Bb}` → **C7**). Inversion labeling:
+  structural chord-tone bass ≠ root → slash (`C/E`); `opts.slash:false` disables.
+  A non-structural (passing) bass never steers naming.
+- **`keyFifths(keyStr)`** (−7…7, majors+minors+worded forms) and
+  **`spellPcForKey(pc, keyStr)`** — sharp keys spell sharpward (pc 8 in E = G#),
+  flat keys flatward (pc 8 in Fm = Ab), unknown/0-fifths → family default
+  (Bb C# Eb F# Ab). **The family NOTE_NAMES default is unchanged**; key-aware
+  spelling applies only where a key is actually known (`opts.key`).
+- `importGuitarPro.js` `_recognizeChordFromPcs` is now a thin delegation; the
+  declared GP key is computed **before** the measure loop and passed as
+  `recoveryOpts.key` (untouched-default key → null → family spelling).
+
+### Testing & verification pattern used (repeat this)
+- Every fix was diagnosed against the real file pair, then verified end-to-end by
+  running the REAL `importUGProPDF` in a Node vm (pdfjs-dist from node_modules +
+  DOM stubs; see the harness pattern in tests/importPipelineUtils.test.mjs) and the
+  real `_buildCsmpnFromScore` against the real `.gp` parsed by
+  `npm i --no-save @coderline/alphatab` in Node.
+- **Fixture-loop principle:** when a real file converts badly, that file becomes a
+  fixture + regression test. Ask the user for the file + Import Details panel output.
+
+### Known follow-ups (not yet done)
+- `midiImport.js` still has its own `recognizeChord` — consolidate onto
+  `ChordTheory.recognizeChordFromPcs` (behavior-diff carefully; midiImport's tests pin it)
+- Re-harmonization/analysis assistant (secondary dominants V/V, tritone subs,
+  modal-mixture bVI/iv/bVII borrowing flags) — an analysis layer over finished
+  charts, built on the tritone + bass data the engine now exposes
+- Scale-degree-exact enharmonic spelling (D# vs Eb by degree, not just key direction)
+- MusicXML deep-read: analyze actual bass-clef notes on piano lead sheets instead of
+  trusting only printed chord symbols
+- Optional "prefer simple chord names" toggle (recovered voicing names like Dsus4/Gsus2
+  are note-accurate but verbose for fake books)
