@@ -204,55 +204,18 @@ function _harvestBarPcs(allTrackData, mi) {
 }
 
 /**
- * Tolerant chord recognition over weighted pitch classes.
- * Scores every root × pattern as (matched − 0.8·extra − 1.2·missing), with a
- * small bonus when the root is in the bass. Requires ≥ 2 structural pitch
- * classes and a minimally convincing score — a lone melody note is not
- * harmony, and weak fits stay null so genuine N.C. bars survive.
- * No slash bass is emitted: the harvested "lowest note anywhere in the bar"
- * is too often a passing note to make honest slash chords.
+ * Tolerant chord recognition over weighted pitch classes — delegates to the
+ * shared bass-priority engine in chordTheory.js, which implements the full
+ * analysis sequence: isolate the bass -> intervals from candidate roots with
+ * the bass-rooted reading preferred ([C,E,G,A]/C = C6, /A = Am7; Bb-triad/C =
+ * C9sus4) -> tritone dominant bias -> inversion slash labels -> key-aware
+ * enharmonic spelling. Same guardrails (>= 2 structural pitch classes +
+ * confidence floor) so lone melody notes and true silence never fabricate
+ * harmony.
  * @returns {string|null}
  */
-function _recognizeChordFromPcs(pcWeights, bassPc) {
-  var pcs = Object.keys(pcWeights).map(Number);
-  if (!pcs.length) return null;
-  var total = 0;
-  for (var i = 0; i < pcs.length; i++) total += pcWeights[pcs[i]];
-  // Structural pitch classes: at least 10% of the bar's sounding weight.
-  var strong = pcs.filter(function (pc) {
-    return pcWeights[pc] >= total * 0.1;
-  });
-  if (strong.length < 2) return null;
-  var pcSet = Object.create(null);
-  for (var si = 0; si < strong.length; si++) pcSet[strong[si]] = true;
-
-  var bestName = null;
-  var bestScore = -Infinity;
-  for (var root = 0; root < 12; root++) {
-    for (var pi = 0; pi < _CHORD_PATTERNS.length; pi++) {
-      var pat = _CHORD_PATTERNS[pi];
-      var covered = Object.create(null);
-      var inter = 0;
-      var missing = 0;
-      for (var ii = 0; ii < pat.intervals.length; ii++) {
-        var pc = (root + pat.intervals[ii]) % 12;
-        covered[pc] = true;
-        if (pcSet[pc]) inter++;
-        else missing++;
-      }
-      var extra = 0;
-      for (var ei = 0; ei < strong.length; ei++) {
-        if (!covered[strong[ei]]) extra++;
-      }
-      var score = inter - 0.8 * extra - 1.2 * missing;
-      if (typeof bassPc === 'number' && root === bassPc) score += 0.3;
-      if (score > bestScore) {
-        bestScore = score;
-        bestName = _NOTE_NAMES[root] + pat.suffix;
-      }
-    }
-  }
-  return bestScore >= 1.5 ? bestName : null;
+function _recognizeChordFromPcs(pcWeights, bassPc, opts) {
+  return window.ChordTheory.recognizeChordFromPcs(pcWeights, bassPc, opts);
 }
 
 // ── Chord name normalization ──────────────────────────────────────────────────
@@ -476,6 +439,21 @@ function _buildCsmpnFromScore(score, opts) {
     });
   }
 
+  // Declared key signature (needed up front: recovered chord names spell
+  // enharmonics for the chart key — G# in E major, Ab in flat keys). The
+  // untouched GP default (0 accidentals / major) means "unknown", so recovery
+  // falls back to the family spelling and the header key gets inferred later.
+  var keySigRaw = 0;
+  var keyTypeRaw = 0;
+  if (typeof masterBars[0].keySignature === 'number') {
+    keySigRaw = masterBars[0].keySignature;
+    keyTypeRaw = masterBars[0].keySignatureType || 0;
+  }
+  var declaredKeyStr = _gpKeyToStr(keySigRaw, keyTypeRaw);
+  var recoveryOpts = {
+    key: keySigRaw === 0 && keyTypeRaw === 0 ? null : declaredKeyStr,
+  };
+
   // ── Per-measure data collection ──────────────────────────────────────────
 
   // voicings: Map<chordName → voicingString> (first seen wins)
@@ -564,7 +542,7 @@ function _buildCsmpnFromScore(score, opts) {
     if (barChords.length === 0) {
       // Chord track went melodic — recover the harmony from all tracks.
       var harvested = _harvestBarPcs(allTrackData, mi);
-      var recovered = _recognizeChordFromPcs(harvested.weights, harvested.bassPc);
+      var recovered = _recognizeChordFromPcs(harvested.weights, harvested.bassPc, recoveryOpts);
       if (recovered && recovered !== prevChordGlobal) {
         barContent = recovered;
         prevChordGlobal = recovered;
@@ -619,21 +597,13 @@ function _buildCsmpnFromScore(score, opts) {
   var artist = ((score.artist || score.composer || '').trim());
   var tempo = (typeof score.tempo === 'number' ? score.tempo : 0);
 
-  // Key from first masterBar
-  var keyStr = 'C';
+  // Key from first masterBar (keySigRaw/keyTypeRaw/declaredKeyStr computed
+  // before the measure loop so recovery could spell for the declared key)
+  var keyStr = declaredKeyStr;
   var timeStr = '4/4';
-  var keySigRaw = 0;
-  var keyTypeRaw = 0;
-  if (masterBars.length > 0) {
-    var mb0 = masterBars[0];
-    if (typeof mb0.keySignature === 'number') {
-      keySigRaw = mb0.keySignature;
-      keyTypeRaw = mb0.keySignatureType || 0;
-      keyStr = _gpKeyToStr(keySigRaw, keyTypeRaw);
-    }
-    if (mb0.timeSignatureNumerator && mb0.timeSignatureDenominator) {
-      timeStr = mb0.timeSignatureNumerator + '/' + mb0.timeSignatureDenominator;
-    }
+  var mb0 = masterBars[0];
+  if (mb0.timeSignatureNumerator && mb0.timeSignatureDenominator) {
+    timeStr = mb0.timeSignatureNumerator + '/' + mb0.timeSignatureDenominator;
   }
 
   // GP files routinely ship with the key signature left at the editor default
