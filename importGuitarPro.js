@@ -94,6 +94,33 @@ function _loadScoreFromBytes(at, bytes) {
   );
 }
 
+/**
+ * Identify what the bytes actually are, for accurate error messages.
+ * The extension is ignored on purpose: GP files circulate misnamed (e.g. a
+ * Guitar Pro 7/8 zip renamed ".gp5"), and AlphaTab detects format by content —
+ * so error messages must be based on content too.
+ */
+function _describeGpFormat(bytes) {
+  if (!bytes || bytes.length === 0) return { kind: 'empty', label: 'empty file' };
+  var ascii = function (start, len) {
+    var s = '';
+    var end = Math.min(start + len, bytes.length);
+    for (var i = start; i < end; i++) s += String.fromCharCode(bytes[i]);
+    return s;
+  };
+  // GP3/4/5: length-prefixed "FICHIER GUITAR PRO vX.XX" version string
+  if (ascii(1, 18) === 'FICHIER GUITAR PRO') return { kind: 'gp3-5', label: 'Guitar Pro 3–5' };
+  var head4 = ascii(0, 4);
+  if (head4 === 'BCFZ' || head4 === 'BCFS') return { kind: 'gpx', label: 'Guitar Pro 6 (GPX)' };
+  if (head4.slice(0, 2) === 'PK') {
+    // ZIP container: GP7/8 stores Content/score.gpif after the stylesheet
+    // streams — scan the same 64 KB window sniffBinaryMusicExt uses.
+    if (ascii(0, 65536).indexOf('score.gpif') !== -1) return { kind: 'gp7-8', label: 'Guitar Pro 7/8' };
+    return { kind: 'zip', label: 'zip archive' };
+  }
+  return { kind: 'unknown', label: 'unrecognized data' };
+}
+
 // ── Tuning / chord helpers ────────────────────────────────────────────────────
 
 /** Standard 6-string guitar open-string MIDI notes (index 0 = high-e). */
@@ -734,9 +761,44 @@ function _buildCsmpnFromScore(score, opts) {
  * @returns {Promise<string>}              CSMPN text
  */
 async function importGuitarProToCSMPN(input, opts) {
-  var at = await _loadAlphaTab();
   var bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  var score = _loadScoreFromBytes(at, bytes);
+  var fmt = _describeGpFormat(bytes);
+  if (fmt.kind === 'empty') {
+    throw new Error(
+      'The selected file arrived empty (0 bytes), so there is nothing to import. ' +
+        'The file has probably not downloaded to this device yet — if it is in ' +
+        'iCloud Drive, open it in the Files app first, then import it again.'
+    );
+  }
+  var at = await _loadAlphaTab();
+  var score;
+  try {
+    score = _loadScoreFromBytes(at, bytes);
+  } catch (parseErr) {
+    var reason = (parseErr && parseErr.message) || String(parseErr);
+    if (fmt.kind === 'unknown' || fmt.kind === 'zip') {
+      throw new Error(
+        'This does not look like a Guitar Pro file (' +
+          fmt.label +
+          ', ' +
+          bytes.length +
+          ' bytes). It may be a partial download or a renamed non-GP file — ' +
+          're-download it, or export it from Guitar Pro again as .gp or .gp5. [' +
+          reason +
+          ']'
+      );
+    }
+    throw new Error(
+      'This ' +
+        fmt.label +
+        ' file could not be read — the data may be incomplete (' +
+        bytes.length +
+        ' bytes received). If it is stored in iCloud Drive, open it in the Files app ' +
+        'so it fully downloads, then import it again. [' +
+        reason +
+        ']'
+    );
+  }
   return _buildCsmpnFromScore(score, opts || {});
 }
 
@@ -1007,6 +1069,8 @@ if (typeof window !== 'undefined') {
 // Expose pure helpers for Node.js vm.runInContext tests
 // (The vm context will see these as globals since the script runs in context scope)
 var _GP_TEST_EXPORTS = {
+  _describeGpFormat: _describeGpFormat,
+  importGuitarProToCSMPN: importGuitarProToCSMPN,
   _gpKeyToStr: _gpKeyToStr,
   _fretsToChordName: _fretsToChordName,
   _harvestBarPcs: _harvestBarPcs,

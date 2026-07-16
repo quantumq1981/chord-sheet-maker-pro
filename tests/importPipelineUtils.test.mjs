@@ -675,3 +675,47 @@ describe('detectSmuflTimeSigFromItems', () => {
     assert.equal(ctx.detectSmuflTimeSigFromItems([dig(4, 100, 500), dig(5, 100, 480)]), null);
   });
 });
+
+// ── readFileBytesReliably (iOS partial-read guard) ────────────────────────────
+
+describe('readFileBytesReliably', () => {
+  const fakeFile = (name, size, buffers) => {
+    let call = 0;
+    return {
+      name,
+      size,
+      arrayBuffer: async () => buffers[Math.min(call++, buffers.length - 1)],
+    };
+  };
+
+  it('returns the buffer when the read matches file.size', async () => {
+    const buf = new ArrayBuffer(8);
+    const file = fakeFile('song.gp5', 8, [buf]);
+    assert.equal(await ctx.readFileBytesReliably(file), buf);
+  });
+
+  it('re-reads once when the first read is short, and returns the full buffer', async () => {
+    const short = new ArrayBuffer(0);
+    const full = new ArrayBuffer(16);
+    const file = fakeFile('song.gp5', 16, [short, full]);
+    assert.equal(await ctx.readFileBytesReliably(file), full);
+  });
+
+  it('throws an actionable iCloud/download message when reads stay empty', async () => {
+    const file = fakeFile('song.gp5', 49255, [new ArrayBuffer(0)]);
+    await assert.rejects(
+      ctx.readFileBytesReliably(file),
+      /empty \(0 bytes\).*iCloud Drive.*Files app/s
+    );
+  });
+
+  it('throws with byte counts when reads stay incomplete', async () => {
+    const file = fakeFile('song.gp5', 49255, [new ArrayBuffer(1024)]);
+    await assert.rejects(ctx.readFileBytesReliably(file), /incomplete \(1024 of 49255 bytes\)/);
+  });
+
+  it('rejects a zero-byte file even when file.size is also 0', async () => {
+    const file = fakeFile('empty.gp5', 0, [new ArrayBuffer(0)]);
+    await assert.rejects(ctx.readFileBytesReliably(file), /empty \(0 bytes\)/);
+  });
+});

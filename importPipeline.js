@@ -2348,6 +2348,28 @@ function sniffBinaryMusicExt(bytes){
   return '';
 }
 
+// ── Reliable binary file reads (iOS Safari) ───────────────────────────────────
+// iOS Safari can hand the page an empty or partial buffer for a file that has
+// not finished downloading to the device (iCloud Drive placeholders, lazy
+// Files-app providers). The resulting truncated bytes then fail deep inside a
+// parser with a cryptic error that blames the file. Read once, re-read if the
+// buffer is visibly short of file.size, and fail with an actionable message
+// instead of letting the parser crash.
+async function readFileBytesReliably(file){
+  let buf = await file.arrayBuffer();
+  if (file.size && buf.byteLength < file.size){
+    buf = await file.arrayBuffer(); // one retry usually settles a lazy provider
+  }
+  if (buf.byteLength === 0 || (file.size && buf.byteLength < file.size)){
+    throw new Error(
+      `"${file.name}" arrived ${buf.byteLength === 0 ? 'empty (0 bytes)' : `incomplete (${buf.byteLength} of ${file.size} bytes)`}. ` +
+        'The file has probably not downloaded to this device yet — if it is in iCloud Drive, ' +
+        'open it in the Files app first so it downloads, then import it again.'
+    );
+  }
+  return buf;
+}
+
 // ── UG Pro (Guitar Pro–rendered) PDF pure helpers ────────────────────────────
 
 // SMuFL chord-symbol accidentals (the "csym" range MuseScore/UG Pro engraving
