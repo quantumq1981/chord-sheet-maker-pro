@@ -1130,3 +1130,44 @@ test('_buildCsmpnFromScore: truly silent bars still emit N.C. / %', () => {
   const csmpn = _buildCsmpnFromScore(score, {});
   assert.ok(csmpn.includes('| N.C. | C | % | % |'), csmpn);
 });
+
+// ── _describeGpFormat (content-based format identification) ───────────────────
+
+test('_describeGpFormat: GP3-5 binary (length-prefixed FICHIER GUITAR PRO)', () => {
+  const magic = 'FICHIER GUITAR PRO v5.00';
+  const bytes = Uint8Array.from([magic.length, ...[...magic].map((c) => c.charCodeAt(0))]);
+  assert.equal(gp._describeGpFormat(bytes).kind, 'gp3-5');
+});
+
+test('_describeGpFormat: GP7/8 zip containing score.gpif', () => {
+  const body = 'PK\x03\x04............Content/score.gpif....';
+  const bytes = Uint8Array.from([...body].map((c) => c.charCodeAt(0)));
+  assert.equal(gp._describeGpFormat(bytes).kind, 'gp7-8');
+});
+
+test('_describeGpFormat: zip without score.gpif is not a GP file', () => {
+  const body = 'PK\x03\x04............META-INF/container.xml....';
+  const bytes = Uint8Array.from([...body].map((c) => c.charCodeAt(0)));
+  assert.equal(gp._describeGpFormat(bytes).kind, 'zip');
+});
+
+test('_describeGpFormat: GPX (BCFZ/BCFS) container', () => {
+  const bytes = Uint8Array.from([...'BCFZ....'].map((c) => c.charCodeAt(0)));
+  assert.equal(gp._describeGpFormat(bytes).kind, 'gpx');
+});
+
+test('_describeGpFormat: empty and unknown bytes', () => {
+  assert.equal(gp._describeGpFormat(new Uint8Array(0)).kind, 'empty');
+  assert.equal(gp._describeGpFormat(null).kind, 'empty');
+  const bytes = Uint8Array.from([...'hello world, not a gp file'].map((c) => c.charCodeAt(0)));
+  assert.equal(gp._describeGpFormat(bytes).kind, 'unknown');
+});
+
+// ── importGuitarProToCSMPN empty-input guard ──────────────────────────────────
+
+test('importGuitarProToCSMPN: rejects empty bytes with an actionable message (before CDN load)', async () => {
+  await assert.rejects(
+    gp.importGuitarProToCSMPN(new Uint8Array(0)),
+    /empty \(0 bytes\).*iCloud Drive.*Files app/s
+  );
+});

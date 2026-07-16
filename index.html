@@ -3617,7 +3617,7 @@ fileInputGuitarPro.addEventListener('change', async () => {
     importDiagnostics.miner = 'Guitar Pro';
     importDiagnostics.sourceFlavor = 'guitarpro';
     importDiagnostics.confidence = 'high';
-    const gpBuf = await file.arrayBuffer();
+    const gpBuf = await readFileBytesReliably(file);
     window._gpLastBytes = gpBuf;
     window._gpLastFileName = file.name;
     window._ptbAlphaTex = null; // GP path renders raw bytes; PTB path re-sets this
@@ -4239,7 +4239,7 @@ fileInput.addEventListener('change', async () => {
         setStatus('Guitar Pro importer not loaded — try refreshing.', 'error');
         return;
       }
-      const gpBuf = await file.arrayBuffer();
+      const gpBuf = await readFileBytesReliably(file);
       // Store bytes globally for the notation view panel
       window._gpLastBytes = gpBuf;
       window._gpLastFileName = file.name;
