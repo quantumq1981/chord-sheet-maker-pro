@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sheet Music Chord OCR — Chord Sheet Maker Pro</title>
+    <!--
+      Sheet Music Chord OCR importer (Phase 1 spike).
+
+      Extracts chord NAMES (D7, Cmaj7, F#m7...) from scanned songbook page
+      images — no full music-notation recognition. Fully client-side:
+      Tesseract.js (WASM) runs in the browser; nothing is uploaded anywhere.
+
+      Pipeline (pure algorithms live in sheetOcr.js — unit-tested in Node;
+      this page is only the canvas + Tesseract glue and the UI):
+        1. Image file -> canvas, normalized to ANALYSIS_W px wide so every
+           tuned pixel constant in sheetOcr.js applies regardless of source
+           resolution (also caps memory: a 4000px-tall 300 DPI page stays
+           well inside iOS Safari's canvas limits at this width).
+        2. SheetOcr.analyzePage: adaptive threshold (Otsu on the page area),
+           letterbox/margin crop, deskew estimate, staff-line detection via
+           long-run row profiles, 5-line staff grouping, system grouping,
+           chord-strip band above each system.
+        3. Per band: recursive XY-cut into atomic blocks; text-sized blocks
+           are OCR'd individually (PSM single word) in three variants
+           (gray 2x, binarized 2x, gray 3x) — best chord-parsing variant
+           wins. Small crops are Tesseract's best case; the LSTM engine does
+           NOT reliably honour tessedit_char_whitelist, so the REAL filter
+           is the chord grammar + confusion repair in sheetOcr.js.
+        4. Chords + x-positions -> measure/beat timeline (bars-per-system is
+           a user control — honest v1 approximation) -> JSON + CSMPN.
+
+      Multi-page: process several images in one run; measure numbering
+      continues across pages. Memory: pages are processed strictly
+      sequentially and one Tesseract worker is created once and reused.
+    -->
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background: #12121e;
+        color: #e8e8f0;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      header {
+        background: #1c1c2e;
+        border-bottom: 1px solid #2e2e46;
+        padding: 14px 20px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #c8b8ff;
+      }
+      header a {
+        color: #8888bb;
+        text-decoration: none;
+        font-size: 0.85rem;
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 20px;
+        max-width: 980px;
+        width: 100%;
+        margin: 0 auto;
+      }
+      .pane {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      label {
+        font-size: 0.8rem;
+        color: #9999bb;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: flex-end;
+      }
+      .ctl {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      input[type='number'],
+      select {
+        background: #1a1a2e;
+        border: 1px solid #2e2e46;
+        border-radius: 8px;
+        color: #e8e8f0;
+        padding: 8px 10px;
+        font-size: 0.9rem;
+        width: 90px;
+      }
+      button {
+        padding: 9px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:active {
+        opacity: 0.75;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .primary {
+        background: #6655cc;
+        color: #fff;
+      }
+      .outline {
+        background: #2a2a44;
+        color: #c8b8ff;
+        border: 1px solid #4444aa;
+      }
+      #status {
+        font-size: 0.85rem;
+        min-height: 1.2em;
+      }
+      #status.ok {
+        color: #7dd87d;
+      }
+      #status.err {
+        color: #ff7d7d;
+      }
+      #status.busy {
+        color: #e8c86a;
+      }
+      .pageCard {
+        border: 1px solid #2e2e46;
+        border-radius: 10px;
+        padding: 12px;
+        background: #16162a;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .pageCard h3 {
+        margin: 0;
+        font-size: 0.9rem;
+        color: #b8a8ee;
+        font-weight: 600;
+      }
+      .pageCard canvas {
+        width: 100%;
+        height: auto;
+        border-radius: 6px;
+        background: #fff;
+      }
+      .chordLine {
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+        color: #d8d8ee;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .warn {
+        color: #e8c86a;
+        font-size: 0.8rem;
+      }
+      textarea {
+        width: 100%;
+        min-height: 160px;
+        background: #1a1a2e;
+        border: 1px solid #2e2e46;
+        border-radius: 8px;
+        color: #b8d8b8;
+        font-family: 'Courier New', monospace;
+        font-size: 0.8rem;
+        padding: 12px;
+        resize: vertical;
+      }
+      .btn-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .hint {
+        font-size: 0.78rem;
+        color: #777799;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>🎼 Sheet Music Chord OCR</h1>
+      <a href="index.html">← Chord Sheet Maker Pro</a>
+    </header>
+    <main>
+      <div class="pane">
+        <label for="fileInput">Scanned page images (PNG/JPEG, in song order)</label>
+        <input id="fileInput" type="file" accept="image/png,image/jpeg" multiple />
+        <div class="hint">
+          Everything runs on this device — nothing is uploaded. The first run downloads the OCR
+          language data (~10&nbsp;MB, cached afterwards). Chord names must be printed above the top
+          staff of each system. Detected staff systems are outlined in blue, chord search bands in
+          amber, and accepted chords in green on each page preview.
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="ctl">
+          <label for="barsPerSystem">Bars / system</label>
+          <input id="barsPerSystem" type="number" min="1" max="12" value="2" />
+        </div>
+        <div class="ctl">
+          <label for="beatsPerBar">Beats / bar</label>
+          <input id="beatsPerBar" type="number" min="1" max="12" value="4" />
+        </div>
+        <button id="btnProcess" class="primary" disabled>Extract chords</button>
+        <span id="status"></span>
+      </div>
+
+      <div id="pages"></div>
+
+      <div class="pane" id="resultPane" style="display: none">
+        <label>Chord timeline (JSON)</label>
+        <textarea id="jsonOut" readonly></textarea>
+        <label>CSMPN chart</label>
+        <textarea id="csmpnOut" readonly></textarea>
+        <div class="btn-row">
+          <button id="btnCopyJson" class="outline">Copy JSON</button>
+          <button id="btnCopyCsmpn" class="outline">Copy CSMPN</button>
+          <button id="btnDownloadCsmpn" class="outline">↓ Download .csmpn</button>
+        </div>
+        <div class="hint">
+          Measure/beat numbers are estimates from horizontal position under the “Bars / system”
+          setting — adjust it to match the printed layout and re-run. Chords that fail validation
+          are listed per page as rejected tokens so nothing disappears silently.
+        </div>
+      </div>
+    </main>
+
+    <script src="sheetOcr.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        /* ---------- configuration ---------- */
+
+        // All sheetOcr.js pixel constants were tuned at this page width
+        // (validated headlessly against real 2160px songbook scans), so every
+        // input is normalized to it. It also bounds canvas memory: 2160 wide
+        // x any plausible page height stays far inside iOS Safari's canvas
+        // area limits.
+        var ANALYSIS_W = 2160;
+        var MAX_SRC_PIXELS = 24e6; // refuse absurd inputs before decoding cost
+
+        // Tesseract.js v5, fully pinned — library, worker, WASM core and
+        // traineddata all from the same CSP-friendly CDN. NEVER rely on the
+        // library defaults (they point at hosts a family CSP would block).
+        var TESS_LIB =
+          'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+        var TESS_OPTS = {
+          workerPath:
+            'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+          corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
+          langPath:
+            'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int',
+          gzip: true,
+        };
+
+        var S = window.SheetOcr;
+        var fileInput = document.getElementById('fileInput');
+        var btnProcess = document.getElementById('btnProcess');
+        var statusEl = document.getElementById('status');
+        var pagesEl = document.getElementById('pages');
+        var resultPane = document.getElementById('resultPane');
+        var jsonOut = document.getElementById('jsonOut');
+        var csmpnOut = document.getElementById('csmpnOut');
+
+        var worker = null;
+        var busy = false;
+
+        function setStatus(msg, cls) {
+          statusEl.textContent = msg || '';
+          statusEl.className = cls || '';
+        }
+
+        /* ---------- Tesseract lifecycle ---------- */
+
+        function loadScript(src) {
+          return new Promise(function (resolve, reject) {
+            var s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = function () {
+              reject(new Error('failed to load ' + src));
+            };
+            document.head.appendChild(s);
+          });
+        }
+
+        // One worker for the whole session (created lazily on first run,
+        // reused across pages, terminated on page exit) — creating a worker
+        // per strip would exhaust iPad memory.
+        async function ensureWorker() {
+          if (worker) return worker;
+          if (!window.Tesseract) {
+            setStatus('Loading OCR engine…', 'busy');
+            await loadScript(TESS_LIB);
+          }
+          setStatus('Preparing OCR (first run downloads language data)…', 'busy');
+          worker = await window.Tesseract.createWorker('eng', 1, TESS_OPTS);
+          await worker.setParameters({
+            // PSM 8 = single word: each XY-cut block is one printed token.
+            tessedit_pageseg_mode: window.Tesseract.PSM.SINGLE_WORD,
+            // Best-effort only — the LSTM engine may ignore this; the chord
+            // grammar in sheetOcr.js is the real filter.
+            tessedit_char_whitelist: 'ABCDEFGabdgijmnorsu#/().0123456789NoChrd',
+            user_defined_dpi: '300',
+          });
+          return worker;
+        }
+
+        window.addEventListener('pagehide', function () {
+          if (worker) {
+            worker.terminate();
+            worker = null;
+          }
+        });
+
+        /* ---------- image plumbing ---------- */
+
+        function loadImage(file) {
+          return new Promise(function (resolve, reject) {
+            var url = URL.createObjectURL(file);
+            var img = new Image();
+            img.onload = function () {
+              URL.revokeObjectURL(url);
+              resolve(img);
+            };
+            img.onerror = function () {
+              URL.revokeObjectURL(url);
+              reject(new Error('could not decode ' + file.name));
+            };
+            img.src = url;
+          });
+        }
+
+        // Normalize a source image onto a working canvas at ANALYSIS_W.
+        function toWorkCanvas(img) {
+          var scale = ANALYSIS_W / img.naturalWidth;
+          var w = ANALYSIS_W;
+          var h = Math.round(img.naturalHeight * scale);
+          var c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          var g = c.getContext('2d', { willReadFrequently: true });
+          g.drawImage(img, 0, 0, w, h);
+          return c;
+        }
+
+        // Crop a block from the work canvas into an OCR-sized canvas:
+        // `scale`x bilinear upscale (canvas drawImage filtering), white
+        // padding border, optional hard binarization.
+        function blockToOcrCanvas(work, block, scale, binThresh) {
+          var pad = 12;
+          var sx = Math.max(0, block.x0 - 2);
+          var sy = Math.max(0, block.y0 - 2);
+          var sw = Math.min(work.width, block.x1 + 2) - sx;
+          var sh = Math.min(work.height, block.y1 + 2) - sy;
+          var c = document.createElement('canvas');
+          c.width = Math.round(sw * scale) + pad * 2;
+          c.height = Math.round(sh * scale) + pad * 2;
+          var g = c.getContext('2d', { willReadFrequently: true });
+          g.fillStyle = '#fff';
+          g.fillRect(0, 0, c.width, c.height);
+          g.imageSmoothingEnabled = true;
+          g.imageSmoothingQuality = 'high';
+          g.drawImage(work, sx, sy, sw, sh, pad, pad, sw * scale, sh * scale);
+          if (binThresh) {
+            var id = g.getImageData(0, 0, c.width, c.height);
+            var d = id.data;
+            for (var i = 0; i < d.length; i += 4) {
+              var v = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+              var b = v < binThresh ? 0 : 255;
+              d[i] = d[i + 1] = d[i + 2] = b;
+            }
+            g.putImageData(id, 0, 0);
+          }
+          return c;
+        }
+
+        /* ---------- OCR one block (multi-variant voting) ---------- */
+
+        async function ocrBlock(work, block, thresh) {
+          var variants = [
+            [2, 0],
+            [2, thresh],
+            [3, 0],
+          ];
+          var best = null;
+          var bestRaw = null;
+          for (var i = 0; i < variants.length; i++) {
+            var canvas = blockToOcrCanvas(work, block, variants[i][0], variants[i][1]);
+            var res = await worker.recognize(canvas);
+            var text = (res.data.text || '').trim().replace(/\s+/g, '');
+            if (!text) continue;
+            var cand = { text: text, conf: res.data.confidence };
+            if (!bestRaw || cand.conf > bestRaw.conf) bestRaw = cand;
+            if (S.normalizeOcrChord(text, { confidence: cand.conf })) {
+              if (!best || cand.conf > best.conf) best = cand;
+            }
+          }
+          return best || bestRaw;
+        }
+
+        /* ---------- overlay drawing ---------- */
+
+        function drawOverlay(work, analysis, chords) {
+          var g = work.getContext('2d');
+          g.lineWidth = 4;
+          analysis.systems.forEach(function (sys) {
+            g.strokeStyle = 'rgba(80,120,255,0.8)';
+            g.strokeRect(
+              analysis.bounds.x0 + 2,
+              sys.top,
+              analysis.bounds.x1 - analysis.bounds.x0 - 4,
+              sys.bottom - sys.top
+            );
+          });
+          analysis.bands.forEach(function (band) {
+            g.strokeStyle = 'rgba(255,180,40,0.8)';
+            g.strokeRect(
+              analysis.bounds.x0 + 2,
+              band.top,
+              analysis.bounds.x1 - analysis.bounds.x0 - 4,
+              band.bottom - band.top
+            );
+          });
+          g.font = 'bold 30px sans-serif';
+          chords.forEach(function (c) {
+            g.strokeStyle = 'rgba(40,200,90,0.9)';
+            g.strokeRect(c.box.x0 - 4, c.box.y0 - 4, c.box.x1 - c.box.x0 + 8, c.box.y1 - c.box.y0 + 8);
+            g.fillStyle = 'rgba(40,160,70,1)';
+            g.fillText(c.chord, c.box.x0, Math.max(30, c.box.y0 - 10));
+          });
+        }
+
+        /* ---------- per-page processing ---------- */
+
+        async function processPage(file, pageIndex, systemOffset, measureOffset, barsPerSystem, beatsPerBar) {
+          var img = await loadImage(file);
+          if (img.naturalWidth * img.naturalHeight > MAX_SRC_PIXELS) {
+            throw new Error(file.name + ' is too large (' + img.naturalWidth + 'x' + img.naturalHeight + ')');
+          }
+          var work = toWorkCanvas(img);
+          var g = work.getContext('2d', { willReadFrequently: true });
+          var imageData = g.getImageData(0, 0, work.width, work.height);
+          var gray = S.grayFromRgba(imageData.data, work.width, work.height);
+          imageData = null; // release the RGBA copy before OCR allocations
+
+          var analysis = S.analyzePage(gray, work.width, work.height, { lineFrac: 0.15 });
+
+          var pageChords = [];
+          var rejected = [];
+          var contentW = analysis.bounds.x1 - analysis.bounds.x0;
+
+          for (var bi = 0; bi < analysis.bands.length; bi++) {
+            var band = analysis.bands[bi];
+            var topStaff = analysis.systems[band.systemIndex].staves[0];
+            var staffH = topStaff.nominalHeight || topStaff.height;
+            var box = {
+              x0: analysis.bounds.x0,
+              x1: analysis.bounds.x1,
+              y0: Math.round(band.top),
+              y1: Math.round(band.bottom),
+            };
+            var blocks = S.xyCutBlocks(gray, work.width, box, analysis.thresh, { colGap: 10 });
+            var textBlocks = S.chordTextBlocks(blocks, staffH);
+            var rowWords = [];
+            for (var ti = 0; ti < textBlocks.length; ti++) {
+              setStatus(
+                'Page ' + (pageIndex + 1) + ': OCR band ' + (bi + 1) + '/' + analysis.bands.length + '…',
+                'busy'
+              );
+              var read = await ocrBlock(work, textBlocks[ti], analysis.thresh);
+              if (read) {
+                rowWords.push({
+                  text: read.text,
+                  conf: read.conf,
+                  x0: textBlocks[ti].x0,
+                  x1: textBlocks[ti].x1,
+                  y0: textBlocks[ti].y0,
+                  y1: textBlocks[ti].y1,
+                });
+              }
+            }
+            var words = S.stitchNoChord(rowWords);
+            words = S.mergeSplitChordWords(words, 26);
+            for (var wi = 0; wi < words.length; wi++) {
+              var w = words[wi];
+              var norm = S.normalizeOcrChord(w.text, { confidence: w.conf, minBareConfidence: 82 });
+              if (norm) {
+                pageChords.push({
+                  chord: norm,
+                  systemIndex: band.systemIndex,
+                  xNorm: ((w.x0 + w.x1) / 2 - analysis.bounds.x0) / contentW,
+                  box: w,
+                  confidence: Math.round(w.conf),
+                });
+              } else if (w.text.length > 1) {
+                rejected.push(w.text);
+              }
+            }
+          }
+
+          // Per-system chord lists -> timeline entries for this page.
+          var perSystem = analysis.systems.map(function () {
+            return [];
+          });
+          pageChords.forEach(function (c) {
+            perSystem[c.systemIndex].push({ chord: c.chord, xNorm: c.xNorm });
+          });
+          var timeline = S.buildTimeline(perSystem, {
+            barsPerSystem: barsPerSystem,
+            beatsPerBar: beatsPerBar,
+            systemOffset: systemOffset,
+            measureOffset: measureOffset,
+          });
+          timeline.forEach(function (t) {
+            t.page = pageIndex + 1;
+          });
+
+          drawOverlay(work, analysis, pageChords);
+
+          // Render the page card (preview canvas is the work canvas itself,
+          // downscaled by CSS — no extra pixel copies).
+          var card = document.createElement('div');
+          card.className = 'pageCard';
+          var h3 = document.createElement('h3');
+          h3.textContent =
+            'Page ' + (pageIndex + 1) + ' — ' + file.name + ' · ' + analysis.systems.length +
+            ' systems · ' + pageChords.length + ' chords';
+          card.appendChild(h3);
+          card.appendChild(work);
+          var line = document.createElement('div');
+          line.className = 'chordLine';
+          line.textContent = pageChords.length
+            ? pageChords
+                .map(function (c) {
+                  return c.chord + (c.confidence < 60 ? '?' : '');
+                })
+                .join('  ')
+            : '(no chords detected on this page)';
+          card.appendChild(line);
+          if (rejected.length) {
+            var rej = document.createElement('div');
+            rej.className = 'warn';
+            rej.textContent = 'Rejected tokens: ' + rejected.join(' · ');
+            card.appendChild(rej);
+          }
+          if (!analysis.systems.length) {
+            var noSys = document.createElement('div');
+            noSys.className = 'warn';
+            noSys.textContent =
+              'No staff systems detected — check that the photo is straight and evenly lit, or crop to the page area.';
+            card.appendChild(noSys);
+          }
+          pagesEl.appendChild(card);
+
+          return { timeline: timeline, systems: analysis.systems.length };
+        }
+
+        /* ---------- run ---------- */
+
+        async function run() {
+          if (busy) return;
+          var files = Array.prototype.slice.call(fileInput.files || []);
+          if (!files.length) return;
+          busy = true;
+          btnProcess.disabled = true;
+          pagesEl.textContent = '';
+          resultPane.style.display = 'none';
+          var barsPerSystem = Math.max(1, parseInt(document.getElementById('barsPerSystem').value, 10) || 2);
+          var beatsPerBar = Math.max(1, parseInt(document.getElementById('beatsPerBar').value, 10) || 4);
+          try {
+            await ensureWorker();
+            var timeline = [];
+            var systemOffset = 0;
+            for (var i = 0; i < files.length; i++) {
+              setStatus('Analyzing page ' + (i + 1) + '/' + files.length + '…', 'busy');
+              var page = await processPage(
+                files[i],
+                i,
+                systemOffset,
+                systemOffset * barsPerSystem,
+                barsPerSystem,
+                beatsPerBar
+              );
+              timeline = timeline.concat(page.timeline);
+              systemOffset += page.systems;
+            }
+            jsonOut.value = JSON.stringify(
+              timeline.map(function (t) {
+                return { chord: t.chord, measure: t.measure, beat: t.beat, staffIndex: t.staffIndex, page: t.page };
+              }),
+              null,
+              2
+            );
+            csmpnOut.value = S.timelineToCsmpn(timeline, {
+              title: (files[0].name || '').replace(/\.[a-z]+$/i, ''),
+              barsPerRow: barsPerSystem * 2,
+            });
+            resultPane.style.display = '';
+            setStatus('Done — ' + timeline.length + ' chords across ' + files.length + ' page(s).', 'ok');
+          } catch (err) {
+            setStatus(
+              'Failed: ' +
+                (err && err.message ? err.message : err) +
+                (window.Tesseract ? '' : ' — the OCR engine could not load; check the network connection and retry.'),
+              'err'
+            );
+          } finally {
+            busy = false;
+            btnProcess.disabled = !fileInput.files.length;
+          }
+        }
+
+        function copyText(el, btn) {
+          var done = function () {
+            var old = btn.textContent;
+            btn.textContent = '✓ Copied';
+            setTimeout(function () {
+              btn.textContent = old;
+            }, 1200);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(el.value).then(done, function () {
+              el.select();
+              document.execCommand('copy');
+              done();
+            });
+          } else {
+            el.select();
+            document.execCommand('copy');
+            done();
+          }
+        }
+
+        fileInput.addEventListener('change', function () {
+          btnProcess.disabled = !fileInput.files.length;
+          setStatus(fileInput.files.length + ' file(s) selected.', '');
+        });
+        btnProcess.addEventListener('click', run);
+        document.getElementById('btnCopyJson').addEventListener('click', function () {
+          copyText(jsonOut, this);
+        });
+        document.getElementById('btnCopyCsmpn').addEventListener('click', function () {
+          copyText(csmpnOut, this);
+        });
+        document.getElementById('btnDownloadCsmpn').addEventListener('click', function () {
+          var blob = new Blob([csmpnOut.value], { type: 'text/plain;charset=utf-8' });
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'chord-ocr.csmpn';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(function () {
+            URL.revokeObjectURL(a.href);
+          }, 2000);
+        });
+
+        if (!S) {
+          setStatus('sheetOcr.js failed to load — the importer cannot run.', 'err');
+          btnProcess.disabled = true;
+        }
+      })();
+    </script>
+  </body>
+</html>
