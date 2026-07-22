@@ -2078,6 +2078,13 @@ body.exporting .sectionBlock{
 
         <div class="toolbar-sep"></div>
 
+        <!-- Lyrics View — chord-free lyric sheet -->
+        <div class="toolbar-group">
+          <button class="secondary" id="btnLyrics" title="Open lyrics-only view (no chords)">Lyrics</button>
+        </div>
+
+        <div class="toolbar-sep"></div>
+
         <!-- Print / PDF — primary CTA -->
         <div class="toolbar-group">
           <button class="accent cta" id="btnPrint">⎙ Print / PDF</button>
@@ -2942,6 +2949,7 @@ Tempo: 130
 <script src="importPipeline.js"></script>
 <script src="backupRestore.js"></script>
 <script src="audioPlayback.js"></script>
+<script src="lyricsView.js"></script>
 <script src="abcSuite.js"></script>
 <script src="midiImport.js"></script>
 <script src="chordsheetPdf.js"></script>
@@ -4653,6 +4661,15 @@ function doTranspose(delta){
 document.getElementById('btnPrint').addEventListener('click', () => {
   setStatus('Opening print dialog...');
   window.print();
+});
+
+document.getElementById('btnLyrics').addEventListener('click', () => {
+  if (!window.LyricsView) { setStatus('Lyrics module not loaded yet.', 'err'); return; }
+  var src = sourceEl.value;
+  if (!src || !src.trim()) { setStatus('No chart loaded — load a song first.', 'err'); return; }
+  var doc = typeof parseCSMPN === 'function' ? parseCSMPN(src) : null;
+  var title = (doc && doc.title) || 'Untitled';
+  window.LyricsView.openLyricsView(function(){ return sourceEl.value; }, function(){ return title; });
 });
 
 // Floating print button: long charts put the toolbar's ⎙ Print far off-screen,
