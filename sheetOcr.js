@@ -389,7 +389,7 @@
   // diagram on the fixtures.
   function chordStripBands(systems, contentTop, opts) {
     opts = opts || {};
-    var stripFactor = opts.stripFactor != null ? opts.stripFactor : 2.0;
+    var stripFactor = opts.stripFactor != null ? opts.stripFactor : 2.9;
     var pad = opts.pad != null ? opts.pad : 6;
     var bands = [];
     for (var i = 0; i < systems.length; i++) {
@@ -704,6 +704,10 @@
     // the engraved lowercase m thins out or reads as r
     t = t.replace(/^([A-G][#b]?)aj(?=\d)/, '$1maj');
     t = t.replace(/^([A-G][#b]?)raj(?=\d)/, '$1maj');
+    // Small-print sharp misread before "dim" ("Fodim7"/"C4dim7"/"F2dim7" ->
+    // F#dim7/C#dim7): root + o/2/4 + dim is never a real chord, so the
+    // stray glyph can only be a mangled #.
+    t = t.replace(/^([A-G])[o24](?=dim)/, '$1#');
     // "m17" is not a chord; it is how this corpus's engraved "m7" misreads
     t = t.replace(/^([A-G][#b]?)m17/, '$1m7');
     // A lone trailing "1" after a quality letter is a misread "7"
