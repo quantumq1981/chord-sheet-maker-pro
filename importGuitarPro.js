@@ -427,6 +427,73 @@ function _extractVoicing(beat, stringCount) {
   return hasPlayable ? parts.join(',') : null;
 }
 
+// ── Lyrics extraction from AlphaTab score model ─────────────────────────────
+
+/**
+ * Find a track that has beat-level lyrics. Returns the first staff of that
+ * track, or null if no lyrics are found in any track.
+ */
+function _findLyricsStaff(tracks) {
+  for (var ti = 0; ti < tracks.length; ti++) {
+    var t = tracks[ti];
+    if (t.isPercussion) continue;
+    var staves = t.staves ? (Array.from ? Array.from(t.staves) : [].slice.call(t.staves)) : [];
+    for (var si = 0; si < staves.length; si++) {
+      var staff = staves[si];
+      var bars = staff.bars ? (Array.from ? Array.from(staff.bars) : [].slice.call(staff.bars)) : [];
+      for (var bi = 0; bi < bars.length; bi++) {
+        var voices = bars[bi].voices ? (Array.from ? Array.from(bars[bi].voices) : [].slice.call(bars[bi].voices)) : [];
+        for (var vi = 0; vi < voices.length; vi++) {
+          var beats = voices[vi].beats ? (Array.from ? Array.from(voices[vi].beats) : [].slice.call(voices[vi].beats)) : [];
+          for (var bei = 0; bei < beats.length; bei++) {
+            if (beats[bei].lyrics && beats[bei].lyrics.length > 0) {
+              var txt = beats[bei].lyrics[0];
+              if (txt && txt.trim()) return staff;
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Collect lyrics from a single bar (staff bar object). Returns a string with
+ * the syllables joined into readable text, or '' if no lyrics in this bar.
+ * GP lyrics use dashes for syllable continuation; we join with '' when a
+ * syllable ends with '-' and with ' ' otherwise.
+ */
+function _collectBarLyrics(bar) {
+  if (!bar) return '';
+  var voices = bar.voices ? (Array.from ? Array.from(bar.voices) : [].slice.call(bar.voices)) : [];
+  var parts = [];
+  for (var vi = 0; vi < voices.length; vi++) {
+    var beats = voices[vi].beats ? (Array.from ? Array.from(voices[vi].beats) : [].slice.call(voices[vi].beats)) : [];
+    for (var bi = 0; bi < beats.length; bi++) {
+      var beat = beats[bi];
+      if (beat.lyrics && beat.lyrics.length > 0) {
+        var syl = beat.lyrics[0];
+        if (syl && syl.trim()) {
+          var trimmed = syl.replace(/^\s+/, '');
+          if (trimmed.charAt(trimmed.length - 1) !== '-') trimmed = trimmed.replace(/\s+$/, '');
+          parts.push(trimmed);
+        }
+      }
+    }
+  }
+  if (!parts.length) return '';
+  var out = parts[0];
+  for (var i = 1; i < parts.length; i++) {
+    if (out.charAt(out.length - 1) === '-') {
+      out = out.slice(0, -1) + parts[i];
+    } else {
+      out += ' ' + parts[i];
+    }
+  }
+  return out.trim();
+}
+
 // ── CSMPN builder ─────────────────────────────────────────────────────────────
 
 /**
@@ -454,6 +521,12 @@ function _buildCsmpnFromScore(score, opts) {
   var openMidi = _staffTuning(chordTrack);
   var stringCount = openMidi.length;
   var chordBars = _barsFromTrack(chordTrack);
+
+  // Find the lyrics track (any track with beat.lyrics data).
+  var lyricsStaff = _findLyricsStaff(tracks);
+  var lyricsBars = lyricsStaff
+    ? (lyricsStaff.bars ? (Array.from ? Array.from(lyricsStaff.bars) : [].slice.call(lyricsStaff.bars)) : [])
+    : [];
 
   // All non-percussion tracks, for cross-track harmony recovery on bars where
   // the chord track has no recognizable harmony (melodic intros, solos).
@@ -583,6 +656,9 @@ function _buildCsmpnFromScore(score, opts) {
       prevChordGlobal = barChords[barChords.length - 1];
     }
 
+    // Lyrics from the lyrics track for this bar
+    var lyricText = (mi < lyricsBars.length) ? _collectBarLyrics(lyricsBars[mi]) : '';
+
     measures.push({
       barContent: barContent,
       hybridLine: hybridParts.length > 0 ? hybridParts.join(' ') : '',
@@ -592,6 +668,7 @@ function _buildCsmpnFromScore(score, opts) {
       repeatEnd: !!(mb && mb.isRepeatEnd),
       // alternateEndings bitmask: bit 0 = 1st volta, bit 1 = 2nd volta, etc.
       alternateEndings: (mb && mb.alternateEndings) || 0,
+      lyricText: lyricText,
     });
   }
 
@@ -704,6 +781,29 @@ function _buildCsmpnFromScore(score, opts) {
       var trailingBar = lastRM.repeatEnd ? ' :|' : ' |';
       lines.push(rowParts.join(' ') + trailingBar);
     }
+
+    // Lyric lines — collect from each bar, emit as '; text' CSMPN lines.
+    // Join consecutive non-empty bar lyrics into flowing lines (one ; line
+    // per phrase), breaking on empty-lyric bars.
+    var lyricPhrase = '';
+    for (var lmi = 0; lmi < secMeasures.length; lmi++) {
+      var lt = secMeasures[lmi].lyricText;
+      if (lt) {
+        if (lyricPhrase) {
+          if (lyricPhrase.charAt(lyricPhrase.length - 1) === '-') {
+            lyricPhrase = lyricPhrase.slice(0, -1) + lt;
+          } else {
+            lyricPhrase += ' ' + lt;
+          }
+        } else {
+          lyricPhrase = lt;
+        }
+      } else if (lyricPhrase) {
+        lines.push('; ' + lyricPhrase);
+        lyricPhrase = '';
+      }
+    }
+    if (lyricPhrase) lines.push('; ' + lyricPhrase);
 
     // {tab} voicing block — collect unique chords used in this section
     if (includeTab) {
@@ -1081,4 +1181,6 @@ var _GP_TEST_EXPORTS = {
   _gpDurToQuarters: _gpDurToQuarters,
   _gpDurToLetter: _gpDurToLetter,
   _normalizeGpChordName: _normalizeGpChordName,
+  _findLyricsStaff: _findLyricsStaff,
+  _collectBarLyrics: _collectBarLyrics,
 };
