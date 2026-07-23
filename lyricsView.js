@@ -412,16 +412,16 @@
       '    <span id="lv-speedval">' + sec + 's/line</span></label>',
       '</div>',
       '<script>',
-      '(function(){var running=false,raf=null,last=null;',
+      '(function(){var running=false,raf=null,last=null,accum=0;',
       'var toggle=document.getElementById("lv-toggle"),speed=document.getElementById("lv-speed"),',
       'sv=document.getElementById("lv-speedval");',
       'function lh(){var el=document.querySelector(".lv-line");return el?el.getBoundingClientRect().height:' + fs * 1.5 + ';}',
       'function pps(){return lh()/parseFloat(speed.value);}',
-      'function step(ts){if(!running)return;if(last==null)last=ts;var dt=(ts-last)/1000;last=ts;',
-      'window.scrollBy(0,pps()*dt);',
+      'function step(ts){if(!running)return;if(last==null){last=ts;raf=requestAnimationFrame(step);return;}',
+      'var dt=(ts-last)/1000;last=ts;accum+=pps()*dt;window.scrollTo(0,accum);',
       'if((window.innerHeight+window.scrollY)>=(document.body.scrollHeight-2)){stop();return;}',
       'raf=requestAnimationFrame(step);}',
-      'function start(){running=true;last=null;toggle.textContent="❚❚ Pause";raf=requestAnimationFrame(step);}',
+      'function start(){running=true;last=null;accum=window.scrollY;toggle.textContent="❚❚ Pause";raf=requestAnimationFrame(step);}',
       'function stop(){running=false;toggle.textContent="▶ Auto-scroll";if(raf)cancelAnimationFrame(raf);}',
       'toggle.addEventListener("click",function(){running?stop():start();});',
       'speed.addEventListener("input",function(){sv.textContent=speed.value+"s/line";});',
@@ -507,16 +507,19 @@
     }
   }
 
-  function startAutoScroll(scrollEl, secondsPerLine, onEnd) {
+  function startAutoScroll(scrollEl, getSpeed, onEnd) {
     stopAutoScroll();
     var last = null;
+    var accum = scrollEl.scrollTop;
     function step(ts) {
-      if (last == null) last = ts;
+      if (last == null) { last = ts; autoScrollRaf = requestAnimationFrame(step); return; }
       var dt = (ts - last) / 1000;
       last = ts;
+      var spl = typeof getSpeed === 'function' ? getSpeed() : getSpeed;
       var line = scrollEl.querySelector('.lv-line');
       var lh = line ? line.getBoundingClientRect().height : 40;
-      scrollEl.scrollTop += (lh / secondsPerLine) * dt;
+      accum += (lh / spl) * dt;
+      scrollEl.scrollTop = accum;
       if (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 2) {
         stopAutoScroll();
         if (onEnd) onEnd();
@@ -660,7 +663,7 @@
         toggle.textContent = '▶ Auto-scroll';
       } else {
         toggle.textContent = '❚❚ Pause';
-        startAutoScroll(scroll, parseFloat(speed.value), function () {
+        startAutoScroll(scroll, function () { return parseFloat(speed.value); }, function () {
           toggle.textContent = '▶ Auto-scroll';
         });
       }

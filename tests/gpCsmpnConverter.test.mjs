@@ -1171,3 +1171,159 @@ test('importGuitarProToCSMPN: rejects empty bytes with an actionable message (be
     /empty \(0 bytes\).*iCloud Drive.*Files app/s
   );
 });
+
+// ── GP lyrics extraction ─────────────────────────────────────────────────────
+
+test('_collectBarLyrics: joins syllables with spaces', () => {
+  const bar = {
+    voices: [
+      {
+        beats: [
+          { lyrics: ['When '] },
+          { lyrics: ['I '] },
+          { lyrics: ['find '] },
+          { lyrics: ['my'] },
+        ],
+      },
+    ],
+  };
+  assert.equal(gp._collectBarLyrics(bar), 'When I find my');
+});
+
+test('_collectBarLyrics: joins dash-continued syllables without space', () => {
+  const bar = {
+    voices: [
+      {
+        beats: [{ lyrics: ['trou-'] }, { lyrics: ['ble'] }],
+      },
+    ],
+  };
+  assert.equal(gp._collectBarLyrics(bar), 'trouble');
+});
+
+test('_collectBarLyrics: returns empty string for bar with no lyrics', () => {
+  const bar = { voices: [{ beats: [{ lyrics: null }, { lyrics: [] }] }] };
+  assert.equal(gp._collectBarLyrics(bar), '');
+});
+
+test('_findLyricsStaff: returns staff with lyrics', () => {
+  const tracks = [
+    {
+      isPercussion: false,
+      staves: [
+        {
+          bars: [
+            {
+              voices: [
+                {
+                  beats: [{ lyrics: ['Hello'] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+  const staff = gp._findLyricsStaff(tracks);
+  assert.ok(staff !== null);
+});
+
+test('_findLyricsStaff: returns null when no lyrics', () => {
+  const tracks = [
+    {
+      isPercussion: false,
+      staves: [
+        {
+          bars: [{ voices: [{ beats: [{ lyrics: null }] }] }],
+        },
+      ],
+    },
+  ];
+  assert.equal(gp._findLyricsStaff(tracks), null);
+});
+
+test('_findLyricsStaff: skips percussion tracks', () => {
+  const tracks = [
+    {
+      isPercussion: true,
+      staves: [
+        {
+          bars: [{ voices: [{ beats: [{ lyrics: ['Hit'] }] }] }],
+        },
+      ],
+    },
+  ];
+  assert.equal(gp._findLyricsStaff(tracks), null);
+});
+
+test('_buildCsmpnFromScore: emits ; lyric lines from beat lyrics', () => {
+  const score = {
+    title: 'Test Song',
+    artist: '',
+    tempo: 120,
+    tracks: [
+      {
+        isPercussion: false,
+        staves: [
+          {
+            bars: [
+              {
+                voices: [
+                  {
+                    beats: [
+                      { duration: 4, lyrics: ['When '] },
+                      { duration: 4, lyrics: ['I '] },
+                      { duration: 4, lyrics: ['was '] },
+                      { duration: 4, lyrics: ['young'] },
+                    ],
+                  },
+                ],
+              },
+              {
+                voices: [
+                  {
+                    beats: [
+                      { duration: 4, lyrics: null },
+                      { duration: 4, lyrics: null },
+                      { duration: 4, lyrics: null },
+                      { duration: 4, lyrics: null },
+                    ],
+                  },
+                ],
+              },
+              {
+                voices: [
+                  {
+                    beats: [
+                      { duration: 4, lyrics: ['I '] },
+                      { duration: 4, lyrics: ['played '] },
+                      { duration: 4, lyrics: ['gui-'] },
+                      { duration: 4, lyrics: ['tar'] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    masterBars: [
+      {
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+        keySignature: 0,
+        keySignatureType: 0,
+      },
+      { timeSignatureNumerator: 4, timeSignatureDenominator: 4 },
+      { timeSignatureNumerator: 4, timeSignatureDenominator: 4 },
+    ],
+  };
+  const csmpn = _buildCsmpnFromScore(score, { includeTab: false, includeHybrid: false });
+  const lyricLines = csmpn.split('\n').filter((l) => l.startsWith('; '));
+  assert.ok(lyricLines.length >= 1, 'should have at least one lyric line');
+  const joined = lyricLines.join(' ');
+  assert.ok(joined.includes('When I was young'), 'should contain first bar lyrics');
+  assert.ok(joined.includes('I played guitar'), 'should contain third bar lyrics');
+});
