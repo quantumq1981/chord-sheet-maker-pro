@@ -21,7 +21,7 @@ const fbSettings = {
   pageOrientation: 'portrait', // portrait, landscape
   bgColor: '#ffffff',  // sheet background
   fgColor: '#111111',  // font/foreground color
-  chordColor: '#0044cc', // chord color
+  chordColor: '#20201c', // chord color (family ink default)
   headlineFont: 'patrickhand', // font for song title
   bodyFont: 'helvetica',       // font for body/chords/section headers
   // Whether to include lyrics lines (prefixed with ';') in the CSMPN output.
@@ -146,7 +146,7 @@ function applyFBSettings(){
   root.style.setProperty('--fb-font-scale', FONT_SCALE_MAP[fbSettings.fontSize] || 1);
   root.style.setProperty('--fb-line-spacing', fbSettings.lineSpacing + 'px');
   root.style.setProperty('--fb-bars-per-row', fbSettings.barsPerRow);
-  root.style.setProperty('--fb-chord-color', fbSettings.chordColor || '#0044cc');
+  root.style.setProperty('--fb-chord-color', fbSettings.chordColor || '#20201c');
   const chordPack = getChordFontPackConfig(fbSettings.chordFontPack);
   const isAscPack = ['pori', 'norfolk', 'norfolksans'].includes(fbSettings.chordFontPack);
   // Apply font families via CSS custom properties

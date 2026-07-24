@@ -834,7 +834,7 @@ function _hybridBuildModel(sourceText) {
 
   const fg = fbSettings.fgColor || '#111111';
   const bg = fbSettings.bgColor || '#ffffff';
-  const cc = fbSettings.chordColor || '#0044cc';
+  const cc = fbSettings.chordColor || '#20201c';
   let bpr = Math.max(1, Math.min(8, Number(fbSettings.barsPerRow) || 4));
   // Compound meters (6/8, 9/8, 12/8) pack 2–4× the subdivisions of a simple-meter
   // bar, so dense scaffold rhythms cram together. Cap bars-per-row for compound

@@ -59,22 +59,29 @@
 
 <style>
   :root{
-    --bg:#f5f5f5;
+    /* Family 1 "desk" palette — warm manuscript ground with white paper sheets.
+       Deliberately NOT the neutral-grey / soft-cream AI default; the burnt-orange
+       family stamp does the accent work. White chart surfaces (.sheet /
+       .previewWrap / .print-page-container) stay literal #fff for print fidelity. */
+    --bg:#e8e4d8;
     --card:#ffffff;
-    --ink:#111111;
-    --muted:#5b5b5b;
+    --ink:#20201c;
+    --muted:#6c6656;
     /* BandMgtPro family accent (was #2563eb blue). Deep family orange, legible
        ≥4.5:1 on this light UI both as text and as a fill with white text. Drives
-       all 17 var(--accent) usages — buttons, focus, links, borders. */
+       all var(--accent) usages — buttons, focus, links, borders. */
     --accent:var(--bmp-accent-ink);
-    --accent2:#111827;
-    --border:#d9d9d9;
+    --accent-hover:#992c0c;
+    --stamp-tint:#f0ddd0;
+    --stamp-tint-border:#d9b7a6;
+    --accent2:#26221c;
+    --border:#d3c9b3;
     --radius:14px;
     /* Fake Book configurable defaults */
     --fb-font-scale:1;
     --fb-line-spacing:8px;
     --fb-bars-per-row:4;
-    --fb-chord-color:#0044cc;
+    --fb-chord-color:#20201c;
     --fb-headline-font: "Patrick Hand SC", Georgia, cursive;
     --fb-body-font: Helvetica, Arial, "Helvetica Neue", sans-serif;
     --fb-chord-font: "EB Garamond", Georgia, "Times New Roman", "CSMPN Music", serif;
@@ -203,24 +210,24 @@
   .btn-pill button:first-child{ border-radius:10px 0 0 10px; }
   .btn-pill button:last-child{ border-radius:0 10px 10px 0; }
   .btn-pill button+button{ border-left:none; }
-  .btn-pill button:hover{ background:#f0f4ff; color:var(--accent); border-color:#b0c4ff; z-index:1; }
-  .btn-pill button:active{ background:#e0e8ff; }
+  .btn-pill button:hover{ background:var(--stamp-tint); color:var(--accent); border-color:var(--stamp-tint-border); z-index:1; }
+  .btn-pill button:active{ background:#e7cdbf; }
 
   /* Print / PDF primary CTA */
   button.cta{
-    background:linear-gradient(135deg,#1d4ed8,#2563eb);
-    box-shadow:0 2px 8px rgba(37,99,235,0.3);
+    background:var(--accent);
+    box-shadow:0 2px 8px rgba(184,53,15,0.28);
     padding:11px 22px;
     font-size:15px;
     letter-spacing:0.01em;
   }
   button.cta:hover{
-    background:linear-gradient(135deg,#1e40af,#1d4ed8);
-    box-shadow:0 4px 14px rgba(37,99,235,0.4);
+    background:var(--accent-hover);
+    box-shadow:0 4px 14px rgba(184,53,15,0.4);
   }
   button.cta:active{
     transform:translateY(1px);
-    box-shadow:0 1px 4px rgba(37,99,235,0.25);
+    box-shadow:0 1px 4px rgba(184,53,15,0.25);
   }
 
   /* Floating Print mirror — shown only while the toolbar ⎙ Print is off-screen
@@ -230,8 +237,8 @@
     display:none; align-items:center; justify-content:center;
     width:52px; height:52px; padding:0; border:none; border-radius:50%;
     font-size:24px; line-height:1; cursor:pointer; color:#fff;
-    background:linear-gradient(135deg,#1d4ed8,#2563eb);
-    box-shadow:0 3px 12px rgba(37,99,235,0.45);
+    background:var(--accent);
+    box-shadow:0 3px 12px rgba(184,53,15,0.45);
   }
   #btnPrintFloat.show{ display:flex; }
   #btnPrintFloat:active{ transform:translateY(1px); }
@@ -1444,7 +1451,7 @@ body.exporting .sectionBlock{
     margin-bottom:6px;
     padding:2px 10px;
     border-radius:12px;
-    background:#0044cc;
+    background:var(--accent);
     color:#fff;
     font-size:11px;
     font-weight:600;
@@ -1700,7 +1707,7 @@ body.exporting .sectionBlock{
   #csmlEditorInput:focus{
     outline:none;
     border-color:var(--accent);
-    box-shadow:0 0 0 2px rgba(37,99,235,.12);
+    box-shadow:0 0 0 2px rgba(184,53,15,.14);
   }
   .csml-preview-box{
     min-height:200px;
@@ -1765,7 +1772,7 @@ body.exporting .sectionBlock{
     color:#fff;
     border-color:var(--accent);
   }
-  .csml-editor-actions button.primary:hover{ background:#1d4ed8; border-color:#1d4ed8; }
+  .csml-editor-actions button.primary:hover{ background:var(--accent-hover); border-color:var(--accent-hover); }
 
   /* ── ChordSlashML Style Settings Panel ─────────────────────────── */
   .csml-style-toggle{
@@ -1889,10 +1896,10 @@ body.exporting .sectionBlock{
   }
   .setlist-item-btns button:disabled{ opacity:0.35; cursor:default; }
   .setlist-item-btns button:not(:disabled):hover{ background:var(--hover,#f0f0f0); }
-  .setlist-item-btns .btn-sl-load{ color:#0044cc; border-color:#0044cc; }
+  .setlist-item-btns .btn-sl-load{ color:var(--accent); border-color:var(--accent); }
   .setlist-item-btns .btn-sl-del{ color:#c00; border-color:#c00; }
   .setlist-badge{
-    display:inline-block; background:#0044cc; color:#fff;
+    display:inline-block; background:var(--accent); color:#fff;
     border-radius:10px; font-size:11px; padding:1px 7px; margin-left:4px;
     font-weight:700; vertical-align:middle;
   }
@@ -2861,7 +2868,7 @@ Tempo: 130
       </div>
       <div class="field power-only">
         <label>Chord Color</label>
-        <input type="color" id="setChordColor" value="#0044cc" style="height:36px;padding:2px;">
+        <input type="color" id="setChordColor" value="#20201c" style="height:36px;padding:2px;">
       </div>
       <div class="field power-only">
         <label>Power Mode PIN</label>
