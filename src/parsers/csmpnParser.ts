@@ -67,7 +67,13 @@ export function parseCsmpn(text: string): ChordChartDocument {
     const line = rawLine.trim();
 
     // ── Header fields ───────────────────────────────────────────────────────
-    const headerMatch = line.match(/^(Title|Composer|Style|Tempo|Key|Time)\s*:\s*(.+)$/i);
+    // Capo/Tuning describe the instrument setup rather than the harmony. This model
+    // has no field for them, but they MUST still be recognised here: otherwise the
+    // line falls through and is parsed as chart content (a spurious bar). The
+    // recognition engine emits both on every Guitar Pro / Power Tab import.
+    const headerMatch = line.match(
+      /^(Title|Composer|Style|Tempo|Key|Time|Capo|Tuning)\s*:\s*(.+)$/i
+    );
     if (headerMatch) {
       const field = headerMatch[1].toLowerCase();
       const value = headerMatch[2].trim();

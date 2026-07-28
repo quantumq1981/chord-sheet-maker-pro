@@ -1,0 +1,15 @@
+{
+  "$comment": "Provenance for the VENDORED recognition engine. recognitionEngine.mjs is a byte-for-byte mirror of the upstream file below — never edit it in this repo. To re-vendor: copy the upstream file over it, then update `upstream.commit`, `upstream.committedAt` and `sha256` here. tests/recognitionEngineParity.test.mjs fails if the local copy stops matching this hash.",
+  "vendoredFile": "recognitionEngine.mjs",
+  "upstream": {
+    "repo": "quantumq1981/Tab-Translator-Pro",
+    "path": "engine.tsx",
+    "commit": "c03a3ecec7eb842c6996d7a50ee47240ea0a1b63",
+    "committedAt": "2026-07-24T14:24:22Z",
+    "note": "Named .tsx upstream for the in-browser Babel loader, but it is plain ES with no TypeScript or JSX syntax — an invariant enforced by that repo's own tests. That is what lets this repo load it as a native ES module with no build step."
+  },
+  "sha256": "bac36788b82b1c3d2235c234f071d1f19c71bcc0895956679f2234bfbf5b6179",
+  "bytes": 172159,
+  "lines": 2843,
+  "vendoredAt": "2026-07-28"
+}

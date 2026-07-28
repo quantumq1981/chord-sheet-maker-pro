@@ -98,7 +98,7 @@ function parseDiagramDefinition(str){
  * Parse a CSMPN source text into a document object.
  *
  * Returns:
- *   { title, composer, style, tempo, time, key, blocks[] }
+ *   { title, composer, style, tempo, time, key, capo, tuning, blocks[] }
  *
  * Block types:
  *   { type:'pagebreak' }
@@ -119,10 +119,15 @@ function parseCSMPN(text){
     time: '',
     key: '',
     capo: 0,
+    tuning: '',
     blocks: []
   };
 
-  const metaRE = /^(Title|Composer|Artist|Style|Tempo|Time|Key|Capo)\s*:\s*(.*)$/i;
+  // `Tuning` is emitted by the Tab Translator recognition engine alongside `Capo`
+  // (both describe how the instrument is set up, not the harmony). Without it here
+  // a "Tuning: Standard" line falls through to the content pass and is parsed as a
+  // BAR — every handed-off chart grew a spurious leading measure.
+  const metaRE = /^(Title|Composer|Artist|Style|Tempo|Time|Key|Capo|Tuning)\s*:\s*(.*)$/i;
 
   // First pass: meta extraction
   const contentLines = [];
@@ -142,6 +147,7 @@ function parseCSMPN(text){
         const n = parseInt(val, 10);
         doc.capo = !isNaN(n) ? n : _parseRoman(val);
       }
+      else if (field === 'tuning') doc.tuning = val;
       continue;
     }
     contentLines.push(line);
