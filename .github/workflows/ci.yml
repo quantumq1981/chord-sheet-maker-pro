@@ -99,7 +99,7 @@ jobs:
           cp index.html settings.js renderer.js importPipeline.js \
              utils.js chordProcessing.js csmpnParser.js chordTheory.js importGuitarPro.js \
              powerTabImporter.js chordSlashMLRenderer.js musicXmlCore.js \
-             musicFont.js backupRestore.js audioPlayback.js lyricsView.js abcSuite.js midiImport.js chordsheetPdf.js sheetOcr.js recognitionEngine.mjs ug-txt-importer.html sheet-ocr-importer.html bandmgtpro-theme.css dist/
+             musicFont.js backupRestore.js audioPlayback.js lyricsView.js abcSuite.js midiImport.js chordsheetPdf.js sheetOcr.js recognitionEngine.mjs ug-txt-importer.html sheet-ocr-importer.html dist/
 
       - name: Verify deploy assets (no referenced script is missing from dist)
         run: node scripts/verify-deploy-assets.mjs dist
