@@ -27,6 +27,12 @@
 <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin>
 <link href="https://fonts.cdnfonts.com/css/freeserif" rel="stylesheet">
 
+<!-- Workflow shell (Capture / Prepare / Perform). Same-origin ('self' in CSP).
+     Loads BEFORE the inline <style> below, so the inline rules win any tie. The
+     shell only adds new classes (.stageNav/.stageHead/.advToggle) plus stage
+     visibility rules that carry !important, so nothing here is overridden. -->
+<link href="ui.css" rel="stylesheet">
+
 <!-- PDF.js (required for UG Pro PDF text extraction) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
@@ -1272,48 +1278,6 @@ body.exporting .sectionBlock{
     gap:8px;
     margin-bottom:10px;
   }
-  .mode-toggle-label{
-    font-size:12px;
-    font-weight:700;
-    color:var(--muted);
-    cursor:pointer;
-    user-select:none;
-    -webkit-user-select:none;
-    transition:color 0.15s;
-  }
-  .mode-toggle-label.active{
-    color:var(--ink);
-  }
-  .mode-switch{
-    position:relative;
-    width:42px;
-    height:24px;
-    background:var(--border);
-    border-radius:12px;
-    cursor:pointer;
-    transition:background 0.2s;
-    border:none;
-    padding:0;
-    -webkit-tap-highlight-color:transparent;
-  }
-  .mode-switch.power{
-    background:var(--accent);
-  }
-  .mode-switch .mode-knob{
-    position:absolute;
-    top:3px;
-    left:3px;
-    width:18px;
-    height:18px;
-    background:#fff;
-    border-radius:50%;
-    transition:transform 0.2s;
-    box-shadow:0 1px 3px rgba(0,0,0,0.2);
-  }
-  .mode-switch.power .mode-knob{
-    transform:translateX(18px);
-  }
-
   /* User-mode: hide power-only elements */
   body.user-mode .power-only{
     display:none !important;
@@ -2013,14 +1977,16 @@ body.exporting .sectionBlock{
   <div class="topbar">
     <div class="title">Chord Sheet Maker Pro <span style="font-size:12px;font-weight:500;color:var(--muted);letter-spacing:0;">v1.10.0</span></div>
 
-    <!-- User / Power Mode Toggle -->
+    <!-- Advanced disclosure. Replaces the old User/Power switch: same underlying
+         body.power-mode class (so every existing .power-only rule still works),
+         but presented as a disclosure next to the work rather than a mode switch
+         in the chrome. -->
     <div class="mode-toggle-wrap">
-      <span class="mode-toggle-label active" id="labelUser">User</span>
-      <button class="mode-switch" id="modeSwitch" title="Toggle between User and Power mode">
-        <span class="mode-knob"></span>
+      <button class="advToggle" id="btnAdvanced" aria-expanded="false"
+              title="Show advanced tools — editors, exports and import details">
+        <span class="advCaret">&#9654;</span><span id="advLabel">Advanced</span>
       </button>
-      <span class="mode-toggle-label" id="labelPower">Power</span>
-      <button class="info-btn" onclick="openFeatureInfo('modeToggle')" title="About User / Power Mode">ⓘ</button>
+      <button class="info-btn" onclick="openFeatureInfo('modeToggle')" title="About Advanced tools">ⓘ</button>
     </div>
 
     <div class="row">
@@ -2038,7 +2004,7 @@ body.exporting .sectionBlock{
       <div class="toolbar-row">
 
         <!-- Import with format dropdown -->
-        <div class="toolbar-group">
+        <div class="toolbar-group" data-stage-item="capture">
           <div class="import-wrap">
             <button class="accent" id="btnImport">⬇ Import</button><button class="accent import-more" id="btnImportMore" title="Choose import format" aria-haspopup="true" aria-expanded="false">▾</button>
             <div class="import-menu" id="importMenu" role="menu">
@@ -2064,7 +2030,7 @@ body.exporting .sectionBlock{
         <div class="toolbar-sep"></div>
 
         <!-- Transpose pill -->
-        <div class="toolbar-group">
+        <div class="toolbar-group" data-stage-item="prepare">
           <div class="btn-pill" title="Transpose">
             <button id="btnTransposeDown" title="Down one semitone">−1</button>
             <button id="btnTransposeUp" title="Up one semitone">+1</button>
@@ -2075,21 +2041,21 @@ body.exporting .sectionBlock{
         <div class="toolbar-sep"></div>
 
         <!-- Playback — hear the chart -->
-        <div class="toolbar-group">
+        <div class="toolbar-group" data-stage-item="prepare">
           <button class="secondary" id="btnPlay" title="Play the chart — hear the chords and rhythm">&#9654; Play</button>
         </div>
 
         <div class="toolbar-sep"></div>
 
         <!-- Lyrics View — chord-free lyric sheet -->
-        <div class="toolbar-group">
+        <div class="toolbar-group" data-stage-item="prepare">
           <button class="secondary" id="btnLyrics" title="Open lyrics-only view (no chords)">Lyrics</button>
         </div>
 
         <div class="toolbar-sep"></div>
 
         <!-- Print / PDF — primary CTA -->
-        <div class="toolbar-group">
+        <div class="toolbar-group" data-stage-item="perform">
           <button class="accent cta" id="btnPrint">⎙ Print / PDF</button>
           <button class="secondary" id="btnDownloadPdf" title="Download as PDF">↓ PDF</button>
           <button class="secondary" id="btnPng" title="Export PNG">PNG</button>
@@ -2099,18 +2065,24 @@ body.exporting .sectionBlock{
         <div class="toolbar-sep"></div>
 
         <!-- Save / Load / Settings -->
-        <div class="toolbar-group">
+        <div class="toolbar-group" data-stage-item="perform">
           <button class="outline" id="btnSave">Save</button>
           <button class="outline" id="btnLoad">Load</button>
+        </div>
+
+        <!-- Settings carries no data-stage-item: it is chrome, reachable from
+             every stage. -->
+        <div class="toolbar-group">
           <button class="outline" id="btnSettings" title="Open settings">⚙ Settings</button>
         </div>
 
       </div>
 
       <!-- Row 2: power tools (hidden in user mode) -->
-      <div class="toolbar-row toolbar-row--tools power-only">
+      <div class="toolbar-row toolbar-row--tools power-only" data-stage-item="prepare capture">
         <div class="toolbar-group">
           <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
+          <button class="outline" id="btnExportFakeBook" title="Download a pure fake book chart — chords and bars only, no lyrics, rhythm or tab">&#x2193; Fake Book</button>
           <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
           <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
           <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
@@ -2939,6 +2911,20 @@ Tempo: 130
     </div>
   </div>
 </div>
+
+<!-- Workflow shell nav. Must precede the inline <script> below, which wires it
+     during parse. Bottom bar on phone/tablet, left rail from 900px (ui.css). -->
+<nav class="stageNav" role="tablist" aria-label="Workflow">
+  <button type="button" role="tab" data-stage="capture" aria-selected="false" title="Bring music in">
+    <span class="stageIcon" aria-hidden="true">&#11015;</span><span class="stageLabel">Capture</span>
+  </button>
+  <button type="button" role="tab" data-stage="prepare" aria-selected="true" title="Edit and arrange the chart">
+    <span class="stageIcon" aria-hidden="true">&#9998;</span><span class="stageLabel">Prepare</span>
+  </button>
+  <button type="button" role="tab" data-stage="perform" aria-selected="false" title="Setlist, print and play">
+    <span class="stageIcon" aria-hidden="true">&#9834;</span><span class="stageLabel">Perform</span>
+  </button>
+</nav>
 
 <script type="module" src="/src/utils/vexflowNotation.js"></script>
 <script src="utils.js"></script>
@@ -3867,20 +3853,15 @@ let appMode = 'user'; // 'user' or 'power'
 
 function applyAppMode(mode){
   appMode = mode;
+  // The body class is unchanged — every existing .power-only / .user-only rule
+  // keys off it. Only the control that drives it changed (a switch in the chrome
+  // became an Advanced disclosure).
   document.body.classList.remove('user-mode', 'power-mode');
   document.body.classList.add(mode + '-mode');
-  const sw = document.getElementById('modeSwitch');
-  const labelUser = document.getElementById('labelUser');
-  const labelPower = document.getElementById('labelPower');
-  if (mode === 'power'){
-    sw.classList.add('power');
-    labelUser.classList.remove('active');
-    labelPower.classList.add('active');
-  } else {
-    sw.classList.remove('power');
-    labelUser.classList.add('active');
-    labelPower.classList.remove('active');
-  }
+  const btn = document.getElementById('btnAdvanced');
+  const lbl = document.getElementById('advLabel');
+  if (btn) btn.setAttribute('aria-expanded', mode === 'power' ? 'true' : 'false');
+  if (lbl) lbl.textContent = mode === 'power' ? 'Advanced on' : 'Advanced';
   try { localStorage.setItem('csmpn_appMode', mode); } catch(_){}
 }
 
@@ -3900,15 +3881,42 @@ function switchToMode(mode){
   }
 }
 
-document.getElementById('modeSwitch').addEventListener('click', function(){
+document.getElementById('btnAdvanced').addEventListener('click', function(){
   switchToMode(appMode === 'power' ? 'user' : 'power');
 });
-document.getElementById('labelUser').addEventListener('click', function(){
-  switchToMode('user');
+
+/* =========================================================
+   Workflow shell — Capture / Prepare / Perform
+   ---------------------------------------------------------
+   Stage membership lives on the DOM as data-stage-item, so nothing moves and
+   every id/listener/test keeps working; ui.css hides what does not belong to
+   the active stage. An element WITHOUT the attribute is chrome and is always
+   visible (header fields, the chart itself, Settings, modals).
+========================================================= */
+const STAGES = ['capture', 'prepare', 'perform'];
+
+function applyStage(stage){
+  if (STAGES.indexOf(stage) === -1) stage = 'prepare';
+  document.body.setAttribute('data-stage', stage);
+  document.querySelectorAll('.stageNav button').forEach(function(b){
+    b.setAttribute('aria-selected', String(b.dataset.stage === stage));
+  });
+  try { localStorage.setItem('csmpn_stage', stage); } catch(_){}
+}
+
+function loadStage(){
+  try {
+    const saved = localStorage.getItem('csmpn_stage');
+    if (STAGES.indexOf(saved) !== -1) return saved;
+  } catch(_){}
+  return 'prepare'; // the chart is the app's centre of gravity
+}
+
+document.querySelectorAll('.stageNav button').forEach(function(b){
+  b.addEventListener('click', function(){ applyStage(b.dataset.stage); });
 });
-document.getElementById('labelPower').addEventListener('click', function(){
-  switchToMode('power');
-});
+document.body.classList.add('has-stage-nav');
+applyStage(loadStage());
 
 /* fbSettings, FONT_SCALE_MAP, HEADLINE_FONT_MAP, BODY_FONT_MAP, CHORD_FONT_PACK_MAP,
    getChordFontPackConfig, saveFBSettings, loadFBSettings, applyFBSettings — see settings.js */
@@ -4941,6 +4949,22 @@ document.getElementById('btnExportChordPro').addEventListener('click', () => {
     setStatus('Exported as ChordPro (.chopro).');
   } catch(e) {
     setStatus('ChordPro export failed: ' + (e?.message || e), 'error');
+  }
+});
+
+document.getElementById('btnExportFakeBook').addEventListener('click', () => {
+  try {
+    if (typeof toPureFakeBook !== 'function') {
+      setStatus('Fake Book export is unavailable — importPipeline.js did not load.', 'error');
+      return;
+    }
+    const pure = toPureFakeBook(sourceEl.value || '');
+    if (!pure.trim()) { setStatus('Nothing to export — the chart is empty.', 'warning'); return; }
+    const filename = safeFilename(hdr.title.value?.trim() || 'chart') + '.csmpn';
+    downloadBlob(new Blob([pure], { type: 'text/plain;charset=utf-8' }), filename);
+    setStatus('Exported a pure fake book chart (.csmpn) — chords and bars only.');
+  } catch(e) {
+    setStatus('Fake Book export failed: ' + (e?.message || e), 'error');
   }
 });
 

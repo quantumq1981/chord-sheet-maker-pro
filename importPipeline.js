@@ -3356,7 +3356,71 @@ function toHybridCSMPN(text, preset, _opts) {
   return out.join('\n');
 }
 
+/**
+ * Reduce a CSMPN chart to PURE FAKE BOOK style: header metadata, section markers
+ * and the bar grid — nothing else.
+ *
+ * A fake book chart is chord symbols over bars. It is NOT ChordPro (which threads
+ * chords into the lyric line), and it carries no rhythm notation or fingering. So
+ * three kinds of content come out:
+ *
+ *   ';' lyric lines        — rendered as lyrics beneath the bars
+ *   '{hybrid …}' blocks    — notated rhythm for the Slash-Rhythm view
+ *   '{tab …}' blocks       — fingering, which drives the TAB staff + chord diagrams
+ *
+ * Header fields, '- : =' section markers, '//' diagram definitions and the bar
+ * lines themselves are all kept, so the result still parses through parseCSMPN
+ * and still renders — it is a narrower chart, not a different format.
+ *
+ * This is DESTRUCTIVE by design and is meant for export ("give me a clean fake
+ * book chart to hand someone"). The in-app view hides lyrics non-destructively
+ * via fbSettings.includeLyrics instead, so nothing is lost from the source.
+ *
+ * @param {string} text CSMPN source.
+ * @returns {string} CSMPN containing only fake-book content.
+ */
+function toPureFakeBook(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const out = [];
+  let blockDepth = 0; // inside a {tab …} / {hybrid …} / {notation …} block
+
+  for (const line of lines) {
+    const t = line.trim();
+
+    if (blockDepth > 0) {
+      // Brace-counting rather than "ends with }" — a block's closing brace can
+      // share a line with content (e.g. a single-line `{tab G: 3,2,0,0,0,3}`).
+      blockDepth += (t.match(/\{/g) || []).length;
+      blockDepth -= (t.match(/\}/g) || []).length;
+      if (blockDepth < 0) blockDepth = 0;
+      continue;
+    }
+
+    // Open a strippable block. Only these three are non-fake-book.
+    if (/^\{(tab|hybrid|notation)\b/i.test(t)) {
+      blockDepth = (t.match(/\{/g) || []).length - (t.match(/\}/g) || []).length;
+      if (blockDepth < 0) blockDepth = 0;
+      continue;
+    }
+
+    if (t.startsWith(';')) continue; // lyric line
+
+    out.push(line);
+  }
+
+  // Collapse the blank-line runs the removals leave behind, and trim the tail.
+  const collapsed = [];
+  for (const line of out) {
+    if (!line.trim() && collapsed.length && !collapsed[collapsed.length - 1].trim()) continue;
+    collapsed.push(line);
+  }
+  while (collapsed.length && !collapsed[collapsed.length - 1].trim()) collapsed.pop();
+
+  return collapsed.join('\n');
+}
+
 if (typeof window !== 'undefined'){
   window.toHybridCSMPN = toHybridCSMPN;
   window.HYBRID_PRESET_PATTERNS = HYBRID_PRESET_PATTERNS;
+  window.toPureFakeBook = toPureFakeBook;
 }
