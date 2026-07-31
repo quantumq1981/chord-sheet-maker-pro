@@ -2124,7 +2124,7 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnCsmlEditor">⊞ ChordSlashML Editor</button>
           <button class="outline power-only" id="btnCsmlGuide">★ CSML Quick Start</button>
           <button class="outline power-only" id="btnAbcEditor" title="ABC notation: render &amp; play traditional/lead-sheet ABC">𝄞 ABC Notation</button>
-          <button class="outline power-only" id="btnGpNotation" title="View Guitar Pro or Power Tab notation">🎸 Tab View</button>
+          <button class="outline power-only" id="btnGpNotation" title="View Guitar Pro, Power Tab or MusicXML notation">🎸 Tab View</button>
         </div>
 
         <!-- Perform: handing the finished chart to something else. -->
@@ -4520,6 +4520,12 @@ fileInput.addEventListener('change', async () => {
       const buf = await file.arrayBuffer();
       const song = await importMXL(buf);
       if (song instanceof SongModel){
+        // AlphaTab reads the .mxl container directly, so Tab View can engrave it.
+        try {
+          window._gpLastBytes = buf;
+          window._gpLastFileName = file.name;
+          window._ptbAlphaTex = null;
+        } catch (_e) { /* Tab View simply stays unavailable */ }
         importDiagnostics.sections = song.sections.length;
         importDiagnostics.bars = countSongModelBars(song);
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);
@@ -4678,7 +4684,15 @@ fileInput.addEventListener('change', async () => {
         sourceEl.value = finalCsmpn;
         extractHeaderFromText(finalCsmpn);
         updatePreview();
-        setStatus('Imported MusicXML.');
+        // AlphaTab reads MusicXML as well as Guitar Pro, so keep the bytes and
+        // the 🎸 Tab View can engrave the score. Without this a MusicXML import
+        // gave a chart with no way to see the notation it came from.
+        try {
+          window._gpLastBytes = new TextEncoder().encode(text).buffer;
+          window._gpLastFileName = file.name;
+          window._ptbAlphaTex = null;
+        } catch (_e) { /* Tab View simply stays unavailable */ }
+        setStatus('Imported MusicXML. Use \u{1F3B8} Tab View to see the engraved score.');
       }
       updateDiagnosticsPanel();
       return;
@@ -6426,7 +6440,7 @@ function csmpnToCsml(csmpnText) {
   async function renderNotation() {
     const ptbTex = window._ptbAlphaTex;
     if (!window._gpLastBytes && !ptbTex) {
-      container.innerHTML = '<div class="gpn-empty">Load a Guitar Pro or Power Tab file first.</div>';
+      container.innerHTML = '<div class="gpn-empty">Import a Guitar Pro, Power Tab or MusicXML file first.</div>';
       return;
     }
     if (typeof window.renderGpNotation !== 'function') {

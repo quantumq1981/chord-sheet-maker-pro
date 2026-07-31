@@ -19,7 +19,7 @@ Read this first when picking the work back up.
 | 1a-fix | iPad regressions (float button, breakpoint, overflow) | ✅ committed |
 | 1b | Per-stage disclosure + stage-scoped advanced tools | ✅ committed |
 | 2 | Recognition merge — GP/PTB/MusicXML through the engine | ✅ committed |
-| 3 | Notation (OSMD/AlphaTab/VexFlow) + Stage Mode from chord-sheet-maker | ⬜ next |
+| 3 | Notation + Stage Mode | 🚧 in progress — see below |
 | 4 | Audio suite (tuner, stem→chart, DTW sync, vocal isolation) | ⬜ |
 | 5 | Consolidate: CSM + TTP become redirects; PWA + IndexedDB | ⬜ |
 
@@ -220,16 +220,56 @@ local console.
 - A tab-PDF import end to end on device.
 - Print-to-PDF unchanged from baseline.
 
-## Next: Phase 3
+## Phase 3 — Notation + Stage Mode
 
-Vendor from chord-sheet-maker into this repo's existing Vite track (`app.html` + `src/`),
-mounted into Prepare's view switcher with the lazy-panel pattern `#gpNotationPanel` uses:
+**The plan overestimated this phase, in two ways.** Both changed what got built; the
+findings are recorded here so the next session does not redo the survey.
 
-- `src/hooks/useOsmd.ts`, `src/renderers/{AlphaTabRenderer,VexFlowTabRenderer}.tsx`
-- `src/converters/{musicXMLtochordpro,transposeMusicXML,musicXMLtoVexFlow}.ts`
-- `src/stage/stageMode.ts` + `stageBatch.ts` (pure, already tested) behind Perform's
-  stage view; `lyricsView.js` becomes its presenter.
+**1. Stage Mode is mostly already here.** `lyricsView.js` (716 lines) independently grew
+what `chord-sheet-maker/src/stage/stageMode.ts` (536 lines) does: `stripInlineChords`,
+lyric extraction for CSMPN / ChordPro / plain, a full-screen dark modal, **auto-scroll**,
+print, and standalone HTML export. Vendoring wholesale would duplicate ~700 lines. The
+real deltas were batch (setlist-wide) export and the key/tempo/capo line.
 
-Then resolve the drifted twins — `sniffFormat`, `chordProParser`, `ChordChartModel` exist
-in two apps and disagree. Pick one owner each and delete the loser. That is where the
-drift actually dies.
+→ **`stageSheets.js`** (new): a lyrics-only running order for the whole setlist — dark for
+the stand, one auto-scroll for the set, key/tempo/capo per song, print flipping to black
+on white with a page per song. Reads through `window.LyricsView` rather than
+re-implementing extraction. Songs with no lyrics are skipped and named in the status.
+**🎤 Stage Sheets** in the Setlist panel. `tests/stageSheets.test.mjs` (11).
+
+**2. Vendoring React renderers contradicts this repo's own rule.** `CLAUDE.md` #2: index.html
+is canonical, features never go into the React track in parallel — the developer is on iOS
+and only ever sees index.html, so a feature in `app.html` would be invisible. The plan's
+"mount OSMD into Prepare's view switcher via the Vite track" was not followed.
+
+→ The user-facing gap was real but smaller: importing MusicXML gave a chart with **no way
+to see the engraved score**, because 🎸 Tab View only opened for Guitar Pro / Power Tab.
+AlphaTab (already loaded, and its UMD build carries `MusicXmlImporter`) reads MusicXML and
+`.mxl` directly, so both import branches now keep the bytes and Tab View engraves them.
+No OSMD, no React, no new dependency.
+
+### The drifted twins — owner decided, deletion deferred to Phase 5
+
+| File | CSMP | CSM | Verdict |
+|---|---|---|---|
+| `ingest/sniffFormat.ts` | 363 lines | 270 | **CSMP owns** |
+| `parsers/chordProParser.ts` | 617 | 373 | **CSMP owns** |
+| `models/ChordChartModel.ts` | 110 | 75 | **CSMP owns** |
+
+Checked rather than assumed: the only exports CSM has and CSMP lacks are one-line
+predicates (`isPowerTabFormat` = `detected.format === 'powertab'`, `isAsciiTabFormat`,
+`isChordLine`, `UG_SECTION_RE`). CSMP already detects those formats. **Nothing needs
+merging back into CSMP.**
+
+All three live only in CSMP's React track and are pinned by its 486-test parser suite.
+Deleting CSM's copies now would break a still-live app for zero gain — that step belongs
+in **Phase 5**, when CSM becomes a redirect and its `src/` stops being live code.
+
+## Next: Phase 4 — audio suite
+
+Expose the engine's DSP through a thin `audioCapture.js` holding the only non-pure parts
+(`getUserMedia`, `decodeAudioData`, the rAF playhead). All analysis (`transcribeChords`,
+`detectPitch`, `extractCenter`, `alignPcmToScore`, `harmonicClarity`) is already pure and
+headless-tested in the vendored engine. Four features: audio/stem → chart, tuner,
+reference-audio playback with DTW sync, center-channel vocal isolation with the
+`harmonicClarity` A/B gate.
