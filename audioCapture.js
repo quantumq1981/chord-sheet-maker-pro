@@ -126,6 +126,104 @@
     };
   }
 
+  /**
+   * The chords one bar renders, in the exact order `renderer.js` `hrBar()` draws
+   * them. This is the ONE thing the reference-audio sync couples to: the engine
+   * score built below and the `data-ci` indices the renderer stamps must agree on
+   * chord ORDER (not beats), so the Nth chord here is `[data-ci="N"]` on the page.
+   * Mirror of hrBar: events carrying a chord win; otherwise the `_`-split token.
+   */
+  function chartChordList(bar) {
+    var events = bar && Array.isArray(bar.events) ? bar.events : [];
+    var withChord = [];
+    for (var i = 0; i < events.length; i++) {
+      if (events[i] && events[i].chord)
+        withChord.push(String(events[i].chord).replace(/[!~]$/, '').trim());
+    }
+    if (withChord.length) return withChord;
+    if (bar && bar.chordToken) {
+      return String(bar.chordToken)
+        .replace(/[!~]$/, '')
+        .trim()
+        .split('_')
+        .map(function (p) {
+          return p.trim();
+        })
+        .filter(Boolean);
+    }
+    return [];
+  }
+
+  function parseTimeSig(ts) {
+    var m = /^(\d+)\s*\/\s*(\d+)$/.exec(String(ts || '4/4'));
+    return m ? [parseInt(m[1], 10), parseInt(m[2], 10)] : [4, 4];
+  }
+
+  /**
+   * Turn the current CSMPN chart into the engine's score shape (the one
+   * `scoreChromaSequence`/`scoreEventTimes`/`alignPcmToScore` consume) plus a
+   * `keyToCi` map from each event's `${bar}.${beat}` key back to the running
+   * chord index the renderer stamped. Walks `parseHybridChartFromCSMPN` sections
+   * → bars in the same order the renderer does, so indices line up.
+   *
+   * `chordToMidi` is injected (the app passes `AudioPlayback.chordToMidi`) so this
+   * stays pure and unit-testable with a stub. Beats are assigned by even split
+   * within the bar — the alignment keys are internal and mapped back to `ci`, so
+   * the beat values only need to be self-consistent, not match the renderer's.
+   */
+  function csmpnChartToScore(source, chordToMidi) {
+    var parse = typeof window !== 'undefined' && window.parseHybridChartFromCSMPN;
+    if (!parse) return null;
+    var hybrid = parse(source || '');
+    if (!hybrid || !hybrid.sections || !hybrid.sections.length) return null;
+    var docTs = parseTimeSig(hybrid.time || '4/4');
+    var bars = [];
+    var keyToCi = {};
+    var ci = 0;
+    var barNum = 0;
+    for (var si = 0; si < hybrid.sections.length; si++) {
+      var secBars = hybrid.sections[si].bars || [];
+      for (var bi = 0; bi < secBars.length; bi++) {
+        var bar = secBars[bi];
+        barNum++;
+        var ts = bar && bar.timeSig ? parseTimeSig(bar.timeSig) : docTs;
+        var pulses = ts[0] || 4;
+        var chords = chartChordList(bar);
+        var n = chords.length;
+        var events = [];
+        for (var k = 0; k < n; k++) {
+          var dur = pulses / n;
+          var beat = k * dur;
+          var midis = chordToMidi ? chordToMidi(chords[k]) || [] : [];
+          events.push({
+            symbol: chords[k],
+            midis: Array.from(midis),
+            beat: beat,
+            durBeats: dur,
+            qbeat: beat,
+            qdur: dur,
+          });
+          keyToCi[barNum + '.' + beat] = ci;
+          ci++;
+        }
+        bars.push({ number: barNum, timeSig: ts, events: events });
+      }
+    }
+    if (!ci) return null;
+    return { score: { timeSig: docTs, bars: bars }, keyToCi: keyToCi, chordCount: ci };
+  }
+
+  /**
+   * Map DTW/linear segment keys onto chord indices. Pure helper split out so the
+   * key→ci translation is unit-testable without the engine.
+   */
+  function segmentsToCi(segments, keyToCi) {
+    return (segments || []).map(function (seg) {
+      var ci = seg.key != null && keyToCi[seg.key] != null ? keyToCi[seg.key] : -1;
+      return { sec: seg.sec, ci: ci };
+    });
+  }
+
   // ── Browser-only ──────────────────────────────────────────────────────────
 
   function audioContextClass() {
@@ -256,6 +354,58 @@
   }
 
   /**
+   * Align a reference recording to the current chart for a synced playhead.
+   *
+   * Builds the engine score from the chart, runs the engine's DTW aligner
+   * (`alignPcmToScore` — already vendored + tested) to get audio-time → chord
+   * segments, plus the linear `scoreEventTimes` map as a confidence fallback.
+   * Both are returned with keys already translated to chord indices (`ci`), so
+   * the rAF playhead just highlights `[data-ci]`. DTW is adopted only when its
+   * confidence clears `minConfidence`; otherwise the caller stretches the linear
+   * map across the recording (the honest "no reliable tempo" fallback).
+   */
+  async function alignReference(pcm, source, opts) {
+    opts = opts || {};
+    if (!window.RecognitionBridge) throw new Error('Recognition engine not available.');
+    var chordToMidi = (window.AudioPlayback && window.AudioPlayback.chordToMidi) || null;
+    var built = csmpnChartToScore(source, chordToMidi);
+    if (!built || !built.chordCount) return null;
+    var engine = await window.RecognitionBridge.loadEngine();
+    var bpm = opts.bpm || 120;
+
+    var linearRaw = engine.scoreEventTimes(built.score, bpm);
+    var linear = (linearRaw.events || [])
+      .map(function (e) {
+        return { start: e.start, dur: e.dur, ci: built.keyToCi[e.key] != null ? built.keyToCi[e.key] : -1 };
+      })
+      .filter(function (e) {
+        return e.ci >= 0;
+      });
+
+    var out = {
+      chordCount: built.chordCount,
+      chartDurationSec: linearRaw.duration || 0,
+      linear: linear,
+      dtw: null,
+      confidence: 0,
+      useDtw: false,
+    };
+    try {
+      var al = engine.alignPcmToScore(pcm.mono, pcm.sampleRate, built.score, {
+        hopSec: opts.hopSec || 0.25,
+      });
+      if (al && al.segments) {
+        out.confidence = al.confidence || 0;
+        out.dtw = segmentsToCi(al.segments, built.keyToCi);
+        out.useDtw = out.confidence >= (opts.minConfidence != null ? opts.minConfidence : 0.35);
+      }
+    } catch (_e) {
+      /* DTW failed → the linear map carries the sync */
+    }
+    return out;
+  }
+
+  /**
    * Live pitch from the microphone. Returns a handle with `stop()`; `onNote`
    * fires with `{ freq, midi, note, cents, verdict, clarity }` or null when
    * nothing steady is being played.
@@ -347,10 +497,14 @@
     tuningVerdict: tuningVerdict,
     pulsesPerBar: pulsesPerBar,
     clarityDelta: clarityDelta,
+    chartChordList: chartChordList,
+    csmpnChartToScore: csmpnChartToScore,
+    segmentsToCi: segmentsToCi,
     supported: supported,
     decodeToPcm: decodeToPcm,
     pcmToChart: pcmToChart,
     isolateAndGate: isolateAndGate,
+    alignReference: alignReference,
     createTuner: createTuner,
   };
   if (typeof window !== 'undefined') window.AudioCapture = api;

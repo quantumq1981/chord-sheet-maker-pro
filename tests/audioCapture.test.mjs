@@ -24,6 +24,15 @@ function load() {
   return ctx.window.AudioCapture;
 }
 
+// A variant that lets a test seed the window (e.g. a stub parseHybridChartFromCSMPN)
+// before the module reads it. csmpnChartToScore reads window.* at call time.
+function loadWith(win) {
+  const ctx = { window: win, module: { exports: {} }, console };
+  vm.createContext(ctx);
+  vm.runInContext(readFileSync(join(root, 'audioCapture.js'), 'utf8'), ctx);
+  return ctx.window.AudioCapture;
+}
+
 const ac = load();
 
 // ── Downmix ──────────────────────────────────────────────────────────────────
@@ -172,6 +181,99 @@ test('clarityDelta is safe when the raw mix scored zero clarity', () => {
 test('clarityDelta honours a caller-supplied margin', () => {
   assert.equal(ac.clarityDelta(0.4, 0.42, 10).helps, false, '5% under a 10% bar');
   assert.equal(ac.clarityDelta(0.4, 0.42, 4).helps, true, '5% over a 4% bar');
+});
+
+// ── Reference-audio sync: chart → engine score ───────────────────────────────
+
+// Results cross the vm realm boundary, so normalise arrays before deepEqual
+// (a vm-realm Array/Object fails deepStrictEqual against a test-realm literal).
+const arr = (x) => Array.from(x);
+const plain = (x) => JSON.parse(JSON.stringify(x));
+
+test('chartChordList mirrors hrBar: events-with-chord win over the bar token', () => {
+  const bar = { chordToken: 'C', events: [{ chord: 'Am' }, { chord: 'F' }] };
+  assert.deepEqual(arr(ac.chartChordList(bar)), ['Am', 'F'], 'per-event chords, in order');
+});
+
+test('chartChordList splits a multi-chord token and strips accent/sustain flags', () => {
+  assert.deepEqual(arr(ac.chartChordList({ chordToken: 'Bb_C7!' })), ['Bb', 'C7']);
+  assert.deepEqual(arr(ac.chartChordList({ chordToken: 'G~' })), ['G']);
+  assert.deepEqual(arr(ac.chartChordList({})), [], 'an empty bar contributes no chords');
+});
+
+test('csmpnChartToScore builds the engine score and a key→chord-index map', () => {
+  // Stub the global parser the seam reads, and a chordToMidi that tags its input.
+  const parseResult = {
+    time: '4/4',
+    sections: [{ bars: [{ chordToken: 'C' }, { chordToken: 'Am_F' }] }],
+  };
+  const seam = loadWith({ parseHybridChartFromCSMPN: () => parseResult });
+  const midi = (sym) => (sym === 'C' ? [48, 52, 55] : [1]);
+  const built = seam.csmpnChartToScore('ignored', midi);
+
+  assert.equal(built.chordCount, 3, 'C + (Am,F) = 3 chords');
+  assert.equal(built.score.bars.length, 2);
+  // Bar 1: one chord fills the bar at beat 0; bar 2: two chords split evenly (beats 0, 2).
+  assert.deepEqual(
+    arr(built.score.bars[1].events).map((e) => e.beat),
+    [0, 2],
+    'a two-chord 4/4 bar splits at beats 0 and 2'
+  );
+  assert.deepEqual(
+    arr(built.score.bars[0].events[0].midis),
+    [48, 52, 55],
+    'midis come from chordToMidi'
+  );
+  // keyToCi keys are `${barNumber}.${beat}` and map to the running chord index.
+  assert.equal(built.keyToCi['1.0'], 0, 'first chord');
+  assert.equal(built.keyToCi['2.0'], 1, 'second bar, first chord');
+  assert.equal(built.keyToCi['2.2'], 2, 'second bar, second chord');
+  assert.deepEqual(
+    arr(built.score.bars[0].timeSig),
+    [4, 4],
+    'timeSig is [num,den] for scoreEventTimes'
+  );
+});
+
+test('csmpnChartToScore returns null when there is no chart to align', () => {
+  assert.equal(
+    ac.csmpnChartToScore('anything', () => []),
+    null,
+    'no global parser → null'
+  );
+  const empty = loadWith({ parseHybridChartFromCSMPN: () => ({ sections: [] }) });
+  assert.equal(
+    empty.csmpnChartToScore('x', () => []),
+    null,
+    'no sections → null'
+  );
+  const noChords = loadWith({
+    parseHybridChartFromCSMPN: () => ({ time: '4/4', sections: [{ bars: [{}] }] }),
+  });
+  assert.equal(
+    noChords.csmpnChartToScore('x', () => []),
+    null,
+    'no chords → null'
+  );
+});
+
+test('segmentsToCi translates alignment keys to chord indices, -1 for unknown', () => {
+  const keyToCi = { '1.0': 0, '2.0': 1 };
+  const segs = ac.segmentsToCi(
+    [
+      { sec: 0, key: '1.0' },
+      { sec: 1.2, key: '2.0' },
+      { sec: 3, key: null },
+      { sec: 4, key: '9.9' },
+    ],
+    keyToCi
+  );
+  assert.deepEqual(plain(segs), [
+    { sec: 0, ci: 0 },
+    { sec: 1.2, ci: 1 },
+    { sec: 3, ci: -1 },
+    { sec: 4, ci: -1 },
+  ]);
 });
 
 // ── Shipping ─────────────────────────────────────────────────────────────────

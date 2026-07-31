@@ -73,6 +73,35 @@ test('compound and simple charts both produce a single <svg> document', () => {
   assert.ok(out.includes('>G<'));
 });
 
+// The load-bearing contract for reference-audio sync: the data-ci indices the
+// renderer stamps on chord labels must line up, in order, with the chords
+// csmpnChartToScore emits — otherwise a playhead highlights the wrong chord.
+test('rendered data-ci chord indices align with the reference-audio score builder', () => {
+  const ctx = loadRenderer();
+  vm.runInContext(readFileSync(new URL('../audioCapture.js', import.meta.url), 'utf8'), ctx);
+  const ac = ctx.window.AudioCapture;
+
+  const source = 'Title: Sync\nTime: 4/4\n\n- Verse\n| C | Am_F | G |\n- Chorus\n| D | E |\n';
+  const out = ctx.renderHybridDoc(source);
+
+  // Extract (index → chord text) from the rendered SVG, in document order.
+  const rendered = [];
+  const re = /data-ci="(\d+)"[^>]*>([^<]+)</g;
+  let m;
+  while ((m = re.exec(out))) rendered[Number(m[1])] = m[2];
+
+  // The builder's chord order (chordToMidi irrelevant here → stub).
+  const built = ac.csmpnChartToScore(source, () => []);
+  const builtSymbols = Array.from(built.score.bars).flatMap((b) =>
+    Array.from(b.events).map((e) => e.symbol)
+  );
+
+  assert.equal(rendered.length, built.chordCount, 'same number of chords rendered and scored');
+  assert.deepEqual(rendered, builtSymbols, 'chord N on the page is chord N in the score');
+  // Spot-check the split bar: C(0) Am(1) F(2) G(3) D(4) E(5)
+  assert.deepEqual(builtSymbols, ['C', 'Am', 'F', 'G', 'D', 'E']);
+});
+
 // A single chord bar in the no-events (zero-rhythm) path draws one filled
 // polygon per slash notehead, so counting <polygon> gives the slash count.
 const slashCount = (svg) => (svg.match(/<polygon/g) || []).length;

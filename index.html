@@ -277,6 +277,21 @@
   @media (min-width:1000px){ .tunerBox{ bottom:18px; } }
   @media print{ .tunerBox{ display:none !important; } }
 
+  /* Play-Along: the chord sounding now, highlighted on the Slash-Rhythm SVG. */
+  .hrChord.hrChordNow{ fill:var(--accent) !important; }
+  .refBar{
+    position:fixed; left:50%; transform:translateX(-50%); z-index:95;
+    bottom:calc(18px + var(--ui-nav-h, 58px) + env(safe-area-inset-bottom, 0px));
+    display:flex; align-items:center; gap:10px; max-width:92vw;
+    padding:10px 14px; border-radius:14px;
+    background:var(--card); border:1px solid var(--border);
+    box-shadow:0 6px 24px rgba(32,32,28,.18); font-size:13px;
+  }
+  .refBar button{ min-height:38px; }
+  .refBar .refStatus{ color:var(--muted); }
+  @media (min-width:1000px){ .refBar{ bottom:18px; } }
+  @media print{ .refBar{ display:none !important; } .hrChord.hrChordNow{ fill:inherit !important; } }
+
   /* Floating Print mirror — shown only while the toolbar ⎙ Print is off-screen
      so long charts can be printed without scrolling back to the top. */
   #btnPrintFloat{
@@ -2169,8 +2184,10 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
           <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
           <button class="outline power-only" id="btnTuner" title="Tune up — live pitch from the microphone">&#127908; Tuner</button>
+          <button class="outline power-only" id="btnRefAudio" title="Play a reference recording and follow along — the chart's chords highlight in time">&#127911; Play-Along</button>
           <button class="outline power-only" id="btnSetlist" title="Setlist / Songbook — save and print multiple charts">&#9776; Setlist<span class="setlist-badge" id="setlistBadge" style="display:none">0</span></button>
         </div>
+        <input id="fileInputRefAudio" type="file" style="display:none" />
       </div>
 
     </div>
@@ -3997,6 +4014,127 @@ fileInputAudio.addEventListener('change', async () => {
     } catch (err) {
       close();
       setStatus(`Tuner could not start: ${err?.message || err}`, 'error');
+    }
+  });
+})();
+
+// ── Play-Along: reference recording synced to the chart ─────────────────────
+// Attach a recording; the engine's DTW aligner (alignReference) maps audio time
+// to the chart's chords, and an rAF loop highlights the chord sounding now on the
+// Slash-Rhythm SVG (the [data-ci] labels the renderer stamps). When DTW isn't
+// confident it stretches the linear chart map across the recording — honest, if
+// coarse. Browser-only glue (decode + <audio> + rAF); the maths is tested in the
+// engine and audioCapture. Smoke-test on device.
+(function () {
+  const btn = document.getElementById('btnRefAudio');
+  const fileInput = document.getElementById('fileInputRefAudio');
+  if (!btn || !fileInput) return;
+
+  let audioEl = null, objUrl = null, align = null, raf = null, bar = null, lastEl = null;
+
+  function clearHighlight() {
+    if (lastEl) { lastEl.classList.remove('hrChordNow'); lastEl = null; }
+  }
+  function highlight(ci) {
+    if (ci < 0) { clearHighlight(); return; }
+    const el = previewEl.querySelector('.hrChord[data-ci="' + ci + '"]');
+    if (el === lastEl) return;
+    clearHighlight();
+    if (el) { el.classList.add('hrChordNow'); lastEl = el; }
+  }
+  function ciAt(t) {
+    if (!align) return -1;
+    if (align.useDtw && align.dtw && align.dtw.length) {
+      let ci = -1;
+      for (const seg of align.dtw) { if (seg.sec <= t) ci = seg.ci; else break; }
+      return ci;
+    }
+    // Fallback: stretch the linear (chart-tempo) map across the recording.
+    const dur = audioEl && isFinite(audioEl.duration) ? audioEl.duration : 0;
+    if (!dur || !align.chartDurationSec || !align.linear.length) return -1;
+    const chartT = (t / dur) * align.chartDurationSec;
+    let ci = -1;
+    for (const e of align.linear) { if (e.start <= chartT) ci = e.ci; else break; }
+    return ci;
+  }
+  function loop() {
+    if (!audioEl) return;
+    highlight(ciAt(audioEl.currentTime));
+    raf = requestAnimationFrame(loop);
+  }
+  function teardown() {
+    if (raf) { cancelAnimationFrame(raf); raf = null; }
+    clearHighlight();
+    if (audioEl) { try { audioEl.pause(); } catch (_e) {} audioEl = null; }
+    if (objUrl) { try { URL.revokeObjectURL(objUrl); } catch (_e) {} objUrl = null; }
+    if (bar) { bar.remove(); bar = null; }
+    align = null;
+    btn.setAttribute('aria-pressed', 'false');
+  }
+
+  btn.addEventListener('click', () => {
+    if (bar) { teardown(); setStatus('Play-Along closed.'); return; }
+    if (!window.AudioCapture || !window.AudioCapture.supported()) {
+      setStatus('This browser has no Web Audio support — Play-Along is unavailable.', 'error');
+      return;
+    }
+    if (!sourceEl.value.trim()) { setStatus('Load a chart first, then attach a recording to play along.', 'error'); return; }
+    fileInput.value = '';
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    try {
+      setStatus(`Decoding ${file.name}…`);
+      const buf = await file.arrayBuffer();
+      const pcm = await window.AudioCapture.decodeToPcm(buf.slice(0));
+      setStatus('Aligning the recording to your chart…');
+      await new Promise((r) => setTimeout(r, 0));
+      align = await window.AudioCapture.alignReference(pcm, sourceEl.value, {});
+      if (!align) { setStatus('Could not build a chart to sync to.', 'error'); return; }
+
+      objUrl = URL.createObjectURL(file);
+      audioEl = new Audio(objUrl);
+      audioEl.addEventListener('ended', () => { clearHighlight(); if (playBtn) playBtn.textContent = '▶ Play'; });
+
+      bar = document.createElement('div');
+      bar.className = 'refBar';
+      bar.innerHTML =
+        '<button class="cta" id="refPlayBtn">▶ Play</button>' +
+        '<span class="refStatus" id="refStatus"></span>' +
+        '<button class="outline" id="refCloseBtn" aria-label="Close Play-Along">✕</button>';
+      document.body.appendChild(bar);
+      const playBtn = bar.querySelector('#refPlayBtn');
+      const statusEl = bar.querySelector('#refStatus');
+      bar.querySelector('#refCloseBtn').addEventListener('click', () => { teardown(); setStatus('Play-Along closed.'); });
+
+      const synced = align.useDtw
+        ? `auto-synced (match ${Math.round(align.confidence * 100)}%)`
+        : 'estimated sync — auto-align was weak on this take';
+      statusEl.textContent = synced;
+      if (!previewEl.querySelector('[data-ci]'))
+        statusEl.textContent += ' · turn on Slash-Rhythm View to see chords light up';
+
+      playBtn.addEventListener('click', async () => {
+        if (!audioEl) return;
+        if (audioEl.paused) {
+          try { await audioEl.play(); } catch (e) { setStatus(`Playback blocked: ${e?.message || e}`, 'error'); return; }
+          playBtn.textContent = '■ Stop';
+          loop();
+        } else {
+          audioEl.pause(); if (raf) { cancelAnimationFrame(raf); raf = null; }
+          clearHighlight(); playBtn.textContent = '▶ Play';
+        }
+      });
+
+      btn.setAttribute('aria-pressed', 'true');
+      setStatus(`Attached ${file.name} — ${synced}. Tap Play to follow along.`);
+    } catch (err) {
+      console.error(err);
+      teardown();
+      setStatus(`Play-Along failed: ${err?.message || err}`, 'error');
     }
   });
 })();
