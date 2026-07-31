@@ -183,6 +183,8 @@
   }
   .toolbar-group{
     display:flex;
+    flex-wrap:wrap;      /* a group is one flex item; without this a 5-button
+                            group cannot break and pushes the page sideways */
     align-items:center;
     gap:6px;
   }
@@ -235,7 +237,10 @@
   /* Floating Print mirror — shown only while the toolbar ⎙ Print is off-screen
      so long charts can be printed without scrolling back to the top. */
   #btnPrintFloat{
-    position:fixed; right:16px; bottom:18px; z-index:90;
+    /* Clears the fixed stage nav (bottom bar on phone/tablet). On the wide
+       layout the nav becomes a left rail, so the offset is dropped again. */
+    position:fixed; right:16px; z-index:90;
+    bottom:calc(18px + var(--ui-nav-h, 58px) + env(safe-area-inset-bottom, 0px));
     display:none; align-items:center; justify-content:center;
     width:52px; height:52px; padding:0; border:none; border-radius:50%;
     font-size:24px; line-height:1; cursor:pointer; color:#fff;
@@ -2666,7 +2671,7 @@ Tempo: 130
       </div>
     </div>
 
-    <button id="btnPrintFloat" title="Print / PDF" aria-label="Print / PDF">⎙</button>
+    <button id="btnPrintFloat" data-stage-item="perform" title="Print / PDF" aria-label="Print / PDF">⎙</button>
     <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.mid,.midi,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx,.ptb,.csml,text/plain,application/pdf" style="display:none" />
     <!-- Dedicated hidden file inputs for each format -->
     <input id="fileInputMusicXML" type="file" accept=".musicxml,.xml,.mxl,text/xml,application/xml" style="display:none" />

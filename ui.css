@@ -111,7 +111,7 @@ body.has-stage-nav {
   padding-bottom: calc(var(--ui-nav-h) + env(safe-area-inset-bottom, 0px) + 12px);
 }
 
-@media (min-width: 900px) {
+@media (min-width: 1000px) {
   .stageNav {
     top: 0;
     right: auto;
@@ -143,6 +143,11 @@ body.has-stage-nav {
   body.has-stage-nav {
     padding-bottom: 0;
     padding-left: var(--ui-rail-w);
+  }
+
+  /* Nav is a left rail here, so the floating print button needs no bottom offset. */
+  #btnPrintFloat {
+    bottom: 18px;
   }
 }
 
