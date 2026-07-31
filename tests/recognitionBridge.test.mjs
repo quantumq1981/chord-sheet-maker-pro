@@ -50,9 +50,13 @@ function loadBridge(engineModule = engine) {
     console,
     __loadEngineModule: () => Promise.resolve(engineModule),
   };
-  const src = stubbedBridgeSource();
   vm.createContext(ctx);
-  vm.runInContext(src, ctx);
+  // The bridge reads window.ChordTheory for harmony recovery — the same oracle
+  // the app's own importers use, so recovery is tested through the real thing.
+  for (const f of ['utils.js', 'chordTheory.js']) {
+    vm.runInContext(readFileSync(join(root, f), 'utf8'), ctx);
+  }
+  vm.runInContext(stubbedBridgeSource(), ctx);
   return ctx.window.RecognitionBridge;
 }
 
@@ -253,4 +257,161 @@ test('the dynamic-import specifier matches ENGINE_URL, so the deploy guard follo
   const literal = src.match(/import\(\s*'([^']+)'\s*\)/);
   assert.ok(literal, 'the engine is loaded by a literal dynamic import');
   assert.equal(literal[1], bridge.ENGINE_URL);
+});
+
+// ── Cross-track harmony recovery ─────────────────────────────────────────────
+
+test('harvestBarPitches weighs pitch classes by duration across every part', () => {
+  const scores = [
+    { bars: [{ events: [{ midis: [60], qdur: 4 }] }] }, // C, held
+    { bars: [{ events: [{ midis: [64, 67], qdur: 1 }] }] }, // E + G, brief
+  ];
+  const h = plain(bridge.harvestBarPitches(scores, 0));
+  assert.equal(h.bassPc, 0, 'the lowest note is the bass');
+  assert.ok(h.weights[0] > h.weights[4], 'the held note outweighs the brief one');
+  assert.deepEqual(
+    Object.keys(h.weights)
+      .map(Number)
+      .sort((a, b) => a - b),
+    [0, 4, 7]
+  );
+});
+
+test('harvestBarPitches is empty when no part plays that bar', () => {
+  const h = plain(bridge.harvestBarPitches([{ bars: [{ events: [] }] }], 0));
+  assert.deepEqual(h.weights, {});
+  assert.equal(h.bassPc, null);
+});
+
+test('an empty bar takes its harmony from the other parts', () => {
+  // The chosen part rests; another part plays a C major triad.
+  const chosen = { timeSig: [4, 4], bars: [{ events: [] }] };
+  const others = [chosen, { bars: [{ events: [{ midis: [48, 52, 55], qdur: 4 }] }] }];
+  const out = bridge.recoverEmptyBars(chosen, others, {});
+  assert.equal(out.recoveredBars, 1);
+  assert.equal(out.bars[0].events[0].symbol, 'C');
+  assert.equal(out.bars[0].events[0].recovered, true);
+  assert.equal(out.bars[0].events[0].durBeats, 4, 'a whole-bar event');
+  assert.deepEqual(plain(out.bars[0].events[0].midis), [], 'no fingering is claimed');
+});
+
+test('a bar that states its own chords is never second-guessed', () => {
+  const chosen = { timeSig: [4, 4], bars: [{ events: [{ symbol: 'Am', midis: [57, 60, 64] }] }] };
+  const others = [chosen, { bars: [{ events: [{ midis: [48, 52, 55], qdur: 4 }] }] }];
+  const out = bridge.recoverEmptyBars(chosen, others, {});
+  assert.equal(out.recoveredBars, undefined, 'nothing was recovered');
+  assert.equal(out.bars[0].events[0].symbol, 'Am');
+});
+
+test('silence and a lone note stay an honest N.C.', () => {
+  const chosen = { timeSig: [4, 4], bars: [{ events: [] }, { events: [] }] };
+  const others = [
+    chosen,
+    { bars: [{ events: [] }, { events: [{ midis: [60], qdur: 4 }] }] }, // silence, then one note
+  ];
+  const out = bridge.recoverEmptyBars(chosen, others, {});
+  assert.equal((out.bars[0].events || []).length, 0, 'silence recovers nothing');
+  assert.equal((out.bars[1].events || []).length, 0, 'a single pitch class is not a chord');
+});
+
+test('recovery does not mutate the engine’s own score', () => {
+  const chosen = { timeSig: [4, 4], bars: [{ events: [] }] };
+  const others = [chosen, { bars: [{ events: [{ midis: [48, 52, 55], qdur: 4 }] }] }];
+  const out = bridge.recoverEmptyBars(chosen, others, {});
+  assert.notEqual(out, chosen);
+  assert.equal(chosen.bars[0].events.length, 0, 'the input is untouched');
+});
+
+test('a real multi-track import comes back playable, not half N.C.', async () => {
+  // The regression this recovery exists for: routing imports through the engine
+  // alone returned 45% of Peg's bars and 49% of Kid Charlemagne's as N.C., because
+  // the chosen guitar rests while the band plays.
+  for (const [file, part] of [
+    ['Steely Dan - Peg.gp4', 3],
+    ['steely-dan-kid_charlemegne.gp3', 0],
+  ]) {
+    const res = await bridge.importBinary(bytes(file), {
+      filename: file,
+      partIndex: part,
+      tab: false,
+      hybrid: false,
+    });
+    const cells = res.csmpn
+      .split('\n')
+      .filter((l) => l.includes('|'))
+      .flatMap((l) => l.split(/\s*(?:\|\||\|:|:\||\||\|\])\s*/))
+      .map((c) => c.trim())
+      .filter(Boolean);
+    const nc = cells.filter((c) => c === 'N.C.').length;
+    assert.ok(res.recoveredBars > 20, `${file}: expected real recovery, got ${res.recoveredBars}`);
+    assert.ok(nc / cells.length < 0.1, `${file}: ${nc}/${cells.length} bars still N.C.`);
+  }
+});
+
+test('recovery is skipped, not fatal, when ChordTheory is absent', () => {
+  const ctx = { window: {}, console, __loadEngineModule: () => Promise.resolve(engine) };
+  vm.createContext(ctx);
+  vm.runInContext(stubbedBridgeSource(), ctx);
+  const bare = ctx.window.RecognitionBridge;
+  const score = { timeSig: [4, 4], bars: [{ events: [] }] };
+  assert.equal(bare.recoverEmptyBars(score, [score], {}), score, 'returned unchanged');
+});
+
+// ── Tab PDFs (fret geometry, no chord symbols) ───────────────────────────────
+
+test('pdfTokenScale normalises an oversized export page and leaves normal ones alone', () => {
+  // A Guitar Pro / alphaTab PDF page can be 4209pt tall. The engine's parser
+  // only measures string-line gaps under 20pt, so at that scale it finds none,
+  // falls back to 7pt, and reports zero systems on a page full of legible tab.
+  assert.ok(Math.abs(bridge.pdfTokenScale(4209) - 792 / 4209) < 1e-9);
+  assert.equal(bridge.pdfTokenScale(792), 1, 'a normal page is untouched');
+  assert.equal(bridge.pdfTokenScale(1000), 1, 'below the 1.5x trigger, untouched');
+  assert.equal(bridge.pdfTokenScale(0), 1, 'no height is not a division by zero');
+  assert.equal(bridge.pdfTokenScale(2000, 1000), 0.5, 'the target is configurable');
+});
+
+test('importTabPdf refuses too little to work with rather than returning half a chart', async () => {
+  assert.equal(await bridge.importTabPdf([], {}), null);
+  assert.equal(await bridge.importTabPdf(null, {}), null, 'a scanned PDF yields no digits');
+  // Enough tokens to pass the count gate, but no staff geometry in them.
+  const junk = Array.from({ length: 20 }, (_, i) => ({ page: 1, x: i * 40, y: 100, val: 3 }));
+  assert.equal(await bridge.importTabPdf(junk, {}), null, 'one row is not a staff');
+});
+
+test('importTabPdf reads six string lines into chords and hands back parseable CSMPN', async () => {
+  // A synthetic system: two measures, each two columns of an open E shape on six
+  // evenly spaced string lines, at the ~7pt spacing the engine expects, with a
+  // measure number above each.
+  const SP = 7;
+  const top = 200;
+  const shape = [0, 2, 2, 1, 0, 0]; // low E -> high e
+  const tokens = [];
+  [
+    [40, [60, 140]],
+    [240, [260, 340]],
+  ].forEach(([markX, xs], mi) => {
+    tokens.push({ page: 1, x: markX, y: top - SP * 2.5, val: mi + 1 });
+    xs.forEach((x) =>
+      shape.forEach((fret, engIdx) =>
+        tokens.push({ page: 1, x, y: top + (5 - engIdx) * SP, val: fret })
+      )
+    );
+  });
+
+  const res = await bridge.importTabPdf(tokens, { title: 'Synthetic' });
+  assert.ok(res, 'a well-formed system is read');
+  assert.equal(res.systems, 1);
+  assert.equal(res.columns, 4);
+  assert.equal(res.summary.bars, 2);
+  assert.match(res.csmpn, /^Title: Synthetic$/m);
+  assert.match(res.csmpn, /\bE\b/, 'the open E shape is named');
+
+  const { parseCSMPN } = loadCsmpnParser();
+  const doc = parseCSMPN(res.csmpn);
+  assert.deepEqual(doc.warnings || [], [], 'the tab-PDF handoff must be warning-free too');
+
+  // The frets belong to one transcription rather than to a chord shape worth
+  // showing, and column geometry carries no reliable onset timing.
+  assert.ok(!res.csmpn.includes('{tab'), 'no tab block');
+  assert.ok(!res.csmpn.includes('{hybrid'), 'no hybrid block');
 });

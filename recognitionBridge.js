@@ -122,6 +122,162 @@
     };
   }
 
+  /**
+   * Duration-weighted pitch classes sounding in one bar across EVERY parsed
+   * part, plus the lowest sounding note's pitch class.
+   *
+   * The chosen part states the changes most of the time, but it goes melodic or
+   * drops out over intros, solos and turnarounds — and the harmony is still
+   * there, in the other instruments.
+   */
+  function harvestBarPitches(scores, index) {
+    var weights = Object.create(null);
+    var lowest = Infinity;
+    var pc = function (m) {
+      return ((m % 12) + 12) % 12;
+    };
+    for (var s = 0; s < (scores || []).length; s++) {
+      var bars = scores[s] && scores[s].bars;
+      var bar = bars && bars[index];
+      if (!bar) continue;
+      var events = bar.events || [];
+      for (var e = 0; e < events.length; e++) {
+        var ev = events[e];
+        var midis = ev.midis || [];
+        var w = Math.max(ev.qdur != null ? ev.qdur : ev.durBeats || 1, 0.25);
+        for (var m = 0; m < midis.length; m++) {
+          weights[pc(midis[m])] = (weights[pc(midis[m])] || 0) + w;
+          if (midis[m] < lowest) lowest = midis[m];
+        }
+      }
+    }
+    return { weights: weights, bassPc: lowest === Infinity ? null : pc(lowest) };
+  }
+
+  /**
+   * Recover the harmony of bars the chosen part leaves empty.
+   *
+   * Without this a chart imported from a multi-track file comes back nearly half
+   * N.C. — measured at 45% of bars on Peg and 49% on Kid Charlemagne — because
+   * the guitar rests while the band plays. This is the same recovery this app's
+   * own Guitar Pro importer does (Sprint 19), reading the engine's parsed notes
+   * instead of AlphaTab's, and through the same ChordTheory oracle.
+   *
+   * Only genuinely empty bars are touched, so a part that states its own chords
+   * is never second-guessed. ChordTheory requires two structural pitch classes
+   * before it will name anything, so a lone passing note or real silence stays
+   * an honest N.C.
+   *
+   * Returns a new score; the engine's own object is not mutated.
+   */
+  function recoverEmptyBars(score, scores, opts) {
+    var theory = (typeof window !== 'undefined' && window.ChordTheory) || null;
+    if (!theory || !theory.recognizeChordFromPcs || !score || !score.bars) return score;
+    opts = opts || {};
+
+    var beatsPerBar = (score.timeSig && score.timeSig[0]) || 4;
+    var recovered = 0;
+    var bars = score.bars.map(function (bar, index) {
+      if ((bar.events || []).length) return bar;
+      var harvest = harvestBarPitches(scores, index);
+      var symbol = theory.recognizeChordFromPcs(harvest.weights, harvest.bassPc, {
+        key: opts.key || null,
+      });
+      if (!symbol) return bar;
+      recovered++;
+      // A synthetic whole-bar event. No frets: this harmony was assembled from
+      // several instruments, so there is no one fingering to claim.
+      var event = {
+        symbol: symbol,
+        beat: 0,
+        durBeats: beatsPerBar,
+        qbeat: 0,
+        qdur: beatsPerBar,
+        midis: [],
+        recovered: true,
+      };
+      var next = {};
+      for (var k in bar) if (Object.prototype.hasOwnProperty.call(bar, k)) next[k] = bar[k];
+      next.events = [event];
+      return next;
+    });
+
+    if (!recovered) return score;
+    var out = {};
+    for (var k2 in score) if (Object.prototype.hasOwnProperty.call(score, k2)) out[k2] = score[k2];
+    out.bars = bars;
+    out.recoveredBars = recovered;
+    return out;
+  }
+
+  /**
+   * Scale factor that brings a PDF page back to normal page geometry.
+   *
+   * The engine's tab-PDF parser derives every threshold from the spacing between
+   * string lines, and it only measures gaps under 20pt. Guitar Pro and alphaTab
+   * export at a large user-unit scale — a page can be 4209pt tall, where the
+   * string lines sit ~37pt apart — so no gap qualifies, the estimate falls back
+   * to 7pt, and every threshold ends up ~10x too small: no run of lines ever
+   * looks like a staff, and the parser reports zero systems on a page full of
+   * legible tab.
+   *
+   * Normalising the coordinates instead of the thresholds keeps the engine's
+   * validated numbers intact and treats "tokens arrive at normal page scale" as
+   * the contract it always implicitly was. Pages already near normal size are
+   * left alone, so nothing that parses today changes.
+   */
+  function pdfTokenScale(pageHeight, target) {
+    target = target || 792; // US Letter, points
+    if (!pageHeight || pageHeight <= 0) return 1;
+    return pageHeight > target * 1.5 ? target / pageHeight : 1;
+  }
+
+  /**
+   * A tab PDF carries no chord symbols — the harmony is in the fret numbers. So
+   * this reads the digits' geometry (which string, which column, which measure)
+   * and names the chord each column sounds.
+   *
+   * `tokens` are `{ page, x, y, val }` with y measured DOWNWARD from the top of
+   * the page — the caller does the pdfjs extraction, since that is the only
+   * browser-dependent part.
+   *
+   * Returns null rather than a near-empty chart when too little survives: a
+   * scanned (image-only) PDF produces no digits at all, and half a bar is worse
+   * than an honest failure that lets the caller try another importer.
+   */
+  async function importTabPdf(tokens, opts) {
+    opts = opts || {};
+    if (!tokens || tokens.length < 12) return null;
+    var engine = await loadEngine();
+
+    var chart = engine.buildChart(tokens);
+    if (!chart || !chart.systemsFound || !chart.columnsFound) return null;
+
+    var score = engine.buildScore(chart, opts.useSharp !== false);
+    if (!score || !score.bars || score.bars.length < 2) return null;
+
+    var key = engine.analyzeKey(score);
+    var csmpn = engine.scoreToCSMPN(score, {
+      title: opts.title || 'Imported tab',
+      key: key,
+      tempo: opts.tempo || 0,
+      useSharp: opts.useSharp !== false,
+      // The frets belong to a specific transcription, not to a chord shape the
+      // player should be shown, and there is no reliable onset timing here.
+      tab: false,
+      hybrid: false,
+    });
+
+    return {
+      csmpn: csmpn,
+      score: score,
+      summary: importSummary(score),
+      systems: chart.systemsFound,
+      columns: chart.columnsFound,
+      key: engine.keyName(key, opts.useSharp !== false) || '',
+    };
+  }
+
   // ── Runtime ───────────────────────────────────────────────────────────────
 
   /**
@@ -150,19 +306,14 @@
     var first = await engine.parseGuitarProOrXML(u8, name, useSharp, 0);
     var parts = first.parts || [];
 
-    var index = 0;
-    var score = first;
-    if (opts.partIndex != null) {
-      index = opts.partIndex;
-      if (index !== 0) score = await engine.parseGuitarProOrXML(u8, name, useSharp, index);
-    } else if (parts.length > 1) {
-      var scores = [first];
-      for (var i = 1; i < parts.length; i++) {
-        scores.push(await engine.parseGuitarProOrXML(u8, name, useSharp, i));
-      }
-      index = pickChordPart(scores);
-      score = scores[index];
+    // Every part is parsed, not just the chosen one: the chooser needs them all
+    // to compare, and the harmony recovery below needs them all to read from.
+    var scores = [first];
+    for (var i = 1; i < parts.length; i++) {
+      scores.push(await engine.parseGuitarProOrXML(u8, name, useSharp, i));
     }
+    var index = opts.partIndex != null ? opts.partIndex : pickChordPart(scores);
+    var score = scores[index] || first;
 
     // An arpeggiated or single-note part would otherwise export one chord per
     // note; collapsing it to one chord per bar is what makes it a chart.
@@ -170,6 +321,8 @@
     var charted = melodic ? engine.simplifyScore(score, useSharp) : score;
 
     var key = engine.analyzeKey(charted);
+    // Bars the chosen part rests through get their harmony from the other parts.
+    charted = recoverEmptyBars(charted, scores, { key: engine.keyName(key, useSharp) });
     var csmpn = engine.scoreToCSMPN(charted, {
       title: opts.title || chartTitleFromFilename(name) || 'Imported chart',
       key: key,
@@ -186,6 +339,7 @@
       parts: parts,
       partIndex: index,
       melodic: melodic,
+      recoveredBars: charted.recoveredBars || 0,
       key: engine.keyName(key, useSharp) || '',
       summary: importSummary(charted),
       format: score.source || '',
@@ -197,6 +351,10 @@
     loadEngine: loadEngine,
     chartTitleFromFilename: chartTitleFromFilename,
     partHarmonyScore: partHarmonyScore,
+    harvestBarPitches: harvestBarPitches,
+    recoverEmptyBars: recoverEmptyBars,
+    pdfTokenScale: pdfTokenScale,
+    importTabPdf: importTabPdf,
     pickChordPart: pickChordPart,
     importSummary: importSummary,
     importBinary: importBinary,

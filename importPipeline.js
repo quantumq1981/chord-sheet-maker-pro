@@ -2434,6 +2434,13 @@ function detectSmuflTimeSigFromItems(items){
   if (![1, 2, 4, 8, 16, 32].includes(den)) return null;
   return num + '/' + den;
 }
+// A printed chord symbol in a PDF text layer. Deliberately strict: it decides
+// whether a PDF states its harmony in words (the two chord-text importers) or
+// only as fret numbers (the tab-geometry path), so a stray "A" of lyric text
+// must not read as a chord.
+const CHORD_TEXT_RE =
+  /^[A-G][b#♭♯]?(maj|min|dim|aug|sus|add|m|M|Δ|°|ø|\+|-)?\d*(sus\d?|add\d+|b\d+|#\d+)*(\/[A-G][b#♭♯]?)?$/;
+
 async function importUGProPDF(file){
   if (!window.pdfjsLib) throw new Error("PDF.js not loaded.");
   statusEl.textContent = "Reading PDF…";
@@ -2473,6 +2480,65 @@ async function importUGProPDF(file){
       }
     } catch (csErr) {
       /* not a chordsheet.com PDF — fall through to the UG-Pro importer */
+    }
+  }
+
+  // A tab PDF (alphaTab / Guitar Pro export) prints notation and TAB but NO
+  // chord symbols — the harmony only exists as fret numbers. Both importers
+  // below look for chord text, so they can only ever fail on one. The engine's
+  // geometry parser reads the digits instead and names what each column sounds.
+  // Runs only when the page really has no chord symbols, so no PDF that imports
+  // today changes route.
+  if (window.RecognitionBridge && window.RecognitionBridge.importTabPdf) {
+    try {
+      const tabTokens = [];
+      let sawChordText = false;
+      for (let tp = 1; tp <= pdf.numPages; tp++) {
+        const page = await pdf.getPage(tp);
+        const base = page.getViewport({ scale: 1 });
+        // Export scale varies wildly (a Guitar Pro page can be 4209pt tall);
+        // the parser's thresholds assume normal page geometry.
+        const scale = window.RecognitionBridge.pdfTokenScale(base.height);
+        const height = base.height * scale;
+        const items = (await page.getTextContent()).items;
+        for (const it of items) {
+          const str = (it.str ?? '').trim();
+          if (!str) continue;
+          if (/^\d+$/.test(str)) {
+            tabTokens.push({
+              page: tp,
+              x: (it.transform?.[4] ?? 0) * scale,
+              y: height - (it.transform?.[5] ?? 0) * scale, // parser wants y downward
+              val: parseInt(str, 10),
+            });
+          } else if (CHORD_TEXT_RE.test(str)) {
+            sawChordText = true;
+          }
+        }
+      }
+      if (!sawChordText && tabTokens.length >= 12) {
+        statusEl.textContent = 'Reading tab geometry…';
+        const tab = await window.RecognitionBridge.importTabPdf(tabTokens, {
+          title: (file.name || '').replace(/\.[A-Za-z0-9]{1,6}$/, ''),
+        });
+        if (tab) {
+          if (importDiagnostics) {
+            importDiagnostics.miner = 'Tab PDF';
+            importDiagnostics.sourceFlavor = 'tabpdf';
+            importDiagnostics.confidence = 'medium';
+            importDiagnostics.sections = tab.summary.sections;
+            importDiagnostics.bars = tab.summary.bars;
+            importDiagnostics.warnings.push(
+              'This PDF prints tab but no chord symbols, so the chords were read from the ' +
+                'fret numbers. Partial voicings name what is written (F5, Fdim/B), which is ' +
+                'not always the chord the band plays — worth a pass before you gig it.'
+            );
+          }
+          return tab.csmpn;
+        }
+      }
+    } catch (tabErr) {
+      /* not readable as a tab PDF — fall through to the UG-Pro importer */
     }
   }
 
