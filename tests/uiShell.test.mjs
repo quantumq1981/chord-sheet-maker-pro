@@ -218,3 +218,52 @@ test('body.power-mode remains the gate for existing .power-only elements', () =>
 test('ui.css ships — it is in the deploy copy list', () => {
   assert.ok(/cp [^\n]*\bui\.css\b/s.test(ci.replace(/\\\n/g, ' ')), 'ui.css in the cp step');
 });
+
+// ── Notation from an import ──────────────────────────────────────────────────
+
+// A call is file-backed when its argument is a bare variable — `importMXL(buf)`,
+// `importMusicXML(text)`. The two that are not: the handoff path reads a field off
+// an envelope (`f.musicxml`) and the self-test passes a literal, and neither has a
+// file's bytes to keep.
+const FILE_BACKED_IMPORT =
+  /\b(?:await\s+)?(?:importMusicXML|importMXL)\(\s*([A-Za-z_$][\w$]*)\s*\)/g;
+
+test('every file-backed MusicXML import remembers its bytes', () => {
+  // A counting invariant, not a style rule. The stashing used to be written out
+  // per branch, and the third MusicXML handler was missed — so a file imported
+  // from the Import menu got a chart with no notation while the same file on the
+  // main input worked. Any new importer added without the call trips this.
+  const importers = [...html.matchAll(FILE_BACKED_IMPORT)];
+  const remembers = (html.match(/\brememberScoreBytes\(/g) || []).length - 1; // −1: the definition
+  assert.ok(importers.length > 0, 'file-backed MusicXML importers found');
+  assert.equal(
+    remembers,
+    importers.length,
+    `${importers.length} file-backed MusicXML import(s) but ${remembers} remember bytes`
+  );
+});
+
+test('the bytes are remembered in the same import branch as the import itself', () => {
+  // Counting alone would pass if a handler stashed twice and another not at all.
+  // Every import branch closes with updateDiagnosticsPanel(), so that bounds it.
+  for (const m of html.matchAll(FILE_BACKED_IMPORT)) {
+    const end = html.indexOf('updateDiagnosticsPanel();', m.index);
+    const branch = html.slice(Math.max(0, m.index - 400), end < 0 ? m.index + 400 : end);
+    assert.ok(
+      branch.includes('rememberScoreBytes('),
+      `${m[0]} has no rememberScoreBytes() in its branch`
+    );
+  }
+});
+
+test('rememberScoreBytes is defined before the handlers that call it', () => {
+  const def = html.indexOf('function rememberScoreBytes');
+  assert.ok(def > 0, 'the helper exists');
+  const firstCall = html.indexOf('rememberScoreBytes(', def + 40);
+  assert.ok(firstCall > def, 'every call comes after the definition');
+});
+
+test('Tab View offers itself for MusicXML, not just Guitar Pro and Power Tab', () => {
+  assert.match(html, /Import a Guitar Pro, Power Tab or MusicXML file first/);
+  assert.match(html, /title="View Guitar Pro, Power Tab or MusicXML notation"/);
+});

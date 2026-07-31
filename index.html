@@ -3198,6 +3198,24 @@ document.getElementById('feature-modal').addEventListener('click', function(e){
 //   primary import routine but force the appropriate parser.
 // ====================================================================
 
+// Keep a renderable score's own bytes so 🎸 Tab View can engrave it.
+//
+// AlphaTab reads MusicXML as well as Guitar Pro, so any import that HAS the
+// original bytes can offer notation. This exists as one function because the
+// stashing used to be written out per branch — and the third MusicXML handler
+// was missed, so importing from the Import menu gave a chart with no notation
+// while the same file dropped on the main input worked. A counting test now
+// pins the number of call sites to the number of importers.
+function rememberScoreBytes(bytes, filename) {
+  try {
+    window._gpLastBytes = bytes;
+    window._gpLastFileName = filename || '';
+    window._ptbAlphaTex = null; // this path renders raw bytes, not AlphaTex
+  } catch (_e) {
+    /* Tab View simply stays unavailable */
+  }
+}
+
 // MusicXML / MXL import
 const fileInputMusicXML = document.getElementById('fileInputMusicXML');
 document.getElementById('btnImportMusicXML').addEventListener('click', () => {
@@ -3216,9 +3234,11 @@ fileInputMusicXML.addEventListener('change', async () => {
     let song;
     if (isMXL){
       const buf = await file.arrayBuffer();
+      rememberScoreBytes(buf, file.name);
       song = await importMXL(buf);
     } else {
       const text = await readImportedTextFile(file);
+      rememberScoreBytes(new TextEncoder().encode(text).buffer, file.name);
       song = importMusicXML(text);
     }
     if (song instanceof SongModel) {
@@ -3235,7 +3255,7 @@ fileInputMusicXML.addEventListener('change', async () => {
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
-      setStatus('Imported MusicXML.');
+      setStatus('Imported MusicXML. Use \u{1F3B8} Tab View to see the engraved score.');
     } else {
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
       setStatus('MusicXML import failed: invalid SongModel', 'error');
@@ -4676,12 +4696,7 @@ fileInput.addEventListener('change', async () => {
       const buf = await file.arrayBuffer();
       const song = await importMXL(buf);
       if (song instanceof SongModel){
-        // AlphaTab reads the .mxl container directly, so Tab View can engrave it.
-        try {
-          window._gpLastBytes = buf;
-          window._gpLastFileName = file.name;
-          window._ptbAlphaTex = null;
-        } catch (_e) { /* Tab View simply stays unavailable */ }
+        rememberScoreBytes(buf, file.name);
         importDiagnostics.sections = song.sections.length;
         importDiagnostics.bars = countSongModelBars(song);
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);
@@ -4840,14 +4855,7 @@ fileInput.addEventListener('change', async () => {
         sourceEl.value = finalCsmpn;
         extractHeaderFromText(finalCsmpn);
         updatePreview();
-        // AlphaTab reads MusicXML as well as Guitar Pro, so keep the bytes and
-        // the 🎸 Tab View can engrave the score. Without this a MusicXML import
-        // gave a chart with no way to see the notation it came from.
-        try {
-          window._gpLastBytes = new TextEncoder().encode(text).buffer;
-          window._gpLastFileName = file.name;
-          window._ptbAlphaTex = null;
-        } catch (_e) { /* Tab View simply stays unavailable */ }
+        rememberScoreBytes(new TextEncoder().encode(text).buffer, file.name);
         setStatus('Imported MusicXML. Use \u{1F3B8} Tab View to see the engraved score.');
       }
       updateDiagnosticsPanel();
