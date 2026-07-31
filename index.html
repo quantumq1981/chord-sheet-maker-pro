@@ -3890,10 +3890,29 @@ fileInputAudio.addEventListener('change', async () => {
     const importStart = performance.now();
     setStatus(`Decoding ${file.name}\u2026`);
     const pcm = await window.AudioCapture.decodeToPcm(await file.arrayBuffer());
+    // A stereo file may have the vocal/harmony mixed to the centre; isolating it
+    // often reads chords better than the full mix. The A/B gate decides per file
+    // and only applies isolation when it measurably helps \u2014 a mono stem skips it.
+    let gate = { mono: pcm.mono, ab: null, applied: false, stereo: pcm.stereo };
+    let abNote = '';
+    if (pcm.stereo) {
+      setStatus('Checking whether centre-channel vocal isolation helps this file\u2026');
+      await new Promise((r) => setTimeout(r, 0));
+      try {
+        gate = await window.AudioCapture.isolateAndGate(pcm);
+      } catch (_e) {
+        gate = { mono: pcm.mono, ab: null, applied: false, stereo: true };
+      }
+      if (gate.ab) {
+        abNote = gate.applied
+          ? `Vocal isolation raised harmonic clarity ${gate.ab.deltaPct}% (${gate.ab.raw.toFixed(2)}\u2192${gate.ab.isolated.toFixed(2)}) \u2014 chords read from the centred signal.`
+          : `Vocal isolation did not improve clarity on this file (${gate.ab.raw.toFixed(2)} vs ${gate.ab.isolated.toFixed(2)}) \u2014 chords read from the full mix.`;
+      }
+    }
     setStatus('Listening for chord changes\u2026 this takes a moment on a long track.');
     // Yield once so the status paints before the analysis blocks the thread.
     await new Promise((r) => setTimeout(r, 0));
-    const res = await window.AudioCapture.pcmToChart(pcm, {
+    const res = await window.AudioCapture.pcmToChart({ ...pcm, mono: gate.mono }, {
       title: file.name.replace(/\.[A-Za-z0-9]{1,6}$/, ''),
       // No tempo detection yet, so bars are laid out on an assumed grid. The
       // player re-bars by editing the chart; the warning below says as much.
@@ -3916,11 +3935,12 @@ fileInputAudio.addEventListener('change', async () => {
       'Bar lines assume 120 BPM in 4/4 unless the recording happens to match; an isolated stem ' +
       'is far more accurate than a full mix.'
     );
+    if (abNote) importDiagnostics.warnings.push(abNote);
     const finalCsmpn = filterLyricsLines(res.csmpn);
     sourceEl.value = finalCsmpn;
     extractHeaderFromText(finalCsmpn);
     updatePreview();
-    setStatus(`Heard ${res.bars} bar(s)${res.key ? ' in ' + res.key : ''} — a sketch, worth correcting before you play from it.`);
+    setStatus(`Heard ${res.bars} bar(s)${res.key ? ' in ' + res.key : ''}${gate.applied ? ', vocals isolated' : ''} — a sketch, worth correcting before you play from it.`);
     updateDiagnosticsPanel();
   } catch (err) {
     console.error(err);

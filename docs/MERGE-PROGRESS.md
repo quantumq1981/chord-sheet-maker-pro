@@ -20,7 +20,7 @@ Read this first when picking the work back up.
 | 1b | Per-stage disclosure + stage-scoped advanced tools | ✅ committed |
 | 2 | Recognition merge — GP/PTB/MusicXML through the engine | ✅ committed |
 | 3 | Notation + Stage Mode | 🚧 in progress — see below |
-| 4 | Audio suite | 🚧 tuner + stem→chart done; DTW sync + vocal isolation next |
+| 4 | Audio suite | 🚧 tuner + stem→chart + vocal isolation done; reference-audio DTW sync next |
 | 5 | Consolidate: CSM + TTP become redirects; PWA + IndexedDB | ⬜ |
 
 ---
@@ -282,13 +282,31 @@ around them — analysis rate, downmix, resample, the cents maths — is pure an
 - **Tuner** (Perform). Mic → `detectPitch` (YIN, so it locks the fundamental rather than a
   harmonic) → note + cents + a needle. ±5 cents reads in tune, ±25 close. Releases the mic
   track *and* closes the context on stop, or iOS leaves the recording dot lit.
+- **Centre-channel vocal isolation, A/B-gated** (Capture, on the stem→chart path). Lead and
+  backing vocals sit in the centre of a stereo mix; `decodeToPcm` already kept both channels,
+  so a stereo import now runs the engine's `extractCenter` and the harmony reads from the
+  centred signal **only when it measurably helps**. The gate is the engine's `harmonicClarity`
+  scored on the raw mix vs the isolated centre (`isolateAndGate` in `audioCapture.js`); the
+  centred signal is used only when clarity rises past a noise margin (`clarityDelta`, pure +
+  tested). A mono file skips it (no centre to extract), a failed isolation falls back to the
+  mix, and Import Details states which signal the chords were read from and the A/B numbers —
+  the gate *tells you whether isolation actually helped on that file*, per the plan. Zero new
+  UI: the decision is automatic and reported. `tests/audioCapture.test.mjs` +6 (`clarityDelta`
+  margin, worse-is-not-a-win, divide-by-zero at raw=0, caller margin).
 
 **Honest limits, stated in the UI not just here:** a clean isolated stem gives an editable
 sketch; a dense full mix mislabels. There is **no tempo detection yet**, so bars are laid
 out on an assumed 120 BPM 4/4 grid — the import warning says so, and the player re-bars by
 editing. Import Details marks the confidence `low`.
 
-**Next in Phase 4:** reference-audio playback with DTW auto-sync (`alignPcmToScore` is
-already vendored and tested — it needs the rAF playhead and a chart to highlight), and
-center-channel vocal isolation with the `harmonicClarity` A/B gate that tells you whether
-isolation actually helped on *that* file.
+**Next in Phase 4:** reference-audio playback with DTW auto-sync. `alignPcmToScore` is
+already vendored and tested and returns `{ segments:[{sec, key}], confidence }` — but the
+`key` is a *score-event* key, and highlighting it needs a per-chord DOM anchor the CSMP
+preview does not have (its output is one SVG / fake-book block with no per-chord element,
+the same gap that blocked the Phase 2 `arbitrateChord` chip). So the honest next step is
+either (a) a section/beat-level playhead over the existing preview, or (b) give
+`renderHybridDoc` per-chord ids first, then wire the rAF playhead + the `confidence`
+fallback to the linear `scoreEventTimes` map. Pick that surface before building the glue.
+
+**Done since the debrief:** centre-channel vocal isolation with the `harmonicClarity` A/B
+gate (see "Shipped" above) — the other named Phase-4 follow-up.
