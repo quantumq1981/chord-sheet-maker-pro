@@ -242,6 +242,41 @@
     box-shadow:0 1px 4px rgba(184,53,15,0.25);
   }
 
+  /* Tuner — a fixed card, because it is used while holding an instrument. */
+  .tunerBox{
+    position:fixed; right:16px; z-index:95;
+    bottom:calc(18px + var(--ui-nav-h, 58px) + env(safe-area-inset-bottom, 0px));
+    width:200px; padding:14px; border-radius:14px;
+    background:var(--card); border:1px solid var(--border);
+    box-shadow:0 6px 24px rgba(32,32,28,.18); text-align:center;
+  }
+  .tunerClose{
+    position:absolute; top:6px; right:8px; border:0; background:transparent;
+    font-size:14px; line-height:1; color:var(--muted); cursor:pointer;
+    min-width:32px; min-height:32px;
+  }
+  .tunerNote{ font-size:40px; font-weight:800; line-height:1.1; margin:2px 0 8px; }
+  .tunerMeter{
+    position:relative; height:10px; border-radius:5px;
+    background:linear-gradient(90deg,#d9d4c6,#efeadd,#d9d4c6);
+    border:1px solid var(--border);
+  }
+  /* The centre line is "in tune" — the needle is read against it. */
+  .tunerMeter::after{
+    content:''; position:absolute; left:50%; top:-3px; bottom:-3px;
+    width:2px; background:var(--muted); opacity:.6;
+  }
+  .tunerNeedle{
+    position:absolute; top:-4px; width:4px; height:18px; border-radius:2px;
+    background:var(--accent); transform:translateX(-2px); transition:left .08s linear;
+  }
+  .tunerCents{ margin-top:8px; font-size:12px; color:var(--muted); }
+  .tunerBox[data-verdict="in-tune"] .tunerNote{ color:#1a7f37; }
+  .tunerBox[data-verdict="in-tune"] .tunerNeedle{ background:#1a7f37; }
+  .tunerBox[data-verdict="off"] .tunerNote{ color:var(--accent); }
+  @media (min-width:1000px){ .tunerBox{ bottom:18px; } }
+  @media print{ .tunerBox{ display:none !important; } }
+
   /* Floating Print mirror — shown only while the toolbar ⎙ Print is off-screen
      so long charts can be printed without scrolling back to the top. */
   #btnPrintFloat{
@@ -2044,6 +2079,7 @@ body.exporting .sectionBlock{
               <button class="import-item power-only" id="btnImportIRealPro" role="menuitem">iReal Pro</button>
               <button class="import-item power-only" id="btnImportGuitarPro" role="menuitem">Guitar Pro / Power Tab</button>
               <button class="import-item power-only" id="btnImportMidi" role="menuitem">MIDI (.mid)</button>
+              <button class="import-item power-only" id="btnImportAudio" role="menuitem">Audio / stem (.mp3, .m4a, .wav)</button>
               <button class="import-item power-only" id="btnImportCsml" role="menuitem">ChordSlashML (.csml)</button>
               <hr class="import-divider power-only">
               <button class="import-item power-only" id="btnDecodeTab" role="menuitem">Decode tab → Tab Translator Pro ↗</button>
@@ -2132,6 +2168,7 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
           <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
           <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
+          <button class="outline power-only" id="btnTuner" title="Tune up — live pitch from the microphone">&#127908; Tuner</button>
           <button class="outline power-only" id="btnSetlist" title="Setlist / Songbook — save and print multiple charts">&#9776; Setlist<span class="setlist-badge" id="setlistBadge" style="display:none">0</span></button>
         </div>
       </div>
@@ -2724,6 +2761,9 @@ Tempo: 130
     <input id="fileInputGuitarPro" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx,.ptb" style="display:none" />
     <input id="fileInputDecode" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx,.ptb,.xml,.musicxml,.pdf" style="display:none" />
     <input id="fileInputCsml" type="file" accept=".csml,.csm,text/plain" style="display:none" />
+    <!-- No accept filter on purpose: iOS maps accept extensions to UTIs and greys
+         out perfectly valid .mp3/.m4a files. decodeAudioData validates instead. -->
+    <input id="fileInputAudio" type="file" style="display:none" />
   </div>
 
   <!-- Fake Book Settings Panel -->
@@ -2984,6 +3024,7 @@ Tempo: 130
 <script src="audioPlayback.js"></script>
 <script src="lyricsView.js"></script>
 <script src="stageSheets.js"></script>
+<script src="audioCapture.js"></script>
 <script src="abcSuite.js"></script>
 <script src="midiImport.js"></script>
 <script src="chordsheetPdf.js"></script>
@@ -3804,6 +3845,121 @@ fileInputGuitarPro.addEventListener('change', async () => {
     updateDiagnosticsPanel();
   }
 });
+
+// ── Audio / stem import ─────────────────────────────────────────────────────
+// The engine's chord transcription is pure and tested; audioCapture.js holds the
+// one thing only a browser can do — turning a file into samples.
+//
+// Honest about what this is: an isolated stem gives an editable sketch, a dense
+// full mix mislabels. The status and Import Details both say so, because a chart
+// that looks authoritative and is not costs a player more than no chart.
+const fileInputAudio = document.getElementById('fileInputAudio');
+document.getElementById('btnImportAudio').addEventListener('click', () => {
+  fileInputAudio.value = '';
+  fileInputAudio.click();
+});
+fileInputAudio.addEventListener('change', async () => {
+  const file = fileInputAudio.files && fileInputAudio.files[0];
+  if (!file) return;
+  if (!window.AudioCapture || !window.AudioCapture.supported()) {
+    setStatus('This browser has no Web Audio support — audio import is unavailable.', 'error');
+    return;
+  }
+  try {
+    resetDiagnostics();
+    const importStart = performance.now();
+    setStatus(`Decoding ${file.name}\u2026`);
+    const pcm = await window.AudioCapture.decodeToPcm(await file.arrayBuffer());
+    setStatus('Listening for chord changes\u2026 this takes a moment on a long track.');
+    // Yield once so the status paints before the analysis blocks the thread.
+    await new Promise((r) => setTimeout(r, 0));
+    const res = await window.AudioCapture.pcmToChart(pcm, {
+      title: file.name.replace(/\.[A-Za-z0-9]{1,6}$/, ''),
+      // No tempo detection yet, so bars are laid out on an assumed grid. The
+      // player re-bars by editing the chart; the warning below says as much.
+      bpm: 120,
+      timeSig: '4/4',
+    });
+    if (!res) {
+      setStatus('No chords could be heard in that audio. An isolated instrument stem works far better than a full mix.', 'error');
+      updateDiagnosticsPanel();
+      return;
+    }
+    importDiagnostics.miner = 'Audio';
+    importDiagnostics.sourceFlavor = 'audio';
+    importDiagnostics.confidence = 'low';
+    importDiagnostics.sections = 1;
+    importDiagnostics.bars = res.bars;
+    importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+    importDiagnostics.warnings.push(
+      'Chords were heard from audio, not read from a file — treat this as a sketch to correct. ' +
+      'Bar lines assume 120 BPM in 4/4 unless the recording happens to match; an isolated stem ' +
+      'is far more accurate than a full mix.'
+    );
+    const finalCsmpn = filterLyricsLines(res.csmpn);
+    sourceEl.value = finalCsmpn;
+    extractHeaderFromText(finalCsmpn);
+    updatePreview();
+    setStatus(`Heard ${res.bars} bar(s)${res.key ? ' in ' + res.key : ''} — a sketch, worth correcting before you play from it.`);
+    updateDiagnosticsPanel();
+  } catch (err) {
+    console.error(err);
+    setStatus(`Audio import failed: ${err?.message || err}`, 'error');
+    updateDiagnosticsPanel();
+  }
+});
+
+// ── Tuner ───────────────────────────────────────────────────────────────────
+(function(){
+  const btn = document.getElementById('btnTuner');
+  if (!btn) return;
+  let handle = null;
+  let box = null;
+
+  function close() {
+    if (handle) { handle.stop(); handle = null; }
+    if (box) { box.remove(); box = null; }
+    btn.setAttribute('aria-pressed', 'false');
+  }
+
+  btn.addEventListener('click', async () => {
+    if (handle) { close(); setStatus('Tuner stopped.'); return; }
+    if (!window.AudioCapture || !window.AudioCapture.supported()) {
+      setStatus('This browser cannot access the microphone.', 'error');
+      return;
+    }
+    box = document.createElement('div');
+    box.className = 'tunerBox';
+    box.innerHTML =
+      '<button class="tunerClose" aria-label="Close tuner">&#10005;</button>' +
+      '<div class="tunerNote" id="tunerNote">\u2014</div>' +
+      '<div class="tunerMeter"><div class="tunerNeedle" id="tunerNeedle"></div></div>' +
+      '<div class="tunerCents" id="tunerCents">play a note</div>';
+    document.body.appendChild(box);
+    box.querySelector('.tunerClose').addEventListener('click', close);
+    const noteEl = box.querySelector('#tunerNote');
+    const needleEl = box.querySelector('#tunerNeedle');
+    const centsEl = box.querySelector('#tunerCents');
+    try {
+      handle = await window.AudioCapture.createTuner({
+        onNote(n) {
+          if (!n) { noteEl.textContent = '\u2014'; centsEl.textContent = 'play a note';
+            needleEl.style.left = '50%'; box.dataset.verdict = 'none'; return; }
+          noteEl.textContent = n.note;
+          centsEl.textContent = (n.cents > 0 ? '+' : '') + n.cents + ' cents';
+          // -50..+50 cents maps across the meter.
+          needleEl.style.left = Math.max(0, Math.min(100, 50 + n.cents)) + '%';
+          box.dataset.verdict = n.verdict;
+        },
+      });
+      btn.setAttribute('aria-pressed', 'true');
+      setStatus('Tuner listening \u2014 play one string at a time.');
+    } catch (err) {
+      close();
+      setStatus(`Tuner could not start: ${err?.message || err}`, 'error');
+    }
+  });
+})();
 
 // ── "Decode tab" — reverse handoff to Tab Translator Pro ────────────────────
 // Tab Translator Pro (sibling app, same GitHub Pages origin → shared localStorage)

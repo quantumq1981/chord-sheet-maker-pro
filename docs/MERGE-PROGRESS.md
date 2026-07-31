@@ -20,7 +20,7 @@ Read this first when picking the work back up.
 | 1b | Per-stage disclosure + stage-scoped advanced tools | ✅ committed |
 | 2 | Recognition merge — GP/PTB/MusicXML through the engine | ✅ committed |
 | 3 | Notation + Stage Mode | 🚧 in progress — see below |
-| 4 | Audio suite (tuner, stem→chart, DTW sync, vocal isolation) | ⬜ |
+| 4 | Audio suite | 🚧 tuner + stem→chart done; DTW sync + vocal isolation next |
 | 5 | Consolidate: CSM + TTP become redirects; PWA + IndexedDB | ⬜ |
 
 ---
@@ -265,11 +265,30 @@ All three live only in CSMP's React track and are pinned by its 486-test parser 
 Deleting CSM's copies now would break a still-live app for zero gain — that step belongs
 in **Phase 5**, when CSM becomes a redirect and its `src/` stops being live code.
 
-## Next: Phase 4 — audio suite
+## Phase 4 — Audio suite
 
-Expose the engine's DSP through a thin `audioCapture.js` holding the only non-pure parts
-(`getUserMedia`, `decodeAudioData`, the rAF playhead). All analysis (`transcribeChords`,
-`detectPitch`, `extractCenter`, `alignPcmToScore`, `harmonicClarity`) is already pure and
-headless-tested in the vendored engine. Four features: audio/stem → chart, tuner,
-reference-audio playback with DTW sync, center-channel vocal isolation with the
-`harmonicClarity` A/B gate.
+**`audioCapture.js`** (new) is the seam. The analysis is already pure and headless-tested
+inside the vendored engine, so this file holds exactly three impure things and nothing
+else: `decodeAudioData`, `getUserMedia` + an AnalyserNode, and an rAF loop. Everything
+around them — analysis rate, downmix, resample, the cents maths — is pure and tested.
+
+**Shipped:**
+- **Audio / stem → chart** (Capture, import menu). Decode → the engine's `transcribeChords`
+  → `audioEventsToScore` → CSMPN. Runs with `maxRank: 14`, which drops the jazz extensions:
+  polyphonic audio lights 4+ pitch classes per frame, so without it a plain G · Em · F · Am
+  chorus comes back as Gadd9 · Em9 · Fmaj9 · Am9. The file input has **no `accept` filter**
+  — iOS maps accept extensions to UTIs and greys out valid .mp3/.m4a; `decodeAudioData`
+  validates instead. (Same lesson as the Guitar Pro upload.)
+- **Tuner** (Perform). Mic → `detectPitch` (YIN, so it locks the fundamental rather than a
+  harmonic) → note + cents + a needle. ±5 cents reads in tune, ±25 close. Releases the mic
+  track *and* closes the context on stop, or iOS leaves the recording dot lit.
+
+**Honest limits, stated in the UI not just here:** a clean isolated stem gives an editable
+sketch; a dense full mix mislabels. There is **no tempo detection yet**, so bars are laid
+out on an assumed 120 BPM 4/4 grid — the import warning says so, and the player re-bars by
+editing. Import Details marks the confidence `low`.
+
+**Next in Phase 4:** reference-audio playback with DTW auto-sync (`alignPcmToScore` is
+already vendored and tested — it needs the rAF playhead and a chart to highlight), and
+center-channel vocal isolation with the `harmonicClarity` A/B gate that tells you whether
+isolation actually helped on *that* file.
