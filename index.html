@@ -2691,6 +2691,7 @@ Tempo: 130
         <div class="setlist-header-actions">
           <button class="outline" id="btnSetlistAdd" title="Save current chart to setlist">+ Add Chart</button>
           <button class="outline" id="btnSetlistPrint" title="Print all charts as one PDF">&#x2399; Print All</button>
+          <button class="outline" id="btnSetlistStage" title="Lyrics-only running order for the stand — auto-scrolls, prints one song per page">&#127908; Stage Sheets</button>
           <button class="outline" id="btnSetlistBackup" title="Download a backup file of all your songs, setlists, and settings">&#x2B07; Backup</button>
           <button class="outline" id="btnSetlistRestore" title="Restore your songs, setlists, and settings from a backup file">&#x2B06; Restore</button>
           <button class="outline" id="btnSetlistClear" style="color:#c00;" title="Remove all charts">&#x2715; Clear All</button>
@@ -2982,6 +2983,7 @@ Tempo: 130
 <script src="backupRestore.js"></script>
 <script src="audioPlayback.js"></script>
 <script src="lyricsView.js"></script>
+<script src="stageSheets.js"></script>
 <script src="abcSuite.js"></script>
 <script src="midiImport.js"></script>
 <script src="chordsheetPdf.js"></script>
@@ -6662,6 +6664,32 @@ function csmpnToCsml(csmpnText) {
     w.document.close();
   }
 
+  // The other half of a gig: the words, in running order, for the stand.
+  // printAll covers the charts; this covers the singer.
+  function stageSheets() {
+    const items = getSetlist();
+    if (!items.length) { setStatus('Setlist is empty — add charts first.', 'err'); return; }
+    if (!window.StageSheets || !window.LyricsView) {
+      setStatus('Stage sheets not ready — try refreshing.', 'err');
+      return;
+    }
+    const built = window.StageSheets.buildSetlistStageSongs(items);
+    if (!built.songs.length) {
+      setStatus('No lyrics found in this setlist — stage sheets need words, not just chords.', 'err');
+      return;
+    }
+    const html = window.StageSheets.buildSetlistStageHtml(built.songs, { title: 'Setlist' });
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (!w) { setStatus('Pop-up blocked — allow pop-ups and try again.', 'err'); return; }
+    w.document.write(html);
+    w.document.close();
+    // Say which songs were left out rather than letting the count quietly differ.
+    const note = built.skipped.length
+      ? ` (${built.skipped.length} with no lyrics skipped: ${built.skipped.join(', ')})`
+      : '';
+    setStatus(`Stage sheets: ${built.songs.length} song(s)${note}.`, 'ok');
+  }
+
   function handleItemClick(e) {
     const item = e.target.closest('.setlist-item');
     if (!item) return;
@@ -6707,6 +6735,8 @@ function csmpnToCsml(csmpnText) {
   });
   if (btnAdd)   btnAdd.addEventListener('click', addCurrentChart);
   if (btnPrint) btnPrint.addEventListener('click', printAll);
+  const btnStage = document.getElementById('btnSetlistStage');
+  if (btnStage) btnStage.addEventListener('click', stageSheets);
 
   // ── Whole-library backup / restore (window.BackupRestore) ────────────────
   function doBackup() {
