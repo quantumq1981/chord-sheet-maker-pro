@@ -38,6 +38,17 @@ const SRC_RE = /<script\b[^>]*\bsrc=["']([^"']+)["']/gi;
 const LINK_TAG_RE = /<link\b[^>]*>/gi;
 const linkStylesheetHref = (tag) =>
   /\brel=["']?stylesheet["']?/i.test(tag) ? (tag.match(/\bhref=["']([^"']+)["']/i) || [])[1] : undefined;
+// Relative dynamic-import specifiers inside a local script. Only string literals
+// are followable; a computed specifier is out of scope by construction.
+const DYNAMIC_IMPORT_RE = /\bimport\(\s*["'](\.[^"']+)["']\s*\)/g;
+const dynamicImports = (source) => {
+  const out = [];
+  DYNAMIC_IMPORT_RE.lastIndex = 0;
+  let m;
+  while ((m = DYNAMIC_IMPORT_RE.exec(source)) !== null) out.push(m[1]);
+  return out;
+};
+
 const missing = [];
 let checked = 0;
 
@@ -59,7 +70,21 @@ for (const html of htmlFiles) {
       if (/^https?:\/\//i.test(ref) || ref.startsWith('//') || ref.startsWith('/')) continue;
       checked++;
       const target = join(distDir, dirname(html), ref);
-      if (!existsSync(target)) missing.push(`${html} references "${ref}" — not found at ${target}`);
+      if (!existsSync(target)) {
+        missing.push(`${html} references "${ref}" — not found at ${target}`);
+        continue;
+      }
+      // A script tag is not the only way a page pulls in code. recognitionBridge.js
+      // reaches the recognition engine with a dynamic import(), which no <script src>
+      // scan can see — so the engine could be dropped from the copy list and only
+      // fail in production, on the first Guitar Pro import. Follow those specifiers.
+      for (const spec of dynamicImports(readFileSync(target, 'utf8'))) {
+        checked++;
+        const dep = join(distDir, dirname(html), dirname(ref), spec);
+        if (!existsSync(dep)) {
+          missing.push(`${ref} dynamically imports "${spec}" — not found at ${dep}`);
+        }
+      }
     }
   }
 }

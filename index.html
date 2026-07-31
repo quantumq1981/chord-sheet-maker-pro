@@ -51,10 +51,18 @@
 <!-- VexFlow for {vt ...} notation blocks — defer: render-time only, null-checked at call site -->
 <script defer src="https://cdn.jsdelivr.net/npm/vexflow@3.0.9/releases/vexflow-min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<!-- Guitar Pro importer — loads AlphaTab CDN lazily on first GP file import -->
+<!-- Recognition bridge — lazily imports recognitionEngine.mjs (the vendored
+     Tab Translator Pro engine) on the first binary import. This is the primary
+     path for Guitar Pro 3-8/GPX, Power Tab and MusicXML files. -->
+<script defer src="recognitionBridge.js"></script>
+
+<!-- Guitar Pro importer — AlphaTab CDN, lazy. Now the FALLBACK for chord import;
+     still the renderer behind 🎸 Tab View (window.renderGpNotation). -->
 <script defer src="importGuitarPro.js"></script>
 
-<!-- Power Tab (.ptb) importer — pure-JS parser + AlphaTex render (no CDN) -->
+<!-- Power Tab (.ptb) importer — pure-JS parser + AlphaTex render (no CDN).
+     Superseded for chord extraction by the recognition engine; retained because
+     it is what produces the AlphaTex the Tab View renders. -->
 <script defer src="powerTabImporter.js"></script>
 
 <!-- ChordSlashML browser bundle loaded at end of body for guaranteed timing -->
@@ -183,6 +191,8 @@
   }
   .toolbar-group{
     display:flex;
+    flex-wrap:wrap;      /* a group is one flex item; without this a 5-button
+                            group cannot break and pushes the page sideways */
     align-items:center;
     gap:6px;
   }
@@ -235,7 +245,10 @@
   /* Floating Print mirror — shown only while the toolbar ⎙ Print is off-screen
      so long charts can be printed without scrolling back to the top. */
   #btnPrintFloat{
-    position:fixed; right:16px; bottom:18px; z-index:90;
+    /* Clears the fixed stage nav (bottom bar on phone/tablet). On the wide
+       layout the nav becomes a left rail, so the offset is dropped again. */
+    position:fixed; right:16px; z-index:90;
+    bottom:calc(18px + var(--ui-nav-h, 58px) + env(safe-area-inset-bottom, 0px));
     display:none; align-items:center; justify-content:center;
     width:52px; height:52px; padding:0; border:none; border-radius:50%;
     font-size:24px; line-height:1; cursor:pointer; color:#fff;
@@ -1983,7 +1996,7 @@ body.exporting .sectionBlock{
          in the chrome. -->
     <div class="mode-toggle-wrap">
       <button class="advToggle" id="btnAdvanced" aria-expanded="false"
-              title="Show advanced tools — editors, exports and import details">
+              title="Show this stage's advanced tools — remembered per stage">
         <span class="advCaret">&#9654;</span><span id="advLabel">Advanced</span>
       </button>
       <button class="info-btn" onclick="openFeatureInfo('modeToggle')" title="About Advanced tools">ⓘ</button>
@@ -1996,6 +2009,18 @@ body.exporting .sectionBlock{
       <div class="field"><label>Time</label><input id="hdrTime" placeholder="e.g., 4/4"></div>
       <div class="field"><label>Tempo</label><input id="hdrTempo" placeholder="e.g., 120"></div>
       <div class="field"><label>Style</label><input id="hdrStyle" placeholder="e.g., Swing"></div>
+    </div>
+
+    <!-- One heading per destination. Only the active stage's is visible, so this
+         reads as a single line that changes with the stage rather than three. -->
+    <div class="stageHead" data-stage-item="capture">
+      <h2>Capture</h2><p>Bring music in — import a file, paste text, or type chords below.</p>
+    </div>
+    <div class="stageHead" data-stage-item="prepare">
+      <h2>Prepare</h2><p>Shape the chart — key, layout, rhythm and lyrics.</p>
+    </div>
+    <div class="stageHead" data-stage-item="perform">
+      <h2>Perform</h2><p>Print, export, and build setlists for the stand.</p>
     </div>
 
     <div class="toolbar">
@@ -2060,6 +2085,9 @@ body.exporting .sectionBlock{
           <button class="secondary" id="btnDownloadPdf" title="Download as PDF">↓ PDF</button>
           <button class="secondary" id="btnPng" title="Export PNG">PNG</button>
           <button class="secondary" id="btnCopy" title="Copy chart text">Copy</button>
+          <!-- Pure fake book is a first-stage output, not an advanced one, so it
+               sits with the other everyday exports rather than behind Advanced. -->
+          <button class="secondary" id="btnExportFakeBook" title="Download a pure fake book chart — chords and bars only, no lyrics, rhythm or tab">&#x2193; Fake Book</button>
         </div>
 
         <div class="toolbar-sep"></div>
@@ -2078,29 +2106,44 @@ body.exporting .sectionBlock{
 
       </div>
 
-      <!-- Row 2: power tools (hidden in user mode) -->
-      <div class="toolbar-row toolbar-row--tools power-only" data-stage-item="prepare capture">
-        <div class="toolbar-group">
+      <!-- Row 2: advanced tools. The row itself is chrome (every stage owns at
+           least one group in it); each group declares the stage whose work it
+           belongs to, so Advanced reveals ~5 buttons in context instead of all
+           eleven at once. -->
+      <div class="toolbar-row toolbar-row--tools power-only">
+
+        <!-- Capture: turning a foreign format into a chart, and seeing how it went. -->
+        <div class="toolbar-group" data-stage-item="capture">
           <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
-          <button class="outline" id="btnExportFakeBook" title="Download a pure fake book chart — chords and bars only, no lyrics, rhythm or tab">&#x2193; Fake Book</button>
-          <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
-          <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
-          <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
+          <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
         </div>
-        <div class="toolbar-sep"></div>
-        <div class="toolbar-group">
+
+        <!-- Prepare: the authoring and notation surfaces. -->
+        <div class="toolbar-group" data-stage-item="prepare">
           <button class="outline power-only" id="btnCsmlHelp">♩ ChordSlashML Help</button>
           <button class="outline power-only" id="btnCsmlEditor">⊞ ChordSlashML Editor</button>
           <button class="outline power-only" id="btnCsmlGuide">★ CSML Quick Start</button>
           <button class="outline power-only" id="btnAbcEditor" title="ABC notation: render &amp; play traditional/lead-sheet ABC">𝄞 ABC Notation</button>
           <button class="outline power-only" id="btnGpNotation" title="View Guitar Pro or Power Tab notation">🎸 Tab View</button>
-          <button class="outline power-only" id="btnSetlist" title="Setlist / Songbook — save and print multiple charts">&#9776; Setlist<span class="setlist-badge" id="setlistBadge" style="display:none">0</span></button>
         </div>
-        <div class="toolbar-group">
-          <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
+
+        <!-- Perform: handing the finished chart to something else. -->
+        <div class="toolbar-group" data-stage-item="perform">
+          <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
+          <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
+          <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
+          <button class="outline power-only" id="btnSetlist" title="Setlist / Songbook — save and print multiple charts">&#9776; Setlist<span class="setlist-badge" id="setlistBadge" style="display:none">0</span></button>
         </div>
       </div>
 
+    </div>
+
+    <!-- Shown after importing a multi-track file: which instrument's part the
+         chart was read from, and a one-tap way to read a different one. -->
+    <div class="importPartRow" id="importPartRow" data-stage-item="capture" style="display:none">
+      <label for="importPartSelect">Chart read from</label>
+      <select id="importPartSelect" aria-label="Which instrument part to read the chart from"></select>
+      <span class="importPartHint">Multiple parts carry chords — pick the one you want.</span>
     </div>
 
     <div class="tips">
@@ -2666,7 +2709,7 @@ Tempo: 130
       </div>
     </div>
 
-    <button id="btnPrintFloat" title="Print / PDF" aria-label="Print / PDF">⎙</button>
+    <button id="btnPrintFloat" data-stage-item="perform" title="Print / PDF" aria-label="Print / PDF">⎙</button>
     <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.mid,.midi,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx,.ptb,.csml,text/plain,application/pdf" style="display:none" />
     <!-- Dedicated hidden file inputs for each format -->
     <input id="fileInputMusicXML" type="file" accept=".musicxml,.xml,.mxl,text/xml,application/xml" style="display:none" />
@@ -3504,6 +3547,97 @@ fileInputIRealPro.addEventListener('change', async () => {
   }
 });
 
+// ── Binary music files via the recognition engine ───────────────────────────
+// Guitar Pro 3-8 / GPX, Power Tab and MusicXML are read by recognitionEngine.mjs
+// (vendored from Tab Translator Pro) rather than by AlphaTab or this repo's own
+// Power Tab reader. Three reasons it leads:
+//   - it reads the file's own bytes, so a Guitar Pro import needs no CDN at all
+//   - its Power Tab reader is complete; powerTabImporter.js is header + tunings
+//   - it picks the part that carries the harmony instead of trusting track 0
+// It never becomes a hard dependency: any failure returns false and the caller
+// runs the path that worked before, so nothing that imported today stops.
+let _lastImportParts = null; // part list of the last engine import (for the picker)
+
+async function importViaRecognitionEngine(gpBuf, fileName, importStart, partIndex){
+  if (!window.RecognitionBridge) return false;
+  let res;
+  try {
+    res = await window.RecognitionBridge.importBinary(gpBuf, {
+      filename: fileName,
+      partIndex: partIndex,
+    });
+  } catch (err){
+    console.warn('Recognition engine import failed; falling back.', err);
+    return false;
+  }
+  if (!res || !res.summary || !res.summary.bars) return false;
+
+  // The part picker re-reads from these, so record them on every engine import
+  // rather than only on the paths that happen to set them for the Tab View.
+  window._gpLastBytes = gpBuf;
+  window._gpLastFileName = fileName;
+
+  const finalCsmpn = filterLyricsLines(res.csmpn);
+  sourceEl.value = finalCsmpn;
+  extractHeaderFromText(finalCsmpn);
+  updatePreview();
+
+  const label = fileName.toLowerCase().endsWith('.ptb') ? 'Power Tab' : 'Guitar Pro';
+  importDiagnostics.miner = label;
+  importDiagnostics.sourceFlavor = res.format || 'guitarpro';
+  importDiagnostics.confidence = 'high';
+  importDiagnostics.sections = res.summary.sections;
+  importDiagnostics.bars = res.summary.bars;
+  importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+  if (res.melodic){
+    importDiagnostics.warnings.push(
+      'This part is mostly single notes, so it was condensed to one chord per bar.'
+    );
+  }
+  updateDiagnosticsPanel();
+
+  showImportPartPicker(res);
+  const partName = (res.parts[res.partIndex] && res.parts[res.partIndex].name) || '';
+  const partNote = res.parts.length > 1 && partName ? `, from "${partName}"` : '';
+  setStatus(
+    `Imported ${label}: ${res.summary.bars} bars, ${res.summary.chords} chords${partNote}. ` +
+    'Use 🎸 Tab View for full notation.'
+  );
+  return true;
+}
+
+// Multi-track files have more than one part that could legitimately carry the
+// changes (a rhythm guitar and a piano often both do). The engine picks the
+// strongest, and this row lets the player overrule it in one tap.
+function showImportPartPicker(res){
+  const row = document.getElementById('importPartRow');
+  const sel = document.getElementById('importPartSelect');
+  if (!row || !sel) return;
+  if (!res || !res.parts || res.parts.length < 2){
+    row.style.display = 'none';
+    _lastImportParts = null;
+    return;
+  }
+  _lastImportParts = res.parts;
+  sel.innerHTML = res.parts
+    .map((p, i) => `<option value="${i}">${escapeHtml(p.name || ('Part ' + (i + 1)))}</option>`)
+    .join('');
+  sel.value = String(res.partIndex);
+  row.style.display = '';
+}
+
+document.getElementById('importPartSelect').addEventListener('change', async function(){
+  const bytes = window._gpLastBytes;
+  const name = window._gpLastFileName || '';
+  if (!bytes || !_lastImportParts) return;
+  const idx = Number(this.value);
+  setStatus('Re-reading the chart…');
+  const importStart = performance.now();
+  resetDiagnostics();
+  const ok = await importViaRecognitionEngine(bytes, name, importStart, idx);
+  if (!ok) setStatus('That part has no chart content — try another.', 'error');
+});
+
 // Power Tab (.ptb) handling.
 // AlphaTab ships no Power Tab importer, so we parse the binary ourselves
 // (powerTabImporter.js — a faithful TuxGuitar port) and convert the score to
@@ -3512,6 +3646,10 @@ fileInputIRealPro.addEventListener('change', async () => {
 // TuxGuitar-conversion message for genuinely corrupt/variant files.
 async function tryImportPowerTab(gpBuf, fileName, importStart) {
   const bytes = gpBuf instanceof Uint8Array ? gpBuf : new Uint8Array(gpBuf);
+
+  // The recognition engine reads the chord chart; powerTabImporter still runs
+  // below it purely to produce the AlphaTex the Tab View renders.
+  const viaEngine = await importViaRecognitionEngine(bytes, fileName, importStart);
 
   // 1) Native Power Tab parse → AlphaTex notation render + editable chord chart.
   if (window.PowerTab && typeof window.PowerTab.parse === 'function') {
@@ -3529,6 +3667,13 @@ async function tryImportPowerTab(gpBuf, fileName, importStart) {
       window._ptbAlphaTex = render.tex;
       window._gpLastBytes = bytes; // keep raw bytes around (GP-rename fallback / tests)
       window._gpLastFileName = fileName;
+      if (viaEngine) {
+        // The chart is already loaded and reported; this pass exists only for the
+        // AlphaTex above. Overwriting the source here would replace the engine's
+        // complete reading with this importer's partial one.
+        window.dispatchEvent(new Event('gpbytesready'));
+        return true;
+      }
       importDiagnostics.miner = 'Power Tab';
       importDiagnostics.sourceFlavor = 'powertab';
       importDiagnostics.confidence = 'high';
@@ -3555,6 +3700,13 @@ async function tryImportPowerTab(gpBuf, fileName, importStart) {
       window.dispatchEvent(new Event('gpbytesready')); // auto-open notation panel
       return true;
     }
+  }
+
+  // The engine read the chart but powerTabImporter could not build notation —
+  // the chart is the deliverable, so this is still a success.
+  if (viaEngine) {
+    window._ptbAlphaTex = null;
+    return true;
   }
 
   // 2) Fallback: maybe it's a Guitar Pro file renamed .ptb.
@@ -3607,7 +3759,7 @@ fileInputGuitarPro.addEventListener('change', async () => {
     resetDiagnostics();
     const importStart = performance.now();
     setStatus(`Importing ${file.name}...`);
-    if (typeof importGuitarProToCSMPN !== 'function') {
+    if (typeof importGuitarProToCSMPN !== 'function' && !window.RecognitionBridge) {
       setStatus('Guitar Pro importer not loaded — try refreshing.', 'error');
       return;
     }
@@ -3620,6 +3772,7 @@ fileInputGuitarPro.addEventListener('change', async () => {
     window._ptbAlphaTex = null; // GP path renders raw bytes; PTB path re-sets this
     importDiagnostics.miner = file.name.endsWith('.ptb') ? 'Power Tab' : 'Guitar Pro';
     if (!file.name.endsWith('.ptb')) {
+      if (await importViaRecognitionEngine(gpBuf, file.name, importStart)) return;
       const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
       const gpDoc = parseCSMPN(csmpn);
       const gpMarkers = gpDoc.blocks.filter(b => b.type === 'marker');
@@ -3847,9 +4000,19 @@ document.getElementById('btnClearPin').addEventListener('click', function(){
 });
 
 /* =========================================================
-   User Mode / Power Mode Toggle
+   Advanced disclosure (per stage)
+   ---------------------------------------------------------
+   The old control was one global User/Power switch, so turning it on to reach
+   the CSML editor in Prepare also unpacked every advanced import option in
+   Capture. The mechanism is unchanged — body.power-mode still gates all 41
+   .power-only elements — but the CHOICE is now remembered per stage, so each
+   destination stays as simple as the user left it.
 ========================================================= */
-let appMode = 'user'; // 'user' or 'power'
+let appMode = 'user'; // 'user' or 'power' — the mode of the ACTIVE stage
+
+const MODE_KEY_LEGACY = 'csmpn_appMode';
+const modeKey = (stage) => MODE_KEY_LEGACY + ':' + stage;
+const currentStage = () => document.body.getAttribute('data-stage') || 'prepare';
 
 function applyAppMode(mode){
   appMode = mode;
@@ -3862,13 +4025,16 @@ function applyAppMode(mode){
   const lbl = document.getElementById('advLabel');
   if (btn) btn.setAttribute('aria-expanded', mode === 'power' ? 'true' : 'false');
   if (lbl) lbl.textContent = mode === 'power' ? 'Advanced on' : 'Advanced';
-  try { localStorage.setItem('csmpn_appMode', mode); } catch(_){}
+  try { localStorage.setItem(modeKey(currentStage()), mode); } catch(_){}
 }
 
 function loadAppMode(){
   try {
-    const saved = localStorage.getItem('csmpn_appMode');
+    const saved = localStorage.getItem(modeKey(currentStage()));
     if (saved === 'power' || saved === 'user') return saved;
+    // Anyone who had Power Mode on before the split keeps it in every stage.
+    const legacy = localStorage.getItem(MODE_KEY_LEGACY);
+    if (legacy === 'power' || legacy === 'user') return legacy;
   } catch(_){}
   return 'user';
 }
@@ -3902,6 +4068,9 @@ function applyStage(stage){
     b.setAttribute('aria-selected', String(b.dataset.stage === stage));
   });
   try { localStorage.setItem('csmpn_stage', stage); } catch(_){}
+  // Advanced is remembered per stage, so re-read it now that the stage changed.
+  // Must come after data-stage is set — that attribute is what keys the lookup.
+  applyAppMode(loadAppMode());
 }
 
 function loadStage(){
@@ -4254,7 +4423,9 @@ fileInput.addEventListener('change', async () => {
       importDiagnostics.miner = name.endsWith('.ptb') ? 'Power Tab' : 'Guitar Pro';
       importDiagnostics.sourceFlavor = 'guitarpro';
       importDiagnostics.confidence = 'high';
-      if (typeof importGuitarProToCSMPN !== 'function') {
+      // Either reader is enough: the recognition engine is the primary path and
+      // AlphaTab the fallback, so only both being absent is fatal.
+      if (typeof importGuitarProToCSMPN !== 'function' && !window.RecognitionBridge) {
         setStatus('Guitar Pro importer not loaded — try refreshing.', 'error');
         return;
       }
@@ -4264,7 +4435,8 @@ fileInput.addEventListener('change', async () => {
       window._gpLastFileName = file.name;
       window._ptbAlphaTex = null; // GP path renders raw bytes; PTB path re-sets this
       if (!name.endsWith('.ptb')) {
-        // Full CSMPN conversion for GP files
+        if (await importViaRecognitionEngine(gpBuf, file.name, importStart)) return;
+        // Fallback: AlphaTab-based conversion (engine unavailable or unreadable file)
         const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
         const gpDoc = parseCSMPN(csmpn);
         const gpMarkers = gpDoc.blocks.filter(b => b.type === 'marker');
