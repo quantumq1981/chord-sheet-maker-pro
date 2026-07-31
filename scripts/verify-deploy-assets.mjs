@@ -32,24 +32,40 @@ if (htmlFiles.length === 0) {
 }
 
 const SRC_RE = /<script\b[^>]*\bsrc=["']([^"']+)["']/gi;
+// Stylesheets 404 just as silently as scripts, and a missing one takes the whole
+// layout with it — so <link rel=stylesheet> is checked by the same rule. Matched in
+// two steps because rel and href appear in either order in real markup.
+const LINK_TAG_RE = /<link\b[^>]*>/gi;
+const linkStylesheetHref = (tag) =>
+  /\brel=["']?stylesheet["']?/i.test(tag) ? (tag.match(/\bhref=["']([^"']+)["']/i) || [])[1] : undefined;
 const missing = [];
 let checked = 0;
 
 for (const html of htmlFiles) {
   const src = readFileSync(join(distDir, html), 'utf8');
+  const refs = [];
+  SRC_RE.lastIndex = 0;
   let m;
-  while ((m = SRC_RE.exec(src)) !== null) {
-    const ref = m[1];
-    // External (CDN) or Vite-bundled absolute asset — not our responsibility.
-    if (/^https?:\/\//i.test(ref) || ref.startsWith('//') || ref.startsWith('/')) continue;
-    checked++;
-    const target = join(distDir, dirname(html), ref);
-    if (!existsSync(target)) missing.push(`${html} references "${ref}" — not found at ${target}`);
+  while ((m = SRC_RE.exec(src)) !== null) refs.push(m[1]);
+  LINK_TAG_RE.lastIndex = 0;
+  while ((m = LINK_TAG_RE.exec(src)) !== null) {
+    const href = linkStylesheetHref(m[0]);
+    if (href) refs.push(href);
+  }
+
+  {
+    for (const ref of refs) {
+      // External (CDN) or Vite-bundled absolute asset — not our responsibility.
+      if (/^https?:\/\//i.test(ref) || ref.startsWith('//') || ref.startsWith('/')) continue;
+      checked++;
+      const target = join(distDir, dirname(html), ref);
+      if (!existsSync(target)) missing.push(`${html} references "${ref}" — not found at ${target}`);
+    }
   }
 }
 
 if (missing.length > 0) {
-  console.error('verify-deploy-assets: the deploy would 404 on these local scripts:\n');
+  console.error('verify-deploy-assets: the deploy would 404 on these local assets:\n');
   for (const line of missing) console.error('  ✗ ' + line);
   console.error(
     '\nAdd the missing file(s) to the "Copy static root files into dist" step in .github/workflows/ci.yml.'
@@ -58,5 +74,5 @@ if (missing.length > 0) {
 }
 
 console.log(
-  `verify-deploy-assets: OK — ${checked} local script reference(s) across ${htmlFiles.length} page(s) all present in ${distDir}/.`
+  `verify-deploy-assets: OK — ${checked} local asset reference(s) across ${htmlFiles.length} page(s) all present in ${distDir}/.`
 );

@@ -1,0 +1,239 @@
+/* ============================================================================
+   ui.css — workflow shell: Capture → Prepare → Perform
+   ----------------------------------------------------------------------------
+   Adds a three-destination shell around the existing app. Two rules kept this
+   change safe against a 6,900-line index.html:
+
+     1. NOTHING MOVES IN THE DOM. Stage membership is an attribute
+        (data-stage-item) on nodes that are already where they are, so every id,
+        event listener and test keeps working. The router only toggles
+        visibility.
+
+     2. STAGE RULES ONLY HIDE — they never set a display value. Elements are
+        flex, grid, inline-flex and block; forcing `display:block` on show would
+        break their layout. So the selector is "hide what does NOT belong to the
+        active stage" and the natural display survives untouched.
+
+   Colours come from the Family 1 desk palette already defined in index.html's
+   :root (--bg / --card / --ink / --muted / --accent / --border / --radius), so
+   this file introduces no second palette. The tokens below are the additions
+   the shell needs and index.html did not already have.
+   ============================================================================ */
+
+:root {
+  /* Touch targets — iOS HIG floor is 44px; a chart is operated standing up. */
+  --ui-touch: 44px;
+  --ui-nav-h: 58px;
+
+  /* Rail width once there is room for a side rail instead of a bottom bar. */
+  --ui-rail-w: 132px;
+
+  --ui-gap: 8px;
+  --ui-pad: 12px;
+
+  /* Text that sits ON an --accent fill. */
+  --ui-on-accent: #ffffff;
+}
+
+/* ===== Stage visibility =================================================== *
+ * An element with data-stage-item belongs to the listed stages; anything not
+ * carrying the attribute is chrome and is always visible.                    */
+body[data-stage='capture'] [data-stage-item]:not([data-stage-item~='capture']),
+body[data-stage='prepare'] [data-stage-item]:not([data-stage-item~='prepare']),
+body[data-stage='perform'] [data-stage-item]:not([data-stage-item~='perform']) {
+  display: none !important;
+}
+
+/* ===== Stage nav ========================================================== *
+ * Bottom bar on phone/tablet — the reachable edge on iOS. Becomes a left rail
+ * when the viewport is wide enough to spare the width.                       */
+.stageNav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  display: flex;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 10px rgba(32, 32, 28, 0.06);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.stageNav button {
+  flex: 1;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: var(--muted);
+  min-height: var(--ui-nav-h);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 4px;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.stageNav button:hover {
+  background: rgba(32, 32, 28, 0.04);
+}
+
+.stageNav button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.stageNav .stageIcon {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.stageNav .stageLabel {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.stageNav button[aria-selected='true'] {
+  color: var(--accent);
+}
+
+.stageNav button[aria-selected='true'] .stageLabel {
+  font-weight: 700;
+}
+
+/* Keep the last of the page clear of the fixed bar. */
+body.has-stage-nav {
+  padding-bottom: calc(var(--ui-nav-h) + env(safe-area-inset-bottom, 0px) + 12px);
+}
+
+@media (min-width: 900px) {
+  .stageNav {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    width: var(--ui-rail-w);
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 16px 8px;
+    border-top: 0;
+    border-right: 1px solid var(--border);
+    box-shadow: 2px 0 10px rgba(32, 32, 28, 0.05);
+  }
+
+  .stageNav button {
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    min-height: var(--ui-touch);
+  }
+
+  .stageNav button[aria-selected='true'] {
+    background: var(--stamp-tint, rgba(184, 53, 15, 0.1));
+  }
+
+  body.has-stage-nav {
+    padding-bottom: 0;
+    padding-left: var(--ui-rail-w);
+  }
+}
+
+/* ===== Stage heading ====================================================== */
+.stageHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+
+.stageHead h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.stageHead p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ===== Advanced disclosure ================================================ *
+ * Replaces the global User/Power switch in the chrome with a control that sits
+ * inside the stage it affects.                                               */
+.advToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 9px;
+  padding: 7px 11px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.advToggle:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.advToggle:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.advToggle[aria-expanded='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--stamp-tint, transparent);
+}
+
+.advToggle .advCaret {
+  font-size: 10px;
+  transition: transform 0.12s ease;
+}
+
+.advToggle[aria-expanded='true'] .advCaret {
+  transform: rotate(90deg);
+}
+
+/* ===== Print: the shell is screen-only ==================================== */
+@media print {
+  .stageNav,
+  .stageHead,
+  .advToggle {
+    display: none !important;
+  }
+
+  body.has-stage-nav {
+    padding-bottom: 0 !important;
+    padding-left: 0 !important;
+  }
+
+  /* Printing must never be blocked by whichever stage happens to be active. */
+  body[data-stage] [data-stage-item] {
+    display: revert !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stageNav button,
+  .advToggle,
+  .advToggle .advCaret {
+    transition: none !important;
+  }
+}
