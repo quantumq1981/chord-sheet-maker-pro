@@ -24,9 +24,12 @@ const fbSettings = {
   chordColor: '#20201c', // chord color (family ink default)
   headlineFont: 'patrickhand', // font for song title
   bodyFont: 'helvetica',       // font for body/chords/section headers
-  // Whether to include lyrics lines (prefixed with ';') in the CSMPN output.
-  // True = keep lyrics as comment lines; False = omit lyrics completely.
-  includeLyrics: true,
+  // Whether to render lyrics lines (prefixed with ';') in the chart.
+  // Defaults to FALSE so a freshly imported chart lands as a PURE FAKE BOOK chart —
+  // chord symbols over bars, which is what the first pass is for. This only affects
+  // rendering: the ';' lines stay in the source, so turning it back on restores them.
+  // Existing users are unaffected — loadFBSettings() restores their saved value.
+  includeLyrics: false,
   hybridRhythmMode: false,
   hybridScaffoldPreset: 'quarter',
   // Strum direction arrows below the staff: 'none' | 'down' | 'alt' | 'custom'

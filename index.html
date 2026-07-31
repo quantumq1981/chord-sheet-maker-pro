@@ -2111,6 +2111,7 @@ body.exporting .sectionBlock{
       <div class="toolbar-row toolbar-row--tools power-only">
         <div class="toolbar-group">
           <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
+          <button class="outline" id="btnExportFakeBook" title="Download a pure fake book chart — chords and bars only, no lyrics, rhythm or tab">&#x2193; Fake Book</button>
           <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
           <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
           <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
@@ -4941,6 +4942,22 @@ document.getElementById('btnExportChordPro').addEventListener('click', () => {
     setStatus('Exported as ChordPro (.chopro).');
   } catch(e) {
     setStatus('ChordPro export failed: ' + (e?.message || e), 'error');
+  }
+});
+
+document.getElementById('btnExportFakeBook').addEventListener('click', () => {
+  try {
+    if (typeof toPureFakeBook !== 'function') {
+      setStatus('Fake Book export is unavailable — importPipeline.js did not load.', 'error');
+      return;
+    }
+    const pure = toPureFakeBook(sourceEl.value || '');
+    if (!pure.trim()) { setStatus('Nothing to export — the chart is empty.', 'warning'); return; }
+    const filename = safeFilename(hdr.title.value?.trim() || 'chart') + '.csmpn';
+    downloadBlob(new Blob([pure], { type: 'text/plain;charset=utf-8' }), filename);
+    setStatus('Exported a pure fake book chart (.csmpn) — chords and bars only.');
+  } catch(e) {
+    setStatus('Fake Book export failed: ' + (e?.message || e), 'error');
   }
 });
 

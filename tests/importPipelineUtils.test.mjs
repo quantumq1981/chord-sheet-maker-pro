@@ -719,3 +719,96 @@ describe('readFileBytesReliably', () => {
     await assert.rejects(ctx.readFileBytesReliably(file), /empty \(0 bytes\)/);
   });
 });
+
+// ── toPureFakeBook ────────────────────────────────────────────────────────────
+
+describe('toPureFakeBook', () => {
+  const ctx = makeContext();
+
+  it('keeps header metadata, section markers and the bar grid', () => {
+    const src = [
+      'Title: Peg',
+      'Key: G',
+      'Time: 4/4',
+      '',
+      '- Verse',
+      'Gmaj7 | F#7 | Fmaj7 | E7 |',
+    ].join('\n');
+    assert.equal(ctx.toPureFakeBook(src), src);
+  });
+
+  it('strips lyric lines', () => {
+    const out = ctx.toPureFakeBook(
+      ['- Verse', 'C | G |', ";I've got your picture", 'Am | F |'].join('\n')
+    );
+    assert.ok(!out.includes('picture'));
+    assert.ok(out.includes('C | G |') && out.includes('Am | F |'));
+  });
+
+  it('strips a multi-line {tab} block but keeps the bars around it', () => {
+    const out = ctx.toPureFakeBook(
+      [
+        '- Verse',
+        '| G | C |',
+        '{tab',
+        '  G: 3,2,0,0,0,3',
+        '  C: x,3,2,0,1,0',
+        '}',
+        '- Chorus',
+        '| D |',
+      ].join('\n')
+    );
+    assert.ok(!out.includes('{tab'), 'tab block removed');
+    assert.ok(!out.includes('3,2,0'), 'voicings removed');
+    assert.ok(out.includes('| G | C |') && out.includes('- Chorus') && out.includes('| D |'));
+  });
+
+  it('strips a {hybrid} rhythm block', () => {
+    const out = ctx.toPureFakeBook(
+      ['- Verse', '| C | G |', '{hybrid', 'b1: 1:q 2:q 3:q 4:q', 'b2: 1:h 3:h', '}'].join('\n')
+    );
+    assert.ok(!out.includes('{hybrid') && !out.includes('b1:'));
+    assert.ok(out.includes('| C | G |'));
+  });
+
+  it('handles a single-line block whose closing brace shares the line', () => {
+    const out = ctx.toPureFakeBook(
+      ['- Verse', '| G |', '{tab G: 3,2,0,0,0,3}', '| C |'].join('\n')
+    );
+    assert.ok(!out.includes('{tab') && !out.includes('3,2,0'));
+    assert.ok(out.includes('| G |') && out.includes('| C |'));
+  });
+
+  it('collapses the blank-line runs left behind and trims the tail', () => {
+    const out = ctx.toPureFakeBook(
+      ['- Verse', '| C |', '', ';lyric', '', '', '| G |', '', ''].join('\n')
+    );
+    assert.ok(!/\n\n\n/.test(out), 'no triple newline');
+    assert.ok(!/\n\s*$/.test(out), 'no trailing blank line');
+  });
+
+  it('output still parses cleanly through parseCSMPN', () => {
+    const out = ctx.toPureFakeBook(
+      [
+        'Title: T',
+        'Time: 4/4',
+        '',
+        '- Verse',
+        '| C | G |',
+        ';some words',
+        '{tab',
+        ' C: x,3,2,0,1,0',
+        '}',
+      ].join('\n')
+    );
+    const doc = ctx.parseCSMPN(out);
+    assert.deepEqual(doc.warnings || [], []);
+    assert.equal(doc.title, 'T');
+    assert.ok(doc.blocks.some((b) => Array.isArray(b.tokens) && b.tokens.includes('|')));
+  });
+
+  it('is safe on empty input', () => {
+    assert.equal(ctx.toPureFakeBook(''), '');
+    assert.equal(ctx.toPureFakeBook(null), '');
+  });
+});
