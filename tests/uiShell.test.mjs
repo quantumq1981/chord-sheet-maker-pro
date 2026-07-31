@@ -123,6 +123,91 @@ test('the Advanced control exists and applyAppMode drives it', () => {
   assert.ok(fn.includes('power-mode'), 'still drives the body class the .power-only rules use');
 });
 
+// ── Per-stage disclosure ─────────────────────────────────────────────────────
+
+test('the Advanced choice is stored per stage, and applyStage re-reads it', () => {
+  const apply = html.slice(
+    html.indexOf('function applyAppMode'),
+    html.indexOf('function loadAppMode')
+  );
+  assert.ok(
+    apply.includes('modeKey(currentStage())'),
+    'applyAppMode must write the stage-scoped key, not one global mode'
+  );
+
+  const stage = html.slice(html.indexOf('function applyStage'), html.indexOf('function loadStage'));
+  assert.ok(
+    stage.includes('applyAppMode(loadAppMode())'),
+    'switching stage must re-apply that stage’s Advanced state'
+  );
+  // The lookup keys off data-stage, so the attribute has to be set first.
+  assert.ok(
+    stage.indexOf("setAttribute('data-stage'") < stage.indexOf('applyAppMode'),
+    'data-stage must be set before the mode is re-read'
+  );
+});
+
+test('a pre-split saved mode still applies', () => {
+  const fn = html.slice(
+    html.indexOf('function loadAppMode'),
+    html.indexOf('function switchToMode')
+  );
+  assert.ok(fn.includes('MODE_KEY_LEGACY'), 'loadAppMode falls back to the legacy global key');
+});
+
+test('the per-stage mode keys are backed up', () => {
+  const backup = read('backupRestore.js');
+  for (const s of STAGES) {
+    assert.ok(backup.includes(`'csmpn_appMode:${s}'`), `csmpn_appMode:${s} missing from backup`);
+  }
+  assert.ok(backup.includes("'csmpn_stage'"), 'the active stage is backed up too');
+});
+
+// ── Advanced tools are split across the stages ───────────────────────────────
+
+test('the advanced tools row is chrome, and each of its groups picks a stage', () => {
+  const row = html.slice(
+    html.indexOf('toolbar-row toolbar-row--tools'),
+    html.indexOf('<div class="tips">')
+  );
+  const rowTag = row.slice(0, row.indexOf('>'));
+  assert.ok(
+    !rowTag.includes('data-stage-item'),
+    'the row must not be stage-scoped — its groups are, so every stage keeps a tools row'
+  );
+
+  const groups = [...row.matchAll(/<div class="toolbar-group"([^>]*)>/g)].map((m) => m[1]);
+  assert.ok(groups.length >= STAGES.length, 'one advanced group per stage');
+  for (const g of groups) {
+    assert.ok(g.includes('data-stage-item'), 'every advanced group declares its stage');
+  }
+  const owned = groups.join(' ');
+  for (const s of STAGES) {
+    assert.ok(owned.includes(s), `no advanced tools assigned to "${s}"`);
+  }
+});
+
+test('pure fake book export is a first-stage output, not an advanced one', () => {
+  // The advanced row is .power-only, so anything inside it is hidden until
+  // Advanced is switched on. Fake book is the app's headline output — it belongs
+  // with the everyday exports.
+  const row = html.slice(
+    html.indexOf('toolbar-row toolbar-row--tools'),
+    html.indexOf('<div class="tips">')
+  );
+  assert.ok(!row.includes('btnExportFakeBook'), 'fake book export must not sit behind Advanced');
+  assert.ok(html.includes('id="btnExportFakeBook"'), 'the button still exists');
+});
+
+// ── Stage headings ───────────────────────────────────────────────────────────
+
+test('every stage has a heading, and only its own', () => {
+  const heads = [...html.matchAll(/<div class="stageHead" data-stage-item="([a-z]+)">/g)].map(
+    (m) => m[1]
+  );
+  assert.deepEqual(heads, STAGES, 'one heading per stage, in workflow order');
+});
+
 test('body.power-mode remains the gate for existing .power-only elements', () => {
   assert.ok(html.includes('body.user-mode .power-only'), 'the power-only rule is untouched');
   assert.ok(html.match(/class="[^"]*power-only/), 'power-only elements still exist');

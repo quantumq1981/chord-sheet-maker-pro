@@ -1988,7 +1988,7 @@ body.exporting .sectionBlock{
          in the chrome. -->
     <div class="mode-toggle-wrap">
       <button class="advToggle" id="btnAdvanced" aria-expanded="false"
-              title="Show advanced tools — editors, exports and import details">
+              title="Show this stage's advanced tools — remembered per stage">
         <span class="advCaret">&#9654;</span><span id="advLabel">Advanced</span>
       </button>
       <button class="info-btn" onclick="openFeatureInfo('modeToggle')" title="About Advanced tools">ⓘ</button>
@@ -2001,6 +2001,18 @@ body.exporting .sectionBlock{
       <div class="field"><label>Time</label><input id="hdrTime" placeholder="e.g., 4/4"></div>
       <div class="field"><label>Tempo</label><input id="hdrTempo" placeholder="e.g., 120"></div>
       <div class="field"><label>Style</label><input id="hdrStyle" placeholder="e.g., Swing"></div>
+    </div>
+
+    <!-- One heading per destination. Only the active stage's is visible, so this
+         reads as a single line that changes with the stage rather than three. -->
+    <div class="stageHead" data-stage-item="capture">
+      <h2>Capture</h2><p>Bring music in — import a file, paste text, or type chords below.</p>
+    </div>
+    <div class="stageHead" data-stage-item="prepare">
+      <h2>Prepare</h2><p>Shape the chart — key, layout, rhythm and lyrics.</p>
+    </div>
+    <div class="stageHead" data-stage-item="perform">
+      <h2>Perform</h2><p>Print, export, and build setlists for the stand.</p>
     </div>
 
     <div class="toolbar">
@@ -2065,6 +2077,9 @@ body.exporting .sectionBlock{
           <button class="secondary" id="btnDownloadPdf" title="Download as PDF">↓ PDF</button>
           <button class="secondary" id="btnPng" title="Export PNG">PNG</button>
           <button class="secondary" id="btnCopy" title="Copy chart text">Copy</button>
+          <!-- Pure fake book is a first-stage output, not an advanced one, so it
+               sits with the other everyday exports rather than behind Advanced. -->
+          <button class="secondary" id="btnExportFakeBook" title="Download a pure fake book chart — chords and bars only, no lyrics, rhythm or tab">&#x2193; Fake Book</button>
         </div>
 
         <div class="toolbar-sep"></div>
@@ -2083,26 +2098,33 @@ body.exporting .sectionBlock{
 
       </div>
 
-      <!-- Row 2: power tools (hidden in user mode) -->
-      <div class="toolbar-row toolbar-row--tools power-only" data-stage-item="prepare capture">
-        <div class="toolbar-group">
+      <!-- Row 2: advanced tools. The row itself is chrome (every stage owns at
+           least one group in it); each group declares the stage whose work it
+           belongs to, so Advanced reveals ~5 buttons in context instead of all
+           eleven at once. -->
+      <div class="toolbar-row toolbar-row--tools power-only">
+
+        <!-- Capture: turning a foreign format into a chart, and seeing how it went. -->
+        <div class="toolbar-group" data-stage-item="capture">
           <button class="outline power-only" id="btnConvertChordMark">ChordMark → CSMPN</button>
-          <button class="outline" id="btnExportFakeBook" title="Download a pure fake book chart — chords and bars only, no lyrics, rhythm or tab">&#x2193; Fake Book</button>
-          <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
-          <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
-          <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
+          <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
         </div>
-        <div class="toolbar-sep"></div>
-        <div class="toolbar-group">
+
+        <!-- Prepare: the authoring and notation surfaces. -->
+        <div class="toolbar-group" data-stage-item="prepare">
           <button class="outline power-only" id="btnCsmlHelp">♩ ChordSlashML Help</button>
           <button class="outline power-only" id="btnCsmlEditor">⊞ ChordSlashML Editor</button>
           <button class="outline power-only" id="btnCsmlGuide">★ CSML Quick Start</button>
           <button class="outline power-only" id="btnAbcEditor" title="ABC notation: render &amp; play traditional/lead-sheet ABC">𝄞 ABC Notation</button>
           <button class="outline power-only" id="btnGpNotation" title="View Guitar Pro or Power Tab notation">🎸 Tab View</button>
-          <button class="outline power-only" id="btnSetlist" title="Setlist / Songbook — save and print multiple charts">&#9776; Setlist<span class="setlist-badge" id="setlistBadge" style="display:none">0</span></button>
         </div>
-        <div class="toolbar-group">
-          <button class="diagnosticsToggle power-only" id="btnDiagnostics" style="display:none;">Import Details <span class="arrow">&#9654;</span></button>
+
+        <!-- Perform: handing the finished chart to something else. -->
+        <div class="toolbar-group" data-stage-item="perform">
+          <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
+          <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
+          <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
+          <button class="outline power-only" id="btnSetlist" title="Setlist / Songbook — save and print multiple charts">&#9776; Setlist<span class="setlist-badge" id="setlistBadge" style="display:none">0</span></button>
         </div>
       </div>
 
@@ -3852,9 +3874,19 @@ document.getElementById('btnClearPin').addEventListener('click', function(){
 });
 
 /* =========================================================
-   User Mode / Power Mode Toggle
+   Advanced disclosure (per stage)
+   ---------------------------------------------------------
+   The old control was one global User/Power switch, so turning it on to reach
+   the CSML editor in Prepare also unpacked every advanced import option in
+   Capture. The mechanism is unchanged — body.power-mode still gates all 41
+   .power-only elements — but the CHOICE is now remembered per stage, so each
+   destination stays as simple as the user left it.
 ========================================================= */
-let appMode = 'user'; // 'user' or 'power'
+let appMode = 'user'; // 'user' or 'power' — the mode of the ACTIVE stage
+
+const MODE_KEY_LEGACY = 'csmpn_appMode';
+const modeKey = (stage) => MODE_KEY_LEGACY + ':' + stage;
+const currentStage = () => document.body.getAttribute('data-stage') || 'prepare';
 
 function applyAppMode(mode){
   appMode = mode;
@@ -3867,13 +3899,16 @@ function applyAppMode(mode){
   const lbl = document.getElementById('advLabel');
   if (btn) btn.setAttribute('aria-expanded', mode === 'power' ? 'true' : 'false');
   if (lbl) lbl.textContent = mode === 'power' ? 'Advanced on' : 'Advanced';
-  try { localStorage.setItem('csmpn_appMode', mode); } catch(_){}
+  try { localStorage.setItem(modeKey(currentStage()), mode); } catch(_){}
 }
 
 function loadAppMode(){
   try {
-    const saved = localStorage.getItem('csmpn_appMode');
+    const saved = localStorage.getItem(modeKey(currentStage()));
     if (saved === 'power' || saved === 'user') return saved;
+    // Anyone who had Power Mode on before the split keeps it in every stage.
+    const legacy = localStorage.getItem(MODE_KEY_LEGACY);
+    if (legacy === 'power' || legacy === 'user') return legacy;
   } catch(_){}
   return 'user';
 }
@@ -3907,6 +3942,9 @@ function applyStage(stage){
     b.setAttribute('aria-selected', String(b.dataset.stage === stage));
   });
   try { localStorage.setItem('csmpn_stage', stage); } catch(_){}
+  // Advanced is remembered per stage, so re-read it now that the stage changed.
+  // Must come after data-stage is set — that attribute is what keys the lookup.
+  applyAppMode(loadAppMode());
 }
 
 function loadStage(){

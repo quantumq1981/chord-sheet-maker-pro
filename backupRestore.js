@@ -23,7 +23,11 @@
     'csmp_setlist_v1', // setlists (SETLIST_KEY)
     'csmpn_settings', // Fake Book settings (settings.js)
     'csml_editor_settings', // ChordSlashML editor style (CSML_STYLE_KEY)
-    'csmpn_appMode', // last UI mode
+    'csmpn_appMode', // legacy single UI mode, pre per-stage split
+    'csmpn_appMode:capture', // Advanced disclosure, per stage (index.html modeKey)
+    'csmpn_appMode:prepare',
+    'csmpn_appMode:perform',
+    'csmpn_stage', // last workflow stage (index.html)
     'csmpn_draft', // current editor draft (_SOURCE_DRAFT_KEY)
   ];
 
