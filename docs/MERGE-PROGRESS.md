@@ -170,32 +170,55 @@ regression was only visible in a real file's output.
 Reported from an iPad session (2026-07-31), not yet diagnosed — each needs the actual
 file, because guessing at a binary/PDF parser failure wastes more time than asking:
 
-- **A `.ptb` that fails to read.** The message shown is `tryImportPowerTab`'s last-resort
-  branch, so the recognition engine's Power Tab reader failed too. It parses
-  `tests/fixtures/a-major-shape-arpeggio.ptb` fine, so it is specific to that file.
-  Ask for the `.ptb` → make it a fixture.
-- **Tab Decoder: "0 bars · 0 systems · 8 pp" on a tab PDF** ("Pick Up The Pieces"). That
-  is Tab-Translator-Pro's Path A geometry parser, a **different repo**, not anything this
-  merge touched yet. Its own CLAUDE.md says Path A targets digital alphaTab-style
-  text-layer PDFs; a MuseScore-engraved PDF may carry its TAB digits in a music font with
-  no Unicode mapping, in which case `getTextContent()` returns empty strings and there is
-  nothing to parse — the same reason meter detection is impossible there. Confirming that
-  needs the PDF. If true, the honest fix is routing that PDF species to the UG-Pro
-  importer in this repo (which handles SMuFL/PUA glyph PDFs) rather than Path A.
+- ~~A `.ptb` that fails to read.~~ **Resolved** — the file was a PDF named `.ptb`. Two
+  fixes shipped: signatures now beat extensions when they disagree about which importer
+  should run, and tab PDFs (fret digits, no chord symbols) are read by the engine's
+  geometry parser. See "Tab PDFs" below.
+- ~~Tab Decoder: "0 bars · 0 systems".~~ **Root cause found** — `estimateSpacing` only
+  measures string-line gaps under 20pt, but Guitar Pro / alphaTab export at a large user
+  unit (a page 4209pt tall, lines ~37pt apart). No gap qualifies, the estimate falls back
+  to 7pt, and every threshold is ~10x too small. **Still open upstream**: this is a real
+  bug in Tab-Translator-Pro's `engine.tsx` and the fix belongs there. Worked around here
+  by normalising coordinates at the call site (`pdfTokenScale`), because
+  `recognitionEngine.mjs` is vendored verbatim and must not be edited in this repo.
 - **Fake-book rows still uneven on dense charts even with harmony recovered.** Bar cells
   vary from 1 to 5 chords (`F/C_G/D_G/B_G/D_Adim/Eb` is 23 chars against a typical 2),
   and the renderer lays out fixed-width columns. A3 print evens it out, which is the tell.
   Worth a look at proportional column widths or a per-row cell-count cap.
 
-## Device pass still owed
+### Tab PDFs (no chord symbols)
 
-Everything browser-only needs a real iOS Safari check on iPhone *and* iPad — there is no
-substitute and no local console:
+`pdfTokenScale` + `importTabPdf` in the bridge, wired into `importUGProPDF` after the
+chordsheet.com check. Runs only when a PDF has **no** chord text at all, so nothing that
+imports today changes route. On the real Sledgehammer file: 0 systems / 0 bars → 11
+systems, 186 columns, 18 bars, parsing warning-free.
 
-- Phase 1a/1b: stage switching, per-stage Advanced persistence, the part picker row,
-  the floating print button at each stage, the 1000px rail on iPad landscape.
-- Phase 2: a real `.gp`/`.gp5`/`.gpx`/`.ptb` import, the part picker re-read, Tab View
-  still opening after a Power Tab import, and print-to-PDF unchanged.
+**Honest limit:** a riff transcription has no chords to extract, so partial voicings get
+named for what is written (`F5`, `Fdim/B`) and dense bars carry many readings. Import
+Details says so. Collapsing to one chord per bar via `simplifyScore` was tried and
+**rejected** — pooling a bar of a melodic figure produced worse names (`C#9/B`, `B6/9/C#`).
+A comping tab PDF, which is what the engine's corpus is built from, does much better.
+
+## Device pass
+
+Everything browser-only needs a real iOS Safari check — there is no substitute and no
+local console.
+
+**Confirmed on device (2026-07-31):**
+- The Capture / Prepare / Perform nav on iPhone.
+- Power Tab import through the engine — "Pali Gap", 130 bars, correct Eb-Bb-Gb-Db-Ab-Eb
+  tuning. This is the format `powerTabImporter.js` never finished reading.
+- The part picker selecting a track on a multi-track file.
+- Tab View still opening after a Power Tab import (the engine reads the chart,
+  `powerTabImporter.js` still builds the AlphaTex underneath it).
+- A multi-track Guitar Pro import ("Revelation (Live)") with title, key and tempo.
+
+**Still owed:**
+- Per-stage Advanced persistence; the floating print button in each stage; the 1000px
+  rail on iPad landscape.
+- The part picker's *re-read* on change (selecting a different part).
+- A tab-PDF import end to end on device.
+- Print-to-PDF unchanged from baseline.
 
 ## Next: Phase 3
 
