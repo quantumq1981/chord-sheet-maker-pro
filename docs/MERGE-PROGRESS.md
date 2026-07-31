@@ -131,6 +131,23 @@ it to `ENGINE_URL`.
 arbitrates a single chord from a chroma vector, which needs a chord-inspection surface
 this app does not have.
 
+### Phase 2 follow-up — harmony recovery (regression fix)
+
+Making the engine primary silently dropped the cross-track harmony recovery this repo
+added in Sprint 19 (#340). The engine has no equivalent, so a bar the chosen part rests
+through became `N.C.` Measured on the committed fixtures: **45% of Peg's bars and 49% of
+Kid Charlemagne's** came back `N.C.` — a half-empty chart, and the reason an imported
+multi-track file laid out unevenly.
+
+`harvestBarPitches` + `recoverEmptyBars` in the bridge port that recovery onto the
+engine's score shape, through this repo's own `ChordTheory` oracle. Peg → 1%,
+Kid Charlemagne → 3%, Blue Sky unchanged at 0% (it never needed any). Recovered bars are
+reported in Import Details, not passed off as read from the file.
+
+**Lesson worth keeping:** when a capability moves to a vendored engine, check what the
+displaced code did that the engine does not. The tests all passed either way — the
+regression was only visible in a real file's output.
+
 ---
 
 ## Standing decisions
@@ -147,6 +164,28 @@ this app does not have.
   `#b8350f`, is a literal in each app.
 - **Never edit `recognitionEngine.mjs` here.** Change it upstream in Tab-Translator-Pro,
   re-vendor, update the provenance file.
+
+## Open, needs files from the user
+
+Reported from an iPad session (2026-07-31), not yet diagnosed — each needs the actual
+file, because guessing at a binary/PDF parser failure wastes more time than asking:
+
+- **A `.ptb` that fails to read.** The message shown is `tryImportPowerTab`'s last-resort
+  branch, so the recognition engine's Power Tab reader failed too. It parses
+  `tests/fixtures/a-major-shape-arpeggio.ptb` fine, so it is specific to that file.
+  Ask for the `.ptb` → make it a fixture.
+- **Tab Decoder: "0 bars · 0 systems · 8 pp" on a tab PDF** ("Pick Up The Pieces"). That
+  is Tab-Translator-Pro's Path A geometry parser, a **different repo**, not anything this
+  merge touched yet. Its own CLAUDE.md says Path A targets digital alphaTab-style
+  text-layer PDFs; a MuseScore-engraved PDF may carry its TAB digits in a music font with
+  no Unicode mapping, in which case `getTextContent()` returns empty strings and there is
+  nothing to parse — the same reason meter detection is impossible there. Confirming that
+  needs the PDF. If true, the honest fix is routing that PDF species to the UG-Pro
+  importer in this repo (which handles SMuFL/PUA glyph PDFs) rather than Path A.
+- **Fake-book rows still uneven on dense charts even with harmony recovered.** Bar cells
+  vary from 1 to 5 chords (`F/C_G/D_G/B_G/D_Adim/Eb` is 23 chars against a typical 2),
+  and the renderer lays out fixed-width columns. A3 print evens it out, which is the tell.
+  Worth a look at proportional column widths or a per-row cell-count cap.
 
 ## Device pass still owed
 
