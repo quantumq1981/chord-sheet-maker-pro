@@ -356,3 +356,62 @@ test('recovery is skipped, not fatal, when ChordTheory is absent', () => {
   const score = { timeSig: [4, 4], bars: [{ events: [] }] };
   assert.equal(bare.recoverEmptyBars(score, [score], {}), score, 'returned unchanged');
 });
+
+// ── Tab PDFs (fret geometry, no chord symbols) ───────────────────────────────
+
+test('pdfTokenScale normalises an oversized export page and leaves normal ones alone', () => {
+  // A Guitar Pro / alphaTab PDF page can be 4209pt tall. The engine's parser
+  // only measures string-line gaps under 20pt, so at that scale it finds none,
+  // falls back to 7pt, and reports zero systems on a page full of legible tab.
+  assert.ok(Math.abs(bridge.pdfTokenScale(4209) - 792 / 4209) < 1e-9);
+  assert.equal(bridge.pdfTokenScale(792), 1, 'a normal page is untouched');
+  assert.equal(bridge.pdfTokenScale(1000), 1, 'below the 1.5x trigger, untouched');
+  assert.equal(bridge.pdfTokenScale(0), 1, 'no height is not a division by zero');
+  assert.equal(bridge.pdfTokenScale(2000, 1000), 0.5, 'the target is configurable');
+});
+
+test('importTabPdf refuses too little to work with rather than returning half a chart', async () => {
+  assert.equal(await bridge.importTabPdf([], {}), null);
+  assert.equal(await bridge.importTabPdf(null, {}), null, 'a scanned PDF yields no digits');
+  // Enough tokens to pass the count gate, but no staff geometry in them.
+  const junk = Array.from({ length: 20 }, (_, i) => ({ page: 1, x: i * 40, y: 100, val: 3 }));
+  assert.equal(await bridge.importTabPdf(junk, {}), null, 'one row is not a staff');
+});
+
+test('importTabPdf reads six string lines into chords and hands back parseable CSMPN', async () => {
+  // A synthetic system: two measures, each two columns of an open E shape on six
+  // evenly spaced string lines, at the ~7pt spacing the engine expects, with a
+  // measure number above each.
+  const SP = 7;
+  const top = 200;
+  const shape = [0, 2, 2, 1, 0, 0]; // low E -> high e
+  const tokens = [];
+  [
+    [40, [60, 140]],
+    [240, [260, 340]],
+  ].forEach(([markX, xs], mi) => {
+    tokens.push({ page: 1, x: markX, y: top - SP * 2.5, val: mi + 1 });
+    xs.forEach((x) =>
+      shape.forEach((fret, engIdx) =>
+        tokens.push({ page: 1, x, y: top + (5 - engIdx) * SP, val: fret })
+      )
+    );
+  });
+
+  const res = await bridge.importTabPdf(tokens, { title: 'Synthetic' });
+  assert.ok(res, 'a well-formed system is read');
+  assert.equal(res.systems, 1);
+  assert.equal(res.columns, 4);
+  assert.equal(res.summary.bars, 2);
+  assert.match(res.csmpn, /^Title: Synthetic$/m);
+  assert.match(res.csmpn, /\bE\b/, 'the open E shape is named');
+
+  const { parseCSMPN } = loadCsmpnParser();
+  const doc = parseCSMPN(res.csmpn);
+  assert.deepEqual(doc.warnings || [], [], 'the tab-PDF handoff must be warning-free too');
+
+  // The frets belong to one transcription rather than to a chord shape worth
+  // showing, and column geometry carries no reliable onset timing.
+  assert.ok(!res.csmpn.includes('{tab'), 'no tab block');
+  assert.ok(!res.csmpn.includes('{hybrid'), 'no hybrid block');
+});

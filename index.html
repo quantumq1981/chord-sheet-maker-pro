@@ -4371,17 +4371,42 @@ fileInput.addEventListener('change', async () => {
     let name = file.name.toLowerCase();
     const type = (file.type || '').toLowerCase();
 
-    // Files saved without a useful extension (common from the UG app / iOS
-    // share sheet): identify the real format from magic bytes and route as if
-    // the extension were present.
-    const KNOWN_EXT_RE = /\.(pdf|txt|xml|musicxml|mxl|abc|midi?|chordmark|cmark|onsong|opensong|chopro|chordpro|cho|pro|irealb|gp|gp[345]|gpx|ptb|csml|csm)$/;
-    if (!KNOWN_EXT_RE.test(name) && typeof sniffBinaryMusicExt === 'function'){
+    // Route by what the file IS, not what it is called.
+    //
+    // Two things go wrong with trusting the extension. A file can arrive with no
+    // useful extension at all (the UG app, the iOS share sheet), and a file can
+    // arrive with an extension that is simply wrong — a PDF saved as .ptb, an
+    // .mxl saved as .xml. The second case used to reach a parser that failed and
+    // then blamed the file, because the extension was in KNOWN_EXT_RE so the
+    // signature was never consulted.
+    //
+    // So the signature always wins over the name when the two disagree about
+    // which importer should run. sniffBinaryMusicExt returns '' for anything it
+    // cannot identify (all text formats included), so a chart in a .txt is
+    // untouched.
+    if (typeof sniffBinaryMusicExt === 'function'){
       try {
         const headBytes = new Uint8Array(await file.slice(0, 65536).arrayBuffer());
         const sniffedExt = sniffBinaryMusicExt(headBytes);
-        if (sniffedExt){
-          name += sniffedExt;
-          importDiagnostics.warnings.push(`No recognized extension — detected ${sniffedExt} content from file signature.`);
+        // Compare importers, not spellings: .gp/.gp3/.gpx all take the same
+        // branch, and the signature cannot tell GP3 from GP5 anyway, so a
+        // disagreement inside one family is not a disagreement worth acting on.
+        const importerFor = (n) =>
+          /\.(gp|gp[345]|gpx)$/.test(n) ? 'guitarpro' :
+          /\.ptb$/.test(n) ? 'powertab' :
+          /\.midi?$/.test(n) ? 'midi' :
+          /\.mxl$/.test(n) ? 'mxl' :
+          /\.(xml|musicxml)$/.test(n) ? 'musicxml' :
+          /\.pdf$/.test(n) ? 'pdf' : '';
+        const named = importerFor(name);
+        const actual = importerFor(sniffedExt);
+        if (sniffedExt && actual !== named){
+          name += sniffedExt; // appended, so every endsWith() check below re-routes
+          importDiagnostics.warnings.push(
+            named
+              ? `Named "${file.name}" but the file signature says ${sniffedExt} — read as ${sniffedExt}.`
+              : `No recognized extension — detected ${sniffedExt} content from file signature.`
+          );
         }
       } catch (_sniffErr) { /* fall through to extension-based routing */ }
     }

@@ -210,6 +210,74 @@
     return out;
   }
 
+  /**
+   * Scale factor that brings a PDF page back to normal page geometry.
+   *
+   * The engine's tab-PDF parser derives every threshold from the spacing between
+   * string lines, and it only measures gaps under 20pt. Guitar Pro and alphaTab
+   * export at a large user-unit scale — a page can be 4209pt tall, where the
+   * string lines sit ~37pt apart — so no gap qualifies, the estimate falls back
+   * to 7pt, and every threshold ends up ~10x too small: no run of lines ever
+   * looks like a staff, and the parser reports zero systems on a page full of
+   * legible tab.
+   *
+   * Normalising the coordinates instead of the thresholds keeps the engine's
+   * validated numbers intact and treats "tokens arrive at normal page scale" as
+   * the contract it always implicitly was. Pages already near normal size are
+   * left alone, so nothing that parses today changes.
+   */
+  function pdfTokenScale(pageHeight, target) {
+    target = target || 792; // US Letter, points
+    if (!pageHeight || pageHeight <= 0) return 1;
+    return pageHeight > target * 1.5 ? target / pageHeight : 1;
+  }
+
+  /**
+   * A tab PDF carries no chord symbols — the harmony is in the fret numbers. So
+   * this reads the digits' geometry (which string, which column, which measure)
+   * and names the chord each column sounds.
+   *
+   * `tokens` are `{ page, x, y, val }` with y measured DOWNWARD from the top of
+   * the page — the caller does the pdfjs extraction, since that is the only
+   * browser-dependent part.
+   *
+   * Returns null rather than a near-empty chart when too little survives: a
+   * scanned (image-only) PDF produces no digits at all, and half a bar is worse
+   * than an honest failure that lets the caller try another importer.
+   */
+  async function importTabPdf(tokens, opts) {
+    opts = opts || {};
+    if (!tokens || tokens.length < 12) return null;
+    var engine = await loadEngine();
+
+    var chart = engine.buildChart(tokens);
+    if (!chart || !chart.systemsFound || !chart.columnsFound) return null;
+
+    var score = engine.buildScore(chart, opts.useSharp !== false);
+    if (!score || !score.bars || score.bars.length < 2) return null;
+
+    var key = engine.analyzeKey(score);
+    var csmpn = engine.scoreToCSMPN(score, {
+      title: opts.title || 'Imported tab',
+      key: key,
+      tempo: opts.tempo || 0,
+      useSharp: opts.useSharp !== false,
+      // The frets belong to a specific transcription, not to a chord shape the
+      // player should be shown, and there is no reliable onset timing here.
+      tab: false,
+      hybrid: false,
+    });
+
+    return {
+      csmpn: csmpn,
+      score: score,
+      summary: importSummary(score),
+      systems: chart.systemsFound,
+      columns: chart.columnsFound,
+      key: engine.keyName(key, opts.useSharp !== false) || '',
+    };
+  }
+
   // ── Runtime ───────────────────────────────────────────────────────────────
 
   /**
@@ -285,6 +353,8 @@
     partHarmonyScore: partHarmonyScore,
     harvestBarPitches: harvestBarPitches,
     recoverEmptyBars: recoverEmptyBars,
+    pdfTokenScale: pdfTokenScale,
+    importTabPdf: importTabPdf,
     pickChordPart: pickChordPart,
     importSummary: importSummary,
     importBinary: importBinary,
