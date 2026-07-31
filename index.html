@@ -3594,6 +3594,12 @@ async function importViaRecognitionEngine(gpBuf, fileName, importStart, partInde
       'This part is mostly single notes, so it was condensed to one chord per bar.'
     );
   }
+  if (res.recoveredBars){
+    importDiagnostics.warnings.push(
+      `${res.recoveredBars} bar(s) where this part rests took their harmony from the ` +
+      'other instruments — worth a glance before you play from it.'
+    );
+  }
   updateDiagnosticsPanel();
 
   showImportPartPicker(res);

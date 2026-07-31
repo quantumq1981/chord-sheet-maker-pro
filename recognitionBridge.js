@@ -122,6 +122,94 @@
     };
   }
 
+  /**
+   * Duration-weighted pitch classes sounding in one bar across EVERY parsed
+   * part, plus the lowest sounding note's pitch class.
+   *
+   * The chosen part states the changes most of the time, but it goes melodic or
+   * drops out over intros, solos and turnarounds — and the harmony is still
+   * there, in the other instruments.
+   */
+  function harvestBarPitches(scores, index) {
+    var weights = Object.create(null);
+    var lowest = Infinity;
+    var pc = function (m) {
+      return ((m % 12) + 12) % 12;
+    };
+    for (var s = 0; s < (scores || []).length; s++) {
+      var bars = scores[s] && scores[s].bars;
+      var bar = bars && bars[index];
+      if (!bar) continue;
+      var events = bar.events || [];
+      for (var e = 0; e < events.length; e++) {
+        var ev = events[e];
+        var midis = ev.midis || [];
+        var w = Math.max(ev.qdur != null ? ev.qdur : ev.durBeats || 1, 0.25);
+        for (var m = 0; m < midis.length; m++) {
+          weights[pc(midis[m])] = (weights[pc(midis[m])] || 0) + w;
+          if (midis[m] < lowest) lowest = midis[m];
+        }
+      }
+    }
+    return { weights: weights, bassPc: lowest === Infinity ? null : pc(lowest) };
+  }
+
+  /**
+   * Recover the harmony of bars the chosen part leaves empty.
+   *
+   * Without this a chart imported from a multi-track file comes back nearly half
+   * N.C. — measured at 45% of bars on Peg and 49% on Kid Charlemagne — because
+   * the guitar rests while the band plays. This is the same recovery this app's
+   * own Guitar Pro importer does (Sprint 19), reading the engine's parsed notes
+   * instead of AlphaTab's, and through the same ChordTheory oracle.
+   *
+   * Only genuinely empty bars are touched, so a part that states its own chords
+   * is never second-guessed. ChordTheory requires two structural pitch classes
+   * before it will name anything, so a lone passing note or real silence stays
+   * an honest N.C.
+   *
+   * Returns a new score; the engine's own object is not mutated.
+   */
+  function recoverEmptyBars(score, scores, opts) {
+    var theory = (typeof window !== 'undefined' && window.ChordTheory) || null;
+    if (!theory || !theory.recognizeChordFromPcs || !score || !score.bars) return score;
+    opts = opts || {};
+
+    var beatsPerBar = (score.timeSig && score.timeSig[0]) || 4;
+    var recovered = 0;
+    var bars = score.bars.map(function (bar, index) {
+      if ((bar.events || []).length) return bar;
+      var harvest = harvestBarPitches(scores, index);
+      var symbol = theory.recognizeChordFromPcs(harvest.weights, harvest.bassPc, {
+        key: opts.key || null,
+      });
+      if (!symbol) return bar;
+      recovered++;
+      // A synthetic whole-bar event. No frets: this harmony was assembled from
+      // several instruments, so there is no one fingering to claim.
+      var event = {
+        symbol: symbol,
+        beat: 0,
+        durBeats: beatsPerBar,
+        qbeat: 0,
+        qdur: beatsPerBar,
+        midis: [],
+        recovered: true,
+      };
+      var next = {};
+      for (var k in bar) if (Object.prototype.hasOwnProperty.call(bar, k)) next[k] = bar[k];
+      next.events = [event];
+      return next;
+    });
+
+    if (!recovered) return score;
+    var out = {};
+    for (var k2 in score) if (Object.prototype.hasOwnProperty.call(score, k2)) out[k2] = score[k2];
+    out.bars = bars;
+    out.recoveredBars = recovered;
+    return out;
+  }
+
   // ── Runtime ───────────────────────────────────────────────────────────────
 
   /**
@@ -150,19 +238,14 @@
     var first = await engine.parseGuitarProOrXML(u8, name, useSharp, 0);
     var parts = first.parts || [];
 
-    var index = 0;
-    var score = first;
-    if (opts.partIndex != null) {
-      index = opts.partIndex;
-      if (index !== 0) score = await engine.parseGuitarProOrXML(u8, name, useSharp, index);
-    } else if (parts.length > 1) {
-      var scores = [first];
-      for (var i = 1; i < parts.length; i++) {
-        scores.push(await engine.parseGuitarProOrXML(u8, name, useSharp, i));
-      }
-      index = pickChordPart(scores);
-      score = scores[index];
+    // Every part is parsed, not just the chosen one: the chooser needs them all
+    // to compare, and the harmony recovery below needs them all to read from.
+    var scores = [first];
+    for (var i = 1; i < parts.length; i++) {
+      scores.push(await engine.parseGuitarProOrXML(u8, name, useSharp, i));
     }
+    var index = opts.partIndex != null ? opts.partIndex : pickChordPart(scores);
+    var score = scores[index] || first;
 
     // An arpeggiated or single-note part would otherwise export one chord per
     // note; collapsing it to one chord per bar is what makes it a chart.
@@ -170,6 +253,8 @@
     var charted = melodic ? engine.simplifyScore(score, useSharp) : score;
 
     var key = engine.analyzeKey(charted);
+    // Bars the chosen part rests through get their harmony from the other parts.
+    charted = recoverEmptyBars(charted, scores, { key: engine.keyName(key, useSharp) });
     var csmpn = engine.scoreToCSMPN(charted, {
       title: opts.title || chartTitleFromFilename(name) || 'Imported chart',
       key: key,
@@ -186,6 +271,7 @@
       parts: parts,
       partIndex: index,
       melodic: melodic,
+      recoveredBars: charted.recoveredBars || 0,
       key: engine.keyName(key, useSharp) || '',
       summary: importSummary(charted),
       format: score.source || '',
@@ -197,6 +283,8 @@
     loadEngine: loadEngine,
     chartTitleFromFilename: chartTitleFromFilename,
     partHarmonyScore: partHarmonyScore,
+    harvestBarPitches: harvestBarPitches,
+    recoverEmptyBars: recoverEmptyBars,
     pickChordPart: pickChordPart,
     importSummary: importSummary,
     importBinary: importBinary,

@@ -50,9 +50,13 @@ function loadBridge(engineModule = engine) {
     console,
     __loadEngineModule: () => Promise.resolve(engineModule),
   };
-  const src = stubbedBridgeSource();
   vm.createContext(ctx);
-  vm.runInContext(src, ctx);
+  // The bridge reads window.ChordTheory for harmony recovery — the same oracle
+  // the app's own importers use, so recovery is tested through the real thing.
+  for (const f of ['utils.js', 'chordTheory.js']) {
+    vm.runInContext(readFileSync(join(root, f), 'utf8'), ctx);
+  }
+  vm.runInContext(stubbedBridgeSource(), ctx);
   return ctx.window.RecognitionBridge;
 }
 
@@ -253,4 +257,102 @@ test('the dynamic-import specifier matches ENGINE_URL, so the deploy guard follo
   const literal = src.match(/import\(\s*'([^']+)'\s*\)/);
   assert.ok(literal, 'the engine is loaded by a literal dynamic import');
   assert.equal(literal[1], bridge.ENGINE_URL);
+});
+
+// ── Cross-track harmony recovery ─────────────────────────────────────────────
+
+test('harvestBarPitches weighs pitch classes by duration across every part', () => {
+  const scores = [
+    { bars: [{ events: [{ midis: [60], qdur: 4 }] }] }, // C, held
+    { bars: [{ events: [{ midis: [64, 67], qdur: 1 }] }] }, // E + G, brief
+  ];
+  const h = plain(bridge.harvestBarPitches(scores, 0));
+  assert.equal(h.bassPc, 0, 'the lowest note is the bass');
+  assert.ok(h.weights[0] > h.weights[4], 'the held note outweighs the brief one');
+  assert.deepEqual(
+    Object.keys(h.weights)
+      .map(Number)
+      .sort((a, b) => a - b),
+    [0, 4, 7]
+  );
+});
+
+test('harvestBarPitches is empty when no part plays that bar', () => {
+  const h = plain(bridge.harvestBarPitches([{ bars: [{ events: [] }] }], 0));
+  assert.deepEqual(h.weights, {});
+  assert.equal(h.bassPc, null);
+});
+
+test('an empty bar takes its harmony from the other parts', () => {
+  // The chosen part rests; another part plays a C major triad.
+  const chosen = { timeSig: [4, 4], bars: [{ events: [] }] };
+  const others = [chosen, { bars: [{ events: [{ midis: [48, 52, 55], qdur: 4 }] }] }];
+  const out = bridge.recoverEmptyBars(chosen, others, {});
+  assert.equal(out.recoveredBars, 1);
+  assert.equal(out.bars[0].events[0].symbol, 'C');
+  assert.equal(out.bars[0].events[0].recovered, true);
+  assert.equal(out.bars[0].events[0].durBeats, 4, 'a whole-bar event');
+  assert.deepEqual(plain(out.bars[0].events[0].midis), [], 'no fingering is claimed');
+});
+
+test('a bar that states its own chords is never second-guessed', () => {
+  const chosen = { timeSig: [4, 4], bars: [{ events: [{ symbol: 'Am', midis: [57, 60, 64] }] }] };
+  const others = [chosen, { bars: [{ events: [{ midis: [48, 52, 55], qdur: 4 }] }] }];
+  const out = bridge.recoverEmptyBars(chosen, others, {});
+  assert.equal(out.recoveredBars, undefined, 'nothing was recovered');
+  assert.equal(out.bars[0].events[0].symbol, 'Am');
+});
+
+test('silence and a lone note stay an honest N.C.', () => {
+  const chosen = { timeSig: [4, 4], bars: [{ events: [] }, { events: [] }] };
+  const others = [
+    chosen,
+    { bars: [{ events: [] }, { events: [{ midis: [60], qdur: 4 }] }] }, // silence, then one note
+  ];
+  const out = bridge.recoverEmptyBars(chosen, others, {});
+  assert.equal((out.bars[0].events || []).length, 0, 'silence recovers nothing');
+  assert.equal((out.bars[1].events || []).length, 0, 'a single pitch class is not a chord');
+});
+
+test('recovery does not mutate the engine’s own score', () => {
+  const chosen = { timeSig: [4, 4], bars: [{ events: [] }] };
+  const others = [chosen, { bars: [{ events: [{ midis: [48, 52, 55], qdur: 4 }] }] }];
+  const out = bridge.recoverEmptyBars(chosen, others, {});
+  assert.notEqual(out, chosen);
+  assert.equal(chosen.bars[0].events.length, 0, 'the input is untouched');
+});
+
+test('a real multi-track import comes back playable, not half N.C.', async () => {
+  // The regression this recovery exists for: routing imports through the engine
+  // alone returned 45% of Peg's bars and 49% of Kid Charlemagne's as N.C., because
+  // the chosen guitar rests while the band plays.
+  for (const [file, part] of [
+    ['Steely Dan - Peg.gp4', 3],
+    ['steely-dan-kid_charlemegne.gp3', 0],
+  ]) {
+    const res = await bridge.importBinary(bytes(file), {
+      filename: file,
+      partIndex: part,
+      tab: false,
+      hybrid: false,
+    });
+    const cells = res.csmpn
+      .split('\n')
+      .filter((l) => l.includes('|'))
+      .flatMap((l) => l.split(/\s*(?:\|\||\|:|:\||\||\|\])\s*/))
+      .map((c) => c.trim())
+      .filter(Boolean);
+    const nc = cells.filter((c) => c === 'N.C.').length;
+    assert.ok(res.recoveredBars > 20, `${file}: expected real recovery, got ${res.recoveredBars}`);
+    assert.ok(nc / cells.length < 0.1, `${file}: ${nc}/${cells.length} bars still N.C.`);
+  }
+});
+
+test('recovery is skipped, not fatal, when ChordTheory is absent', () => {
+  const ctx = { window: {}, console, __loadEngineModule: () => Promise.resolve(engine) };
+  vm.createContext(ctx);
+  vm.runInContext(stubbedBridgeSource(), ctx);
+  const bare = ctx.window.RecognitionBridge;
+  const score = { timeSig: [4, 4], bars: [{ events: [] }] };
+  assert.equal(bare.recoverEmptyBars(score, [score], {}), score, 'returned unchanged');
 });
