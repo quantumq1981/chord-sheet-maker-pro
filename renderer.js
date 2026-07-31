@@ -555,6 +555,21 @@ function hrAugDot(cx, cy, col) {
   return `<circle cx="${cx + 12}" cy="${cy}" r="1.6" fill="${col}"/>`;
 }
 
+// Running index stamped onto every chord label as it is drawn, so a playhead
+// (reference-audio sync) can highlight the chord sounding now. Reset to 0 at the
+// start of each full build (buildContinuousSvg / buildPaginatedSvgArray) and
+// incremented once per chord <text> here, in chart order. The reference-audio
+// seam builds its engine score by walking the SAME bar/chord order, so segment N
+// lines up with `[data-ci="N"]` — the two only need to agree on chord ORDER, not
+// on beat maths. `hrChordText()` is the single tagging point.
+let _hrChordSeq = 0;
+function hrChordText(x, y, cc, chord, anchor) {
+  return (
+    `<text class="hrChord" data-ci="${_hrChordSeq++}" x="${x}" y="${y}" font-size="13" fill="${cc}"` +
+    ` text-anchor="${anchor}" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(chord)}</text>`
+  );
+}
+
 function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
   const events  = Array.isArray(bar?.events) ? bar.events : [];
   const tabs    = Array.isArray(bar?.tabEvents) ? bar.tabEvents : [];
@@ -575,7 +590,7 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
       const parts = String(bar.chordToken).replace(/[!~]$/, '').trim().split('_').map(p => p.trim()).filter(Boolean);
       parts.forEach((chord, pi) => {
         const cx = ul + (pi / parts.length) * uw;
-        s += `<text x="${cx}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(chord)}</text>`;
+        s += hrChordText(cx, staffY - 12, cc, chord, 'start');
       });
       for (let b = 1; b <= vb; b++) {
         const ex = ul + ((b - 1) / vb) * uw;
@@ -671,13 +686,13 @@ function hrBar(bar, barLeft, staffY, barW, fg, cc, bg) {
     const step2 = nb2 / parts2.length;
     parts2.forEach((chord, pi) => {
       const cx = hrBeatX(1 + pi * step2, timeSig, ul, uw);
-      s += `<text x="${cx}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="start" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(chord)}</text>`;
+      s += hrChordText(cx, staffY - 12, cc, chord, 'start');
     });
   }
 
   events.forEach((ev, i) => {
     if (!ev.chord) return;
-    s += `<text x="${xs[i]}" y="${staffY - 12}" font-size="13" fill="${cc}" text-anchor="middle" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(String(ev.chord).replace(/[!~]$/, '').trim())}</text>`;
+    s += hrChordText(xs[i], staffY - 12, cc, String(ev.chord).replace(/[!~]$/, '').trim(), 'middle');
   });
 
   events.forEach((ev, i) => {
@@ -1077,6 +1092,7 @@ function _hybridBuildModel(sourceText) {
 // unchanged). Used for SVG/PNG downloads and the Setlist printer so those stay
 // byte-identical across the pagination refactor.
 function buildContinuousSvg(units, bg) {
+  _hrChordSeq = 0; // chord-index counter runs 0..N-1 in draw order
   let curY = 0;
   let body = '';
   for (const u of units) {
@@ -1100,6 +1116,7 @@ function buildContinuousSvg(units, bg) {
 // Shared by buildPaginatedSvgs() (live preview + native print) and the PDF
 // export path (one jsPDF page per rendered page — no arbitrary pixel slicing).
 function buildPaginatedSvgArray(pages, bg) {
+  _hrChordSeq = 0; // chord-index counter runs 0..N-1 across pages in draw order
   const hOffset = (HR_PAGE_SIZES.letter.w - HR_PAGE_W) / 2;
   return pages.map((page) => {
     const inner = page.placed

@@ -20,7 +20,7 @@ Read this first when picking the work back up.
 | 1b | Per-stage disclosure + stage-scoped advanced tools | ✅ committed |
 | 2 | Recognition merge — GP/PTB/MusicXML through the engine | ✅ committed |
 | 3 | Notation + Stage Mode | 🚧 in progress — see below |
-| 4 | Audio suite | 🚧 tuner + stem→chart + vocal isolation done; reference-audio DTW sync next |
+| 4 | Audio suite | ✅ tuner, stem→chart, vocal isolation, reference-audio DTW Play-Along (device pass owed) |
 | 5 | Consolidate: CSM + TTP become redirects; PWA + IndexedDB | ⬜ |
 
 ---
@@ -293,20 +293,33 @@ around them — analysis rate, downmix, resample, the cents maths — is pure an
   the gate *tells you whether isolation actually helped on that file*, per the plan. Zero new
   UI: the decision is automatic and reported. `tests/audioCapture.test.mjs` +6 (`clarityDelta`
   margin, worse-is-not-a-win, divide-by-zero at raw=0, caller margin).
+- **Play-Along: reference recording synced to the chart** (Perform, 🎧 Play-Along). Attach a
+  recording; the engine's DTW aligner (`alignPcmToScore`, already vendored + tested) maps
+  audio time → the chart's chords, and an rAF playhead highlights the chord sounding now on
+  the Slash-Rhythm SVG. **The per-chord DOM anchor that blocked this is now built:** the
+  renderer stamps each chord label with `class="hrChord" data-ci="N"` (running index, via the
+  single `hrChordText()` tagging point, reset per build in `buildContinuousSvg` /
+  `buildPaginatedSvgArray`). The seam `csmpnChartToScore(source, chordToMidi)` walks the SAME
+  `parseHybridChartFromCSMPN` bar/chord order the renderer draws in, building the engine score
+  **and** a `${bar}.${beat}` → chord-index map, so alignment segment N lines up with
+  `[data-ci="N"]` — the two only need to agree on chord ORDER, not beats (a `npm test`
+  guard renders a chart and asserts `data-ci` order === the builder's chord order). DTW is
+  adopted only when `confidence ≥ 0.35`; below that the linear `scoreEventTimes` map is
+  stretched across the recording (honest "no reliable tempo" fallback). `alignReference()` is
+  the browser seam (score build + DTW + linear, keys pre-translated to `ci`); the `<audio>` +
+  rAF + highlight is the untestable glue (device smoke-test). `tests/audioCapture.test.mjs` +5
+  (`chartChordList`, `csmpnChartToScore`, `segmentsToCi`), `tests/hybridRenderer.test.mjs` +1
+  (render↔score alignment guard).
 
 **Honest limits, stated in the UI not just here:** a clean isolated stem gives an editable
 sketch; a dense full mix mislabels. There is **no tempo detection yet**, so bars are laid
 out on an assumed 120 BPM 4/4 grid — the import warning says so, and the player re-bars by
-editing. Import Details marks the confidence `low`.
+editing. Import Details marks the confidence `low`. Play-Along's per-chord highlight lives on
+the Slash-Rhythm SVG, so it wants that view on (the transport says so if it's off); the
+fallback sync stretches an even chart timeline over the take, so it drifts on a rubato
+recording where DTW couldn't lock.
 
-**Next in Phase 4:** reference-audio playback with DTW auto-sync. `alignPcmToScore` is
-already vendored and tested and returns `{ segments:[{sec, key}], confidence }` — but the
-`key` is a *score-event* key, and highlighting it needs a per-chord DOM anchor the CSMP
-preview does not have (its output is one SVG / fake-book block with no per-chord element,
-the same gap that blocked the Phase 2 `arbitrateChord` chip). So the honest next step is
-either (a) a section/beat-level playhead over the existing preview, or (b) give
-`renderHybridDoc` per-chord ids first, then wire the rAF playhead + the `confidence`
-fallback to the linear `scoreEventTimes` map. Pick that surface before building the glue.
-
-**Done since the debrief:** centre-channel vocal isolation with the `harmonicClarity` A/B
-gate (see "Shipped" above) — the other named Phase-4 follow-up.
+**Phase 4 is functionally complete** — the two named follow-ups (vocal isolation, reference-
+audio DTW sync) both shipped. Device pass still owed for the browser-only glue: the vocal-
+isolation A/B report on a real stereo import, and Play-Along end to end (attach → auto-sync %
+→ Play → chords highlight in time) on iOS Safari.
