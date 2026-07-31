@@ -65,7 +65,7 @@ jobs:
         run: npm run format:check
 
       - name: Syntax-check root JS files
-        run: node --check renderer.js importPipeline.js settings.js utils.js chordProcessing.js csmpnParser.js chordTheory.js importGuitarPro.js powerTabImporter.js musicXmlCore.js musicFont.js backupRestore.js audioPlayback.js lyricsView.js stageSheets.js abcSuite.js midiImport.js chordsheetPdf.js sheetOcr.js chordSlashMLRenderer.js recognitionBridge.js recognitionEngine.mjs
+        run: node --check renderer.js importPipeline.js settings.js utils.js chordProcessing.js csmpnParser.js chordTheory.js importGuitarPro.js powerTabImporter.js musicXmlCore.js musicFont.js backupRestore.js audioPlayback.js lyricsView.js stageSheets.js audioCapture.js abcSuite.js midiImport.js chordsheetPdf.js sheetOcr.js chordSlashMLRenderer.js recognitionBridge.js recognitionEngine.mjs
 
   # ── Deploy to GitHub Pages ───────────────────────────────────────────────────
   deploy:
@@ -99,7 +99,7 @@ jobs:
           cp index.html settings.js renderer.js importPipeline.js \
              utils.js chordProcessing.js csmpnParser.js chordTheory.js importGuitarPro.js \
              powerTabImporter.js chordSlashMLRenderer.js musicXmlCore.js \
-             musicFont.js backupRestore.js audioPlayback.js lyricsView.js stageSheets.js abcSuite.js midiImport.js chordsheetPdf.js sheetOcr.js recognitionBridge.js recognitionEngine.mjs ui.css ug-txt-importer.html sheet-ocr-importer.html dist/
+             musicFont.js backupRestore.js audioPlayback.js lyricsView.js stageSheets.js audioCapture.js abcSuite.js midiImport.js chordsheetPdf.js sheetOcr.js recognitionBridge.js recognitionEngine.mjs ui.css ug-txt-importer.html sheet-ocr-importer.html dist/
 
       - name: Verify deploy assets (no referenced script is missing from dist)
         run: node scripts/verify-deploy-assets.mjs dist
