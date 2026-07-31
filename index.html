@@ -51,10 +51,18 @@
 <!-- VexFlow for {vt ...} notation blocks — defer: render-time only, null-checked at call site -->
 <script defer src="https://cdn.jsdelivr.net/npm/vexflow@3.0.9/releases/vexflow-min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-<!-- Guitar Pro importer — loads AlphaTab CDN lazily on first GP file import -->
+<!-- Recognition bridge — lazily imports recognitionEngine.mjs (the vendored
+     Tab Translator Pro engine) on the first binary import. This is the primary
+     path for Guitar Pro 3-8/GPX, Power Tab and MusicXML files. -->
+<script defer src="recognitionBridge.js"></script>
+
+<!-- Guitar Pro importer — AlphaTab CDN, lazy. Now the FALLBACK for chord import;
+     still the renderer behind 🎸 Tab View (window.renderGpNotation). -->
 <script defer src="importGuitarPro.js"></script>
 
-<!-- Power Tab (.ptb) importer — pure-JS parser + AlphaTex render (no CDN) -->
+<!-- Power Tab (.ptb) importer — pure-JS parser + AlphaTex render (no CDN).
+     Superseded for chord extraction by the recognition engine; retained because
+     it is what produces the AlphaTex the Tab View renders. -->
 <script defer src="powerTabImporter.js"></script>
 
 <!-- ChordSlashML browser bundle loaded at end of body for guaranteed timing -->
@@ -2130,6 +2138,14 @@ body.exporting .sectionBlock{
 
     </div>
 
+    <!-- Shown after importing a multi-track file: which instrument's part the
+         chart was read from, and a one-tap way to read a different one. -->
+    <div class="importPartRow" id="importPartRow" data-stage-item="capture" style="display:none">
+      <label for="importPartSelect">Chart read from</label>
+      <select id="importPartSelect" aria-label="Which instrument part to read the chart from"></select>
+      <span class="importPartHint">Multiple parts carry chords — pick the one you want.</span>
+    </div>
+
     <div class="tips">
       <details class="guide">
         <summary><strong>📖 Getting Started &amp; Syntax Guide</strong> — tap to open</summary>
@@ -3531,6 +3547,97 @@ fileInputIRealPro.addEventListener('change', async () => {
   }
 });
 
+// ── Binary music files via the recognition engine ───────────────────────────
+// Guitar Pro 3-8 / GPX, Power Tab and MusicXML are read by recognitionEngine.mjs
+// (vendored from Tab Translator Pro) rather than by AlphaTab or this repo's own
+// Power Tab reader. Three reasons it leads:
+//   - it reads the file's own bytes, so a Guitar Pro import needs no CDN at all
+//   - its Power Tab reader is complete; powerTabImporter.js is header + tunings
+//   - it picks the part that carries the harmony instead of trusting track 0
+// It never becomes a hard dependency: any failure returns false and the caller
+// runs the path that worked before, so nothing that imported today stops.
+let _lastImportParts = null; // part list of the last engine import (for the picker)
+
+async function importViaRecognitionEngine(gpBuf, fileName, importStart, partIndex){
+  if (!window.RecognitionBridge) return false;
+  let res;
+  try {
+    res = await window.RecognitionBridge.importBinary(gpBuf, {
+      filename: fileName,
+      partIndex: partIndex,
+    });
+  } catch (err){
+    console.warn('Recognition engine import failed; falling back.', err);
+    return false;
+  }
+  if (!res || !res.summary || !res.summary.bars) return false;
+
+  // The part picker re-reads from these, so record them on every engine import
+  // rather than only on the paths that happen to set them for the Tab View.
+  window._gpLastBytes = gpBuf;
+  window._gpLastFileName = fileName;
+
+  const finalCsmpn = filterLyricsLines(res.csmpn);
+  sourceEl.value = finalCsmpn;
+  extractHeaderFromText(finalCsmpn);
+  updatePreview();
+
+  const label = fileName.toLowerCase().endsWith('.ptb') ? 'Power Tab' : 'Guitar Pro';
+  importDiagnostics.miner = label;
+  importDiagnostics.sourceFlavor = res.format || 'guitarpro';
+  importDiagnostics.confidence = 'high';
+  importDiagnostics.sections = res.summary.sections;
+  importDiagnostics.bars = res.summary.bars;
+  importDiagnostics.durationMs = Math.round(performance.now() - importStart);
+  if (res.melodic){
+    importDiagnostics.warnings.push(
+      'This part is mostly single notes, so it was condensed to one chord per bar.'
+    );
+  }
+  updateDiagnosticsPanel();
+
+  showImportPartPicker(res);
+  const partName = (res.parts[res.partIndex] && res.parts[res.partIndex].name) || '';
+  const partNote = res.parts.length > 1 && partName ? `, from "${partName}"` : '';
+  setStatus(
+    `Imported ${label}: ${res.summary.bars} bars, ${res.summary.chords} chords${partNote}. ` +
+    'Use 🎸 Tab View for full notation.'
+  );
+  return true;
+}
+
+// Multi-track files have more than one part that could legitimately carry the
+// changes (a rhythm guitar and a piano often both do). The engine picks the
+// strongest, and this row lets the player overrule it in one tap.
+function showImportPartPicker(res){
+  const row = document.getElementById('importPartRow');
+  const sel = document.getElementById('importPartSelect');
+  if (!row || !sel) return;
+  if (!res || !res.parts || res.parts.length < 2){
+    row.style.display = 'none';
+    _lastImportParts = null;
+    return;
+  }
+  _lastImportParts = res.parts;
+  sel.innerHTML = res.parts
+    .map((p, i) => `<option value="${i}">${escapeHtml(p.name || ('Part ' + (i + 1)))}</option>`)
+    .join('');
+  sel.value = String(res.partIndex);
+  row.style.display = '';
+}
+
+document.getElementById('importPartSelect').addEventListener('change', async function(){
+  const bytes = window._gpLastBytes;
+  const name = window._gpLastFileName || '';
+  if (!bytes || !_lastImportParts) return;
+  const idx = Number(this.value);
+  setStatus('Re-reading the chart…');
+  const importStart = performance.now();
+  resetDiagnostics();
+  const ok = await importViaRecognitionEngine(bytes, name, importStart, idx);
+  if (!ok) setStatus('That part has no chart content — try another.', 'error');
+});
+
 // Power Tab (.ptb) handling.
 // AlphaTab ships no Power Tab importer, so we parse the binary ourselves
 // (powerTabImporter.js — a faithful TuxGuitar port) and convert the score to
@@ -3539,6 +3646,10 @@ fileInputIRealPro.addEventListener('change', async () => {
 // TuxGuitar-conversion message for genuinely corrupt/variant files.
 async function tryImportPowerTab(gpBuf, fileName, importStart) {
   const bytes = gpBuf instanceof Uint8Array ? gpBuf : new Uint8Array(gpBuf);
+
+  // The recognition engine reads the chord chart; powerTabImporter still runs
+  // below it purely to produce the AlphaTex the Tab View renders.
+  const viaEngine = await importViaRecognitionEngine(bytes, fileName, importStart);
 
   // 1) Native Power Tab parse → AlphaTex notation render + editable chord chart.
   if (window.PowerTab && typeof window.PowerTab.parse === 'function') {
@@ -3556,6 +3667,13 @@ async function tryImportPowerTab(gpBuf, fileName, importStart) {
       window._ptbAlphaTex = render.tex;
       window._gpLastBytes = bytes; // keep raw bytes around (GP-rename fallback / tests)
       window._gpLastFileName = fileName;
+      if (viaEngine) {
+        // The chart is already loaded and reported; this pass exists only for the
+        // AlphaTex above. Overwriting the source here would replace the engine's
+        // complete reading with this importer's partial one.
+        window.dispatchEvent(new Event('gpbytesready'));
+        return true;
+      }
       importDiagnostics.miner = 'Power Tab';
       importDiagnostics.sourceFlavor = 'powertab';
       importDiagnostics.confidence = 'high';
@@ -3582,6 +3700,13 @@ async function tryImportPowerTab(gpBuf, fileName, importStart) {
       window.dispatchEvent(new Event('gpbytesready')); // auto-open notation panel
       return true;
     }
+  }
+
+  // The engine read the chart but powerTabImporter could not build notation —
+  // the chart is the deliverable, so this is still a success.
+  if (viaEngine) {
+    window._ptbAlphaTex = null;
+    return true;
   }
 
   // 2) Fallback: maybe it's a Guitar Pro file renamed .ptb.
@@ -3634,7 +3759,7 @@ fileInputGuitarPro.addEventListener('change', async () => {
     resetDiagnostics();
     const importStart = performance.now();
     setStatus(`Importing ${file.name}...`);
-    if (typeof importGuitarProToCSMPN !== 'function') {
+    if (typeof importGuitarProToCSMPN !== 'function' && !window.RecognitionBridge) {
       setStatus('Guitar Pro importer not loaded — try refreshing.', 'error');
       return;
     }
@@ -3647,6 +3772,7 @@ fileInputGuitarPro.addEventListener('change', async () => {
     window._ptbAlphaTex = null; // GP path renders raw bytes; PTB path re-sets this
     importDiagnostics.miner = file.name.endsWith('.ptb') ? 'Power Tab' : 'Guitar Pro';
     if (!file.name.endsWith('.ptb')) {
+      if (await importViaRecognitionEngine(gpBuf, file.name, importStart)) return;
       const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
       const gpDoc = parseCSMPN(csmpn);
       const gpMarkers = gpDoc.blocks.filter(b => b.type === 'marker');
@@ -4297,7 +4423,9 @@ fileInput.addEventListener('change', async () => {
       importDiagnostics.miner = name.endsWith('.ptb') ? 'Power Tab' : 'Guitar Pro';
       importDiagnostics.sourceFlavor = 'guitarpro';
       importDiagnostics.confidence = 'high';
-      if (typeof importGuitarProToCSMPN !== 'function') {
+      // Either reader is enough: the recognition engine is the primary path and
+      // AlphaTab the fallback, so only both being absent is fatal.
+      if (typeof importGuitarProToCSMPN !== 'function' && !window.RecognitionBridge) {
         setStatus('Guitar Pro importer not loaded — try refreshing.', 'error');
         return;
       }
@@ -4307,7 +4435,8 @@ fileInput.addEventListener('change', async () => {
       window._gpLastFileName = file.name;
       window._ptbAlphaTex = null; // GP path renders raw bytes; PTB path re-sets this
       if (!name.endsWith('.ptb')) {
-        // Full CSMPN conversion for GP files
+        if (await importViaRecognitionEngine(gpBuf, file.name, importStart)) return;
+        // Fallback: AlphaTab-based conversion (engine unavailable or unreadable file)
         const csmpn = await importGuitarProToCSMPN(gpBuf, { barsPerRow: fbSettings.barsPerRow });
         const gpDoc = parseCSMPN(csmpn);
         const gpMarkers = gpDoc.blocks.filter(b => b.type === 'marker');

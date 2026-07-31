@@ -216,11 +216,50 @@ body.has-stage-nav {
   transform: rotate(90deg);
 }
 
+/* ===== Import part picker ================================================= *
+ * A multi-track file often has more than one part that legitimately states the
+ * changes. The engine picks the strongest; this row makes that choice visible
+ * and reversible instead of silent.                                          */
+.importPartRow {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-gap);
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  padding: 8px var(--ui-pad);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+  font-size: 13px;
+}
+
+.importPartRow label {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.importPartRow select {
+  font: inherit;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  max-width: 100%;
+}
+
+.importPartHint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* ===== Print: the shell is screen-only ==================================== */
 @media print {
   .stageNav,
   .stageHead,
-  .advToggle {
+  .advToggle,
+  .importPartRow {
     display: none !important;
   }
 
