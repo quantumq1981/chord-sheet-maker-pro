@@ -136,6 +136,44 @@ test('pulsesPerBar falls back to 4/4 on anything it cannot read', () => {
   assert.equal(ac.pulsesPerBar('5/8'), 5);
 });
 
+// ── Vocal-isolation A/B gate ──────────────────────────────────────────────────
+
+test('clarityDelta only calls isolation a win when it clears the noise margin', () => {
+  // Clarity is a relative gauge, so a tiny bump is measurement noise, not a real
+  // improvement. A 1% rise must not flip the decision.
+  const tiny = ac.clarityDelta(0.4, 0.404);
+  assert.equal(tiny.deltaPct, 1);
+  assert.equal(tiny.helps, false, '1% is within the noise floor');
+
+  const win = ac.clarityDelta(0.4, 0.52);
+  assert.equal(win.deltaPct, 30);
+  assert.equal(win.helps, true, '30% cleaner is a real win');
+});
+
+test('clarityDelta never calls it a win when isolation made the signal worse', () => {
+  const worse = ac.clarityDelta(0.5, 0.3);
+  assert.equal(worse.deltaPct, -40);
+  assert.equal(worse.helps, false, 'a panned-instrument mess is not an improvement');
+});
+
+test('clarityDelta reports the numbers it read back for the UI', () => {
+  const d = ac.clarityDelta(0.42, 0.61);
+  assert.equal(d.raw, 0.42);
+  assert.equal(d.isolated, 0.61);
+});
+
+test('clarityDelta is safe when the raw mix scored zero clarity', () => {
+  // No divide-by-zero: a from-nothing gain reads as a full win, silence as none.
+  assert.equal(ac.clarityDelta(0, 0.3).deltaPct, 100);
+  assert.equal(ac.clarityDelta(0, 0.3).helps, true);
+  assert.equal(ac.clarityDelta(0, 0).helps, false);
+});
+
+test('clarityDelta honours a caller-supplied margin', () => {
+  assert.equal(ac.clarityDelta(0.4, 0.42, 10).helps, false, '5% under a 10% bar');
+  assert.equal(ac.clarityDelta(0.4, 0.42, 4).helps, true, '5% over a 4% bar');
+});
+
 // ── Shipping ─────────────────────────────────────────────────────────────────
 
 test('supported() is false without Web Audio rather than throwing', () => {

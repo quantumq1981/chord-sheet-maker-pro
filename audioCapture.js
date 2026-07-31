@@ -105,6 +105,27 @@
     return num || 4;
   }
 
+  /**
+   * The A/B gate for centre-channel vocal isolation: given the harmonic clarity
+   * of the raw mix and of the isolated centre, decide whether isolation actually
+   * helped *this* file. Clarity is a relative gauge — spectral leakage sets a
+   * floor, so the honest read is the delta, not the absolute. Isolation "helps"
+   * only when it raises clarity by more than a small margin, so noise in the
+   * measurement can't flip the decision.
+   */
+  function clarityDelta(raw, isolated, marginPct) {
+    raw = +raw || 0;
+    isolated = +isolated || 0;
+    var margin = marginPct != null ? marginPct : 3;
+    var deltaPct = raw > 0 ? Math.round(((isolated - raw) / raw) * 100) : isolated > 0 ? 100 : 0;
+    return {
+      raw: raw,
+      isolated: isolated,
+      deltaPct: deltaPct,
+      helps: isolated > raw && deltaPct >= margin,
+    };
+  }
+
   // ── Browser-only ──────────────────────────────────────────────────────────
 
   function audioContextClass() {
@@ -203,6 +224,38 @@
   }
 
   /**
+   * Centre-channel vocal isolation, gated on whether it measurably helps.
+   *
+   * Lead and backing vocals are almost always mixed to the centre while
+   * instruments are panned to the sides, so isolating the centre pulls a usable
+   * vocal stem — the engine's `extractCenter` does the STFT work. But it is an
+   * approximation (centred kick/bass leaks in, a mono file is a passthrough), so
+   * the decision is not made blind: `harmonicClarity` scores the raw mix and the
+   * isolated centre, and the centred signal is used ONLY when it reads cleaner.
+   *
+   * Returns the mono signal to analyse (`center` when it helps, else the raw
+   * downmix), the A/B numbers for the UI to report, and whether isolation was
+   * applied. A mono file skips the whole thing — there is no centre to extract.
+   */
+  async function isolateAndGate(pcm, opts) {
+    opts = opts || {};
+    if (!pcm || !pcm.stereo) {
+      return { mono: pcm ? pcm.mono : null, ab: null, applied: false, stereo: false };
+    }
+    if (!window.RecognitionBridge) throw new Error('Recognition engine not available.');
+    var engine = await window.RecognitionBridge.loadEngine();
+    // A mild high-pass trims centred kick/bass leak so it can't fake a bass note
+    // under the vocal; the vocal fundamental sits well above it.
+    var center = engine.extractCenter(pcm.left, pcm.right, pcm.sampleRate, {
+      minFreq: opts.minFreq != null ? opts.minFreq : 120,
+    });
+    var rawClarity = engine.harmonicClarity(pcm.mono, pcm.sampleRate);
+    var isoClarity = engine.harmonicClarity(center, pcm.sampleRate);
+    var ab = clarityDelta(rawClarity, isoClarity, opts.marginPct);
+    return { mono: ab.helps ? center : pcm.mono, ab: ab, applied: ab.helps, stereo: true };
+  }
+
+  /**
    * Live pitch from the microphone. Returns a handle with `stop()`; `onNote`
    * fires with `{ freq, midi, note, cents, verdict, clarity }` or null when
    * nothing steady is being played.
@@ -293,9 +346,11 @@
     centsOff: centsOff,
     tuningVerdict: tuningVerdict,
     pulsesPerBar: pulsesPerBar,
+    clarityDelta: clarityDelta,
     supported: supported,
     decodeToPcm: decodeToPcm,
     pcmToChart: pcmToChart,
+    isolateAndGate: isolateAndGate,
     createTuner: createTuner,
   };
   if (typeof window !== 'undefined') window.AudioCapture = api;
