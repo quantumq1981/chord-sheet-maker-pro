@@ -335,10 +335,24 @@ function clusterVals(vals, gap) {
 function estimateSpacing(ys) {
   const s = [...new Set(ys)].sort((a, b) => a - b);
   const gaps = [];
-  for (let i = 1; i < s.length; i++) { const g = s[i] - s[i - 1]; if (g > 0.5 && g < 20) gaps.push(g); }
+  for (let i = 1; i < s.length; i++) { const g = s[i] - s[i - 1]; if (g > 0.5) gaps.push(g); }
   if (!gaps.length) return 7;
+  // The string-line spacing is the MOST COMMON gap: a staff repeats it 5×(systems)
+  // times, so it dominates. Noise gaps (chord-text baseline jitter) and the large
+  // system/page gaps are comparatively rare. Cluster near-equal gaps (within 12%)
+  // and take the biggest cluster's median. This is scale-INVARIANT — it recovers
+  // ~7pt on a 1× export and ~37pt on a 4× Guitar-Pro/alphaTab export alike —
+  // where the old "median of the smaller half, capped <20pt" returned 7 (no sub-20
+  // gaps at 4× → 0 systems) or was dragged down to noise (~3.5 → mis-clustering).
   gaps.sort((a, b) => a - b);
-  return median(gaps.slice(0, Math.max(1, Math.ceil(gaps.length / 2)))) || 7;
+  const clusters = [];
+  for (const g of gaps) {
+    const c = clusters.find((c) => Math.abs(g - c.center) <= c.center * 0.12);
+    if (c) { c.vals.push(g); c.center = median(c.vals); }
+    else clusters.push({ center: g, vals: [g] });
+  }
+  clusters.sort((a, b) => b.vals.length - a.vals.length || a.center - b.center);
+  return clusters[0].center || 7;
 }
 function buildChart(tokens) {
   const pages = {};

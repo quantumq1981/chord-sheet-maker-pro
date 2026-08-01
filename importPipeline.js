@@ -2496,10 +2496,11 @@ async function importUGProPDF(file){
       for (let tp = 1; tp <= pdf.numPages; tp++) {
         const page = await pdf.getPage(tp);
         const base = page.getViewport({ scale: 1 });
-        // Export scale varies wildly (a Guitar Pro page can be 4209pt tall);
-        // the parser's thresholds assume normal page geometry.
-        const scale = window.RecognitionBridge.pdfTokenScale(base.height);
-        const height = base.height * scale;
+        // Raw page coordinates: the engine derives its thresholds from the modal
+        // gap between string lines, so it reads a 4209pt Guitar Pro export and a
+        // 792pt page alike. (Coordinates used to be pre-scaled here to work around
+        // an engine that only measured gaps under 20pt; that is fixed upstream.)
+        const height = base.height;
         const items = (await page.getTextContent()).items;
         for (const it of items) {
           const str = (it.str ?? '').trim();
@@ -2507,8 +2508,8 @@ async function importUGProPDF(file){
           if (/^\d+$/.test(str)) {
             tabTokens.push({
               page: tp,
-              x: (it.transform?.[4] ?? 0) * scale,
-              y: height - (it.transform?.[5] ?? 0) * scale, // parser wants y downward
+              x: it.transform?.[4] ?? 0,
+              y: height - (it.transform?.[5] ?? 0), // parser wants y downward
               val: parseInt(str, 10),
             });
           } else if (CHORD_TEXT_RE.test(str)) {
