@@ -174,13 +174,15 @@ file, because guessing at a binary/PDF parser failure wastes more time than aski
   fixes shipped: signatures now beat extensions when they disagree about which importer
   should run, and tab PDFs (fret digits, no chord symbols) are read by the engine's
   geometry parser. See "Tab PDFs" below.
-- ~~Tab Decoder: "0 bars · 0 systems".~~ **Root cause found** — `estimateSpacing` only
-  measures string-line gaps under 20pt, but Guitar Pro / alphaTab export at a large user
-  unit (a page 4209pt tall, lines ~37pt apart). No gap qualifies, the estimate falls back
-  to 7pt, and every threshold is ~10x too small. **Still open upstream**: this is a real
-  bug in Tab-Translator-Pro's `engine.tsx` and the fix belongs there. Worked around here
-  by normalising coordinates at the call site (`pdfTokenScale`), because
-  `recognitionEngine.mjs` is vendored verbatim and must not be edited in this repo.
+- ~~Tab Decoder: "0 bars · 0 systems".~~ **Fixed upstream and re-vendored (2026-08-01).**
+  `estimateSpacing` only measured string-line gaps under 20pt, but Guitar Pro / alphaTab
+  export at a large user unit (a page 4209pt tall, lines ~37pt apart). No gap qualified,
+  the estimate fell back to 7pt, and every threshold was ~10x too small. Upstream now
+  takes the **modal gap** (Tab-Translator-Pro PR #79), which is scale-invariant. The same
+  root cause also decoded a 4x "Confirmation" PDF in the wrong key — noise gaps (0.6/3.5pt)
+  dragged the old smaller-half median down to ~3.5. **The `pdfTokenScale` workaround is
+  retired**: measured on all 16 Pro PDFs in `src/`, scaling on vs off is byte-identical
+  output, so the call site now passes raw page coordinates and a test pins it that way.
 - **Fake-book rows still uneven on dense charts even with harmony recovered.** Bar cells
   vary from 1 to 5 chords (`F/C_G/D_G/B_G/D_Adim/Eb` is 23 chars against a typical 2),
   and the renderer lays out fixed-width columns. A3 print evens it out, which is the tell.
@@ -188,10 +190,11 @@ file, because guessing at a binary/PDF parser failure wastes more time than aski
 
 ### Tab PDFs (no chord symbols)
 
-`pdfTokenScale` + `importTabPdf` in the bridge, wired into `importUGProPDF` after the
-chordsheet.com check. Runs only when a PDF has **no** chord text at all, so nothing that
-imports today changes route. On the real Sledgehammer file: 0 systems / 0 bars → 11
-systems, 186 columns, 18 bars, parsing warning-free.
+`importTabPdf` in the bridge, wired into `importUGProPDF` after the chordsheet.com check.
+Runs only when a PDF has **no** chord text at all, so nothing that imports today changes
+route. On the real Sledgehammer file: 0 systems / 0 bars → 11 systems, 186 columns, 18
+bars, parsing warning-free. (Coordinates were pre-scaled by `pdfTokenScale` until the
+upstream `estimateSpacing` fix made the engine scale-invariant; see the resolved item above.)
 
 **Honest limit:** a riff transcription has no chords to extract, so partial voicings get
 named for what is written (`F5`, `Fdim/B`) and dense bars carry many readings. Import

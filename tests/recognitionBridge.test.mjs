@@ -359,15 +359,34 @@ test('recovery is skipped, not fatal, when ChordTheory is absent', () => {
 
 // ── Tab PDFs (fret geometry, no chord symbols) ───────────────────────────────
 
-test('pdfTokenScale normalises an oversized export page and leaves normal ones alone', () => {
-  // A Guitar Pro / alphaTab PDF page can be 4209pt tall. The engine's parser
-  // only measures string-line gaps under 20pt, so at that scale it finds none,
-  // falls back to 7pt, and reports zero systems on a page full of legible tab.
-  assert.ok(Math.abs(bridge.pdfTokenScale(4209) - 792 / 4209) < 1e-9);
-  assert.equal(bridge.pdfTokenScale(792), 1, 'a normal page is untouched');
-  assert.equal(bridge.pdfTokenScale(1000), 1, 'below the 1.5x trigger, untouched');
-  assert.equal(bridge.pdfTokenScale(0), 1, 'no height is not a division by zero');
-  assert.equal(bridge.pdfTokenScale(2000, 1000), 0.5, 'the target is configurable');
+test('the engine reads an oversized export page natively, so tokens are passed unscaled', async () => {
+  // A Guitar Pro / alphaTab PDF page can be 4209pt tall, with string lines ~37pt
+  // apart. This repo used to pre-scale coordinates to letter size (pdfTokenScale)
+  // because the engine only measured gaps under 20pt and otherwise found no staff.
+  // Upstream now estimates spacing from the MODAL gap, which is scale-invariant —
+  // so the workaround is gone and these two assertions are what replaced it.
+  const engine = await import('../recognitionEngine.mjs');
+  const staff = (top, spacing, sysGap, systems) => {
+    const ys = [];
+    for (let s = 0; s < systems; s++) {
+      const base = top + s * (spacing * 5 + sysGap);
+      for (let i = 0; i < 6; i++) ys.push(+(base + i * spacing).toFixed(1));
+    }
+    return ys;
+  };
+  assert.ok(
+    Math.abs(engine.estimateSpacing(staff(100, 37.5, 296, 3)) - 37.5) < 2,
+    'a 4x export resolves to its real ~37.5pt string spacing, not the 7pt fallback'
+  );
+  assert.ok(
+    Math.abs(engine.estimateSpacing(staff(50, 7, 200, 3)) - 7) < 1,
+    'a normal-scale page still resolves to ~7pt'
+  );
+
+  // Contract: nothing may re-introduce a scaling step at the call site.
+  assert.equal(bridge.pdfTokenScale, undefined, 'the workaround stays retired');
+  const pipeline = readFileSync(new URL('../importPipeline.js', import.meta.url), 'utf8');
+  assert.ok(!/pdfTokenScale/.test(pipeline), 'importPipeline passes raw page coordinates');
 });
 
 test('importTabPdf refuses too little to work with rather than returning half a chart', async () => {

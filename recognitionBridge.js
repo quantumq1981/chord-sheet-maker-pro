@@ -211,28 +211,6 @@
   }
 
   /**
-   * Scale factor that brings a PDF page back to normal page geometry.
-   *
-   * The engine's tab-PDF parser derives every threshold from the spacing between
-   * string lines, and it only measures gaps under 20pt. Guitar Pro and alphaTab
-   * export at a large user-unit scale — a page can be 4209pt tall, where the
-   * string lines sit ~37pt apart — so no gap qualifies, the estimate falls back
-   * to 7pt, and every threshold ends up ~10x too small: no run of lines ever
-   * looks like a staff, and the parser reports zero systems on a page full of
-   * legible tab.
-   *
-   * Normalising the coordinates instead of the thresholds keeps the engine's
-   * validated numbers intact and treats "tokens arrive at normal page scale" as
-   * the contract it always implicitly was. Pages already near normal size are
-   * left alone, so nothing that parses today changes.
-   */
-  function pdfTokenScale(pageHeight, target) {
-    target = target || 792; // US Letter, points
-    if (!pageHeight || pageHeight <= 0) return 1;
-    return pageHeight > target * 1.5 ? target / pageHeight : 1;
-  }
-
-  /**
    * A tab PDF carries no chord symbols — the harmony is in the fret numbers. So
    * this reads the digits' geometry (which string, which column, which measure)
    * and names the chord each column sounds.
@@ -353,7 +331,6 @@
     partHarmonyScore: partHarmonyScore,
     harvestBarPitches: harvestBarPitches,
     recoverEmptyBars: recoverEmptyBars,
-    pdfTokenScale: pdfTokenScale,
     importTabPdf: importTabPdf,
     pickChordPart: pickChordPart,
     importSummary: importSummary,
