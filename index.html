@@ -19,6 +19,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>ChordSheet CSMPN Builder v1.10.0</title>
 
+<!-- Installable / offline. Paths are relative because the app is served from a
+     project subpath (/chord-sheet-maker-pro/), not the domain root. The CSP has
+     no manifest-src, so it inherits default-src 'self' — same origin, allowed. -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#20201c">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+<!-- iOS ignores the manifest for home-screen installs and reads these instead. -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Chord Sheets">
+
 <!-- Google Fonts: Patrick Hand SC for fake book title; EB Garamond for professional engraving-style notation -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2184,7 +2196,7 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
           <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
           <button class="outline power-only" id="btnTuner" title="Tune up — live pitch from the microphone">&#127908; Tuner</button>
-          <button class="outline power-only" id="btnRefAudio" title="Play a reference recording and follow along — the chart's chords highlight in time">&#127911; Play-Along</button>
+          <button class="outline power-only" id="btnRefAudio" title="Play an audio recording (MP3, M4A, WAV) and follow along — the chart's chords highlight in time">&#127911; Play-Along</button>
           <button class="outline power-only" id="btnSetlist" title="Setlist / Songbook — save and print multiple charts">&#9776; Setlist<span class="setlist-badge" id="setlistBadge" style="display:none">0</span></button>
         </div>
         <input id="fileInputRefAudio" type="file" style="display:none" />
@@ -3038,6 +3050,9 @@ Tempo: 130
 <script src="renderer.js"></script>
 <script src="importPipeline.js"></script>
 <script src="backupRestore.js"></script>
+<!-- After backupRestore.js: offlineStore reads BACKUP_KEYS from it, so the list
+     of what gets mirrored to IndexedDB cannot drift from what gets backed up. -->
+<script src="offlineStore.js"></script>
 <script src="audioPlayback.js"></script>
 <script src="lyricsView.js"></script>
 <script src="stageSheets.js"></script>
@@ -3961,7 +3976,12 @@ fileInputAudio.addEventListener('change', async () => {
     updateDiagnosticsPanel();
   } catch (err) {
     console.error(err);
-    setStatus(`Audio import failed: ${err?.message || err}`, 'error');
+    setStatus(
+      err?.decodeFailed
+        ? window.AudioCapture.decodeFailureMessage(file.name, 'Audio import')
+        : `Audio import failed: ${err?.message || err}`,
+      'error'
+    );
     updateDiagnosticsPanel();
   }
 });
@@ -4023,14 +4043,18 @@ fileInputAudio.addEventListener('change', async () => {
 // to the chart's chords, and an rAF loop highlights the chord sounding now on the
 // Slash-Rhythm SVG (the [data-ci] labels the renderer stamps). When DTW isn't
 // confident it stretches the linear chart map across the recording — honest, if
-// coarse. Browser-only glue (decode + <audio> + rAF); the maths is tested in the
-// engine and audioCapture. Smoke-test on device.
+// coarse. Browser-only glue (decode + Web Audio transport + rAF); the maths is
+// tested in the engine and audioCapture. Smoke-test on device.
+//
+// Playback goes through AudioCapture.createFilePlayer, NOT an <audio> element:
+// iOS Safari refuses a blob: URL in a media element (NotSupportedError) even for
+// a file it has just decoded. See the note on createFilePlayer.
 (function () {
   const btn = document.getElementById('btnRefAudio');
   const fileInput = document.getElementById('fileInputRefAudio');
   if (!btn || !fileInput) return;
 
-  let audioEl = null, objUrl = null, align = null, raf = null, bar = null, lastEl = null;
+  let player = null, align = null, raf = null, bar = null, lastEl = null;
 
   function clearHighlight() {
     if (lastEl) { lastEl.classList.remove('hrChordNow'); lastEl = null; }
@@ -4050,7 +4074,7 @@ fileInputAudio.addEventListener('change', async () => {
       return ci;
     }
     // Fallback: stretch the linear (chart-tempo) map across the recording.
-    const dur = audioEl && isFinite(audioEl.duration) ? audioEl.duration : 0;
+    const dur = player && isFinite(player.durationSec) ? player.durationSec : 0;
     if (!dur || !align.chartDurationSec || !align.linear.length) return -1;
     const chartT = (t / dur) * align.chartDurationSec;
     let ci = -1;
@@ -4058,15 +4082,15 @@ fileInputAudio.addEventListener('change', async () => {
     return ci;
   }
   function loop() {
-    if (!audioEl) return;
-    highlight(ciAt(audioEl.currentTime));
+    if (!player) return;
+    highlight(ciAt(player.currentTime()));
     raf = requestAnimationFrame(loop);
   }
   function teardown() {
     if (raf) { cancelAnimationFrame(raf); raf = null; }
     clearHighlight();
-    if (audioEl) { try { audioEl.pause(); } catch (_e) {} audioEl = null; }
-    if (objUrl) { try { URL.revokeObjectURL(objUrl); } catch (_e) {} objUrl = null; }
+    // close() releases the AudioContext; Safari caps how many a page may hold.
+    if (player) { try { player.close(); } catch (_e) {} player = null; }
     if (bar) { bar.remove(); bar = null; }
     align = null;
     btn.setAttribute('aria-pressed', 'false');
@@ -4079,6 +4103,9 @@ fileInputAudio.addEventListener('change', async () => {
       return;
     }
     if (!sourceEl.value.trim()) { setStatus('Load a chart first, then attach a recording to play along.', 'error'); return; }
+    // Said before the picker opens, not after a failure: the file needs to be a
+    // recording, and nothing in the picker itself conveys that.
+    setStatus('Choose an audio recording of this song — MP3, M4A, WAV, or a video’s audio.');
     fileInput.value = '';
     fileInput.click();
   });
@@ -4095,9 +4122,9 @@ fileInputAudio.addEventListener('change', async () => {
       align = await window.AudioCapture.alignReference(pcm, sourceEl.value, {});
       if (!align) { setStatus('Could not build a chart to sync to.', 'error'); return; }
 
-      objUrl = URL.createObjectURL(file);
-      audioEl = new Audio(objUrl);
-      audioEl.addEventListener('ended', () => { clearHighlight(); if (playBtn) playBtn.textContent = '▶ Play'; });
+      // Decoded a second time, at full rate, for playback — the analysis copy is
+      // 16 kHz mono. `buf` survives the first decode because decodeToPcm copies.
+      player = await window.AudioCapture.createFilePlayer(buf);
 
       bar = document.createElement('div');
       bar.className = 'refBar';
@@ -4117,14 +4144,20 @@ fileInputAudio.addEventListener('change', async () => {
       if (!previewEl.querySelector('[data-ci]'))
         statusEl.textContent += ' · turn on Slash-Rhythm View to see chords light up';
 
+      player.onEnded(() => {
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
+        clearHighlight();
+        playBtn.textContent = '▶ Play';
+      });
+
       playBtn.addEventListener('click', async () => {
-        if (!audioEl) return;
-        if (audioEl.paused) {
-          try { await audioEl.play(); } catch (e) { setStatus(`Playback blocked: ${e?.message || e}`, 'error'); return; }
+        if (!player) return;
+        if (!player.isPlaying()) {
+          try { await player.play(); } catch (e) { setStatus(`Playback blocked: ${e?.message || e}`, 'error'); return; }
           playBtn.textContent = '■ Stop';
           loop();
         } else {
-          audioEl.pause(); if (raf) { cancelAnimationFrame(raf); raf = null; }
+          player.pause(); if (raf) { cancelAnimationFrame(raf); raf = null; }
           clearHighlight(); playBtn.textContent = '▶ Play';
         }
       });
@@ -4134,7 +4167,12 @@ fileInputAudio.addEventListener('change', async () => {
     } catch (err) {
       console.error(err);
       teardown();
-      setStatus(`Play-Along failed: ${err?.message || err}`, 'error');
+      setStatus(
+        err?.decodeFailed
+          ? window.AudioCapture.decodeFailureMessage(file.name, 'Play-Along')
+          : `Play-Along failed: ${err?.message || err}`,
+        'error'
+      );
     }
   });
 })();
@@ -7437,12 +7475,80 @@ function csmpnToCsml(csmpnText) {
     const w = window.open('', '_blank');
     if (!w) { setAbcStatus('Pop-up blocked — allow pop-ups to print.', true); return; }
     const title = escapeHtml(window.ABCSuite.extractAbcTitle(curAbc()));
+    // abcjs renders one continuous SVG however tall, so printing it directly
+    // lets the browser cut through the middle of a staff. buildPrintPages
+    // windows onto it — a page-sized viewBox per sheet, cut between systems.
+    // It returns null on a layout it can't measure, and then we print the one
+    // SVG exactly as before rather than risk losing music.
+    let body;
+    const paged = window.ABCSuite.buildPrintPages(svg, { paper: 'letter', marginIn: 0.5 });
+    if (paged) {
+      // The viewBox height is the same on every page so all sheets scale alike;
+      // the clip is what stops a fixed-height window from also showing the top
+      // of the next system, which would put the cut staff back at the bottom.
+      body = paged.pages.map((p, i) =>
+        `<div class="pg${i === paged.pages.length - 1 ? ' last' : ''}">` +
+        `<svg xmlns="http://www.w3.org/2000/svg" width="100%"` +
+        ` viewBox="${paged.originX} ${p.top} ${paged.width} ${p.height}"` +
+        ` preserveAspectRatio="xMinYMin meet">` +
+        `<defs><clipPath id="pgclip${i}"><rect x="${paged.originX}" y="${p.top}"` +
+        ` width="${paged.width}" height="${Math.max(0, p.contentBottom - p.top)}"/>` +
+        `</clipPath></defs>` +
+        `<g clip-path="url(#pgclip${i})">${paged.content}</g></svg></div>`
+      ).join('');
+    } else {
+      body = new XMLSerializer().serializeToString(svg);
+    }
     w.document.write('<!doctype html><html><head><title>' + title + '</title>' +
-      '<style>@page{margin:0.5in;}body{margin:0;}svg{max-width:100%;height:auto;}</style></head><body>' +
-      new XMLSerializer().serializeToString(svg) +
+      '<style>@page{margin:0.5in;}body{margin:0;}' +
+      'svg{max-width:100%;height:auto;}' +
+      // Each window is exactly one sheet; the last must not add a blank page.
+      '.pg{break-after:page;page-break-after:always;}' +
+      '.pg.last{break-after:auto;page-break-after:auto;}' +
+      '</style></head><body>' + body +
       '<scr' + 'ipt>window.onload=function(){window.print();}<\/scr' + 'ipt></body></html>');
     w.document.close();
   });
+})();
+
+// ── Offline + storage durability ────────────────────────────────────────────
+// Two independent safety nets, both entirely optional to the app working:
+//   1. A service worker so the app opens on a stand with no signal.
+//   2. An IndexedDB mirror of the songbook, because iOS evicts localStorage
+//      after ~7 days of not visiting — see offlineStore.js for why it mirrors
+//      rather than migrates.
+// Every step is feature-detected and swallowed on failure: a browser that
+// refuses either one must still get the whole app, unchanged.
+(function registerOffline(){
+  try {
+    if ('serviceWorker' in navigator) {
+      // Registered after load so it never competes with first paint, and with a
+      // relative URL so the scope is this project subpath, not the domain root.
+      window.addEventListener('load', function(){
+        navigator.serviceWorker.register('sw.js').catch(function(){
+          /* http://, private mode, or a browser that declines — app is unaffected */
+        });
+      });
+    }
+  } catch(_e) { /* nothing to do */ }
+
+  try {
+    if (window.OfflineStore && window.OfflineStore.supported()) {
+      window.OfflineStore.install({
+        onRestore: function(keys, summary){
+          // Only speaks up when it ACTUALLY recovered something — this is the
+          // "Safari cleared your library and we put it back" moment, and it
+          // should be legible, not a silent repair the user never learns about.
+          var what = summary.songs
+            ? summary.songs + ' song' + (summary.songs === 1 ? '' : 's')
+            : keys.length + ' item' + (keys.length === 1 ? '' : 's');
+          try {
+            setStatus('Restored ' + what + ' from this device’s offline copy — browser storage had been cleared.', 'warning');
+          } catch(_e) { /* status bar not ready yet */ }
+        }
+      });
+    }
+  } catch(_e) { /* storage unavailable — the app still runs on localStorage alone */ }
 })();
 
 </script>

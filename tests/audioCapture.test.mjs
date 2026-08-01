@@ -145,6 +145,241 @@ test('pulsesPerBar falls back to 4/4 on anything it cannot read', () => {
   assert.equal(ac.pulsesPerBar('5/8'), 5);
 });
 
+// ── Telling the player why a file would not decode ────────────────────────────
+//
+// The browser's own failure is "Unable to decode audio data", which leaves a
+// musician who attached a .mid or a .musicxml with nothing to act on. These
+// guard the two things the message has to get right: naming the format they
+// actually picked, and pointing at the door that does handle it.
+
+test('a score file is explained as the wrong door, not as a failure', () => {
+  for (const [name, kind] of [
+    ['song.mid', 'MIDI'],
+    ['song.midi', 'MIDI'],
+    ['Sultans.musicxml', 'MusicXML'],
+    ['chart.xml', 'MusicXML'],
+    ['blue-sky.gp5', 'Guitar Pro'],
+    ['tune.ptb', 'Power Tab'],
+    ['reel.abc', 'ABC notation'],
+  ]) {
+    const msg = ac.decodeFailureMessage(name, 'Play-Along');
+    assert.match(msg, new RegExp(kind), `${name} should be named as ${kind}`);
+    assert.match(msg, /Import/, 'and should point at the importer that reads it');
+    assert.match(msg, /^Play-Along/, 'and should name the feature that refused');
+  }
+});
+
+test('an unrecognised file names the audio formats that do work', () => {
+  const msg = ac.decodeFailureMessage('mystery.bin', 'Audio import');
+  assert.match(msg, /MP3/);
+  assert.match(msg, /WAV/);
+  assert.doesNotMatch(msg, /Import to turn/, 'no score advice for a non-score file');
+});
+
+test('a missing or extensionless filename still produces usable advice', () => {
+  for (const name of ['', null, undefined, 'recording']) {
+    assert.match(ac.decodeFailureMessage(name), /MP3/);
+  }
+});
+
+test('the extension match is case-insensitive and anchored to the end', () => {
+  assert.match(ac.decodeFailureMessage('SONG.MID'), /MIDI/);
+  // A name that merely contains "mid" is not a MIDI file.
+  assert.doesNotMatch(ac.decodeFailureMessage('midsummer.wav'), /MIDI/);
+});
+
+// ── The playback transport ────────────────────────────────────────────────────
+//
+// Play-Along used to drive an <audio> element on a blob: URL, which iOS Safari
+// refuses with "NotSupportedError: The operation is not supported" even for a
+// file it has just decoded. createFilePlayer replaces it with Web Audio. The
+// AudioContext is a browser object, but everything that made the old version
+// fragile — where the playhead is, resuming before starting, releasing the
+// context — is logic, and a stub context puts all of it under test.
+
+/** A minimal AudioContext with a clock a test can advance by hand. */
+function fakeAudio(opts) {
+  opts = opts || {};
+  const log = [];
+  let now = 0;
+  const sources = [];
+  const ctx = {
+    state: 'suspended',
+    destination: {},
+    get currentTime() {
+      return now;
+    },
+    async decodeAudioData() {
+      if (opts.decodeFails) throw new Error('Unable to decode audio data');
+      return { duration: opts.duration || 10, sampleRate: 44100, numberOfChannels: 1 };
+    },
+    async resume() {
+      ctx.state = 'running';
+      log.push('resume');
+    },
+    close() {
+      ctx.state = 'closed';
+      log.push('close');
+    },
+    createBufferSource() {
+      const src = {
+        buffer: null,
+        onended: null,
+        connect: () => log.push('connect'),
+        start: (when, offset) => log.push('start@' + offset),
+        stop: () => log.push('stop'),
+      };
+      sources.push(src);
+      return src;
+    },
+  };
+  return {
+    log,
+    sources,
+    advance: (s) => {
+      now += s;
+    },
+    win: {
+      AudioContext: function () {
+        return ctx;
+      },
+    },
+  };
+}
+
+test('the playhead advances with the context clock while playing', () => {
+  const fake = fakeAudio({ duration: 30 });
+  return loadWith(fake.win)
+    .createFilePlayer(new ArrayBuffer(8))
+    .then(async (p) => {
+      assert.equal(p.durationSec, 30);
+      assert.equal(p.currentTime(), 0);
+      assert.equal(p.isPlaying(), false);
+
+      await p.play();
+      assert.equal(p.isPlaying(), true);
+      fake.advance(4.5);
+      assert.equal(p.currentTime(), 4.5);
+    });
+});
+
+test('play resumes the context before starting a source — the iOS requirement', () => {
+  const fake = fakeAudio();
+  return loadWith(fake.win)
+    .createFilePlayer(new ArrayBuffer(8))
+    .then(async (p) => {
+      await p.play();
+      assert.deepEqual(
+        fake.log.filter((e) => e === 'resume' || e.startsWith('start')),
+        ['resume', 'start@0'],
+        'a source started against a suspended context plays silence'
+      );
+    });
+});
+
+test('pause holds its position and resuming continues from there', () => {
+  const fake = fakeAudio({ duration: 30 });
+  return loadWith(fake.win)
+    .createFilePlayer(new ArrayBuffer(8))
+    .then(async (p) => {
+      await p.play();
+      fake.advance(6);
+      p.pause();
+      assert.equal(p.isPlaying(), false);
+      assert.equal(p.currentTime(), 6, 'the position survives the pause');
+
+      // Time passes while paused; the playhead must not drift with it.
+      fake.advance(100);
+      assert.equal(p.currentTime(), 6);
+
+      await p.play();
+      assert.ok(
+        fake.log.includes('start@6'),
+        'the second source starts at the paused offset, not from the top'
+      );
+    });
+});
+
+test('stopping our own source does not fire the ended callback', () => {
+  // The recording did not end — we paused it. Reporting "ended" would reset the
+  // button and clear the highlight mid-song.
+  const fake = fakeAudio();
+  return loadWith(fake.win)
+    .createFilePlayer(new ArrayBuffer(8))
+    .then(async (p) => {
+      let ended = 0;
+      p.onEnded(() => ended++);
+      await p.play();
+      p.pause();
+      assert.equal(ended, 0);
+      assert.equal(fake.sources[0].onended, null, 'the handler is detached before stop()');
+    });
+});
+
+test('reaching the end reports it once and rewinds for the next play', () => {
+  const fake = fakeAudio({ duration: 12 });
+  return loadWith(fake.win)
+    .createFilePlayer(new ArrayBuffer(8))
+    .then(async (p) => {
+      let ended = 0;
+      p.onEnded(() => ended++);
+      await p.play();
+      fake.sources[0].onended(); // the buffer ran out
+      assert.equal(ended, 1);
+      assert.equal(p.isPlaying(), false);
+
+      await p.play();
+      assert.ok(fake.log.includes('start@0'), 'a finished recording replays from the start');
+    });
+});
+
+test('the playhead never runs past the end of the recording', () => {
+  // rAF keeps firing for a frame or two after the buffer stops; a time beyond
+  // the end would index off the end of the alignment map.
+  const fake = fakeAudio({ duration: 5 });
+  return loadWith(fake.win)
+    .createFilePlayer(new ArrayBuffer(8))
+    .then(async (p) => {
+      await p.play();
+      fake.advance(99);
+      assert.equal(p.currentTime(), 5);
+    });
+});
+
+test('close releases the context — Safari caps how many a page may hold', () => {
+  const fake = fakeAudio();
+  return loadWith(fake.win)
+    .createFilePlayer(new ArrayBuffer(8))
+    .then(async (p) => {
+      await p.play();
+      p.close();
+      assert.ok(fake.log.includes('stop'), 'the running source is stopped');
+      assert.ok(fake.log.includes('close'), 'and the context is closed');
+      assert.equal(p.isPlaying(), false);
+    });
+});
+
+test('a file that will not decode releases the context and reports decodeFailed', async () => {
+  const fake = fakeAudio({ decodeFails: true });
+  await assert.rejects(
+    () => loadWith(fake.win).createFilePlayer(new ArrayBuffer(8)),
+    (e) => e.decodeFailed === true
+  );
+  assert.ok(fake.log.includes('close'), 'a failed decode must not leak its context');
+});
+
+test('Play-Along does not reach for an <audio> element or a blob URL', () => {
+  // The regression guard for the iOS NotSupportedError. Scoped to the
+  // Play-Along block so unrelated download links keep using createObjectURL.
+  const html = readFileSync(join(root, 'index.html'), 'utf8');
+  const start = html.indexOf('── Play-Along');
+  const block = html.slice(start, html.indexOf('── "Decode tab"', start));
+  assert.ok(start > -1 && block.length > 500, 'Play-Along block not found');
+  assert.doesNotMatch(block, /new Audio\(/, 'a media element cannot play a blob URL on iOS');
+  assert.doesNotMatch(block, /createObjectURL/);
+  assert.match(block, /createFilePlayer/, 'playback goes through the Web Audio transport');
+});
+
 // ── Vocal-isolation A/B gate ──────────────────────────────────────────────────
 
 test('clarityDelta only calls isolation a win when it clears the noise margin', () => {

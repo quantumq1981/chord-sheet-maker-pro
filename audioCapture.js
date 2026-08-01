@@ -224,6 +224,63 @@
     });
   }
 
+  /*
+   * Notation and score formats a musician plausibly reaches for when a control
+   * says "attach a file" — none of which `decodeAudioData` can touch. A .mid is
+   * note events and a .musicxml is engraving instructions; neither contains a
+   * waveform, so the browser rejects them with a bare "Unable to decode audio
+   * data" that tells the player nothing about what to do instead.
+   */
+  var SCORE_EXTS = {
+    mid: 'MIDI',
+    midi: 'MIDI',
+    xml: 'MusicXML',
+    musicxml: 'MusicXML',
+    mxl: 'MusicXML',
+    gp: 'Guitar Pro',
+    gp3: 'Guitar Pro',
+    gp4: 'Guitar Pro',
+    gp5: 'Guitar Pro',
+    gpx: 'Guitar Pro',
+    ptb: 'Power Tab',
+    abc: 'ABC notation',
+    csmpn: 'a chart',
+    csml: 'a chart',
+    cho: 'a chart',
+    pro: 'a chart',
+    crd: 'a chart',
+    pdf: 'a PDF',
+    txt: 'a text chart',
+  };
+
+  /**
+   * What to tell the player when a file will not decode. The distinction that
+   * matters: a score file is not a failure to explain, it is the wrong door —
+   * those formats already have importers that build a chart. Anything else is a
+   * genuine decode failure, so name the formats that do work.
+   */
+  function decodeFailureMessage(filename, purpose) {
+    var m = /\.([A-Za-z0-9]{1,8})$/.exec(String(filename || ''));
+    var kind = m ? SCORE_EXTS[m[1].toLowerCase()] : null;
+    var what = purpose || 'This';
+    if (kind) {
+      return (
+        what +
+        ' needs a recording — an audio file with sound in it. ' +
+        m[0] +
+        ' is ' +
+        kind +
+        ', which describes notes rather than storing sound. ' +
+        'Use Import to turn that into a chart instead.'
+      );
+    }
+    return (
+      what +
+      ' could not read that file as audio. MP3, M4A, WAV and AAC all work, ' +
+      'as does the audio track of an MP4 or MOV.'
+    );
+  }
+
   // ── Browser-only ──────────────────────────────────────────────────────────
 
   function audioContextClass() {
@@ -232,6 +289,24 @@
 
   function supported() {
     return !!audioContextClass();
+  }
+
+  /**
+   * `decodeAudioData`, with the failure flagged. Callers can then tell "this
+   * file is not audio" apart from a failure later in the pipeline, and say
+   * something useful about it via `decodeFailureMessage`.
+   */
+  async function decodeOrExplain(ctx, arrayBuffer) {
+    try {
+      // `decodeAudioData` detaches the buffer it is given, so hand it a copy —
+      // the caller's bytes stay usable (playback decodes them a second time).
+      return await ctx.decodeAudioData(arrayBuffer.slice(0));
+    } catch (e) {
+      var err = new Error('Could not decode that file as audio.');
+      err.decodeFailed = true;
+      err.cause = e;
+      throw err;
+    }
   }
 
   /**
@@ -247,7 +322,7 @@
     if (!Ctx) throw new Error('This browser has no Web Audio support.');
     var ctx = new Ctx();
     try {
-      var buf = await ctx.decodeAudioData(arrayBuffer.slice(0));
+      var buf = await decodeOrExplain(ctx, arrayBuffer);
       var chans = [];
       for (var c = 0; c < buf.numberOfChannels; c++) chans.push(buf.getChannelData(c));
       var mono = downmix(chans, buf.length);
@@ -270,6 +345,123 @@
         }
       }
     }
+  }
+
+  /**
+   * A file's bytes → a transport that plays them, built on Web Audio rather
+   * than an `<audio>` element.
+   *
+   * WHY NOT `<audio>`. The obvious implementation — `new Audio(URL.createObjectURL(file))`
+   * — fails on iOS Safari with `NotSupportedError: The operation is not supported`,
+   * even for a file the same browser has just decoded successfully. Safari's media
+   * element loads a `blob:` URL through its streaming path, which wants range
+   * requests and a MIME type the picker does not always supply; `decodeAudioData`
+   * reads the bytes directly and has no such requirement. So the element is the
+   * one part that can fail, and it is the part worth dropping: this decodes the
+   * same bytes the analysis already proved decodable, then plays the buffer.
+   *
+   * The playhead reads from `ctx.currentTime`, which is sample-accurate and does
+   * not stall the way `audioEl.currentTime` can while a media element buffers.
+   *
+   * The context stays open for the life of the transport — a paused player must
+   * resume without another user gesture — so `close()` matters and every caller
+   * must reach it on teardown.
+   */
+  async function createFilePlayer(arrayBuffer) {
+    var Ctx = audioContextClass();
+    if (!Ctx) throw new Error('This browser has no Web Audio support.');
+    var ctx = new Ctx();
+    var buffer;
+    try {
+      buffer = await decodeOrExplain(ctx, arrayBuffer);
+    } catch (e) {
+      try {
+        if (ctx.close) ctx.close();
+      } catch (_e) {
+        /* nothing to release */
+      }
+      throw e;
+    }
+
+    var src = null;
+    var startedAt = 0; // ctx.currentTime when the current source started
+    var offset = 0; // where in the buffer that source started
+    var playing = false;
+    var handlers = { ended: null };
+
+    function currentTime() {
+      if (!playing) return offset;
+      return Math.min(buffer.duration, offset + (ctx.currentTime - startedAt));
+    }
+
+    function stopSource() {
+      if (!src) return;
+      // Detach first: stopping a source fires `onended`, and that is our own
+      // doing, not the recording reaching its end.
+      src.onended = null;
+      try {
+        src.stop();
+      } catch (_e) {
+        /* already stopped */
+      }
+      src = null;
+    }
+
+    async function play() {
+      if (playing) return;
+      // iOS starts every context suspended and only honours resume() inside the
+      // gesture that asked for it, so this must be called straight from the tap.
+      if (ctx.state === 'suspended' && ctx.resume) {
+        try {
+          await ctx.resume();
+        } catch (_e) {
+          /* play() below will surface anything fatal */
+        }
+      }
+      if (offset >= buffer.duration) offset = 0; // replay after reaching the end
+      src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      src.onended = function () {
+        playing = false;
+        offset = buffer.duration;
+        src = null;
+        if (handlers.ended) handlers.ended();
+      };
+      src.start(0, offset);
+      startedAt = ctx.currentTime;
+      playing = true;
+    }
+
+    function pause() {
+      if (!playing) return;
+      offset = currentTime();
+      playing = false;
+      stopSource();
+    }
+
+    return {
+      durationSec: buffer.duration,
+      isPlaying: function () {
+        return playing;
+      },
+      currentTime: currentTime,
+      play: play,
+      pause: pause,
+      onEnded: function (fn) {
+        handlers.ended = fn;
+      },
+      close: function () {
+        playing = false;
+        stopSource();
+        buffer = null;
+        try {
+          if (ctx.close) ctx.close();
+        } catch (_e) {
+          /* already closed */
+        }
+      },
+    };
   }
 
   /**
@@ -376,7 +568,11 @@
     var linearRaw = engine.scoreEventTimes(built.score, bpm);
     var linear = (linearRaw.events || [])
       .map(function (e) {
-        return { start: e.start, dur: e.dur, ci: built.keyToCi[e.key] != null ? built.keyToCi[e.key] : -1 };
+        return {
+          start: e.start,
+          dur: e.dur,
+          ci: built.keyToCi[e.key] != null ? built.keyToCi[e.key] : -1,
+        };
       })
       .filter(function (e) {
         return e.ci >= 0;
@@ -496,12 +692,15 @@
     centsOff: centsOff,
     tuningVerdict: tuningVerdict,
     pulsesPerBar: pulsesPerBar,
+    SCORE_EXTS: SCORE_EXTS,
+    decodeFailureMessage: decodeFailureMessage,
     clarityDelta: clarityDelta,
     chartChordList: chartChordList,
     csmpnChartToScore: csmpnChartToScore,
     segmentsToCi: segmentsToCi,
     supported: supported,
     decodeToPcm: decodeToPcm,
+    createFilePlayer: createFilePlayer,
     pcmToChart: pcmToChart,
     isolateAndGate: isolateAndGate,
     alignReference: alignReference,
