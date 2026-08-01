@@ -61,12 +61,38 @@
   var NOTE_NAMES_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
   var _MAJOR_FIFTHS = {
-    C: 0, G: 1, D: 2, A: 3, E: 4, B: 5, 'F#': 6, 'C#': 7,
-    F: -1, Bb: -2, Eb: -3, Ab: -4, Db: -5, Gb: -6, Cb: -7,
+    C: 0,
+    G: 1,
+    D: 2,
+    A: 3,
+    E: 4,
+    B: 5,
+    'F#': 6,
+    'C#': 7,
+    F: -1,
+    Bb: -2,
+    Eb: -3,
+    Ab: -4,
+    Db: -5,
+    Gb: -6,
+    Cb: -7,
   };
   var _MINOR_FIFTHS = {
-    A: 0, E: 1, B: 2, 'F#': 3, 'C#': 4, 'G#': 5, 'D#': 6, 'A#': 7,
-    D: -1, G: -2, C: -3, F: -4, Bb: -5, Eb: -6, Ab: -7,
+    A: 0,
+    E: 1,
+    B: 2,
+    'F#': 3,
+    'C#': 4,
+    'G#': 5,
+    'D#': 6,
+    'A#': 7,
+    D: -1,
+    G: -2,
+    C: -3,
+    F: -4,
+    Bb: -5,
+    Eb: -6,
+    Ab: -7,
   };
 
   /**
@@ -197,11 +223,7 @@
     if (!bestOverall || bestOverallScore < FLOOR) return null;
     var name = spell(bestOverall.root) + bestOverall.pat.suffix;
     // Inversion labeling: structural chord-tone bass that isn't the root.
-    if (
-      opts.slash !== false &&
-      bassStructural !== null &&
-      bassStructural !== bestOverall.root
-    ) {
+    if (opts.slash !== false && bassStructural !== null && bassStructural !== bestOverall.root) {
       var isChordTone = bestOverall.pat.intervals.some(function (iv) {
         return (bestOverall.root + iv) % 12 === bassStructural;
       });
@@ -217,9 +239,27 @@
   // triad-quality match) so importers can backfill the Key: header field.
 
   var _PC_BY_NAME = {
-    C: 0, 'B#': 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, Fb: 4,
-    F: 5, 'E#': 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9,
-    'A#': 10, Bb: 10, B: 11, Cb: 11,
+    C: 0,
+    'B#': 0,
+    'C#': 1,
+    Db: 1,
+    D: 2,
+    'D#': 3,
+    Eb: 3,
+    E: 4,
+    Fb: 4,
+    F: 5,
+    'E#': 5,
+    'F#': 6,
+    Gb: 6,
+    G: 7,
+    'G#': 8,
+    Ab: 8,
+    A: 9,
+    'A#': 10,
+    Bb: 10,
+    B: 11,
+    Cb: 11,
   };
 
   // Diatonic chord qualities by scale-degree offset (semitones above tonic).
@@ -281,7 +321,8 @@
             score -= 1; // chromatic root
           } else if (
             expected === ch.quality ||
-            (expected === 'both' && (ch.quality === 'maj' || ch.quality === 'min' || ch.quality === 'dom')) ||
+            (expected === 'both' &&
+              (ch.quality === 'maj' || ch.quality === 'min' || ch.quality === 'dom')) ||
             (expected === 'maj' && ch.quality === 'dom' && off === 7) || // V7
             (expected === 'maj' && ch.quality === 'dom' && off === 0) // blues I7
           ) {
@@ -292,8 +333,10 @@
         }
         // Tonic bonus: charts overwhelmingly start and/or end on the tonic.
         var tonicQuality = mode === 0 ? 'maj' : 'min';
-        if (first.pc === tonic && (first.quality === tonicQuality || first.quality === 'dom')) score += 3;
-        if (last.pc === tonic && (last.quality === tonicQuality || last.quality === 'dom')) score += 2;
+        if (first.pc === tonic && (first.quality === tonicQuality || first.quality === 'dom'))
+          score += 3;
+        if (last.pc === tonic && (last.quality === tonicQuality || last.quality === 'dom'))
+          score += 2;
 
         if (score > bestScore) {
           bestScore = score;
@@ -307,9 +350,147 @@
     return bestKey;
   }
 
+  /*
+   * ── Reading a chord token ────────────────────────────────────────────────
+   *
+   * Musicians write the same chord several ways, and two of those ways contain
+   * a slash: the 6/9 family, and any slash bass. Splitting naively on `/` turns
+   * `C6/9` into "C6 over the note 9", which is not a chord at all — that is how
+   * every 6/9 in a real chart came to play silence.
+   *
+   * The rule that disambiguates them: a slash bass is ALWAYS a note name and
+   * nothing else. `/9` is part of the quality; `/D` is a bass.
+   */
+
+  var BASS_RE = /^[A-Ga-g][#b♯♭]?$/;
+
+  /** Split a raw chord token into root, quality suffix and slash bass. */
+  function splitChordToken(token) {
+    var t = String(token == null ? '' : token)
+      .replace(/[♭]/g, 'b')
+      .replace(/[♯]/g, '#')
+      .replace(/[!~]+$/, '')
+      .trim();
+    if (!t || /^%+$/.test(t) || /^n\.?c\.?$/i.test(t)) return null;
+
+    var bass = null;
+    var slash = t.lastIndexOf('/');
+    if (slash > 0 && BASS_RE.test(t.slice(slash + 1).trim())) {
+      bass = t.slice(slash + 1).trim();
+      t = t.slice(0, slash);
+    }
+    var m = /^([A-Ga-g][#b]?)(.*)$/.exec(t.trim());
+    if (!m) return null;
+    return { root: m[1], suffix: (m[2] || '').trim(), bass: bass };
+  }
+
+  /*
+   * Alias → the canonical suffix used in CHORD_PATTERNS. Ordered longest-first
+   * where prefixes overlap, since these are exact whole-suffix replacements.
+   */
+  var SUFFIX_ALIASES = {
+    '6/9': '6add9',
+    69: '6add9',
+    '6-9': '6add9',
+    add2: 'add9',
+    majadd9: 'add9',
+    sus: 'sus4',
+    '7sus': '7sus4',
+    '9sus': '9sus4',
+    // Bare "maj"/"M" is a major TRIAD, not a major 7th — only the numbered
+    // forms mean the seventh. Getting this backwards would put an 11th-hour
+    // major 7th into every plain chord written that way.
+    maj: '',
+    major: '',
+    Maj: '',
+    Major: '',
+    MAJ: '',
+    M: '',
+    ma7: 'maj7',
+    Ma7: 'maj7',
+    MA7: 'maj7',
+    M7: 'maj7',
+    Maj7: 'maj7',
+    MAJ7: 'maj7',
+    Maj9: 'maj9',
+    M9: 'maj9',
+    '^7': 'maj7',
+    'm(maj7)': 'mM7',
+    mmaj7: 'mM7',
+    minmaj7: 'mM7',
+    mmaj: 'mM7',
+    min: 'm',
+    Min: 'm',
+    MIN: 'm',
+    minor: 'm',
+    Minor: 'm',
+    '-': 'm',
+    min7: 'm7',
+    Min7: 'm7',
+    '-7': 'm7',
+    min6: 'm6',
+    min9: 'm9',
+    o: 'dim',
+    o7: 'dim7',
+    '+': 'aug',
+    '+7': 'aug7',
+    aug5: 'aug',
+    ø: 'm7b5',
+    ø7: 'm7b5',
+    min7b5: 'm7b5',
+    'm7-5': 'm7b5',
+    '-7b5': 'm7b5',
+    halfdim: 'm7b5',
+  };
+
+  /**
+   * Canonical form of a raw quality suffix — unicode folded to ASCII, then any
+   * known alias mapped onto the spelling CHORD_PATTERNS uses.
+   *
+   * Deliberately NOT lower-cased wholesale: `M7` (major 7) and `m7` (minor 7)
+   * differ only by case, so folding them together would turn every major 7th
+   * into a minor 7th.
+   */
+  function normalizeChordSuffix(suffix) {
+    var s = String(suffix == null ? '' : suffix)
+      .replace(/[♭]/g, 'b')
+      .replace(/[♯]/g, '#')
+      // The triangle and ø already imply the seventh, so `△7` and `ø7` must
+      // collapse to one — expanding the glyph first would yield `maj77`.
+      .replace(/[△Δ∆]\s*7?/g, 'maj7')
+      .replace(/[øØ]\s*7?/g, 'm7b5')
+      .replace(/[°º]/g, 'dim')
+      .replace(/\s+/g, '')
+      .trim();
+    if (!s) return '';
+    /*
+     * Exact lookup only, with the realistic capitalisations spelled out in the
+     * table. A case-insensitive fallback is tempting and wrong: `M7` (major 7)
+     * and `m7` (minor 7) differ by case alone, so any fuzzy match risks turning
+     * every major 7th into a minor 7th.
+     */
+    return Object.prototype.hasOwnProperty.call(SUFFIX_ALIASES, s) ? SUFFIX_ALIASES[s] : s;
+  }
+
+  /**
+   * Intervals for a quality suffix from the shared table, or null if unknown.
+   * Callers own their fallback: playback approximates, notation may decline.
+   */
+  function intervalsForSuffix(suffix) {
+    var want = normalizeChordSuffix(suffix);
+    for (var i = 0; i < CHORD_PATTERNS.length; i++) {
+      if (CHORD_PATTERNS[i].suffix === want) return CHORD_PATTERNS[i].intervals.slice();
+    }
+    return null;
+  }
+
   var api = {
     NOTE_NAMES: NOTE_NAMES,
     CHORD_PATTERNS: CHORD_PATTERNS,
+    SUFFIX_ALIASES: SUFFIX_ALIASES,
+    splitChordToken: splitChordToken,
+    normalizeChordSuffix: normalizeChordSuffix,
+    intervalsForSuffix: intervalsForSuffix,
     inferKeyFromChords: inferKeyFromChords,
     keyFifths: keyFifths,
     spellPcForKey: spellPcForKey,

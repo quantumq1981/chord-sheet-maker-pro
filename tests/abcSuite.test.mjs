@@ -492,6 +492,7 @@ test('pageAspect describes the printable area, not the whole sheet', () => {
   // Letter at 0.5in margins is 7.5 × 10in, so a page is taller than it is wide.
   assert.ok(Math.abs(A.pageAspect('letter', 0.5) - 10 / 7.5) < 1e-9);
   assert.ok(Math.abs(A.pageAspect('a4', 0.5) - 10.69 / 7.27) < 1e-9);
+  assert.ok(Math.abs(A.pageAspect('a3', 0.5) - 15.54 / 10.69) < 1e-9);
   // Bigger margins make the printable area proportionally taller.
   assert.ok(A.pageAspect('letter', 1) > A.pageAspect('letter', 0.5));
   assert.ok(A.pageAspect() > 1, 'portrait by default');
@@ -626,4 +627,33 @@ test('the single-page fallback still reports contentBottom', () => {
     0
   );
   assert.equal(pages[0].contentBottom, 250);
+});
+
+test('every offered paper size is portrait and taller than Letter', () => {
+  // Letter is the default BECAUSE it has the widest printable aspect: content
+  // laid out for it always fits on any other choice, leaving white space rather
+  // than spilling. If a size were ever wider, that guarantee would break.
+  const letter = A.pageAspect('letter', 0.5);
+  for (const name of Object.keys(A.PAPER_SIZES)) {
+    const a = A.pageAspect(name, 0.5);
+    assert.ok(a > 1, `${name} is portrait`);
+    assert.ok(a >= letter - 1e-9, `${name} is not wider than Letter`);
+  }
+});
+
+test('an unknown paper falls back to Letter rather than breaking the layout', () => {
+  const letter = A.pageAspect('letter', 0.5);
+  for (const bad of ['b5', '', null, undefined, 'nonsense']) {
+    assert.ok(Math.abs(A.pageAspect(bad, 0.5) - letter) < 1e-9);
+  }
+});
+
+test('a bigger sheet fits more music per page', () => {
+  // The whole point of the picker: A3 pages are taller in SVG units, so fewer
+  // sheets. Same content width, so the scale is unchanged.
+  const bands = [];
+  for (let i = 0; i < 20; i++) bands.push({ top: i * 100, bottom: i * 100 + 90 });
+  const letterPages = A.paginateBands(bands, A.pageBandHeight(740, A.pageAspect('letter', 0.5)));
+  const a3Pages = A.paginateBands(bands, A.pageBandHeight(740, A.pageAspect('a3', 0.5)));
+  assert.ok(a3Pages.length < letterPages.length, 'A3 needs fewer sheets');
 });

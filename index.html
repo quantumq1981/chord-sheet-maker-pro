@@ -2613,6 +2613,14 @@ Tempo: 120
         <label title="Soundfont (larger = fuller, more to download)">Font <select id="abcSoundfont"></select></label>
         <label title="Show guitar tablature below the staff"><input type="checkbox" id="abcGuitarTab"> Guitar tab</label>
         <label title="⬆ From Source: voice each chord as real staff notes + tab (not just the chord name)"><input type="checkbox" id="abcVoiceChords" checked> Voice chords</label>
+        <span class="abc-ctl-sep"></span>
+        <label title="Paper the ⎙ Print pages are laid out for. The page can't see what you pick in the print dialog, so set it here to fill the sheet.">Paper <select id="abcPaper">
+          <option value="letter" selected>Letter</option>
+          <option value="a4">A4</option>
+          <option value="a3">A3</option>
+          <option value="legal">Legal</option>
+          <option value="tabloid">Tabloid</option>
+        </select></label>
       </div>
       <div class="abc-panes">
         <div>
@@ -7487,7 +7495,14 @@ function csmpnToCsml(csmpnText) {
     // It returns null on a layout it can't measure, and then we print the one
     // SVG exactly as before rather than risk losing music.
     let body;
-    const paged = window.ABCSuite.buildPrintPages(svg, { paper: 'letter', marginIn: 0.5 });
+    // The print dialog's paper size is invisible to the page, so the layout uses
+    // whatever the panel's Paper picker says. Letter is the safe default (widest
+    // printable aspect), but choosing A3 here fills the larger sheet.
+    const paperEl = document.getElementById('abcPaper');
+    const paged = window.ABCSuite.buildPrintPages(svg, {
+      paper: (paperEl && paperEl.value) || 'letter',
+      marginIn: 0.5,
+    });
     if (paged) {
       // The viewBox height is the same on every page so all sheets scale alike;
       // the clip is what stops a fixed-height window from also showing the top

@@ -2377,6 +2377,115 @@ function detectChord(samples, sampleRate, opts = {}) {
   const d = chordFromChroma(pcmToChroma(samples, sampleRate, opts), opts);
   return d ? { ...d, chroma: undefined } : null;
 }
+/* recoverChordGaps — second look at the spans that produced no label.
+ *
+ * A decoded chart is littered with N.C. bars, and most of them are NOT silence: the
+ * span had sound, but at the default `pickThreshold` (0.4) fewer than two pitch
+ * classes cleared the bar, or the sub-`minDurSec` filter dropped a short label. In a
+ * real mix a genuine chord's 3rd/5th often sit under 0.4 after harmonic suppression,
+ * so the frame is discarded even though the harmony is there.
+ *
+ * This re-reads the chroma ALREADY MEASURED for those spans at a lower threshold. It
+ * re-labels the gap FRAME BY FRAME (the same smoothed sliding window the main pass
+ * uses) rather than averaging the gap flat — a gap is often 2–3 s and spans a chord
+ * CHANGE, and one average over two chords is mush that no honest confidence floor
+ * will ever accept. Per-frame labelling recovers the changes and gives each run a
+ * confidence that reflects one chord, not a blend. (Measured on a real stem: the
+ * five surviving N.C. bars in Peg averaged to 0.33–0.44 confidence — below any
+ * sane floor — while their constituent runs read 0.55–0.75.)
+ *
+ * It never copies a neighbouring chord and never invents one — the guardrails are
+ * the point:
+ *   - the span must carry real sound (enough non-gated frames to cover `minVoiced`
+ *     of it), so a rest stays a rest;
+ *   - the smoothing window is clamped INSIDE the gap, so a neighbouring chord's
+ *     chroma can never bleed across the boundary and be re-emitted as "recovered";
+ *   - each run must clear `recoverMinConfidence` (mean Jaccard) and last at least
+ *     `minDurSec` — the SAME blip filter the main pass applies, so recovery can
+ *     never emit a label the primary path would have thrown away;
+ *   - only gaps of at least `recoverMinGapSec` are considered. A short gap between
+ *     two events just leaves the previous chord ringing — it never strands a bar as
+ *     N.C., so filling it buys nothing and costs a spurious chord change. (Without
+ *     this, Peg went from 227 to 341 chord slots — bars like
+ *     `Bb7_Bb7_A7_A_E7sus4_Bb7_C7` — to remove five N.C. bars. Unusable.)
+ * Same shape as the Guitar Pro importer's cross-track recovery: harvest what is
+ * actually sounding, recognise tolerantly, then refuse unless it is convincing.
+ *
+ * Opt-in (`recoverGaps`) so the default behaviour of every existing caller is byte
+ * identical. Pure. */
+function recoverChordGaps(events, frames, gate, cover, opts = {}) {
+  if (!frames.length) return events;
+  const thr = opts.recoverThreshold != null ? opts.recoverThreshold : 0.22;
+  const minConf = opts.recoverMinConfidence != null ? opts.recoverMinConfidence : 0.45;
+  const minVoiced = opts.recoverMinVoiced != null ? opts.recoverMinVoiced : 0.5;
+  const minDur = opts.minDurSec != null ? opts.minDurSec : 0.4;
+  // A gap shorter than this can't strand a bar as N.C. — see the guardrails above.
+  const minGap = opts.recoverMinGapSec != null ? opts.recoverMinGapSec : 1.5;
+  const endOf = frames[frames.length - 1].t + cover;
+  // same smoothing width as the main pass (frames each side of the centre frame)
+  const step = frames.length > 1 ? frames[1].t - frames[0].t : cover;
+  const smoothSec = opts.smoothSec != null ? opts.smoothSec : 0.4;
+  const half = Math.max(0, Math.round((smoothSec / (step || cover) - 1) / 2));
+  const recOpts = { ...opts, pickThreshold: thr };
+
+  // The spans with no label: before the first event, between events, after the last.
+  const gaps = [];
+  let at = frames[0].t;
+  for (const e of events) { if (e.startSec - at >= minGap) gaps.push([at, e.startSec]); at = Math.max(at, e.startSec + e.durSec); }
+  if (endOf - at >= minGap) gaps.push([at, endOf]);
+
+  const recovered = [];
+  for (const [a, b] of gaps) {
+    const idx = [];
+    for (let i = 0; i < frames.length; i++) if (frames[i].t >= a && frames[i].t < b) idx.push(i);
+    if (!idx.length) continue;
+    const voiced = idx.filter((i) => frames[i].energy >= gate);
+    // Mostly silent → it really is a rest. Leave it alone.
+    if (voiced.length < 2 || voiced.length / idx.length < minVoiced) continue;
+    const lo = idx[0], hi = idx[idx.length - 1];
+    // Per-frame smoothed label, window clamped to [lo, hi] so no neighbour bleeds in.
+    let run = null;
+    const runs = [];
+    const close = () => { if (run) runs.push(run); run = null; };
+    for (const i of idx) {
+      let d = null;
+      if (frames[i].energy >= gate) {
+        const avg = new Array(12).fill(0); let cnt = 0;
+        for (let j = Math.max(lo, i - half); j <= Math.min(hi, i + half); j++) {
+          if (frames[j].energy >= gate) { for (let p = 0; p < 12; p++) avg[p] += frames[j].chroma[p]; cnt++; }
+        }
+        if (cnt) { for (let p = 0; p < 12; p++) avg[p] /= cnt; d = chordFromChroma(avg, recOpts); }
+      }
+      if (!d || !d.result || !d.result.best) { close(); continue; }
+      if (run && run.symbol === d.symbol) { run.endSec = frames[i].t + cover; run.conf += d.result.best.confidence; run.n++; }
+      else { close(); run = { symbol: d.symbol, midis: d.midis, startSec: frames[i].t, endSec: frames[i].t + cover, conf: d.result.best.confidence, n: 1 }; }
+    }
+    close();
+    for (const r of runs) {
+      if (r.endSec - r.startSec < minDur) continue;
+      if (r.conf / r.n < minConf) continue;             // unconvincing → stay N.C.
+      recovered.push({
+        symbol: r.symbol, midis: r.midis,
+        startSec: +Math.max(a, r.startSec).toFixed(3),
+        durSec: +(Math.min(b, r.endSec) - Math.max(a, r.startSec)).toFixed(3),
+        recovered: true,
+      });
+    }
+  }
+  if (!recovered.length) return events;
+
+  // Merge back in time order, collapsing a recovered label that just repeats its
+  // neighbour into that neighbour (the simile case) rather than adding a change.
+  const all = events.concat(recovered).sort((x, y) => x.startSec - y.startSec);
+  const out = [];
+  for (const e of all) {
+    const prev = out[out.length - 1];
+    if (prev && prev.symbol === e.symbol && Math.abs(prev.startSec + prev.durSec - e.startSec) < 1e-6) {
+      prev.durSec = +(prev.durSec + e.durSec).toFixed(3);
+    } else out.push({ ...e });
+  }
+  return out;
+}
 /* Slide over a whole (decoded) buffer → timed chord events { symbol, midis, startSec,
  * durSec }. For a REAL stem (esp. rhythm+lead, where transients/lead notes flip the
  * chord every frame) raw per-frame detection is far too noisy, so we:
@@ -2417,7 +2526,10 @@ function transcribeChords(samples, sampleRate, opts = {}) {
     else { if (cur) events.push(cur); cur = sym ? { symbol: sym, midis, startSec: t, endSec: t + cover } : null; }
   }
   if (cur) events.push(cur);
-  return events.filter((e) => e.endSec - e.startSec >= minDur).map((e) => ({ symbol: e.symbol, midis: e.midis, startSec: +e.startSec.toFixed(3), durSec: +(e.endSec - e.startSec).toFixed(3) }));
+  const out = events.filter((e) => e.endSec - e.startSec >= minDur).map((e) => ({ symbol: e.symbol, midis: e.midis, startSec: +e.startSec.toFixed(3), durSec: +(e.endSec - e.startSec).toFixed(3) }));
+  // Opt-in second pass over the spans that produced nothing — most "N.C." bars in a
+  // decoded chart are unrecognised, not silent. See recoverChordGaps.
+  return opts.recoverGaps ? recoverChordGaps(out, frames, gate, cover, opts) : out;
 }
 /* harmonicClarity — how legible the harmony in a signal is, 0..1. Per energy-gated frame,
  * the chroma's **inverse participation ratio** `pr = (Σc)²/Σc²` is the effective number of
@@ -2472,6 +2584,21 @@ function audioEventsToScore(events, opts = {}) {
     barsMap.get(bar).push({ symbol: p.symbol, midis: p.midis, qbeat: Math.max(0, Math.min(beatsPerBar - 1e-6, inBar)) });
   }
   const lastBar = barsMap.size ? Math.max(...barsMap.keys()) : -1;
+  // A bar with no ONSET is not "no chord" — the previous chord is often still sounding
+  // right through it (a whole-bar or multi-bar hold). Keying bars off onsets alone made
+  // those bars export as a false `N.C.`; on a real stem at 160 bpm that was 9 of 14 N.C.
+  // bars. Seed such a bar with the sustaining event at beat 0 so the exporters emit the
+  // ringing chord — which scoreToCSMPN then collapses to `%` (simile) when it matches the
+  // bar before — and so playback/MIDI/ABC sustain instead of dropping to silence. Bars
+  // that no event covers are left empty: genuinely unlabelled stays honestly N.C.
+  let heldEv = null, pi = 0;
+  for (let b = 0; b <= lastBar; b++) {
+    const barStart = b * beatsPerBar;
+    while (pi < placed.length && placed[pi].onsetBeat < barStart - 1e-6) heldEv = placed[pi++];
+    if (!barsMap.has(b) && heldEv && heldEv.onsetBeat + heldEv.durBeat > barStart + 1e-6) {
+      barsMap.set(b, [{ symbol: heldEv.symbol, midis: heldEv.midis, qbeat: 0, held: true }]);
+    }
+  }
   const bars = [];
   for (let b = 0; b <= lastBar; b++) {
     const evs = (barsMap.get(b) || []).sort((a, b2) => a.qbeat - b2.qbeat);
@@ -2479,7 +2606,7 @@ function audioEventsToScore(events, opts = {}) {
     for (let i = 1; i < evs.length; i++) if (evs[i].beat <= evs[i - 1].beat) evs[i].beat = Math.min(beatsPerBar - 1, evs[i - 1].beat + 1);
     evs.forEach((e, i) => { e.durBeats = (i + 1 < evs.length ? evs[i + 1].beat : beatsPerBar) - e.beat; });
     _fillTrueDur(evs, beatsPerBar);
-    bars.push({ number: b + 1, timeSig: [beatsPerBar, beatType], events: evs.map((e) => ({ symbol: e.symbol, midis: e.midis, beat: e.beat, durBeats: e.durBeats, qbeat: e.qbeat, qdur: e.qdur })) });
+    bars.push({ number: b + 1, timeSig: [beatsPerBar, beatType], events: evs.map((e) => ({ symbol: e.symbol, midis: e.midis, beat: e.beat, durBeats: e.durBeats, qbeat: e.qbeat, qdur: e.qdur, ...(e.held ? { held: true } : {}) })) });
   }
   return { source: "audio", timeSig: [beatsPerBar, beatType], tempo: bpm, bars };
 }
@@ -2841,6 +2968,7 @@ export {
   pcmToChroma,
   chordFromChroma,
   detectChord,
+  recoverChordGaps,
   transcribeChords,
   harmonicClarity,
   audioEventsToScore,

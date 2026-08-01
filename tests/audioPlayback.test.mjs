@@ -164,3 +164,88 @@ test('buildSchedule respects compound-meter bar length (12/8)', () => {
   assert.equal(Math.round(downs[1].t * 100) / 100, 3);
   assert.equal(downs[1].chord, 'Eb7');
 });
+
+// ── Chord voicings against the shared table ──────────────────────────────────
+//
+// The synth used to parse qualities with its own regex, and got the whole jazz
+// palette wrong: `6/9` failed to parse at all and played SILENCE, while `add9`,
+// `7sus4`, `7b9` and `7#9` all collapsed to a plain dominant 9. Every one of
+// those appears in a Steely Dan "Peg" chart decoded from audio, so most of that
+// tune played either nothing or the wrong chord. Voicings now come from
+// chordTheory.js, which already had them right.
+
+/** audioPlayback WITH chordTheory present — how the app actually loads. */
+function loadAudioWithTheory() {
+  const ctx = { window: {}, console, module: { exports: {} } };
+  vm.createContext(ctx);
+  vm.runInContext(read('chordTheory.js'), ctx);
+  vm.runInContext(read('audioPlayback.js'), ctx);
+  return ctx.window.AudioPlayback;
+}
+
+const AP = loadAudioWithTheory();
+
+/** Root-relative interval set of a token's voicing (bass note excluded). */
+function ivals(token) {
+  const midis = Array.from(AP.chordToMidi(token) || []);
+  if (midis.length < 2) return null;
+  const root = midis[1];
+  return [...new Set(midis.slice(1).map((m) => (m - root + 144) % 12))].sort((a, b) => a - b);
+}
+
+test('the 6/9 family voices as a 6/9 — it used to be silent', () => {
+  for (const tok of ['C6/9', 'C6add9', 'C69']) {
+    assert.deepEqual(ivals(tok), [0, 2, 4, 7, 9], `${tok} is root/9/3rd/5th/6th`);
+  }
+  assert.ok(Array.from(AP.chordToMidi('C6/9')).length > 0, 'not silent');
+});
+
+test('add9 has no seventh — it used to gain a flat 7', () => {
+  assert.deepEqual(ivals('Cadd9'), [0, 2, 4, 7]);
+  assert.deepEqual(ivals('Gadd9'), [0, 2, 4, 7], 'as it appears in the Peg chart');
+});
+
+test('a suspended dominant keeps its 4th — it used to sound a major 3rd', () => {
+  assert.deepEqual(ivals('C7sus4'), [0, 5, 7, 10]);
+  assert.deepEqual(ivals('G7sus4'), [0, 5, 7, 10]);
+  assert.deepEqual(ivals('C9sus4'), [0, 2, 5, 7, 10]);
+});
+
+test('altered ninths are altered — they used to flatten to a natural 9', () => {
+  assert.deepEqual(ivals('C7b9'), [0, 1, 4, 7, 10], 'flat 9');
+  assert.deepEqual(ivals('C7#9'), [0, 3, 4, 7, 10], 'sharp 9 (the Hendrix chord)');
+  assert.notDeepEqual(ivals('C7b9'), ivals('C7#9'), 'the two alterations must differ');
+});
+
+test('the plain palette is unchanged — this was additive, not a rewrite', () => {
+  assert.deepEqual(ivals('C'), [0, 4, 7]);
+  assert.deepEqual(ivals('Cm'), [0, 3, 7]);
+  assert.deepEqual(ivals('C7'), [0, 4, 7, 10]);
+  assert.deepEqual(ivals('Cmaj7'), [0, 4, 7, 11]);
+  assert.deepEqual(ivals('Cm7'), [0, 3, 7, 10]);
+  assert.deepEqual(ivals('C6'), [0, 4, 7, 9]);
+  assert.deepEqual(ivals('Cm7b5'), [0, 3, 6, 10]);
+  assert.deepEqual(ivals('C9'), [0, 2, 4, 7, 10]);
+});
+
+test('a slash bass still sounds below the voicing, and 6/9 keeps its bass', () => {
+  const slash = Array.from(AP.chordToMidi('C/E'));
+  assert.equal(slash[0] % 12, 4, 'E in the bass');
+  assert.ok(slash[0] < slash[1], 'below the voicing');
+  // The case that used to fail outright: a quality slash AND a bass slash.
+  const both = Array.from(AP.chordToMidi('C6/9/G'));
+  assert.equal(both[0] % 12, 7, 'G in the bass');
+  assert.deepEqual(ivals('C6/9/G'), [0, 2, 4, 7, 9], 'quality survives the bass split');
+});
+
+test('non-chords stay silent rather than voicing something', () => {
+  for (const tok of ['%', 'N.C.', '', '   ']) {
+    assert.deepEqual(Array.from(AP.chordToMidi(tok)), [], `${JSON.stringify(tok)} is silent`);
+  }
+});
+
+test('an extension the table lacks still sounds, via the structural fallback', () => {
+  // 13ths are not in CHORD_PATTERNS; they must approximate, not go quiet.
+  const m = Array.from(AP.chordToMidi('C13'));
+  assert.ok(m.length > 2, 'C13 still voices something');
+});

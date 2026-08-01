@@ -30,6 +30,23 @@
   // Raw quality string → semitone intervals above the root (always includes a fifth).
   // Good-enough voicings for hearing the harmony, not a theory engine.
   function qualityIntervals(qRaw) {
+    /*
+     * The shared table first. chordTheory.js already holds correct intervals
+     * for the whole common palette — 6/9, add9, 7sus4, 7b9, 7#9 — and this
+     * function's own structural parser got every one of them wrong (add9 and
+     * 6/9 gained a ♭7 they do not have; the sus and the altered 9ths were
+     * flattened to a plain dominant 9). Reading the table means a chord added
+     * there improves playback for free, instead of drifting from it.
+     *
+     * The structural parser below still runs for anything the table lacks
+     * (11ths, 13ths, odd spellings), so nothing that used to sound goes quiet.
+     */
+    var ct = typeof window !== 'undefined' && window.ChordTheory;
+    if (ct && typeof ct.intervalsForSuffix === 'function') {
+      var known = ct.intervalsForSuffix(qRaw);
+      if (known) return known;
+    }
+
     var q = String(qRaw || '')
       .replace(/[♭]/g, 'b')
       .replace(/[♯]/g, '#')
@@ -49,7 +66,8 @@
     if (/^dim|^o(?!ne)/.test(q)) {
       third = 3;
       fifth = 6;
-      if (/dim7|o7/.test(q)) seventh = 9; // diminished 7th
+      if (/dim7|o7/.test(q))
+        seventh = 9; // diminished 7th
       else if (/7/.test(q)) seventh = 10;
     } else if (/^aug|^\+/.test(q)) {
       third = 4;
@@ -70,7 +88,11 @@
     }
 
     if (seventh === null) {
-      if (/maj7|maj9|maj11|maj13|ma7|m7\b/.test(q) === false && /(^|[^a-z])maj/.test(q) && /7|9|11|13/.test(q))
+      if (
+        /maj7|maj9|maj11|maj13|ma7|m7\b/.test(q) === false &&
+        /(^|[^a-z])maj/.test(q) &&
+        /7|9|11|13/.test(q)
+      )
         seventh = 11;
       else if (/maj7|ma7|maj9|maj13/.test(q)) seventh = 11;
       else if (/7|9|11|13/.test(q)) seventh = 10;
@@ -102,21 +124,34 @@
   // Chord token → array of MIDI note numbers (a bass note + the voicing). Returns
   // [] for tokens with no playable root (e.g. "%", "N.C.", rests).
   function chordToMidi(token, rootMidiBase) {
-    var raw = String(token || '')
-      .replace(/[!~]+$/, '')
-      .trim();
-    if (!raw || raw === '%' || /^n\.?c\.?$/i.test(raw)) return [];
-    var m = /^([A-G][b#♭♯]?)([^/]*?)(?:\/([A-G][b#♭♯]?))?$/.exec(raw);
-    if (!m) return [];
-    var rootPc = noteNameToPc(m[1]);
+    /*
+     * Splitting is shared with the notation path (chordTheory.splitChordToken)
+     * because the hard case is the same in both: a `/` can mean a slash bass OR
+     * be part of the quality, as in 6/9. Treating `/9` as a bass made the whole
+     * token fail to parse, so every 6/9 chord played silence.
+     */
+    var ct = typeof window !== 'undefined' && window.ChordTheory;
+    var parts = ct && typeof ct.splitChordToken === 'function' ? ct.splitChordToken(token) : null;
+    if (!parts) {
+      // Fallback for a page that somehow loaded without chordTheory.js: the
+      // old shape, minus the 6/9 case it could never handle anyway.
+      var raw = String(token || '')
+        .replace(/[!~]+$/, '')
+        .trim();
+      if (!raw || raw === '%' || /^n\.?c\.?$/i.test(raw)) return [];
+      var mm = /^([A-G][b#♭♯]?)([^/]*?)(?:\/([A-G][b#♭♯]?))?$/.exec(raw);
+      if (!mm) return [];
+      parts = { root: mm[1], suffix: mm[2], bass: mm[3] || null };
+    }
+    var rootPc = noteNameToPc(parts.root);
     if (rootPc === null) return [];
-    var intervals = qualityIntervals(m[2]);
+    var intervals = qualityIntervals(parts.suffix);
     var base = (rootMidiBase || 48) + rootPc; // root near C3..B3
     var notes = intervals.map(function (iv) {
       return base + iv;
     });
     // Bass: slash bass an octave below, else the root an octave below the voicing.
-    var bassPc = m[3] ? noteNameToPc(m[3]) : rootPc;
+    var bassPc = parts.bass ? noteNameToPc(parts.bass) : rootPc;
     var bassMidi = 36 + (bassPc === null ? rootPc : bassPc);
     notes.unshift(bassMidi);
     return notes;
@@ -150,7 +185,9 @@
   }
   function isCompound(time) {
     var mm = /^(\d+)\/(\d+)$/.exec(time || '');
-    return !!mm && parseInt(mm[2], 10) === 8 && parseInt(mm[1], 10) % 3 === 0 && parseInt(mm[1], 10) >= 6;
+    return (
+      !!mm && parseInt(mm[2], 10) === 8 && parseInt(mm[1], 10) % 3 === 0 && parseInt(mm[1], 10) >= 6
+    );
   }
 
   function clampTempo(t) {
@@ -301,7 +338,9 @@
         }
       }
       if (ctx.state === 'suspended' && ctx.resume) {
-        try { ctx.resume(); } catch (_e) {}
+        try {
+          ctx.resume();
+        } catch (_e) {}
       }
       return ctx;
     }
