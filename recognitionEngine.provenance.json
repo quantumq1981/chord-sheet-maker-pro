@@ -4,12 +4,12 @@
   "upstream": {
     "repo": "quantumq1981/Tab-Translator-Pro",
     "path": "engine.tsx",
-    "commit": "c0bcfc504ec19273168eedf6a55706a26a97ad8d",
-    "committedAt": "2026-07-31T22:13:02Z",
+    "commit": "1f8061ed8b98ca99e19a54cc3bce8bf1121af8b1",
+    "committedAt": "2026-08-01T18:13:57Z",
     "note": "Named .tsx upstream for the in-browser Babel loader, but it is plain ES with no TypeScript or JSX syntax — an invariant enforced by that repo's own tests. That is what lets this repo load it as a native ES module with no build step."
   },
-  "sha256": "9ca088f2a8e7a5e89948c3c1e95c5714edf5667ec9b59f3040378e412c4892be",
-  "bytes": 173015,
-  "lines": 2857,
+  "sha256": "e2db05bfd20c12eb15c0d520cecb94905603289ca08b6980bbc7a5d08086abb3",
+  "bytes": 180527,
+  "lines": 2985,
   "vendoredAt": "2026-08-01"
 }
