@@ -636,9 +636,11 @@
     -webkit-overflow-scrolling:touch;
   }
 
-  /* Default 4-bar grid (overridden by inline style when bars-per-row changes) */
+  /* Default 4-bar grid (overridden by inline style when bars-per-row changes).
+     min-content floor: bar content is nowrap, so a 0-floor track lets a dense
+     bar's chords overflow into the next bar. See buildGridTemplate. */
   .barlineRow{
-    grid-template-columns: 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px;
+    grid-template-columns: 14px minmax(min-content, 1fr) 14px minmax(min-content, 1fr) 14px minmax(min-content, 1fr) 14px minmax(min-content, 1fr) 14px;
   }
 
   .barline{
@@ -971,8 +973,14 @@
       -webkit-overflow-scrolling:touch;
       flex-wrap:nowrap;
       padding-bottom:4px;
-      /* Mobile portrait: scale to 2 bars per row */
-      grid-template-columns: 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px !important;
+    }
+    /* Mobile portrait: scale to 2 bars per row. Needs !important to beat the
+       per-row inline template, so it carries the min-content floor too —
+       without it a dense bar's chords overprint the next bar on exactly the
+       narrow screens where bars are tightest. The row scrolls instead.
+       Scoped to :not(.exporting) so a PDF/PNG keeps the full per-row layout. */
+    body:not(.exporting) .barlineRow{
+      grid-template-columns: 14px minmax(min-content, 1fr) 14px minmax(min-content, 1fr) 14px !important;
     }
     .measure{
       flex-shrink:0;
@@ -1049,9 +1057,10 @@
     .settingsGrid{
       grid-template-columns: repeat(3, 1fr);
     }
-    /* Tablet: scale to 3 bars per row */
-    .barlineRow{
-      grid-template-columns: 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px !important;
+    /* Tablet: scale to 3 bars per row. Same min-content floor + :not(.exporting)
+       scoping as the portrait rule below — see there for why. */
+    body:not(.exporting) .barlineRow{
+      grid-template-columns: 14px minmax(min-content, 1fr) 14px minmax(min-content, 1fr) 14px minmax(min-content, 1fr) 14px !important;
     }
   }
 
@@ -1083,11 +1092,13 @@ body.exporting .sheet{
   box-shadow: none !important;
   border: none !important;
 }
-/* Restore full bars-per-row during export (override mobile media queries) */
+/* Restore full bars-per-row during export (override mobile media queries).
+   The mobile grid override is scoped to :not(.exporting) rather than being
+   fought with another !important here — that lets the per-row inline template
+   (buildGridTemplate) survive into the export, so the PDF/PNG matches the
+   preview instead of falling back to uniform columns. */
 body.exporting .barlineRow{
   overflow-x: visible !important;
-  /* Reset any mobile grid overrides */
-  grid-template-columns: var(--export-grid-template) !important;
 }
 body.exporting .sectionBlock{
   background: #f0f0f0 !important;
@@ -5338,10 +5349,8 @@ document.getElementById('btnDownloadPdf').addEventListener('click', async () => 
       return;
     }
 
-    // Set the grid template for export so mobile overrides don't interfere
-    const bpr = fbSettings.barsPerRow;
-    const gridTemplate = buildGridTemplate(bpr);
-    document.documentElement.style.setProperty('--export-grid-template', gridTemplate);
+    // The mobile grid override is scoped to :not(.exporting), so the per-row
+    // templates already survive into the export — nothing to force here.
 
     // Brief layout settle for the browser to apply exporting styles
     await new Promise(r => setTimeout(r, 50));
@@ -5438,9 +5447,6 @@ document.getElementById('btnPng').addEventListener('click', async () => {
       const vbH = vbMatch ? parseFloat(vbMatch[2]) : 400;
       canvas = await svgStringToCanvas(svgStr, vbW, vbH, 2, fbSettings.bgColor || '#ffffff');
     } else {
-      const bpr = fbSettings.barsPerRow;
-      const gridTemplate = buildGridTemplate(bpr);
-      document.documentElement.style.setProperty('--export-grid-template', gridTemplate);
       await new Promise(r => setTimeout(r, 50));
       const pngSheetEl = document.querySelector('.sheet');
       const pngRenderWidth = pngSheetEl ? pngSheetEl.offsetWidth : previewEl.offsetWidth;
