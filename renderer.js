@@ -134,17 +134,49 @@ function renderSectionMarker(block){
   return '';
 }
 
-/* Performance: cache grid templates — only 7 possible values (2-8 bars) */
+/*
+ * How much of a row's free space one bar should claim.
+ *
+ * A bar holding `D7#9_C6/9_G7sus4` needs roughly three times the room of a bar
+ * holding `C9`, so weighting every bar equally is what made dense bars spill
+ * into their neighbour. Weight is the chord count, capped: past four chords a
+ * single pathological bar would starve the rest of the row, and the min-content
+ * floor in the template already guarantees it cannot collide regardless.
+ */
+function barGridWeight(bar){
+  const raw = ((bar && typeof bar === 'object' ? bar.token : bar) || '').trim();
+  if (!raw) return 1;
+  // Beats within a bar are `_`-joined; `[A B_C]` groups also space-separate.
+  const parts = raw.replace(/^\[|\]$/g, '').split(/[_\s]+/).filter(Boolean).length;
+  return Math.max(1, Math.min(parts, 4));
+}
+
+/*
+ * Grid columns for one row: a barline, then each bar, then a closing barline.
+ *
+ * `min-content` is the load-bearing part. Bar content is `white-space:nowrap`,
+ * so with the old `minmax(0, 1fr)` floor a track could be sized narrower than
+ * the chords it holds and they simply overflowed into the next bar. A
+ * min-content floor makes that impossible; `.barlineRow` already scrolls
+ * (overflow-x:auto), so an over-full row scrolls rather than overprinting.
+ */
 const _gridTemplateCache = {};
-function buildGridTemplate(barsPerRow){
-  if (_gridTemplateCache[barsPerRow]) return _gridTemplateCache[barsPerRow];
+function buildGridTemplate(bars){
+  // Accepts the row's bars (per-row weighting) or a plain count, which yields
+  // the uniform template the export path used before weighting existed.
+  const weights =
+    typeof bars === 'number'
+      ? new Array(Math.max(0, bars | 0)).fill(1)
+      : (Array.isArray(bars) ? bars : []).map(barGridWeight);
+  const key = weights.join(',');
+  if (_gridTemplateCache[key]) return _gridTemplateCache[key];
   const cols = ['14px'];
-  for (let i = 0; i < barsPerRow; i++){
-    cols.push('minmax(0, 1fr)');
+  for (let i = 0; i < weights.length; i++){
+    cols.push(`minmax(min-content, ${weights[i]}fr)`);
     cols.push('14px');
   }
   const result = cols.join(' ');
-  _gridTemplateCache[barsPerRow] = result;
+  _gridTemplateCache[key] = result;
   return result;
 }
 
@@ -152,7 +184,6 @@ function renderBars(tokens, indent, diagrams){
   _csDiagramThroughout = !!diagrams;
   const bars = parseBarStructures(tokens);
   const bpr = fbSettings.barsPerRow;
-  const gridTemplate = buildGridTemplate(bpr);
   const alignClass = fbSettings.chordAlign === 'center' ? ' center-align' : '';
   const indentStyle = indent ? ` style="margin-left:${indent * 2}em"` : '';
 
@@ -188,7 +219,9 @@ function renderBars(tokens, indent, diagrams){
       activeEnding = null;
     }
 
-    html += `<div class="barlineRow" style="grid-template-columns:${gridTemplate}">`;
+    // Built per row, after padding: the columns depend on how many chords each
+    // bar in THIS row carries, not just on the bars-per-row setting.
+    html += `<div class="barlineRow" style="grid-template-columns:${buildGridTemplate(row)}">`;
     html += renderBarline(row[0]?.leftBar || 'single');
 
     row.forEach((bar) => {
