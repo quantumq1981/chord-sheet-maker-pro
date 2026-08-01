@@ -285,8 +285,17 @@
     var bassName = null;
     var slash = t.lastIndexOf('/');
     if (slash > 0) {
-      upper = t.slice(0, slash);
-      bassName = t.slice(slash + 1).trim();
+      /*
+       * A slash bass is always a note name. Splitting unconditionally turned
+       * `C6/9` into "C6 over 9", and since `9` is not a note the 9th was simply
+       * dropped — the chord rendered as a plain C6. Only split when what
+       * follows really is a bass; otherwise the `/` belongs to the quality.
+       */
+      var tail = t.slice(slash + 1).trim();
+      if (/^[A-Ga-g][#b]?$/.test(tail)) {
+        upper = t.slice(0, slash);
+        bassName = tail;
+      }
     }
     var m = /^([A-Ga-g])([#b]?)(.*)$/.exec(upper.trim());
     if (!m) return null;
@@ -501,10 +510,26 @@
   // kept pure so the packing is testable without a browser; the measuring of
   // where the staves actually sit is the browser's job.
 
+  /*
+   * Paper sizes the print dialog offers, in inches. Letter is first and is the
+   * default because it has the WIDEST printable aspect of the set — assuming it
+   * means content always fits on anything taller, leaving white space rather
+   * than spilling onto the next sheet. The page cannot read the size chosen in
+   * the print dialog, so a bigger sheet has to be selected here to be filled.
+   */
+  var PAPER_SIZES = {
+    letter: [8.5, 11],
+    a4: [8.27, 11.69],
+    a3: [11.69, 16.54],
+    legal: [8.5, 14],
+    tabloid: [11, 17],
+  };
+
   /** Printable aspect (height ÷ width) of a paper size with equal margins. */
   function pageAspect(paper, marginIn) {
     var m = marginIn == null ? 0.5 : Math.max(0, Number(marginIn) || 0);
-    var dims = String(paper || 'letter').toLowerCase() === 'a4' ? [8.27, 11.69] : [8.5, 11];
+    var key = String(paper || 'letter').toLowerCase();
+    var dims = PAPER_SIZES[key] || PAPER_SIZES.letter;
     var w = dims[0] - 2 * m;
     var h = dims[1] - 2 * m;
     if (w <= 0 || h <= 0) return 11 / 8.5;
@@ -894,6 +919,7 @@
     clampPercent: clampPercent,
     buildTrainerSteps: buildTrainerSteps,
     buildRenderOptions: buildRenderOptions,
+    PAPER_SIZES: PAPER_SIZES,
     pageAspect: pageAspect,
     pageBandHeight: pageBandHeight,
     paginateBands: paginateBands,
