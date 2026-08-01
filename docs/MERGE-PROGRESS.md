@@ -21,7 +21,7 @@ Read this first when picking the work back up.
 | 2 | Recognition merge — GP/PTB/MusicXML through the engine | ✅ committed |
 | 3 | Notation + Stage Mode | 🚧 in progress — see below |
 | 4 | Audio suite | ✅ tuner, stem→chart, vocal isolation, reference-audio DTW Play-Along (device pass owed) |
-| 5 | Consolidate: CSM + TTP become redirects; PWA + IndexedDB | ⬜ |
+| 5 | Consolidate: PWA + IndexedDB ✅; redirects deferred by owner decision | 🚧 |
 
 ---
 
@@ -323,3 +323,83 @@ recording where DTW couldn't lock.
 audio DTW sync) both shipped. Device pass still owed for the browser-only glue: the vocal-
 isolation A/B report on a real stereo import, and Play-Along end to end (attach → auto-sync %
 → Play → chords highlight in time) on iOS Safari.
+
+## Phase 5 — Consolidate
+
+**The redirects are deferred, by owner decision (2026-08-01), and the reason is
+worth keeping.** The phase as written turned both siblings into redirects. An audit
+before starting found that CSMP has absorbed Tab Translator's *engine* and much of
+its audio suite (tuner, centre-channel isolation, Play-Along) but **not its app
+surface**: the Manual ASCII-tab paste mode, the PDF-chart lead-sheet/grid views with
+per-chord Edit, Simplify/Arrange, the six exporters, per-voice ML and StaffView have
+no home here. Redirecting TTP would delete working, actively-used tooling — the same
+week its PDF decoder was being fixed against real files. So the safe half shipped and
+the redirects wait until CSMP actually covers what it would be replacing.
+
+### PWA — installable, and it opens with no signal
+
+The app is used on a stand, on a phone, in rooms with no usable network, and every
+asset it needs is already a static file.
+
+- **`sw.js`** — the strategy is chosen around one hazard: *a worker that pins users
+  to a stale build*, which is far worse here than a slow load because the only CI
+  console is GitHub Actions and a wedged client cannot be debugged from a phone.
+  So **navigations are network-first** (online you always get today's HTML, and
+  therefore today's script URLs — a bad deploy can never be permanently pinned),
+  same-origin assets are **stale-while-revalidate** (instant, self-healing, no manual
+  cache-version bump needed), and cross-origin CDN files are cache-first best-effort.
+  `cache.add` runs per file rather than `addAll`, so one 404 costs one asset instead
+  of failing the whole install.
+- **`manifest.webmanifest` + icons** — all paths **relative**, because the app is
+  served from `/chord-sheet-maker-pro/`, not a domain root. iOS ignores the manifest
+  for home-screen installs, so `apple-touch-icon` + `apple-mobile-web-app-*` are set
+  separately.
+- **`scripts/make-icons.mjs`** — generates the icon set with **no image dependency**
+  (Node ships zlib; a PNG is zlib-compressed scanlines plus three chunks). The mark is
+  burnt-orange slash noteheads on ink — the app's own `--accent`/`--ink`. Re-running
+  it is byte-identical, so the icons are reproducible from the palette rather than
+  from a design file nobody has.
+
+**Honest limit, stated in the file:** abcjs / VexFlow / AlphaTab / pdf.js load lazily
+from CDNs. They are cached once fetched, so a feature you have used before keeps
+working offline — but a feature never opened while online will not work offline the
+first time. The core chart work (writing, rendering, Slash-Rhythm, setlists, print)
+is first-party and fully precached.
+
+### IndexedDB — the songbook survives Safari clearing localStorage
+
+Everything the user owns lives in localStorage, which mobile Safari evicts after ~7
+days of not visiting, on "Clear Website Data", and under storage pressure. Backup /
+Restore already existed for this, but it only helps the user who remembered to press it.
+
+**`offlineStore.js` mirrors rather than migrates, and that is the whole design.** The
+app reads localStorage *synchronously* in dozens of inline call sites; IndexedDB is
+async, so moving to it would mean rewriting every one of them and everything upstream
+— a large, risky change to code that works. Instead localStorage is untouched and
+IndexedDB becomes a shadow copy: **mirror** on `pagehide`/hidden `visibilitychange`
+(the last moment iOS reliably gives before suspending a tab), **recover** on boot, and
+**ask to persist** via `navigator.storage.persist()`.
+
+Two rules keep the mirror from ever doing harm:
+1. **Live data always wins.** Recovery only *fills gaps* — a key that still has a
+   value is never overwritten, so a stale mirror cannot clobber current work.
+2. **Whitelist only**, sourced from `BackupRestore.BACKUP_KEYS` so there is one list
+   and it cannot drift. The power-mode PIN is never mirrored or restored.
+
+Recovery is reported, not silent: restoring speaks up with a real count ("Restored 12
+songs … browser storage had been cleared"), because a repair the user never learns
+about is indistinguishable from data loss that hasn't been noticed yet.
+
+**Tests** — `tests/offlineStore.test.mjs` (14): mirror-list-from-backup, the two
+safety rules (live data wins; unlisted keys and the PIN cannot be injected), partial
+failure on a throwing storage, summary counting, and graceful no-op without IndexedDB.
+`tests/pwa.test.mjs` (11): the precache list is pinned **both ways** against the CI
+copy list (an asset that ships but is not cached works online and vanishes offline —
+a stage-only failure), navigation-stays-network-first, cache cleanup scoped to this
+app's prefix, no opaque/error responses cached, all-relative paths, and manifest/icon
+validity. That guard immediately earned itself by catching `sw.js` being deployed but
+not precached — which turned out to be the *correct* exclusion (a worker caching its
+own script can block its own update), now documented as such.
+
+npm tests 756 → 781. Device pass owed: install to the iOS home screen, confirm the
+app opens in airplane mode, and confirm the recovery message after clearing site data.

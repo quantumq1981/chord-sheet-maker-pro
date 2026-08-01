@@ -19,6 +19,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>ChordSheet CSMPN Builder v1.10.0</title>
 
+<!-- Installable / offline. Paths are relative because the app is served from a
+     project subpath (/chord-sheet-maker-pro/), not the domain root. The CSP has
+     no manifest-src, so it inherits default-src 'self' — same origin, allowed. -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#20201c">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+<!-- iOS ignores the manifest for home-screen installs and reads these instead. -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Chord Sheets">
+
 <!-- Google Fonts: Patrick Hand SC for fake book title; EB Garamond for professional engraving-style notation -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -3038,6 +3050,9 @@ Tempo: 130
 <script src="renderer.js"></script>
 <script src="importPipeline.js"></script>
 <script src="backupRestore.js"></script>
+<!-- After backupRestore.js: offlineStore reads BACKUP_KEYS from it, so the list
+     of what gets mirrored to IndexedDB cannot drift from what gets backed up. -->
+<script src="offlineStore.js"></script>
 <script src="audioPlayback.js"></script>
 <script src="lyricsView.js"></script>
 <script src="stageSheets.js"></script>
@@ -7443,6 +7458,46 @@ function csmpnToCsml(csmpnText) {
       '<scr' + 'ipt>window.onload=function(){window.print();}<\/scr' + 'ipt></body></html>');
     w.document.close();
   });
+})();
+
+// ── Offline + storage durability ────────────────────────────────────────────
+// Two independent safety nets, both entirely optional to the app working:
+//   1. A service worker so the app opens on a stand with no signal.
+//   2. An IndexedDB mirror of the songbook, because iOS evicts localStorage
+//      after ~7 days of not visiting — see offlineStore.js for why it mirrors
+//      rather than migrates.
+// Every step is feature-detected and swallowed on failure: a browser that
+// refuses either one must still get the whole app, unchanged.
+(function registerOffline(){
+  try {
+    if ('serviceWorker' in navigator) {
+      // Registered after load so it never competes with first paint, and with a
+      // relative URL so the scope is this project subpath, not the domain root.
+      window.addEventListener('load', function(){
+        navigator.serviceWorker.register('sw.js').catch(function(){
+          /* http://, private mode, or a browser that declines — app is unaffected */
+        });
+      });
+    }
+  } catch(_e) { /* nothing to do */ }
+
+  try {
+    if (window.OfflineStore && window.OfflineStore.supported()) {
+      window.OfflineStore.install({
+        onRestore: function(keys, summary){
+          // Only speaks up when it ACTUALLY recovered something — this is the
+          // "Safari cleared your library and we put it back" moment, and it
+          // should be legible, not a silent repair the user never learns about.
+          var what = summary.songs
+            ? summary.songs + ' song' + (summary.songs === 1 ? '' : 's')
+            : keys.length + ' item' + (keys.length === 1 ? '' : 's');
+          try {
+            setStatus('Restored ' + what + ' from this device’s offline copy — browser storage had been cleared.', 'warning');
+          } catch(_e) { /* status bar not ready yet */ }
+        }
+      });
+    }
+  } catch(_e) { /* storage unavailable — the app still runs on localStorage alone */ }
 })();
 
 </script>
