@@ -4043,14 +4043,18 @@ fileInputAudio.addEventListener('change', async () => {
 // to the chart's chords, and an rAF loop highlights the chord sounding now on the
 // Slash-Rhythm SVG (the [data-ci] labels the renderer stamps). When DTW isn't
 // confident it stretches the linear chart map across the recording — honest, if
-// coarse. Browser-only glue (decode + <audio> + rAF); the maths is tested in the
-// engine and audioCapture. Smoke-test on device.
+// coarse. Browser-only glue (decode + Web Audio transport + rAF); the maths is
+// tested in the engine and audioCapture. Smoke-test on device.
+//
+// Playback goes through AudioCapture.createFilePlayer, NOT an <audio> element:
+// iOS Safari refuses a blob: URL in a media element (NotSupportedError) even for
+// a file it has just decoded. See the note on createFilePlayer.
 (function () {
   const btn = document.getElementById('btnRefAudio');
   const fileInput = document.getElementById('fileInputRefAudio');
   if (!btn || !fileInput) return;
 
-  let audioEl = null, objUrl = null, align = null, raf = null, bar = null, lastEl = null;
+  let player = null, align = null, raf = null, bar = null, lastEl = null;
 
   function clearHighlight() {
     if (lastEl) { lastEl.classList.remove('hrChordNow'); lastEl = null; }
@@ -4070,7 +4074,7 @@ fileInputAudio.addEventListener('change', async () => {
       return ci;
     }
     // Fallback: stretch the linear (chart-tempo) map across the recording.
-    const dur = audioEl && isFinite(audioEl.duration) ? audioEl.duration : 0;
+    const dur = player && isFinite(player.durationSec) ? player.durationSec : 0;
     if (!dur || !align.chartDurationSec || !align.linear.length) return -1;
     const chartT = (t / dur) * align.chartDurationSec;
     let ci = -1;
@@ -4078,15 +4082,15 @@ fileInputAudio.addEventListener('change', async () => {
     return ci;
   }
   function loop() {
-    if (!audioEl) return;
-    highlight(ciAt(audioEl.currentTime));
+    if (!player) return;
+    highlight(ciAt(player.currentTime()));
     raf = requestAnimationFrame(loop);
   }
   function teardown() {
     if (raf) { cancelAnimationFrame(raf); raf = null; }
     clearHighlight();
-    if (audioEl) { try { audioEl.pause(); } catch (_e) {} audioEl = null; }
-    if (objUrl) { try { URL.revokeObjectURL(objUrl); } catch (_e) {} objUrl = null; }
+    // close() releases the AudioContext; Safari caps how many a page may hold.
+    if (player) { try { player.close(); } catch (_e) {} player = null; }
     if (bar) { bar.remove(); bar = null; }
     align = null;
     btn.setAttribute('aria-pressed', 'false');
@@ -4118,9 +4122,9 @@ fileInputAudio.addEventListener('change', async () => {
       align = await window.AudioCapture.alignReference(pcm, sourceEl.value, {});
       if (!align) { setStatus('Could not build a chart to sync to.', 'error'); return; }
 
-      objUrl = URL.createObjectURL(file);
-      audioEl = new Audio(objUrl);
-      audioEl.addEventListener('ended', () => { clearHighlight(); if (playBtn) playBtn.textContent = '▶ Play'; });
+      // Decoded a second time, at full rate, for playback — the analysis copy is
+      // 16 kHz mono. `buf` survives the first decode because decodeToPcm copies.
+      player = await window.AudioCapture.createFilePlayer(buf);
 
       bar = document.createElement('div');
       bar.className = 'refBar';
@@ -4140,14 +4144,20 @@ fileInputAudio.addEventListener('change', async () => {
       if (!previewEl.querySelector('[data-ci]'))
         statusEl.textContent += ' · turn on Slash-Rhythm View to see chords light up';
 
+      player.onEnded(() => {
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
+        clearHighlight();
+        playBtn.textContent = '▶ Play';
+      });
+
       playBtn.addEventListener('click', async () => {
-        if (!audioEl) return;
-        if (audioEl.paused) {
-          try { await audioEl.play(); } catch (e) { setStatus(`Playback blocked: ${e?.message || e}`, 'error'); return; }
+        if (!player) return;
+        if (!player.isPlaying()) {
+          try { await player.play(); } catch (e) { setStatus(`Playback blocked: ${e?.message || e}`, 'error'); return; }
           playBtn.textContent = '■ Stop';
           loop();
         } else {
-          audioEl.pause(); if (raf) { cancelAnimationFrame(raf); raf = null; }
+          player.pause(); if (raf) { cancelAnimationFrame(raf); raf = null; }
           clearHighlight(); playBtn.textContent = '▶ Play';
         }
       });

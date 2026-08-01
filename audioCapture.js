@@ -292,6 +292,24 @@
   }
 
   /**
+   * `decodeAudioData`, with the failure flagged. Callers can then tell "this
+   * file is not audio" apart from a failure later in the pipeline, and say
+   * something useful about it via `decodeFailureMessage`.
+   */
+  async function decodeOrExplain(ctx, arrayBuffer) {
+    try {
+      // `decodeAudioData` detaches the buffer it is given, so hand it a copy —
+      // the caller's bytes stay usable (playback decodes them a second time).
+      return await ctx.decodeAudioData(arrayBuffer.slice(0));
+    } catch (e) {
+      var err = new Error('Could not decode that file as audio.');
+      err.decodeFailed = true;
+      err.cause = e;
+      throw err;
+    }
+  }
+
+  /**
    * A file's bytes → analysis-rate PCM. Handles audio files and video
    * containers alike, because `decodeAudioData` pulls the audio track out of an
    * .mp4/.mov for free.
@@ -304,17 +322,7 @@
     if (!Ctx) throw new Error('This browser has no Web Audio support.');
     var ctx = new Ctx();
     try {
-      var buf;
-      try {
-        buf = await ctx.decodeAudioData(arrayBuffer.slice(0));
-      } catch (e) {
-        // Flagged so callers can tell "this file is not audio" apart from a
-        // failure later in the pipeline and say something useful about it.
-        var err = new Error('Could not decode that file as audio.');
-        err.decodeFailed = true;
-        err.cause = e;
-        throw err;
-      }
+      var buf = await decodeOrExplain(ctx, arrayBuffer);
       var chans = [];
       for (var c = 0; c < buf.numberOfChannels; c++) chans.push(buf.getChannelData(c));
       var mono = downmix(chans, buf.length);
@@ -337,6 +345,123 @@
         }
       }
     }
+  }
+
+  /**
+   * A file's bytes → a transport that plays them, built on Web Audio rather
+   * than an `<audio>` element.
+   *
+   * WHY NOT `<audio>`. The obvious implementation — `new Audio(URL.createObjectURL(file))`
+   * — fails on iOS Safari with `NotSupportedError: The operation is not supported`,
+   * even for a file the same browser has just decoded successfully. Safari's media
+   * element loads a `blob:` URL through its streaming path, which wants range
+   * requests and a MIME type the picker does not always supply; `decodeAudioData`
+   * reads the bytes directly and has no such requirement. So the element is the
+   * one part that can fail, and it is the part worth dropping: this decodes the
+   * same bytes the analysis already proved decodable, then plays the buffer.
+   *
+   * The playhead reads from `ctx.currentTime`, which is sample-accurate and does
+   * not stall the way `audioEl.currentTime` can while a media element buffers.
+   *
+   * The context stays open for the life of the transport — a paused player must
+   * resume without another user gesture — so `close()` matters and every caller
+   * must reach it on teardown.
+   */
+  async function createFilePlayer(arrayBuffer) {
+    var Ctx = audioContextClass();
+    if (!Ctx) throw new Error('This browser has no Web Audio support.');
+    var ctx = new Ctx();
+    var buffer;
+    try {
+      buffer = await decodeOrExplain(ctx, arrayBuffer);
+    } catch (e) {
+      try {
+        if (ctx.close) ctx.close();
+      } catch (_e) {
+        /* nothing to release */
+      }
+      throw e;
+    }
+
+    var src = null;
+    var startedAt = 0; // ctx.currentTime when the current source started
+    var offset = 0; // where in the buffer that source started
+    var playing = false;
+    var handlers = { ended: null };
+
+    function currentTime() {
+      if (!playing) return offset;
+      return Math.min(buffer.duration, offset + (ctx.currentTime - startedAt));
+    }
+
+    function stopSource() {
+      if (!src) return;
+      // Detach first: stopping a source fires `onended`, and that is our own
+      // doing, not the recording reaching its end.
+      src.onended = null;
+      try {
+        src.stop();
+      } catch (_e) {
+        /* already stopped */
+      }
+      src = null;
+    }
+
+    async function play() {
+      if (playing) return;
+      // iOS starts every context suspended and only honours resume() inside the
+      // gesture that asked for it, so this must be called straight from the tap.
+      if (ctx.state === 'suspended' && ctx.resume) {
+        try {
+          await ctx.resume();
+        } catch (_e) {
+          /* play() below will surface anything fatal */
+        }
+      }
+      if (offset >= buffer.duration) offset = 0; // replay after reaching the end
+      src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      src.onended = function () {
+        playing = false;
+        offset = buffer.duration;
+        src = null;
+        if (handlers.ended) handlers.ended();
+      };
+      src.start(0, offset);
+      startedAt = ctx.currentTime;
+      playing = true;
+    }
+
+    function pause() {
+      if (!playing) return;
+      offset = currentTime();
+      playing = false;
+      stopSource();
+    }
+
+    return {
+      durationSec: buffer.duration,
+      isPlaying: function () {
+        return playing;
+      },
+      currentTime: currentTime,
+      play: play,
+      pause: pause,
+      onEnded: function (fn) {
+        handlers.ended = fn;
+      },
+      close: function () {
+        playing = false;
+        stopSource();
+        buffer = null;
+        try {
+          if (ctx.close) ctx.close();
+        } catch (_e) {
+          /* already closed */
+        }
+      },
+    };
   }
 
   /**
@@ -575,6 +700,7 @@
     segmentsToCi: segmentsToCi,
     supported: supported,
     decodeToPcm: decodeToPcm,
+    createFilePlayer: createFilePlayer,
     pcmToChart: pcmToChart,
     isolateAndGate: isolateAndGate,
     alignReference: alignReference,
