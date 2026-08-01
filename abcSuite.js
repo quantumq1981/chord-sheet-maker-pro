@@ -19,8 +19,7 @@
   // abcjs's default soundfont host (paulrosen.github.io) is NOT in our CSP
   // connect-src. jsdelivr serves the same gh-pages content and IS allow-listed,
   // so playback works with zero CSP changes.
-  var SOUNDFONT_BASE =
-    'https://cdn.jsdelivr.net/gh/paulrosen/midi-js-soundfonts@gh-pages/';
+  var SOUNDFONT_BASE = 'https://cdn.jsdelivr.net/gh/paulrosen/midi-js-soundfonts@gh-pages/';
   var SOUNDFONT_URL = SOUNDFONT_BASE + 'abcjs/'; // default (compact abcjs set)
 
   // Selectable soundfonts (all jsdelivr-hosted → CSP-clean). Larger = fuller sound.
@@ -250,9 +249,20 @@
     for (var i = 0; i < patterns.length; i++) map[patterns[i].suffix] = patterns[i].intervals;
     if (s in map) return map[s];
     var alias = {
-      M7: 'maj7', maj: '', major: '', min: 'm', minor: 'm', '-': 'm',
-      'm7-5': 'm7b5', o7: 'dim7', o: 'dim', '+': 'aug', '+7': 'aug7',
-      sus: 'sus4', '7sus': '7sus4', '6/9': '6add9',
+      M7: 'maj7',
+      maj: '',
+      major: '',
+      min: 'm',
+      minor: 'm',
+      '-': 'm',
+      'm7-5': 'm7b5',
+      o7: 'dim7',
+      o: 'dim',
+      '+': 'aug',
+      '+7': 'aug7',
+      sus: 'sus4',
+      '7sus': '7sus4',
+      '6/9': '6add9',
     };
     if (alias[s] != null && alias[s] in map) return map[alias[s]];
     // Fallback so any chord still voices: minor vs major triad.
@@ -266,7 +276,10 @@
    */
   function chordTokenToMidis(token, patterns) {
     if (!patterns || !patterns.length) return null;
-    var t = String(token == null ? '' : token).replace(/♭/g, 'b').replace(/♯/g, '#').trim();
+    var t = String(token == null ? '' : token)
+      .replace(/♭/g, 'b')
+      .replace(/♯/g, '#')
+      .trim();
     if (!t || /^(N\.?C\.?|%+)$/i.test(t)) return null;
     var upper = t;
     var bassName = null;
@@ -335,8 +348,12 @@
    * tablature render option). This is what turns a chord chart into real notation.
    */
   function chordToAbcChord(token, patterns, names) {
-    patterns = patterns || (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.CHORD_PATTERNS);
-    names = names || (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.NOTE_NAMES);
+    patterns =
+      patterns ||
+      (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.CHORD_PATTERNS);
+    names =
+      names ||
+      (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.NOTE_NAMES);
     if (!patterns || !names) return null;
     var midis = chordTokenToMidis(token, patterns);
     if (!midis) return null;
@@ -376,7 +393,8 @@
       (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.CHORD_PATTERNS) ||
       null;
     var names =
-      (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.NOTE_NAMES) || null;
+      (typeof window !== 'undefined' && window.ChordTheory && window.ChordTheory.NOTE_NAMES) ||
+      null;
     // Per-chord body: voiced chord bracket when possible, else a whole-bar rest.
     function chordBody(rawTok, dur) {
       if (voiced && patterns && names) {
@@ -457,20 +475,110 @@
       var atWrap = (i + 1) % barsPerLine === 0;
       if (i === n - 1 || atWrap) {
         lines.push(cur.replace(/\s+/g, ' ').trim());
-        cur = i === n - 1 ? '' : close === ':|' || close === '|]' ? (i + 1 < n && flat[i + 1].leftRepeat ? '|:' : '|') : '';
+        cur =
+          i === n - 1
+            ? ''
+            : close === ':|' || close === '|]'
+              ? i + 1 < n && flat[i + 1].leftRepeat
+                ? '|:'
+                : '|'
+              : '';
       }
     }
 
     return header.concat(lines.filter(Boolean)).join('\n');
   }
 
+  // ── Print pagination ───────────────────────────────────────────────────────
+  //
+  // abcjs renders a tune as ONE continuous SVG, however tall. Handing that to a
+  // print dialog lets the browser slice it wherever a sheet happens to end —
+  // through the middle of a staff — so measures get cut in half and every page
+  // after the first starts mid-system. abcjs has no pagination of its own.
+  //
+  // The fix is to window onto the tall SVG: one page-sized `<svg viewBox>` per
+  // sheet, each cut at a staff boundary. These two functions are that geometry,
+  // kept pure so the packing is testable without a browser; the measuring of
+  // where the staves actually sit is the browser's job.
+
+  /** Printable aspect (height ÷ width) of a paper size with equal margins. */
+  function pageAspect(paper, marginIn) {
+    var m = marginIn == null ? 0.5 : Math.max(0, Number(marginIn) || 0);
+    var dims = String(paper || 'letter').toLowerCase() === 'a4' ? [8.27, 11.69] : [8.5, 11];
+    var w = dims[0] - 2 * m;
+    var h = dims[1] - 2 * m;
+    if (w <= 0 || h <= 0) return 11 / 8.5;
+    return h / w;
+  }
+
+  /**
+   * One printed page's height, in the SVG's own user units. The content is
+   * scaled to the page width, so a page covers `width × aspect` of it.
+   */
+  function pageBandHeight(contentWidth, aspect) {
+    var w = Number(contentWidth) || 0;
+    var a = Number(aspect) || 11 / 8.5;
+    return w > 0 ? w * a : 0;
+  }
+
+  /**
+   * Pack staff bands into pages, never splitting one across a sheet.
+   *
+   * `bands` are the measured `{top, bottom}` extents of each staff system, in
+   * document order. Every returned page is the SAME `height`, so each sheet
+   * scales identically — a short last page leaves white space rather than being
+   * magnified, which is what "uneven" looked like.
+   *
+   * `contentBottom` is where this page's music actually ends. It matters because
+   * a fixed-height window would otherwise still SHOW the top of the next system
+   * — assigning that system to the following page is not enough, the sheet has
+   * to be clipped to its own content or the cut staff reappears at the bottom.
+   *
+   * A band taller than a page gets a page to itself and is allowed to overflow:
+   * clipping it would lose music, and there is nowhere better to put it.
+   */
+  function paginateBands(bands, pageHeight) {
+    var list = [];
+    for (var i = 0; i < (bands || []).length; i++) {
+      var b = bands[i];
+      if (!b) continue;
+      var top = Number(b.top);
+      var bottom = Number(b.bottom);
+      if (!isFinite(top) || !isFinite(bottom) || bottom <= top) continue;
+      list.push({ top: top, bottom: bottom });
+    }
+    if (!list.length) return [];
+    list.sort(function (x, y) {
+      return x.top - y.top;
+    });
+
+    var lastBottom = list[list.length - 1].bottom;
+    var h = Number(pageHeight);
+    if (!isFinite(h) || h <= 0) {
+      // No usable page height — one page holding everything beats losing music.
+      var all = lastBottom - list[0].top;
+      return [{ top: list[0].top, height: all, contentBottom: lastBottom }];
+    }
+
+    var pages = [];
+    var pageTop = list[0].top;
+    var pageBottom = list[0].bottom;
+    for (var j = 0; j < list.length; j++) {
+      if (list[j].bottom - pageTop > h && list[j].top > pageTop) {
+        pages.push({ top: pageTop, height: h, contentBottom: pageBottom });
+        pageTop = list[j].top;
+      }
+      pageBottom = Math.max(pageBottom, list[j].bottom);
+    }
+    pages.push({ top: pageTop, height: h, contentBottom: pageBottom });
+    return pages;
+  }
+
   // ── Runtime (browser-only: abcjs render + synth) ───────────────────────────
 
   function abcjsReady() {
     return (
-      typeof window !== 'undefined' &&
-      window.ABCJS &&
-      typeof window.ABCJS.renderAbc === 'function'
+      typeof window !== 'undefined' && window.ABCJS && typeof window.ABCJS.renderAbc === 'function'
     );
   }
 
@@ -554,6 +662,57 @@
     if (typeof opts.program === 'number') prepared = withMidiProgram(prepared, opts.program);
     var visualObjs = window.ABCJS.renderAbc(el, prepared, buildRenderOptions(opts));
     return visualObjs && visualObjs.length ? visualObjs[0] : null;
+  }
+
+  /**
+   * Measure where each staff system sits inside a rendered abcjs SVG.
+   *
+   * Structure-agnostic on purpose: abcjs's class names and group nesting have
+   * changed between versions, so this reads the geometry rather than the markup
+   * — the SVG's top-level `<g>` children are its systems, and getBBox reports
+   * where each one actually landed. If that yields fewer than two bands (an
+   * abcjs layout we don't recognise), the caller falls back to printing one
+   * continuous SVG, which is exactly today's behaviour: never worse.
+   */
+  function measureStaffBands(svg) {
+    var out = [];
+    if (!svg || typeof svg.querySelectorAll !== 'function') return out;
+    var kids = svg.children || [];
+    for (var i = 0; i < kids.length; i++) {
+      var el = kids[i];
+      if (!el || String(el.tagName).toLowerCase() !== 'g') continue;
+      var box;
+      try {
+        box = el.getBBox();
+      } catch (_e) {
+        continue; // not rendered / not measurable
+      }
+      if (!box || box.height <= 0) continue;
+      out.push({ top: box.y, bottom: box.y + box.height });
+    }
+    return out;
+  }
+
+  /**
+   * Build print-ready pages from a rendered SVG: one page-sized window per
+   * sheet, cut at staff boundaries. Returns null when the SVG can't be measured
+   * into two or more bands, so the caller keeps the single-SVG path.
+   */
+  function buildPrintPages(svg, opts) {
+    opts = opts || {};
+    if (!svg) return null;
+    var vb = svg.viewBox && svg.viewBox.baseVal;
+    var width = vb && vb.width ? vb.width : Number(svg.getAttribute('width')) || 0;
+    var originX = vb ? vb.x : 0;
+    if (!width) return null;
+
+    var bands = measureStaffBands(svg);
+    if (bands.length < 2) return null;
+
+    var pageH = pageBandHeight(width, pageAspect(opts.paper, opts.marginIn));
+    var pages = paginateBands(bands, pageH);
+    if (!pages.length) return null;
+    return { width: width, originX: originX, pages: pages, content: svg.innerHTML };
   }
 
   /** True when this browser can do Web Audio playback (and we're on https/secure). */
@@ -735,6 +894,11 @@
     clampPercent: clampPercent,
     buildTrainerSteps: buildTrainerSteps,
     buildRenderOptions: buildRenderOptions,
+    pageAspect: pageAspect,
+    pageBandHeight: pageBandHeight,
+    paginateBands: paginateBands,
+    measureStaffBands: measureStaffBands,
+    buildPrintPages: buildPrintPages,
     withMidiProgram: withMidiProgram,
     extractAbcTitle: extractAbcTitle,
     abcTempoBpm: abcTempoBpm,

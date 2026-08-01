@@ -480,3 +480,150 @@ test('csmpnToAbc converts a real CSMPN chart via the live parser', () => {
   assert.ok(/\|\]\s*$/.test(abc), abc); // final barline
   assert.equal(A.sniffIsAbc(abc), true); // the output is itself valid ABC
 });
+
+// ── Print pagination ──────────────────────────────────────────────────────────
+//
+// abcjs renders one continuous SVG however tall, and a print dialog will slice
+// that wherever a sheet ends — through the middle of a staff. These cover the
+// geometry that puts each cut between systems instead. The measuring of a live
+// SVG (measureStaffBands/buildPrintPages) needs a browser and stays a device check.
+
+test('pageAspect describes the printable area, not the whole sheet', () => {
+  // Letter at 0.5in margins is 7.5 × 10in, so a page is taller than it is wide.
+  assert.ok(Math.abs(A.pageAspect('letter', 0.5) - 10 / 7.5) < 1e-9);
+  assert.ok(Math.abs(A.pageAspect('a4', 0.5) - 10.69 / 7.27) < 1e-9);
+  // Bigger margins make the printable area proportionally taller.
+  assert.ok(A.pageAspect('letter', 1) > A.pageAspect('letter', 0.5));
+  assert.ok(A.pageAspect() > 1, 'portrait by default');
+});
+
+test('pageBandHeight scales the page to the content width', () => {
+  assert.equal(A.pageBandHeight(750, 2), 1500);
+  assert.equal(A.pageBandHeight(0, 2), 0, 'no width, no page');
+  assert.equal(A.pageBandHeight(-5, 2), 0);
+});
+
+test('a page break never falls inside a staff system', () => {
+  // Six 100-tall systems, 250-tall pages: two fit per page, the third would
+  // straddle the boundary and must start the next page instead.
+  const bands = [0, 100, 200, 300, 400, 500].map((t) => ({ top: t, bottom: t + 100 }));
+  const pages = A.paginateBands(bands, 250);
+  assert.equal(pages.length, 3);
+  assert.deepEqual(
+    Array.from(pages, (p) => p.top),
+    [0, 200, 400]
+  );
+  // What matters is what the sheet SHOWS: the page is clipped to contentBottom,
+  // so no system may straddle that edge.
+  for (const p of pages) {
+    const straddles = bands.some((b) => b.top < p.contentBottom && b.bottom > p.contentBottom);
+    assert.ok(!straddles, `a system is cut at ${p.contentBottom}`);
+    assert.ok(p.contentBottom <= p.top + p.height, 'content stays within the sheet');
+  }
+});
+
+test('every page is the same height, so sheets scale identically', () => {
+  // The "uneven" symptom: a short final page must leave white space, not be
+  // blown up to fill the sheet.
+  const bands = [
+    { top: 0, bottom: 90 },
+    { top: 90, bottom: 180 },
+    { top: 180, bottom: 200 },
+  ];
+  const pages = A.paginateBands(bands, 100);
+  assert.ok(pages.length > 1);
+  for (const p of pages) assert.equal(p.height, 100);
+});
+
+test('a system taller than a page gets its own page rather than being clipped', () => {
+  const pages = A.paginateBands(
+    [
+      { top: 0, bottom: 40 },
+      { top: 40, bottom: 400 },
+    ],
+    100
+  );
+  assert.equal(pages.length, 2);
+  assert.equal(pages[1].top, 40, 'the oversized system starts a page');
+});
+
+test('paginateBands sorts by position and ignores unusable bands', () => {
+  const pages = A.paginateBands(
+    [
+      { top: 200, bottom: 300 },
+      null,
+      { top: 0, bottom: 100 },
+      { top: 50, bottom: 50 }, // zero height
+      { top: 10, bottom: 5 }, // inverted
+      { top: NaN, bottom: 10 },
+    ],
+    1000
+  );
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].top, 0, 'starts at the topmost real band');
+});
+
+test('no bands means no pages — the caller keeps the single-SVG path', () => {
+  assert.deepEqual(Array.from(A.paginateBands([], 100)), []);
+  assert.deepEqual(Array.from(A.paginateBands(null, 100)), []);
+});
+
+test('an unusable page height collapses to one page rather than losing music', () => {
+  const bands = [
+    { top: 0, bottom: 100 },
+    { top: 100, bottom: 250 },
+  ];
+  for (const bad of [0, -10, NaN, undefined]) {
+    const pages = A.paginateBands(bands, bad);
+    assert.equal(pages.length, 1);
+    assert.equal(pages[0].top, 0);
+    assert.equal(pages[0].height, 250, 'the whole tune, uncut');
+  }
+});
+
+test('the pages cover every band — nothing falls off the end', () => {
+  const bands = [];
+  for (let i = 0; i < 17; i++) bands.push({ top: i * 60, bottom: i * 60 + 55 });
+  const pages = A.paginateBands(bands, 200);
+  const last = pages[pages.length - 1];
+  assert.ok(
+    last.top + last.height >= bands[bands.length - 1].bottom,
+    'the final page reaches the end of the music'
+  );
+  for (const b of bands) {
+    assert.ok(
+      pages.some((p) => b.top >= p.top && b.bottom <= p.top + p.height),
+      `band at ${b.top} is not wholly on any page`
+    );
+  }
+});
+
+test('measureStaffBands and buildPrintPages degrade instead of throwing', () => {
+  // No DOM here; they must return empty/null so the print path falls back.
+  assert.deepEqual(Array.from(A.measureStaffBands(null)), []);
+  assert.deepEqual(Array.from(A.measureStaffBands({})), []);
+  assert.equal(A.buildPrintPages(null), null);
+});
+
+test('each page reports where its music ends, so the sheet can be clipped', () => {
+  // The subtle failure this guards: assigning a system to the next page is not
+  // enough. A fixed-height window still SHOWS the space below the last system,
+  // so without contentBottom the cut staff reappears at the bottom of the sheet.
+  const bands = [0, 100, 200, 300].map((t) => ({ top: t, bottom: t + 100 }));
+  const pages = A.paginateBands(bands, 250);
+  assert.equal(pages.length, 2);
+  assert.equal(pages[0].contentBottom, 200, 'page 1 ends after its second system');
+  assert.ok(pages[0].contentBottom < pages[0].top + pages[0].height, 'clipped short of the sheet');
+  assert.equal(pages[1].contentBottom, 400, 'page 2 ends after the last system');
+});
+
+test('the single-page fallback still reports contentBottom', () => {
+  const pages = A.paginateBands(
+    [
+      { top: 0, bottom: 100 },
+      { top: 100, bottom: 250 },
+    ],
+    0
+  );
+  assert.equal(pages[0].contentBottom, 250);
+});

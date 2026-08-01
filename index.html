@@ -7475,9 +7475,37 @@ function csmpnToCsml(csmpnText) {
     const w = window.open('', '_blank');
     if (!w) { setAbcStatus('Pop-up blocked — allow pop-ups to print.', true); return; }
     const title = escapeHtml(window.ABCSuite.extractAbcTitle(curAbc()));
+    // abcjs renders one continuous SVG however tall, so printing it directly
+    // lets the browser cut through the middle of a staff. buildPrintPages
+    // windows onto it — a page-sized viewBox per sheet, cut between systems.
+    // It returns null on a layout it can't measure, and then we print the one
+    // SVG exactly as before rather than risk losing music.
+    let body;
+    const paged = window.ABCSuite.buildPrintPages(svg, { paper: 'letter', marginIn: 0.5 });
+    if (paged) {
+      // The viewBox height is the same on every page so all sheets scale alike;
+      // the clip is what stops a fixed-height window from also showing the top
+      // of the next system, which would put the cut staff back at the bottom.
+      body = paged.pages.map((p, i) =>
+        `<div class="pg${i === paged.pages.length - 1 ? ' last' : ''}">` +
+        `<svg xmlns="http://www.w3.org/2000/svg" width="100%"` +
+        ` viewBox="${paged.originX} ${p.top} ${paged.width} ${p.height}"` +
+        ` preserveAspectRatio="xMinYMin meet">` +
+        `<defs><clipPath id="pgclip${i}"><rect x="${paged.originX}" y="${p.top}"` +
+        ` width="${paged.width}" height="${Math.max(0, p.contentBottom - p.top)}"/>` +
+        `</clipPath></defs>` +
+        `<g clip-path="url(#pgclip${i})">${paged.content}</g></svg></div>`
+      ).join('');
+    } else {
+      body = new XMLSerializer().serializeToString(svg);
+    }
     w.document.write('<!doctype html><html><head><title>' + title + '</title>' +
-      '<style>@page{margin:0.5in;}body{margin:0;}svg{max-width:100%;height:auto;}</style></head><body>' +
-      new XMLSerializer().serializeToString(svg) +
+      '<style>@page{margin:0.5in;}body{margin:0;}' +
+      'svg{max-width:100%;height:auto;}' +
+      // Each window is exactly one sheet; the last must not add a blank page.
+      '.pg{break-after:page;page-break-after:always;}' +
+      '.pg.last{break-after:auto;page-break-after:auto;}' +
+      '</style></head><body>' + body +
       '<scr' + 'ipt>window.onload=function(){window.print();}<\/scr' + 'ipt></body></html>');
     w.document.close();
   });
