@@ -224,6 +224,63 @@
     });
   }
 
+  /*
+   * Notation and score formats a musician plausibly reaches for when a control
+   * says "attach a file" — none of which `decodeAudioData` can touch. A .mid is
+   * note events and a .musicxml is engraving instructions; neither contains a
+   * waveform, so the browser rejects them with a bare "Unable to decode audio
+   * data" that tells the player nothing about what to do instead.
+   */
+  var SCORE_EXTS = {
+    mid: 'MIDI',
+    midi: 'MIDI',
+    xml: 'MusicXML',
+    musicxml: 'MusicXML',
+    mxl: 'MusicXML',
+    gp: 'Guitar Pro',
+    gp3: 'Guitar Pro',
+    gp4: 'Guitar Pro',
+    gp5: 'Guitar Pro',
+    gpx: 'Guitar Pro',
+    ptb: 'Power Tab',
+    abc: 'ABC notation',
+    csmpn: 'a chart',
+    csml: 'a chart',
+    cho: 'a chart',
+    pro: 'a chart',
+    crd: 'a chart',
+    pdf: 'a PDF',
+    txt: 'a text chart',
+  };
+
+  /**
+   * What to tell the player when a file will not decode. The distinction that
+   * matters: a score file is not a failure to explain, it is the wrong door —
+   * those formats already have importers that build a chart. Anything else is a
+   * genuine decode failure, so name the formats that do work.
+   */
+  function decodeFailureMessage(filename, purpose) {
+    var m = /\.([A-Za-z0-9]{1,8})$/.exec(String(filename || ''));
+    var kind = m ? SCORE_EXTS[m[1].toLowerCase()] : null;
+    var what = purpose || 'This';
+    if (kind) {
+      return (
+        what +
+        ' needs a recording — an audio file with sound in it. ' +
+        m[0] +
+        ' is ' +
+        kind +
+        ', which describes notes rather than storing sound. ' +
+        'Use Import to turn that into a chart instead.'
+      );
+    }
+    return (
+      what +
+      ' could not read that file as audio. MP3, M4A, WAV and AAC all work, ' +
+      'as does the audio track of an MP4 or MOV.'
+    );
+  }
+
   // ── Browser-only ──────────────────────────────────────────────────────────
 
   function audioContextClass() {
@@ -247,7 +304,17 @@
     if (!Ctx) throw new Error('This browser has no Web Audio support.');
     var ctx = new Ctx();
     try {
-      var buf = await ctx.decodeAudioData(arrayBuffer.slice(0));
+      var buf;
+      try {
+        buf = await ctx.decodeAudioData(arrayBuffer.slice(0));
+      } catch (e) {
+        // Flagged so callers can tell "this file is not audio" apart from a
+        // failure later in the pipeline and say something useful about it.
+        var err = new Error('Could not decode that file as audio.');
+        err.decodeFailed = true;
+        err.cause = e;
+        throw err;
+      }
       var chans = [];
       for (var c = 0; c < buf.numberOfChannels; c++) chans.push(buf.getChannelData(c));
       var mono = downmix(chans, buf.length);
@@ -376,7 +443,11 @@
     var linearRaw = engine.scoreEventTimes(built.score, bpm);
     var linear = (linearRaw.events || [])
       .map(function (e) {
-        return { start: e.start, dur: e.dur, ci: built.keyToCi[e.key] != null ? built.keyToCi[e.key] : -1 };
+        return {
+          start: e.start,
+          dur: e.dur,
+          ci: built.keyToCi[e.key] != null ? built.keyToCi[e.key] : -1,
+        };
       })
       .filter(function (e) {
         return e.ci >= 0;
@@ -496,6 +567,8 @@
     centsOff: centsOff,
     tuningVerdict: tuningVerdict,
     pulsesPerBar: pulsesPerBar,
+    SCORE_EXTS: SCORE_EXTS,
+    decodeFailureMessage: decodeFailureMessage,
     clarityDelta: clarityDelta,
     chartChordList: chartChordList,
     csmpnChartToScore: csmpnChartToScore,

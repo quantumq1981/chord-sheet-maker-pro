@@ -2196,7 +2196,7 @@ body.exporting .sectionBlock{
           <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
           <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
           <button class="outline power-only" id="btnTuner" title="Tune up — live pitch from the microphone">&#127908; Tuner</button>
-          <button class="outline power-only" id="btnRefAudio" title="Play a reference recording and follow along — the chart's chords highlight in time">&#127911; Play-Along</button>
+          <button class="outline power-only" id="btnRefAudio" title="Play an audio recording (MP3, M4A, WAV) and follow along — the chart's chords highlight in time">&#127911; Play-Along</button>
           <button class="outline power-only" id="btnSetlist" title="Setlist / Songbook — save and print multiple charts">&#9776; Setlist<span class="setlist-badge" id="setlistBadge" style="display:none">0</span></button>
         </div>
         <input id="fileInputRefAudio" type="file" style="display:none" />
@@ -3976,7 +3976,12 @@ fileInputAudio.addEventListener('change', async () => {
     updateDiagnosticsPanel();
   } catch (err) {
     console.error(err);
-    setStatus(`Audio import failed: ${err?.message || err}`, 'error');
+    setStatus(
+      err?.decodeFailed
+        ? window.AudioCapture.decodeFailureMessage(file.name, 'Audio import')
+        : `Audio import failed: ${err?.message || err}`,
+      'error'
+    );
     updateDiagnosticsPanel();
   }
 });
@@ -4094,6 +4099,9 @@ fileInputAudio.addEventListener('change', async () => {
       return;
     }
     if (!sourceEl.value.trim()) { setStatus('Load a chart first, then attach a recording to play along.', 'error'); return; }
+    // Said before the picker opens, not after a failure: the file needs to be a
+    // recording, and nothing in the picker itself conveys that.
+    setStatus('Choose an audio recording of this song — MP3, M4A, WAV, or a video’s audio.');
     fileInput.value = '';
     fileInput.click();
   });
@@ -4149,7 +4157,12 @@ fileInputAudio.addEventListener('change', async () => {
     } catch (err) {
       console.error(err);
       teardown();
-      setStatus(`Play-Along failed: ${err?.message || err}`, 'error');
+      setStatus(
+        err?.decodeFailed
+          ? window.AudioCapture.decodeFailureMessage(file.name, 'Play-Along')
+          : `Play-Along failed: ${err?.message || err}`,
+        'error'
+      );
     }
   });
 })();

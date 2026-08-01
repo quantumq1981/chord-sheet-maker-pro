@@ -145,6 +145,49 @@ test('pulsesPerBar falls back to 4/4 on anything it cannot read', () => {
   assert.equal(ac.pulsesPerBar('5/8'), 5);
 });
 
+// ── Telling the player why a file would not decode ────────────────────────────
+//
+// The browser's own failure is "Unable to decode audio data", which leaves a
+// musician who attached a .mid or a .musicxml with nothing to act on. These
+// guard the two things the message has to get right: naming the format they
+// actually picked, and pointing at the door that does handle it.
+
+test('a score file is explained as the wrong door, not as a failure', () => {
+  for (const [name, kind] of [
+    ['song.mid', 'MIDI'],
+    ['song.midi', 'MIDI'],
+    ['Sultans.musicxml', 'MusicXML'],
+    ['chart.xml', 'MusicXML'],
+    ['blue-sky.gp5', 'Guitar Pro'],
+    ['tune.ptb', 'Power Tab'],
+    ['reel.abc', 'ABC notation'],
+  ]) {
+    const msg = ac.decodeFailureMessage(name, 'Play-Along');
+    assert.match(msg, new RegExp(kind), `${name} should be named as ${kind}`);
+    assert.match(msg, /Import/, 'and should point at the importer that reads it');
+    assert.match(msg, /^Play-Along/, 'and should name the feature that refused');
+  }
+});
+
+test('an unrecognised file names the audio formats that do work', () => {
+  const msg = ac.decodeFailureMessage('mystery.bin', 'Audio import');
+  assert.match(msg, /MP3/);
+  assert.match(msg, /WAV/);
+  assert.doesNotMatch(msg, /Import to turn/, 'no score advice for a non-score file');
+});
+
+test('a missing or extensionless filename still produces usable advice', () => {
+  for (const name of ['', null, undefined, 'recording']) {
+    assert.match(ac.decodeFailureMessage(name), /MP3/);
+  }
+});
+
+test('the extension match is case-insensitive and anchored to the end', () => {
+  assert.match(ac.decodeFailureMessage('SONG.MID'), /MIDI/);
+  // A name that merely contains "mid" is not a MIDI file.
+  assert.doesNotMatch(ac.decodeFailureMessage('midsummer.wav'), /MIDI/);
+});
+
 // ── Vocal-isolation A/B gate ──────────────────────────────────────────────────
 
 test('clarityDelta only calls isolation a win when it clears the noise margin', () => {
