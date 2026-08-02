@@ -2372,6 +2372,335 @@ function chordFromChroma(chroma, opts = {}) {
   const midis = result.best.quality.intervals.map((i) => rootMidi + i);
   return { symbol: symbolOf(result, opts.useSharp !== false), midis, result };
 }
+/* ============================================================================
+ *  BEAT TRACKING — onset envelope → tempo → dynamic-programming beat times
+ *  ---------------------------------------------------------------------------
+ *  WHY this matters more than any chord-vocabulary work: the decoder had NO tempo
+ *  detection at all. `audioEventsToScore` quantises onto a beat grid the user dials
+ *  in by hand, so the whole bar structure hangs off a guess — the SAME Peg analysis
+ *  produced 5 N.C. bars at 120bpm and 17 at 160bpm, identical audio and identical
+ *  chords, purely because the grid didn't line up. Real beats give a real grid, real
+ *  downbeats, and chord changes that land ON barlines.
+ *
+ *  It is also the substrate for beat-synchronous chroma (see transcribeChordsBeatSync),
+ *  which is how every published chord-recognition system denoises: average the chroma
+ *  BETWEEN beats rather than over an arbitrary sliding window, so a strum or a passing
+ *  tone cannot drag the label.
+ *
+ *  Pure DSP, zero deps, no model — the classic pipeline (Ellis, "Beat Tracking by
+ *  Dynamic Programming", 2007): spectral flux → autocorrelation tempo → DP beat path.
+ * ------------------------------------------------------------------------- */
+
+/* Spectral-flux onset strength envelope. Log-compressed magnitudes (perceptual, and it
+ * stops one loud band dominating), half-wave-rectified frame difference summed over
+ * bins, then local-mean-subtracted so a slow level drift (a crescendo) doesn't read as
+ * a continuous onset. Returns { odf, frameRate }. */
+function onsetEnvelope(samples, sampleRate, opts = {}) {
+  const N = opts.onsetFft || 1024;
+  const hop = opts.onsetHop || Math.max(1, Math.round(sampleRate * 0.01));   // 10ms → 100 fps
+  const frameRate = sampleRate / hop;
+  const win = _hann(N);
+  const half = N >> 1;
+  const odf = [];
+  let prev = null;
+  for (let s = 0; s + N <= samples.length; s += hop) {
+    const re = new Float64Array(N), im = new Float64Array(N);
+    for (let i = 0; i < N; i++) re[i] = (samples[s + i] || 0) * win[i];
+    _fft(re, im);
+    const mag = new Float64Array(half);
+    for (let k = 0; k < half; k++) mag[k] = Math.log1p(1000 * Math.hypot(re[k], im[k]));
+    let flux = 0;
+    if (prev) for (let k = 0; k < half; k++) { const d = mag[k] - prev[k]; if (d > 0) flux += d; }
+    odf.push(flux);
+    prev = mag;
+  }
+  if (!odf.length) return { odf: [], frameRate };
+  // subtract a local mean (≈0.4s) and rectify → peaks stand out, drift removed
+  const w = Math.max(1, Math.round(frameRate * 0.2));
+  const out = new Float64Array(odf.length);
+  for (let i = 0; i < odf.length; i++) {
+    let sum = 0, n = 0;
+    for (let j = Math.max(0, i - w); j <= Math.min(odf.length - 1, i + w); j++) { sum += odf[j]; n++; }
+    out[i] = Math.max(0, odf[i] - sum / n);
+  }
+  // Normalise to unit std. This is NOT cosmetic: `tightness` in trackBeats trades onset
+  // strength against tempo steadiness, so the two have to share a scale. Un-normalised,
+  // a loud mix makes onset strength dwarf the penalty and the DP happily packs beats at
+  // half the period — measured: Peg reported 117bpm but laid 685 beats in 240s (=171bpm).
+  let mean = 0; for (let i = 0; i < out.length; i++) mean += out[i];
+  mean /= out.length || 1;
+  let varSum = 0; for (let i = 0; i < out.length; i++) varSum += (out[i] - mean) ** 2;
+  const sd = Math.sqrt(varSum / (out.length || 1)) || 1;
+  for (let i = 0; i < out.length; i++) out[i] /= sd;
+  return { odf: out, frameRate };
+}
+
+/* Global tempo from the onset envelope: autocorrelation over plausible beat periods,
+ * weighted by a log-Gaussian prior around `preferBpm` (Ellis's tempo prior — without it
+ * autocorrelation happily locks onto half- or double-time, which is the classic failure). */
+function estimateTempo(odf, frameRate, opts = {}) {
+  const minBpm = opts.minBpm || 50, maxBpm = opts.maxBpm || 210;
+  const prefer = opts.preferBpm || 120, spread = opts.tempoSpread || 1.0;
+  const minLag = Math.max(2, Math.round((frameRate * 60) / maxBpm));
+  const maxLag = Math.min(odf.length - 1, Math.round((frameRate * 60) / minBpm));
+  if (maxLag <= minLag) return { bpm: prefer, periodFrames: (frameRate * 60) / prefer, strength: 0 };
+  let bestLag = minLag, bestScore = -Infinity, bestAc = 0;
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let ac = 0;
+    for (let i = 0; i + lag < odf.length; i++) ac += odf[i] * odf[i + lag];
+    ac /= odf.length - lag;
+    const bpm = (frameRate * 60) / lag;
+    const prior = Math.exp(-0.5 * Math.pow(Math.log2(bpm / prefer) / spread, 2));
+    const score = ac * prior;
+    if (score > bestScore) { bestScore = score; bestLag = lag; bestAc = ac; }
+  }
+  return { bpm: (frameRate * 60) / bestLag, periodFrames: bestLag, strength: bestAc };
+}
+
+/* Ellis dynamic-programming beat tracker. Maximises (onset strength at each beat) +
+ * (how close each inter-beat gap is to the estimated period), then backtraces the best
+ * path. `tightness` trades beat-to-onset fit against tempo steadiness. */
+function trackBeats(odf, frameRate, periodFrames, opts = {}) {
+  const n = odf.length;
+  if (!n || !(periodFrames > 1)) return [];
+  const tightness = opts.tightness != null ? opts.tightness : 100;
+  const lo = Math.max(1, Math.round(periodFrames * 0.5));
+  const hi = Math.max(lo + 1, Math.round(periodFrames * 2));
+  const C = new Float64Array(n), P = new Int32Array(n).fill(-1);
+  // precompute the transition penalty for each candidate gap
+  const pen = new Float64Array(hi + 1);
+  for (let g = lo; g <= hi; g++) pen[g] = -tightness * Math.pow(Math.log(g / periodFrames), 2);
+  for (let t = 0; t < n; t++) {
+    let best = 0, bestI = -1;                      // 0 = "this is the first beat"
+    const from = Math.max(0, t - hi), to = t - lo;
+    for (let tau = from; tau <= to; tau++) {
+      const v = C[tau] + pen[t - tau];
+      if (v > best) { best = v; bestI = tau; }
+    }
+    C[t] = odf[t] + best;
+    P[t] = bestI;
+  }
+  // start the backtrace from the strongest score in the final period
+  let end = n - 1;
+  for (let t = Math.max(0, n - Math.round(periodFrames)); t < n; t++) if (C[t] > C[end]) end = t;
+  const beats = [];
+  for (let t = end; t >= 0; t = P[t]) { beats.push(t / frameRate); if (P[t] < 0) break; }
+  return beats.reverse();
+}
+
+/* PCM → { bpm, beats[] (seconds), strength }. The one entry point the rest uses. */
+function detectBeats(samples, sampleRate, opts = {}) {
+  const { odf, frameRate } = onsetEnvelope(samples, sampleRate, opts);
+  if (!odf.length) return { bpm: 0, beats: [], strength: 0 };
+  const t = estimateTempo(odf, frameRate, opts);
+  const beats = trackBeats(odf, frameRate, t.periodFrames, opts);
+  return { bpm: +t.bpm.toFixed(2), beats, strength: t.strength, frameRate };
+}
+
+/* ============================================================================
+ *  BEAT-SYNCHRONOUS CHORD DECODING (chroma between beats + Viterbi)
+ *  ---------------------------------------------------------------------------
+ *  The sliding-window path labels each window INDEPENDENTLY and then collapses
+ *  identical neighbours. Nothing in it knows that chords LAST, which is why an
+ *  ambiguous span flips label every 0.26s — measured on a real stem:
+ *      Bb7 · C#7 · Bb7 · E7 · Edim · Eb7 · C# · C7 · G7 …
+ *  each run ~2 frames long and none of them confident. No confidence floor can
+ *  rescue that, because the problem isn't the threshold — it's that the decoder
+ *  has no notion of continuity.
+ *
+ *  Two changes, both standard in published chord-recognition systems:
+ *    1. average the chroma BETWEEN BEATS instead of over an arbitrary window, so
+ *       a strum or a passing tone cannot drag the label, and every chord boundary
+ *       lands on a beat by construction;
+ *    2. decode the whole sequence with VITERBI over a chord-state space with a
+ *       change penalty — the best PATH, not the best guess per window. Staying on
+ *       a chord is free; changing costs. Ambiguous beats inherit their neighbours
+ *       instead of collapsing to N.C.
+ *
+ *  Still pure, still zero-dep, still no model. Opt-in (`beatSync`) so the existing
+ *  sliding-window path — and the whole validated corpus that pins it — is untouched.
+ * ------------------------------------------------------------------------- */
+
+/* All (root × quality) states as unit-normalised 12-d template vectors. `maxRank`
+ * filters to the plain triad/7th vocabulary (Simple mode) exactly as `recognise` does. */
+function chordStates(opts = {}) {
+  const states = [];
+  for (const q of QUALITIES) {
+    if (opts.maxRank != null && q.rank > opts.maxRank) continue;
+    for (let root = 0; root < 12; root++) {
+      const vec = new Float64Array(12);
+      for (const iv of q.intervals) vec[(root + iv) % 12] = 1;
+      let n = 0; for (let p = 0; p < 12; p++) n += vec[p] * vec[p];
+      n = Math.sqrt(n) || 1;
+      for (let p = 0; p < 12; p++) vec[p] /= n;
+      states.push({ root, quality: q, vec });
+    }
+  }
+  return states;
+}
+
+/* Mean chroma between consecutive beats (plus the segment's mean energy, for gating). */
+function beatSegments(samples, sampleRate, beats, opts = {}) {
+  const win = opts.window || 4096;
+  const hop = opts.hop || Math.floor(sampleRate * (opts.hopSec || 0.12));
+  const frames = [];
+  for (let s = 0; s + win <= samples.length; s += hop) {
+    const f = samples.subarray ? samples.subarray(s, s + win) : samples.slice(s, s + win);
+    let e = 0; for (let i = 0; i < f.length; i++) e += f[i] * f[i];
+    // A SECOND chroma restricted to the bass register. The summed full-spectrum chroma
+    // says which pitch classes are present but not which is the ROOT; the bass line
+    // says exactly that, and it's what a player reads. Keeping them separate lets the
+    // emission use each for what it's good at: upper chroma → quality, bass → root.
+    frames.push({
+      t: s / sampleRate,
+      chroma: pcmToChroma(f, sampleRate, opts),
+      bass: pcmToChroma(f, sampleRate, { ...opts, minFreq: opts.bassMinFreq || 40, maxFreq: opts.bassMaxFreq || 250, suppress: 0 }),
+      energy: Math.sqrt(e / f.length),
+    });
+  }
+  if (!frames.length || beats.length < 2) return [];
+  const segs = [];
+  let fi = 0;
+  for (let b = 0; b + 1 < beats.length; b++) {
+    const t0 = beats[b], t1 = beats[b + 1];
+    while (fi < frames.length && frames[fi].t < t0) fi++;
+    const chroma = new Float64Array(12), bass = new Float64Array(12);
+    let n = 0, energy = 0;
+    for (let j = fi; j < frames.length && frames[j].t < t1; j++) {
+      for (let p = 0; p < 12; p++) { chroma[p] += frames[j].chroma[p]; bass[p] += frames[j].bass[p]; }
+      energy += frames[j].energy; n++;
+    }
+    // a beat shorter than the hop can contain no frame centre — use the nearest
+    if (!n) {
+      const j = Math.min(frames.length - 1, fi);
+      for (let p = 0; p < 12; p++) { chroma[p] = frames[j].chroma[p]; bass[p] = frames[j].bass[p]; }
+      energy = frames[j].energy; n = 1;
+    }
+    for (let p = 0; p < 12; p++) { chroma[p] /= n; bass[p] /= n; }
+    segs.push({ t0, t1, chroma, bass, energy: energy / n });
+  }
+  return segs;
+}
+
+/* Viterbi over chord states. Transition is uniform-except-self, so the recursion is
+ * O(T·S) not O(T·S²): the best predecessor is either the same state (free) or the
+ * global best (minus the change penalty). Emission is cosine similarity to the state
+ * template, minus a small prior that keeps uncommon qualities from winning ties — the
+ * same intent as `recognise`'s `rank` tie-break. A dedicated NO-CHORD state with a
+ * fixed emission absorbs beats nothing fits, so silence/mush stays honest. */
+function viterbiChords(segments, states, opts = {}) {
+  const T = segments.length;
+  if (!T || !states.length) return [];
+  const change = opts.changePenalty != null ? opts.changePenalty : 0.08;
+  const ncScore = opts.ncScore != null ? opts.ncScore : 0.62;
+  const rankBias = opts.rankBias != null ? opts.rankBias : 0.004;
+  const S = states.length;                       // index S == the no-chord state
+  const prev = new Float64Array(S + 1), cur = new Float64Array(S + 1);
+  const back = [];
+  const bassW = opts.bassWeight != null ? opts.bassWeight : 0.15;
+  const emit = (seg, s) => {
+    if (s === S) return ncScore;
+    const st = states[s], c = seg.chroma;
+    let dot = 0, n = 0;
+    for (let p = 0; p < 12; p++) { dot += c[p] * st.vec[p]; n += c[p] * c[p]; }
+    n = Math.sqrt(n) || 1;
+    let score = dot / n - rankBias * st.quality.rank;
+    // the bass register votes for the ROOT (see beatSegments) — the upper chroma is
+    // ambiguous between a chord and its relative/inversion, the bass usually isn't.
+    if (bassW && seg.bass) {
+      let bmax = 0; for (let p = 0; p < 12; p++) if (seg.bass[p] > bmax) bmax = seg.bass[p];
+      if (bmax > 0) score += bassW * (seg.bass[st.root] / bmax);
+    }
+    return score;
+  };
+  for (let s = 0; s <= S; s++) prev[s] = emit(segments[0], s);
+  for (let t = 1; t < T; t++) {
+    let bestPrev = -Infinity, bestIdx = 0;
+    for (let s = 0; s <= S; s++) if (prev[s] > bestPrev) { bestPrev = prev[s]; bestIdx = s; }
+    const bp = new Int32Array(S + 1);
+    for (let s = 0; s <= S; s++) {
+      const stay = prev[s], move = bestPrev - change;
+      if (stay >= move) { cur[s] = stay; bp[s] = s; } else { cur[s] = move; bp[s] = bestIdx; }
+      cur[s] += emit(segments[t], s);
+    }
+    back.push(bp);
+    prev.set(cur);
+  }
+  let end = 0;
+  for (let s = 1; s <= S; s++) if (prev[s] > prev[end]) end = s;
+  const path = new Array(T);
+  path[T - 1] = end;
+  for (let t = T - 2; t >= 0; t--) path[t] = back[t][path[t + 1]];
+  return path;
+}
+
+/* PCM → beat-synchronous, Viterbi-decoded chord events (same shape as
+ * transcribeChords, so the score/chart/exporters consume it unchanged).
+ * Returns [] when no beat grid can be found — the caller falls back. */
+function transcribeChordsBeatSync(samples, sampleRate, opts = {}) {
+  const bt = opts.beats ? { beats: opts.beats, bpm: opts.bpm || 0 } : detectBeats(samples, sampleRate, opts);
+  if (!bt.beats || bt.beats.length < 3) return [];
+  const segs = beatSegments(samples, sampleRate, bt.beats, opts);
+  if (!segs.length) return [];
+  // energy gate, adaptive like the sliding path: quiet ≠ silent
+  const maxE = Math.max(...segs.map((s) => s.energy)) || 1;
+  const ratio = opts.energyGate != null ? opts.energyGate : 0.08;
+  const floorAbs = (opts.energyGateFloor != null ? opts.energyGateFloor : 0.005) * maxE;
+  const winSec = opts.energyGateWindowSec != null ? opts.energyGateWindowSec : 15;
+  for (let i = 0; i < segs.length; i++) {
+    if (winSec <= 0) { segs[i].gate = ratio * maxE; continue; }
+    let peak = 0;
+    for (let j = 0; j < segs.length; j++) if (Math.abs(segs[j].t0 - segs[i].t0) <= winSec / 2 && segs[j].energy > peak) peak = segs[j].energy;
+    segs[i].gate = Math.max(floorAbs, ratio * peak);
+  }
+  const states = chordStates(opts);
+  const path = viterbiChords(segs, states, opts);
+  const S = states.length;
+  const out = [];
+  for (let t = 0; t < segs.length; t++) {
+    const gated = segs[t].energy < segs[t].gate;
+    const s = gated ? S : path[t];
+    if (s === S) { out.push(null); continue; }
+    const st = states[s];
+    out.push({ root: st.root, quality: st.quality });
+  }
+  // collapse runs of the same state into events on beat boundaries
+  const events = [];
+  let cur = null;
+  for (let t = 0; t < out.length; t++) {
+    const o = out[t];
+    if (!o) { if (cur) { events.push(cur); cur = null; } continue; }
+    if (cur && cur.root === o.root && cur.quality === o.quality) { cur.endSec = segs[t].t1; continue; }
+    if (cur) events.push(cur);
+    cur = { root: o.root, quality: o.quality, startSec: segs[t].t0, endSec: segs[t].t1 };
+  }
+  if (cur) events.push(cur);
+  const useSharp = opts.useSharp !== false;
+  const names = useSharp ? NOTE_SHARP : NOTE_FLAT;
+  return events.map((e) => ({
+    symbol: names[e.root] + e.quality.suffix,
+    midis: e.quality.intervals.map((i) => 48 + e.root + i),
+    startSec: +e.startSec.toFixed(3),
+    durSec: +(e.endSec - e.startSec).toFixed(3),
+  }));
+}
+
+/* The audio panel's one entry point: chords AND the tempo that produced them, so the
+ * bpm control can be filled in from the audio instead of guessed. Beat-synchronous by
+ * default; falls back to the sliding-window path when no beat grid can be found (very
+ * short clips, or material with no discernible pulse — a rubato solo piano intro), so
+ * a result is always produced. Returns { events, bpm, beats, method }. */
+function analyzeAudioChords(samples, sampleRate, opts = {}) {
+  if (opts.beatSync !== false) {
+    const bt = detectBeats(samples, sampleRate, opts);
+    if (bt.beats && bt.beats.length >= 3) {
+      const events = transcribeChordsBeatSync(samples, sampleRate, { ...opts, beats: bt.beats });
+      if (events.length) return { events, bpm: bt.bpm, beats: bt.beats, method: "beat-sync" };
+    }
+  }
+  return { events: transcribeChords(samples, sampleRate, opts), bpm: 0, beats: [], method: "sliding" };
+}
+
 /* One frame of PCM → recognised chord. (Thin wrapper: chroma → chord.) */
 function detectChord(samples, sampleRate, opts = {}) {
   const d = chordFromChroma(pcmToChroma(samples, sampleRate, opts), opts);
@@ -2992,6 +3321,15 @@ export {
   _hann,
   extractCenter,
   pcmToChroma,
+  onsetEnvelope,
+  estimateTempo,
+  trackBeats,
+  detectBeats,
+  chordStates,
+  beatSegments,
+  viterbiChords,
+  transcribeChordsBeatSync,
+  analyzeAudioChords,
   chordFromChroma,
   detectChord,
   recoverChordGaps,
