@@ -2555,23 +2555,122 @@ function chordStates(opts = {}) {
 }
 
 /* Mean chroma between consecutive beats (plus the segment's mean energy, for gating). */
+/* Harmonic/percussive source separation (Fitzgerald 2010) — median filtering on the
+ * magnitude spectrogram. Sustained pitched content forms HORIZONTAL ridges (stable
+ * across time), transients form VERTICAL ridges (broadband, one frame). So:
+ *   harmonic  ≈ median along TIME, percussive ≈ median along FREQUENCY,
+ * and a soft Wiener-style mask splits the two. Standard preprocessing for chord
+ * recognition — drums dump broadband energy into every chroma bin, and a kick or snare
+ * on the downbeat is exactly where a chord label is most likely to be read.
+ *
+ * We only ever need the CHROMA, never the audio back, so this skips resynthesis: it
+ * masks the magnitudes and folds straight to chroma. That also makes it cheaper than
+ * the per-frame path it replaces, which recomputed an FFT per frame anyway.
+ *
+ * Returns per-frame { t, chroma, bass, energy } — same shape beatSegments consumes.
+ * Pure. Opt-in via `hpss` (default on for the beat-sync path). */
+function harmonicChromagram(samples, sampleRate, opts = {}) {
+  const N = opts.window || 4096;
+  const hop = opts.hop || Math.floor(sampleRate * (opts.hopSec || 0.12));
+  const maxF = opts.maxFreq || 2000, minF = opts.minFreq || 55;
+  const half = N >> 1;
+  const topBin = Math.min(half - 1, Math.ceil((maxF * N) / sampleRate) + 2);
+  const win = _hann(N);
+  // 1) magnitude spectrogram (only the bins we can use)
+  const mags = [], times = [], energies = [];
+  for (let s = 0; s + N <= samples.length; s += hop) {
+    const re = new Float64Array(N), im = new Float64Array(N);
+    let e = 0;
+    for (let i = 0; i < N; i++) { const v = samples[s + i] || 0; re[i] = v * win[i]; e += v * v; }
+    _fft(re, im);
+    const m = new Float64Array(topBin + 1);
+    for (let k = 0; k <= topBin; k++) m[k] = Math.hypot(re[k], im[k]);
+    mags.push(m); times.push(s / sampleRate); energies.push(Math.sqrt(e / N));
+  }
+  const T = mags.length;
+  if (!T) return [];
+  // 2) median filters. kt spans ~0.4s of frames (harmonic), kf ~17 bins (percussive).
+  /* Kernel sizes are SWEPT, not guessed — on the real Peg stem against time-aligned
+   * ground truth, the plateau is tk≈21–23 frames / kf≈9 bins (root 53%), while the
+   * naive 0.4s / 17-bin defaults gave 42%. The time kernel is expressed in SECONDS so
+   * it adapts to `hopSec`: ~2.5s of median is what separates sustained harmony from
+   * transients here. Tuned on one file, so treat the exact numbers as a plateau centre
+   * rather than a global optimum. */
+  const ktSec = opts.hpssTimeSec != null ? opts.hpssTimeSec : 2.5;
+  const kt = Math.max(3, (opts.hpssTimeKernel || Math.round(ktSec / (hop / sampleRate))) | 1);
+  const kf = Math.max(3, (opts.hpssFreqKernel || 9) | 1);
+  /* Median of a small window, hot path: ~1M calls for a 4-minute track. Insertion sort
+   * into a preallocated buffer beats slice()+sort(comparator) — no per-call allocation
+   * and no comparator dispatch. n ≤ 31 here, where insertion sort is the right choice. */
+  const sortBuf = new Float64Array(Math.max(kt, kf));
+  const med = (n) => {
+    for (let i = 1; i < n; i++) {
+      const v = sortBuf[i]; let j = i - 1;
+      while (j >= 0 && sortBuf[j] > v) { sortBuf[j + 1] = sortBuf[j]; j--; }
+      sortBuf[j + 1] = v;
+    }
+    return sortBuf[(n - 1) >> 1];
+  };
+  const power = opts.hpssPower != null ? opts.hpssPower : 2;
+  const pow = power === 2 ? (x) => x * x : (x) => Math.pow(x, power);
+  const chromas = [], basses = [];
+  const C0 = 16.351597831287414;
+  const bassMin = opts.bassMinFreq || 40, bassMax = opts.bassMaxFreq || 250;
+  for (let t = 0; t < T; t++) {
+    const raw = new Array(12).fill(0), bassRaw = new Array(12).fill(0);
+    for (let k = 1; k <= topBin; k++) {
+      const f = (k * sampleRate) / N;
+      const inMain = f >= minF && f <= maxF, inBass = f >= bassMin && f <= bassMax;
+      if (!inMain && !inBass) continue;
+      // harmonic estimate: median across time at this bin
+      let n = 0;
+      for (let j = t - (kt >> 1); j <= t + (kt >> 1); j++) sortBuf[n++] = mags[Math.min(T - 1, Math.max(0, j))][k];
+      const h = med(n);
+      // percussive estimate: median across frequency in this frame
+      n = 0;
+      for (let j = k - (kf >> 1); j <= k + (kf >> 1); j++) sortBuf[n++] = mags[t][Math.min(topBin, Math.max(0, j))];
+      const p = med(n);
+      const hp = pow(h), pp = pow(p);
+      const mask = hp + pp > 0 ? hp / (hp + pp) : 0;          // soft Wiener mask
+      const v = mags[t][k] * mask;
+      const pc = ((Math.round(12 * Math.log2(f / C0)) % 12) + 12) % 12;
+      if (inMain) raw[pc] += v;
+      if (inBass) bassRaw[pc] += v;
+    }
+    const sup = opts.suppress != null ? opts.suppress : 0.3;
+    const ch = raw.map((v, p) => Math.max(0, v - sup * Math.max(raw[((p - 7) % 12 + 12) % 12], raw[((p - 4) % 12 + 12) % 12])));
+    const mx = Math.max(...ch) || 1, bmx = Math.max(...bassRaw) || 1;
+    chromas.push(ch.map((v) => v / mx));
+    basses.push(bassRaw.map((v) => v / bmx));
+  }
+  return times.map((t, i) => ({ t, chroma: chromas[i], bass: basses[i], energy: energies[i] }));
+}
+
 function beatSegments(samples, sampleRate, beats, opts = {}) {
   const win = opts.window || 4096;
   const hop = opts.hop || Math.floor(sampleRate * (opts.hopSec || 0.12));
-  const frames = [];
-  for (let s = 0; s + win <= samples.length; s += hop) {
-    const f = samples.subarray ? samples.subarray(s, s + win) : samples.slice(s, s + win);
-    let e = 0; for (let i = 0; i < f.length; i++) e += f[i] * f[i];
-    // A SECOND chroma restricted to the bass register. The summed full-spectrum chroma
-    // says which pitch classes are present but not which is the ROOT; the bass line
-    // says exactly that, and it's what a player reads. Keeping them separate lets the
-    // emission use each for what it's good at: upper chroma → quality, bass → root.
-    frames.push({
-      t: s / sampleRate,
-      chroma: pcmToChroma(f, sampleRate, opts),
-      bass: pcmToChroma(f, sampleRate, { ...opts, minFreq: opts.bassMinFreq || 40, maxFreq: opts.bassMaxFreq || 250, suppress: 0 }),
-      energy: Math.sqrt(e / f.length),
-    });
+  /* HPSS-filtered chromagram by default: drums dump broadband energy into every chroma
+   * bin, and a kick/snare on the downbeat is exactly where a chord is most likely read.
+   * `hpss:false` falls back to the plain per-frame chroma. */
+  let frames;
+  if (opts.hpss !== false) {
+    frames = harmonicChromagram(samples, sampleRate, opts);
+  } else {
+    frames = [];
+    for (let s = 0; s + win <= samples.length; s += hop) {
+      const f = samples.subarray ? samples.subarray(s, s + win) : samples.slice(s, s + win);
+      let e = 0; for (let i = 0; i < f.length; i++) e += f[i] * f[i];
+      // A SECOND chroma restricted to the bass register. The summed full-spectrum chroma
+      // says which pitch classes are present but not which is the ROOT; the bass line
+      // says exactly that, and it's what a player reads. Keeping them separate lets the
+      // emission use each for what it's good at: upper chroma → quality, bass → root.
+      frames.push({
+        t: s / sampleRate,
+        chroma: pcmToChroma(f, sampleRate, opts),
+        bass: pcmToChroma(f, sampleRate, { ...opts, minFreq: opts.bassMinFreq || 40, maxFreq: opts.bassMaxFreq || 250, suppress: 0 }),
+        energy: Math.sqrt(e / f.length),
+      });
+    }
   }
   if (!frames.length || beats.length < 2) return [];
   const segs = [];
@@ -3396,6 +3495,7 @@ export {
   trackBeats,
   detectBeats,
   chordStates,
+  harmonicChromagram,
   beatSegments,
   viterbiChords,
   transcribeChordsBeatSync,
