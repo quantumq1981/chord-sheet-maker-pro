@@ -145,7 +145,22 @@ function recognise(chroma, chordMask, bassPc, opts = {}) {
     }
   }
   candidates.sort((a, b) => (b.score - a.score) || (a.quality.rank - b.quality.rank));
-  const best = candidates[0];
+  let best = candidates[0];
+  /* NARROW bass-priority tie-break: m6 read as m7♭5 when the bass says so.
+   *
+   * A minor-6 and a half-diminished 7th a minor-3rd below are the SAME four pitch
+   * classes (Am6 = A C E F# = F#m7♭5), and `m6` (rank 10) out-ranks `m7♭5` (rank 12),
+   * so the m6 reading always won. That is why the Tristan chord (F B D# G#) came out
+   * `Abm6/F` instead of `Fø7`, and B D F A came out `Dm6/B` instead of `Bø7`.
+   *
+   * When the BASS is the m7♭5 root — i.e. the chord is in root position as a half-
+   * diminished — that is the reading every lead sheet uses (it is the ii of a minor
+   * ii–V–i). Deliberately narrow: it fires only for m6-vs-m7♭5, and only when the bass
+   * is exactly root+9, so no other quality's ranking moves. */
+  if (opts.halfDimBass !== false && bassPc != null && best && best.quality.suffix === "m6" && ((best.root + 9) % 12) === bassPc) {
+    const alt = candidates.find((c) => c.root === bassPc && c.quality.suffix === "m7♭5");
+    if (alt) best = alt;
+  }
   return { best, candidates: candidates.slice(0, 4), isSlash: bassPc !== null && best.root !== bassPc, bassPc };
 }
 /* ============================================================================
@@ -2688,19 +2703,38 @@ function transcribeChordsBeatSync(samples, sampleRate, opts = {}) {
   for (let t = 0; t < out.length; t++) {
     const o = out[t];
     if (!o) { if (cur) { events.push(cur); cur = null; } continue; }
-    if (cur && cur.root === o.root && cur.quality === o.quality) { cur.endSec = segs[t].t1; continue; }
+    // accumulate the run's bass evidence so an inversion can be named (below)
+    if (cur && cur.root === o.root && cur.quality === o.quality) {
+      cur.endSec = segs[t].t1;
+      for (let p = 0; p < 12; p++) cur.bass[p] += segs[t].bass ? segs[t].bass[p] : 0;
+      continue;
+    }
     if (cur) events.push(cur);
-    cur = { root: o.root, quality: o.quality, startSec: segs[t].t0, endSec: segs[t].t1 };
+    cur = { root: o.root, quality: o.quality, startSec: segs[t].t0, endSec: segs[t].t1, bass: new Float64Array(12) };
+    for (let p = 0; p < 12; p++) cur.bass[p] += segs[t].bass ? segs[t].bass[p] : 0;
   }
   if (cur) events.push(cur);
   const useSharp = opts.useSharp !== false;
   const names = useSharp ? NOTE_SHARP : NOTE_FLAT;
-  return events.map((e) => ({
-    symbol: names[e.root] + e.quality.suffix,
-    midis: e.quality.intervals.map((i) => 48 + e.root + i),
-    startSec: +e.startSec.toFixed(3),
-    durSec: +(e.endSec - e.startSec).toFixed(3),
-  }));
+  const slash = opts.slash !== false;
+  return events.map((e) => {
+    /* Inversions. The sliding path produced slash chords (via `recognise`'s bass rule)
+     * and the beat-sync path did not — it emitted plain root-position symbols, which is
+     * a real loss of information for a fake book. We already measure a bass-register
+     * chroma per beat, so name the inversion when the run's dominant bass pitch class is
+     * a CHORD TONE other than the root. Restricting it to chord tones is what keeps a
+     * walking/passing bass note from inventing a slash. */
+    let bassPc = -1, bMax = 0;
+    for (let p = 0; p < 12; p++) if (e.bass[p] > bMax) { bMax = e.bass[p]; bassPc = p; }
+    const tones = e.quality.intervals.map((i) => (e.root + i) % 12);
+    const inv = slash && bMax > 0 && bassPc !== e.root && tones.indexOf(bassPc) >= 0;
+    return {
+      symbol: names[e.root] + e.quality.suffix + (inv ? "/" + names[bassPc] : ""),
+      midis: e.quality.intervals.map((i) => 48 + e.root + i),
+      startSec: +e.startSec.toFixed(3),
+      durSec: +(e.endSec - e.startSec).toFixed(3),
+    };
+  });
 }
 
 /* The audio panel's one entry point: chords AND the tempo that produced them, so the
