@@ -2415,6 +2415,8 @@ function detectChord(samples, sampleRate, opts = {}) {
  * identical. Pure. */
 function recoverChordGaps(events, frames, gate, cover, opts = {}) {
   if (!frames.length) return events;
+  // frames may carry a per-frame adaptive gate (see transcribeChords); fall back to the scalar.
+  const gateOf = (f) => (f.gate != null ? f.gate : gate);
   const thr = opts.recoverThreshold != null ? opts.recoverThreshold : 0.22;
   const minConf = opts.recoverMinConfidence != null ? opts.recoverMinConfidence : 0.45;
   const minVoiced = opts.recoverMinVoiced != null ? opts.recoverMinVoiced : 0.5;
@@ -2439,7 +2441,7 @@ function recoverChordGaps(events, frames, gate, cover, opts = {}) {
     const idx = [];
     for (let i = 0; i < frames.length; i++) if (frames[i].t >= a && frames[i].t < b) idx.push(i);
     if (!idx.length) continue;
-    const voiced = idx.filter((i) => frames[i].energy >= gate);
+    const voiced = idx.filter((i) => frames[i].energy >= gateOf(frames[i]));
     // Mostly silent → it really is a rest. Leave it alone.
     if (voiced.length < 2 || voiced.length / idx.length < minVoiced) continue;
     const lo = idx[0], hi = idx[idx.length - 1];
@@ -2449,10 +2451,10 @@ function recoverChordGaps(events, frames, gate, cover, opts = {}) {
     const close = () => { if (run) runs.push(run); run = null; };
     for (const i of idx) {
       let d = null;
-      if (frames[i].energy >= gate) {
+      if (frames[i].energy >= gateOf(frames[i])) {
         const avg = new Array(12).fill(0); let cnt = 0;
         for (let j = Math.max(lo, i - half); j <= Math.min(hi, i + half); j++) {
-          if (frames[j].energy >= gate) { for (let p = 0; p < 12; p++) avg[p] += frames[j].chroma[p]; cnt++; }
+          if (frames[j].energy >= gateOf(frames[j])) { for (let p = 0; p < 12; p++) avg[p] += frames[j].chroma[p]; cnt++; }
         }
         if (cnt) { for (let p = 0; p < 12; p++) avg[p] /= cnt; d = chordFromChroma(avg, recOpts); }
       }
@@ -2510,15 +2512,39 @@ function transcribeChords(samples, sampleRate, opts = {}) {
   }
   if (!frames.length) return [];
   const maxE = Math.max(...frames.map((f) => f.energy)) || 1;
-  const gate = (opts.energyGate != null ? opts.energyGate : 0.08) * maxE;
+  const ratio = opts.energyGate != null ? opts.energyGate : 0.08;
+  const gate = ratio * maxE;
+  /* ADAPTIVE energy gate. A gate fixed at a fraction of the GLOBAL peak assumes the
+   * whole recording sits at one level — true of a compressed pop stem, false of
+   * anything with real dynamics. On a Wagner prelude (peak ~28x the opening) it
+   * discarded 42% of the piece as "silence", including 100% of the first 30s — the
+   * quiet opening where the harmony actually is. So the reference is a LOCAL peak
+   * over a sliding window, floored at a small fraction of the global peak so that
+   * genuine silence / room tone still gates out (a silent lead-in's local peak is
+   * ~0, so the floor decides). On compressed material the local peak is close to the
+   * global peak, so the change there is small and in the right direction — measured
+   * on a real rock stem: 113 -> 115 bars (two more bars of quiet material recovered
+   * at the edges), same N.C. count, +2 chord slots. On the Wagner prelude: 51% -> 80%
+   * of the piece labelled, and the opening decodes at all where it previously produced
+   * literally nothing. `energyGateWindowSec: 0` restores the old global-only behaviour. */
+  const winSec = opts.energyGateWindowSec != null ? opts.energyGateWindowSec : 15;
+  const floorAbs = (opts.energyGateFloor != null ? opts.energyGateFloor : 0.005) * maxE;
+  if (winSec > 0) {
+    const halfW = Math.max(1, Math.round(winSec / (hop / sampleRate) / 2));
+    for (let i = 0; i < frames.length; i++) {
+      let peak = 0;
+      for (let j = Math.max(0, i - halfW); j <= Math.min(frames.length - 1, i + halfW); j++) if (frames[j].energy > peak) peak = frames[j].energy;
+      frames[i].gate = Math.max(floorAbs, ratio * peak);
+    }
+  } else for (const f of frames) f.gate = gate;
   // smoothed label per frame (averaged chroma over the window; gated frames → rest)
   const events = [];
   let cur = null;
   for (let i = 0; i < frames.length; i++) {
     let sym = null, midis = null;
-    if (frames[i].energy >= gate) {
+    if (frames[i].energy >= frames[i].gate) {
       const avg = new Array(12).fill(0); let cnt = 0;
-      for (let j = Math.max(0, i - half); j <= Math.min(frames.length - 1, i + half); j++) { if (frames[j].energy >= gate) { for (let p = 0; p < 12; p++) avg[p] += frames[j].chroma[p]; cnt++; } }
+      for (let j = Math.max(0, i - half); j <= Math.min(frames.length - 1, i + half); j++) { if (frames[j].energy >= frames[j].gate) { for (let p = 0; p < 12; p++) avg[p] += frames[j].chroma[p]; cnt++; } }
       if (cnt) { for (let p = 0; p < 12; p++) avg[p] /= cnt; const d = chordFromChroma(avg, opts); if (d) { sym = d.symbol; midis = d.midis; } }
     }
     const t = frames[i].t;
