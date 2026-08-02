@@ -2598,6 +2598,23 @@ function viterbiChords(segments, states, opts = {}) {
   const prev = new Float64Array(S + 1), cur = new Float64Array(S + 1);
   const back = [];
   const bassW = opts.bassWeight != null ? opts.bassWeight : 0.15;
+  /* Optional KEY PRIOR. A tune mostly uses chords built from its scale, so a state whose
+   * notes all sit in the key is a better bet than one that needs an accidental. Scored
+   * as the FRACTION of the chord's pitch classes that are in the key's scale — no
+   * hardcoded chord-function table, so it handles 7ths/extensions and degrades
+   * gracefully rather than banning anything (a genuine secondary dominant still wins if
+   * the audio supports it). `keyScale` is a 12-bool array; see analyzeAudioChords. */
+  const keyW = opts.keyWeight != null ? opts.keyWeight : 0.1;
+  const scale = opts.keyScale && opts.keyScale.length === 12 ? opts.keyScale : null;
+  const keyFit = new Float64Array(states.length);
+  if (scale && keyW) {
+    for (let s = 0; s < states.length; s++) {
+      const iv = states[s].quality.intervals;
+      let inKey = 0;
+      for (const i of iv) if (scale[(states[s].root + i) % 12]) inKey++;
+      keyFit[s] = inKey / iv.length;
+    }
+  }
   const emit = (seg, s) => {
     if (s === S) return ncScore;
     const st = states[s], c = seg.chroma;
@@ -2605,6 +2622,7 @@ function viterbiChords(segments, states, opts = {}) {
     for (let p = 0; p < 12; p++) { dot += c[p] * st.vec[p]; n += c[p] * c[p]; }
     n = Math.sqrt(n) || 1;
     let score = dot / n - rankBias * st.quality.rank;
+    if (scale && keyW) score += keyW * keyFit[s];
     // the bass register votes for the ROOT (see beatSegments) — the upper chroma is
     // ambiguous between a chord and its relative/inversion, the bass usually isn't.
     if (bassW && seg.bass) {
@@ -2694,11 +2712,29 @@ function analyzeAudioChords(samples, sampleRate, opts = {}) {
   if (opts.beatSync !== false) {
     const bt = detectBeats(samples, sampleRate, opts);
     if (bt.beats && bt.beats.length >= 3) {
-      const events = transcribeChordsBeatSync(samples, sampleRate, { ...opts, beats: bt.beats });
-      if (events.length) return { events, bpm: bt.bpm, beats: bt.beats, method: "beat-sync" };
+      let events = transcribeChordsBeatSync(samples, sampleRate, { ...opts, beats: bt.beats });
+      let key = null;
+      /* KEY PRIOR, second pass. Decode once, read the key off THAT (via the existing,
+       * validated analyzeKey), then re-decode with a diatonic bonus. Two passes because
+       * the key isn't known until something has been decoded — and using the first
+       * pass's own output is exactly the information we have. Skipped when the key
+       * reading is weak, so an ambiguous/modulating tune isn't forced into a key. */
+      if (events.length && opts.keyPrior !== false) {
+        const bpb = opts.beatsPerBar || 4;
+        const probe = { bars: events.map((e, i) => ({ number: i + 1, events: [{ symbol: e.symbol, durBeats: Math.max(1, Math.round(e.durSec / (60 / (bt.bpm || 120)))) }] })), timeSig: [bpb, 4] };
+        key = analyzeKey(probe);
+        if (key && key.confidence >= (opts.keyMinConfidence != null ? opts.keyMinConfidence : 0.5)) {
+          const idx = key.mode === "major" ? _MAJ : _MIN;
+          const scale = new Array(12).fill(false);
+          for (const rel of Object.keys(idx)) scale[(key.tonic + Number(rel)) % 12] = true;
+          const second = transcribeChordsBeatSync(samples, sampleRate, { ...opts, beats: bt.beats, keyScale: scale });
+          if (second.length) events = second;
+        } else key = null;
+      }
+      if (events.length) return { events, bpm: bt.bpm, beats: bt.beats, key, method: "beat-sync" };
     }
   }
-  return { events: transcribeChords(samples, sampleRate, opts), bpm: 0, beats: [], method: "sliding" };
+  return { events: transcribeChords(samples, sampleRate, opts), bpm: 0, beats: [], key: null, method: "sliding" };
 }
 
 /* One frame of PCM → recognised chord. (Thin wrapper: chroma → chord.) */
