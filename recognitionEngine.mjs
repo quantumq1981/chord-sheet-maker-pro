@@ -3264,6 +3264,10 @@ function scoreChromaSequence(score) {
  * frame to unit max, which turns silence into a full-magnitude NOISE chroma. */
 function pcmChromaSequence(samples, sampleRate, opts = {}) {
   const win = opts.window || 4096, hop = opts.hop || Math.floor(sampleRate * (opts.hopSec || 0.25));
+  // Optional HPSS: the same drum-suppressed chroma the chord decoder uses. Opt-in here
+  // (`hpss:true`) rather than default-on, because this feeds the Play-Along aligner and
+  // its behaviour is pinned by tests — see alignPcmToScore for the measured effect.
+  if (opts.hpss) return harmonicChromagram(samples, sampleRate, { ...opts, hop, window: win });
   const seq = [];
   for (let s = 0; s + win <= samples.length; s += hop) {
     const frame = samples.subarray ? samples.subarray(s, s + win) : samples.slice(s, s + win);
