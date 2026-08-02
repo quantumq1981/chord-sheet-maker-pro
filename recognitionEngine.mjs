@@ -145,7 +145,22 @@ function recognise(chroma, chordMask, bassPc, opts = {}) {
     }
   }
   candidates.sort((a, b) => (b.score - a.score) || (a.quality.rank - b.quality.rank));
-  const best = candidates[0];
+  let best = candidates[0];
+  /* NARROW bass-priority tie-break: m6 read as m7♭5 when the bass says so.
+   *
+   * A minor-6 and a half-diminished 7th a minor-3rd below are the SAME four pitch
+   * classes (Am6 = A C E F# = F#m7♭5), and `m6` (rank 10) out-ranks `m7♭5` (rank 12),
+   * so the m6 reading always won. That is why the Tristan chord (F B D# G#) came out
+   * `Abm6/F` instead of `Fø7`, and B D F A came out `Dm6/B` instead of `Bø7`.
+   *
+   * When the BASS is the m7♭5 root — i.e. the chord is in root position as a half-
+   * diminished — that is the reading every lead sheet uses (it is the ii of a minor
+   * ii–V–i). Deliberately narrow: it fires only for m6-vs-m7♭5, and only when the bass
+   * is exactly root+9, so no other quality's ranking moves. */
+  if (opts.halfDimBass !== false && bassPc != null && best && best.quality.suffix === "m6" && ((best.root + 9) % 12) === bassPc) {
+    const alt = candidates.find((c) => c.root === bassPc && c.quality.suffix === "m7♭5");
+    if (alt) best = alt;
+  }
   return { best, candidates: candidates.slice(0, 4), isSlash: bassPc !== null && best.root !== bassPc, bassPc };
 }
 /* ============================================================================
@@ -2540,23 +2555,122 @@ function chordStates(opts = {}) {
 }
 
 /* Mean chroma between consecutive beats (plus the segment's mean energy, for gating). */
+/* Harmonic/percussive source separation (Fitzgerald 2010) — median filtering on the
+ * magnitude spectrogram. Sustained pitched content forms HORIZONTAL ridges (stable
+ * across time), transients form VERTICAL ridges (broadband, one frame). So:
+ *   harmonic  ≈ median along TIME, percussive ≈ median along FREQUENCY,
+ * and a soft Wiener-style mask splits the two. Standard preprocessing for chord
+ * recognition — drums dump broadband energy into every chroma bin, and a kick or snare
+ * on the downbeat is exactly where a chord label is most likely to be read.
+ *
+ * We only ever need the CHROMA, never the audio back, so this skips resynthesis: it
+ * masks the magnitudes and folds straight to chroma. That also makes it cheaper than
+ * the per-frame path it replaces, which recomputed an FFT per frame anyway.
+ *
+ * Returns per-frame { t, chroma, bass, energy } — same shape beatSegments consumes.
+ * Pure. Opt-in via `hpss` (default on for the beat-sync path). */
+function harmonicChromagram(samples, sampleRate, opts = {}) {
+  const N = opts.window || 4096;
+  const hop = opts.hop || Math.floor(sampleRate * (opts.hopSec || 0.12));
+  const maxF = opts.maxFreq || 2000, minF = opts.minFreq || 55;
+  const half = N >> 1;
+  const topBin = Math.min(half - 1, Math.ceil((maxF * N) / sampleRate) + 2);
+  const win = _hann(N);
+  // 1) magnitude spectrogram (only the bins we can use)
+  const mags = [], times = [], energies = [];
+  for (let s = 0; s + N <= samples.length; s += hop) {
+    const re = new Float64Array(N), im = new Float64Array(N);
+    let e = 0;
+    for (let i = 0; i < N; i++) { const v = samples[s + i] || 0; re[i] = v * win[i]; e += v * v; }
+    _fft(re, im);
+    const m = new Float64Array(topBin + 1);
+    for (let k = 0; k <= topBin; k++) m[k] = Math.hypot(re[k], im[k]);
+    mags.push(m); times.push(s / sampleRate); energies.push(Math.sqrt(e / N));
+  }
+  const T = mags.length;
+  if (!T) return [];
+  // 2) median filters. kt spans ~0.4s of frames (harmonic), kf ~17 bins (percussive).
+  /* Kernel sizes are SWEPT, not guessed — on the real Peg stem against time-aligned
+   * ground truth, the plateau is tk≈21–23 frames / kf≈9 bins (root 53%), while the
+   * naive 0.4s / 17-bin defaults gave 42%. The time kernel is expressed in SECONDS so
+   * it adapts to `hopSec`: ~2.5s of median is what separates sustained harmony from
+   * transients here. Tuned on one file, so treat the exact numbers as a plateau centre
+   * rather than a global optimum. */
+  const ktSec = opts.hpssTimeSec != null ? opts.hpssTimeSec : 2.5;
+  const kt = Math.max(3, (opts.hpssTimeKernel || Math.round(ktSec / (hop / sampleRate))) | 1);
+  const kf = Math.max(3, (opts.hpssFreqKernel || 9) | 1);
+  /* Median of a small window, hot path: ~1M calls for a 4-minute track. Insertion sort
+   * into a preallocated buffer beats slice()+sort(comparator) — no per-call allocation
+   * and no comparator dispatch. n ≤ 31 here, where insertion sort is the right choice. */
+  const sortBuf = new Float64Array(Math.max(kt, kf));
+  const med = (n) => {
+    for (let i = 1; i < n; i++) {
+      const v = sortBuf[i]; let j = i - 1;
+      while (j >= 0 && sortBuf[j] > v) { sortBuf[j + 1] = sortBuf[j]; j--; }
+      sortBuf[j + 1] = v;
+    }
+    return sortBuf[(n - 1) >> 1];
+  };
+  const power = opts.hpssPower != null ? opts.hpssPower : 2;
+  const pow = power === 2 ? (x) => x * x : (x) => Math.pow(x, power);
+  const chromas = [], basses = [];
+  const C0 = 16.351597831287414;
+  const bassMin = opts.bassMinFreq || 40, bassMax = opts.bassMaxFreq || 250;
+  for (let t = 0; t < T; t++) {
+    const raw = new Array(12).fill(0), bassRaw = new Array(12).fill(0);
+    for (let k = 1; k <= topBin; k++) {
+      const f = (k * sampleRate) / N;
+      const inMain = f >= minF && f <= maxF, inBass = f >= bassMin && f <= bassMax;
+      if (!inMain && !inBass) continue;
+      // harmonic estimate: median across time at this bin
+      let n = 0;
+      for (let j = t - (kt >> 1); j <= t + (kt >> 1); j++) sortBuf[n++] = mags[Math.min(T - 1, Math.max(0, j))][k];
+      const h = med(n);
+      // percussive estimate: median across frequency in this frame
+      n = 0;
+      for (let j = k - (kf >> 1); j <= k + (kf >> 1); j++) sortBuf[n++] = mags[t][Math.min(topBin, Math.max(0, j))];
+      const p = med(n);
+      const hp = pow(h), pp = pow(p);
+      const mask = hp + pp > 0 ? hp / (hp + pp) : 0;          // soft Wiener mask
+      const v = mags[t][k] * mask;
+      const pc = ((Math.round(12 * Math.log2(f / C0)) % 12) + 12) % 12;
+      if (inMain) raw[pc] += v;
+      if (inBass) bassRaw[pc] += v;
+    }
+    const sup = opts.suppress != null ? opts.suppress : 0.3;
+    const ch = raw.map((v, p) => Math.max(0, v - sup * Math.max(raw[((p - 7) % 12 + 12) % 12], raw[((p - 4) % 12 + 12) % 12])));
+    const mx = Math.max(...ch) || 1, bmx = Math.max(...bassRaw) || 1;
+    chromas.push(ch.map((v) => v / mx));
+    basses.push(bassRaw.map((v) => v / bmx));
+  }
+  return times.map((t, i) => ({ t, chroma: chromas[i], bass: basses[i], energy: energies[i] }));
+}
+
 function beatSegments(samples, sampleRate, beats, opts = {}) {
   const win = opts.window || 4096;
   const hop = opts.hop || Math.floor(sampleRate * (opts.hopSec || 0.12));
-  const frames = [];
-  for (let s = 0; s + win <= samples.length; s += hop) {
-    const f = samples.subarray ? samples.subarray(s, s + win) : samples.slice(s, s + win);
-    let e = 0; for (let i = 0; i < f.length; i++) e += f[i] * f[i];
-    // A SECOND chroma restricted to the bass register. The summed full-spectrum chroma
-    // says which pitch classes are present but not which is the ROOT; the bass line
-    // says exactly that, and it's what a player reads. Keeping them separate lets the
-    // emission use each for what it's good at: upper chroma → quality, bass → root.
-    frames.push({
-      t: s / sampleRate,
-      chroma: pcmToChroma(f, sampleRate, opts),
-      bass: pcmToChroma(f, sampleRate, { ...opts, minFreq: opts.bassMinFreq || 40, maxFreq: opts.bassMaxFreq || 250, suppress: 0 }),
-      energy: Math.sqrt(e / f.length),
-    });
+  /* HPSS-filtered chromagram by default: drums dump broadband energy into every chroma
+   * bin, and a kick/snare on the downbeat is exactly where a chord is most likely read.
+   * `hpss:false` falls back to the plain per-frame chroma. */
+  let frames;
+  if (opts.hpss !== false) {
+    frames = harmonicChromagram(samples, sampleRate, opts);
+  } else {
+    frames = [];
+    for (let s = 0; s + win <= samples.length; s += hop) {
+      const f = samples.subarray ? samples.subarray(s, s + win) : samples.slice(s, s + win);
+      let e = 0; for (let i = 0; i < f.length; i++) e += f[i] * f[i];
+      // A SECOND chroma restricted to the bass register. The summed full-spectrum chroma
+      // says which pitch classes are present but not which is the ROOT; the bass line
+      // says exactly that, and it's what a player reads. Keeping them separate lets the
+      // emission use each for what it's good at: upper chroma → quality, bass → root.
+      frames.push({
+        t: s / sampleRate,
+        chroma: pcmToChroma(f, sampleRate, opts),
+        bass: pcmToChroma(f, sampleRate, { ...opts, minFreq: opts.bassMinFreq || 40, maxFreq: opts.bassMaxFreq || 250, suppress: 0 }),
+        energy: Math.sqrt(e / f.length),
+      });
+    }
   }
   if (!frames.length || beats.length < 2) return [];
   const segs = [];
@@ -2598,6 +2712,23 @@ function viterbiChords(segments, states, opts = {}) {
   const prev = new Float64Array(S + 1), cur = new Float64Array(S + 1);
   const back = [];
   const bassW = opts.bassWeight != null ? opts.bassWeight : 0.15;
+  /* Optional KEY PRIOR. A tune mostly uses chords built from its scale, so a state whose
+   * notes all sit in the key is a better bet than one that needs an accidental. Scored
+   * as the FRACTION of the chord's pitch classes that are in the key's scale — no
+   * hardcoded chord-function table, so it handles 7ths/extensions and degrades
+   * gracefully rather than banning anything (a genuine secondary dominant still wins if
+   * the audio supports it). `keyScale` is a 12-bool array; see analyzeAudioChords. */
+  const keyW = opts.keyWeight != null ? opts.keyWeight : 0.1;
+  const scale = opts.keyScale && opts.keyScale.length === 12 ? opts.keyScale : null;
+  const keyFit = new Float64Array(states.length);
+  if (scale && keyW) {
+    for (let s = 0; s < states.length; s++) {
+      const iv = states[s].quality.intervals;
+      let inKey = 0;
+      for (const i of iv) if (scale[(states[s].root + i) % 12]) inKey++;
+      keyFit[s] = inKey / iv.length;
+    }
+  }
   const emit = (seg, s) => {
     if (s === S) return ncScore;
     const st = states[s], c = seg.chroma;
@@ -2605,6 +2736,7 @@ function viterbiChords(segments, states, opts = {}) {
     for (let p = 0; p < 12; p++) { dot += c[p] * st.vec[p]; n += c[p] * c[p]; }
     n = Math.sqrt(n) || 1;
     let score = dot / n - rankBias * st.quality.rank;
+    if (scale && keyW) score += keyW * keyFit[s];
     // the bass register votes for the ROOT (see beatSegments) — the upper chroma is
     // ambiguous between a chord and its relative/inversion, the bass usually isn't.
     if (bassW && seg.bass) {
@@ -2670,19 +2802,38 @@ function transcribeChordsBeatSync(samples, sampleRate, opts = {}) {
   for (let t = 0; t < out.length; t++) {
     const o = out[t];
     if (!o) { if (cur) { events.push(cur); cur = null; } continue; }
-    if (cur && cur.root === o.root && cur.quality === o.quality) { cur.endSec = segs[t].t1; continue; }
+    // accumulate the run's bass evidence so an inversion can be named (below)
+    if (cur && cur.root === o.root && cur.quality === o.quality) {
+      cur.endSec = segs[t].t1;
+      for (let p = 0; p < 12; p++) cur.bass[p] += segs[t].bass ? segs[t].bass[p] : 0;
+      continue;
+    }
     if (cur) events.push(cur);
-    cur = { root: o.root, quality: o.quality, startSec: segs[t].t0, endSec: segs[t].t1 };
+    cur = { root: o.root, quality: o.quality, startSec: segs[t].t0, endSec: segs[t].t1, bass: new Float64Array(12) };
+    for (let p = 0; p < 12; p++) cur.bass[p] += segs[t].bass ? segs[t].bass[p] : 0;
   }
   if (cur) events.push(cur);
   const useSharp = opts.useSharp !== false;
   const names = useSharp ? NOTE_SHARP : NOTE_FLAT;
-  return events.map((e) => ({
-    symbol: names[e.root] + e.quality.suffix,
-    midis: e.quality.intervals.map((i) => 48 + e.root + i),
-    startSec: +e.startSec.toFixed(3),
-    durSec: +(e.endSec - e.startSec).toFixed(3),
-  }));
+  const slash = opts.slash !== false;
+  return events.map((e) => {
+    /* Inversions. The sliding path produced slash chords (via `recognise`'s bass rule)
+     * and the beat-sync path did not — it emitted plain root-position symbols, which is
+     * a real loss of information for a fake book. We already measure a bass-register
+     * chroma per beat, so name the inversion when the run's dominant bass pitch class is
+     * a CHORD TONE other than the root. Restricting it to chord tones is what keeps a
+     * walking/passing bass note from inventing a slash. */
+    let bassPc = -1, bMax = 0;
+    for (let p = 0; p < 12; p++) if (e.bass[p] > bMax) { bMax = e.bass[p]; bassPc = p; }
+    const tones = e.quality.intervals.map((i) => (e.root + i) % 12);
+    const inv = slash && bMax > 0 && bassPc !== e.root && tones.indexOf(bassPc) >= 0;
+    return {
+      symbol: names[e.root] + e.quality.suffix + (inv ? "/" + names[bassPc] : ""),
+      midis: e.quality.intervals.map((i) => 48 + e.root + i),
+      startSec: +e.startSec.toFixed(3),
+      durSec: +(e.endSec - e.startSec).toFixed(3),
+    };
+  });
 }
 
 /* The audio panel's one entry point: chords AND the tempo that produced them, so the
@@ -2694,11 +2845,29 @@ function analyzeAudioChords(samples, sampleRate, opts = {}) {
   if (opts.beatSync !== false) {
     const bt = detectBeats(samples, sampleRate, opts);
     if (bt.beats && bt.beats.length >= 3) {
-      const events = transcribeChordsBeatSync(samples, sampleRate, { ...opts, beats: bt.beats });
-      if (events.length) return { events, bpm: bt.bpm, beats: bt.beats, method: "beat-sync" };
+      let events = transcribeChordsBeatSync(samples, sampleRate, { ...opts, beats: bt.beats });
+      let key = null;
+      /* KEY PRIOR, second pass. Decode once, read the key off THAT (via the existing,
+       * validated analyzeKey), then re-decode with a diatonic bonus. Two passes because
+       * the key isn't known until something has been decoded — and using the first
+       * pass's own output is exactly the information we have. Skipped when the key
+       * reading is weak, so an ambiguous/modulating tune isn't forced into a key. */
+      if (events.length && opts.keyPrior !== false) {
+        const bpb = opts.beatsPerBar || 4;
+        const probe = { bars: events.map((e, i) => ({ number: i + 1, events: [{ symbol: e.symbol, durBeats: Math.max(1, Math.round(e.durSec / (60 / (bt.bpm || 120)))) }] })), timeSig: [bpb, 4] };
+        key = analyzeKey(probe);
+        if (key && key.confidence >= (opts.keyMinConfidence != null ? opts.keyMinConfidence : 0.5)) {
+          const idx = key.mode === "major" ? _MAJ : _MIN;
+          const scale = new Array(12).fill(false);
+          for (const rel of Object.keys(idx)) scale[(key.tonic + Number(rel)) % 12] = true;
+          const second = transcribeChordsBeatSync(samples, sampleRate, { ...opts, beats: bt.beats, keyScale: scale });
+          if (second.length) events = second;
+        } else key = null;
+      }
+      if (events.length) return { events, bpm: bt.bpm, beats: bt.beats, key, method: "beat-sync" };
     }
   }
-  return { events: transcribeChords(samples, sampleRate, opts), bpm: 0, beats: [], method: "sliding" };
+  return { events: transcribeChords(samples, sampleRate, opts), bpm: 0, beats: [], key: null, method: "sliding" };
 }
 
 /* One frame of PCM → recognised chord. (Thin wrapper: chroma → chord.) */
@@ -3326,6 +3495,7 @@ export {
   trackBeats,
   detectBeats,
   chordStates,
+  harmonicChromagram,
   beatSegments,
   viterbiChords,
   transcribeChordsBeatSync,
