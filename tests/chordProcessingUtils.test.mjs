@@ -399,9 +399,13 @@ describe('formatChordQuality — alternate settings', () => {
     const altCtx = makeContext({ minorStyle: 'min' });
     assert.equal(altCtx.formatChordQuality('m'), 'min');
   });
-  it('m7b5 → m7b5 when halfDimStyle=m7b5', () => {
+  it('m7b5 → m7♭5 (proper flat glyph) when halfDimStyle=m7b5', () => {
     const altCtx = makeContext({ halfDimStyle: 'm7b5' });
-    assert.equal(altCtx.formatChordQuality('m7b5'), 'm7b5');
+    assert.equal(altCtx.formatChordQuality('m7b5'), 'm7♭5');
+  });
+  it('ø input → m7♭5 when halfDimStyle=m7b5', () => {
+    const altCtx = makeContext({ halfDimStyle: 'm7b5' });
+    assert.equal(altCtx.formatChordQuality('ø'), 'm7♭5');
   });
   it('dim → ° when dimStyle=o-circle', () => {
     const altCtx = makeContext({ dimStyle: 'o-circle' });

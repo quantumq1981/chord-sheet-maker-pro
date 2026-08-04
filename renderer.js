@@ -596,10 +596,27 @@ function hrAugDot(cx, cy, col) {
 // lines up with `[data-ci="N"]` — the two only need to agree on chord ORDER, not
 // on beat maths. `hrChordText()` is the single tagging point.
 let _hrChordSeq = 0;
+
+// Format a single raw chord token for display through the shared chord-style
+// engine so the Fake Book Settings (Half-Dim / Maj7 / Minor / Dim style,
+// accidental glyphs) apply live in Slash-Rhythm View — exactly as they do in
+// the fake-book HTML view. Without this the SVG printed the raw source token,
+// so changing a chord-style setting appeared to do nothing (the user had to
+// hand-edit each chord). Falls back to the raw token when the chord parser is
+// unavailable (e.g. minimal test contexts) or the token isn't a chord
+// (`%`, `N.C.`, empty).
+function hrFormatChord(chord) {
+  const raw = (chord == null ? '' : String(chord));
+  if (typeof parseChordToken !== 'function') return raw;
+  const parsed = parseChordToken(raw);
+  if (!parsed) return raw;
+  return (parsed.root || '') + (parsed.quality || '') + (parsed.bass ? '/' + parsed.bass : '') || raw;
+}
+
 function hrChordText(x, y, cc, chord, anchor) {
   return (
     `<text class="hrChord" data-ci="${_hrChordSeq++}" x="${x}" y="${y}" font-size="13" fill="${cc}"` +
-    ` text-anchor="${anchor}" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(chord)}</text>`
+    ` text-anchor="${anchor}" font-weight="bold" font-family='${_hrFont()}'>${escapeHtml(hrFormatChord(chord))}</text>`
   );
 }
 
