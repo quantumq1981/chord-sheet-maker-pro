@@ -170,8 +170,10 @@ test('key of G renders one sharp; key of D renders two', () => {
 
 test('key of F renders one flat; key of Eb renders three', () => {
   const ctx = loadRenderer();
-  const f = ctx.renderHybridDoc('Key: F\n\n- Verse\n| F |\n');
-  const eb = ctx.renderHybridDoc('Key: Eb\n\n- Verse\n| Eb |\n');
+  // Use accidental-free chord roots so the count isolates the key signature —
+  // chord roots now render proper ♭/♯ glyphs (they'd otherwise inflate the count).
+  const f = ctx.renderHybridDoc('Key: F\n\n- Verse\n| C |\n');
+  const eb = ctx.renderHybridDoc('Key: Eb\n\n- Verse\n| C |\n');
   assert.equal(flatCount(f), 1);
   assert.equal(flatCount(eb), 3);
 });
@@ -525,4 +527,31 @@ test('SVG/PNG export (continuous SVG) is unaffected by how many printed pages th
   // Height should be much taller than a single printed page, confirming it is
   // the full content height, not a paginated fixed page height.
   assert.ok(svgHeight(svg) > 1200, `expected tall continuous svg, got height=${svgHeight(svg)}`);
+});
+
+// --- Chord-style settings apply live in Slash-Rhythm View ------------------
+// Regression: hrChordText() used to print the raw source token, so the Fake
+// Book chord-style settings (Half-Dim / Maj7 / accidental glyphs) were ignored
+// in Slash-Rhythm View — changing a setting appeared to do nothing until the
+// source was hand-edited. Labels now route through parseChordToken.
+test('Slash-Rhythm labels honour the Half-Dim style setting (default ø7)', () => {
+  const ctx = loadRenderer();
+  ctx.fbSettings.halfDimStyle = 'slashed';
+  const out = ctx.renderHybridDoc('- V\n| Cm7b5 |\n');
+  assert.ok(out.includes('>Cø7<'), 'half-dim renders as ø7 by default');
+  assert.ok(!out.includes('>Cm7b5<'), 'raw m7b5 token is not printed verbatim');
+});
+
+test('Slash-Rhythm labels update when Half-Dim style = m7♭5', () => {
+  const ctx = loadRenderer();
+  ctx.fbSettings.halfDimStyle = 'm7b5';
+  const out = ctx.renderHybridDoc('- V\n| Cm7b5 |\n');
+  assert.ok(out.includes('>Cm7♭5<'), 'half-dim renders as m7♭5 (proper flat) when set');
+});
+
+test('Slash-Rhythm labels render accidentals with proper glyphs', () => {
+  const ctx = loadRenderer();
+  const out = ctx.renderHybridDoc('- V\n| Bbmaj7 | F#m7 |\n');
+  assert.ok(out.includes('B♭'), 'Bb root shows the flat glyph');
+  assert.ok(out.includes('F♯'), 'F# root shows the sharp glyph');
 });

@@ -432,10 +432,11 @@ function formatChordQuality(quality){
   if (!quality) return '';
   let q = quality;
 
-  // Half-diminished: m7b5 or ø — respect settings
+  // Half-diminished: m7b5 or ø — respect settings.
+  // The 'm7b5' style renders the true flat glyph (m7♭5), not the ASCII 'b'.
   if (/^m7b5$/i.test(q) || /^ø/i.test(q)){
     if (fbSettings.halfDimStyle === 'm7b5'){
-      return 'm7b5';
+      return 'm7♭5';
     }
     return 'ø7';
   }
