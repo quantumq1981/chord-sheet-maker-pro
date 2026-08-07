@@ -432,9 +432,12 @@ function formatChordQuality(quality){
   if (!quality) return '';
   let q = quality;
 
-  // Half-diminished: m7b5 or ø — respect settings.
-  // The 'm7b5' style renders the true flat glyph (m7♭5), not the ASCII 'b'.
-  if (/^m7b5$/i.test(q) || /^ø/i.test(q)){
+  // Half-diminished — recognized UNIVERSALLY from any common notation and
+  // normalized to the chosen style so the setting applies to every chart no
+  // matter how the source spelled it. Accepts:
+  //   m7b5 · mi7b5 · min7b5 · -7b5 · −7b5 · m7-5 · m7♭5 (unicode) · ø · ø7 · Ø7
+  // Output: ø7 (default) or m7♭5 (true flat glyph) per fbSettings.halfDimStyle.
+  if (/^(?:m|mi|min|-|−)7(?:b|♭|-)5$/i.test(q) || /^[øØ]/.test(q)){
     if (fbSettings.halfDimStyle === 'm7b5'){
       return 'm7♭5';
     }

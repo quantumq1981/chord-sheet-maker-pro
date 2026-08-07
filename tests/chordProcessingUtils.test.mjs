@@ -291,6 +291,30 @@ describe('formatChordQuality', () => {
     assert.equal(ctx.formatChordQuality('ø'), 'ø7');
     assert.equal(ctx.formatChordQuality('m7b5'), 'ø7');
   });
+  it('half-dim recognized universally from every common notation → ø7 (default)', () => {
+    // Any way a source / import might spell half-diminished normalizes to the style.
+    for (const q of [
+      'm7b5',
+      'm7♭5',
+      'mi7b5',
+      'min7b5',
+      '-7b5',
+      '−7b5',
+      'm7-5',
+      'ø',
+      'ø7',
+      'Ø',
+      'Ø7',
+    ]) {
+      assert.equal(ctx.formatChordQuality(q), 'ø7', `${q} should normalize to ø7`);
+    }
+  });
+  it('half-dim universal notations → m7♭5 when halfDimStyle=m7b5', () => {
+    const altCtx = makeContext({ halfDimStyle: 'm7b5' });
+    for (const q of ['m7b5', 'm7♭5', 'mi7b5', 'min7b5', '-7b5', 'm7-5', 'ø', 'Ø7']) {
+      assert.equal(altCtx.formatChordQuality(q), 'm7♭5', `${q} should normalize to m7♭5`);
+    }
+  });
   it('b/# in extensions converted to unicode (7b9 → 7♭9)', () => {
     assert.equal(ctx.formatChordQuality('7b9'), '7♭9');
     assert.equal(ctx.formatChordQuality('7#11'), '7♯11');
