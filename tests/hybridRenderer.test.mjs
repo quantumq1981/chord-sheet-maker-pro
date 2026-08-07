@@ -555,3 +555,11 @@ test('Slash-Rhythm labels render accidentals with proper glyphs', () => {
   assert.ok(out.includes('B♭'), 'Bb root shows the flat glyph');
   assert.ok(out.includes('F♯'), 'F# root shows the sharp glyph');
 });
+
+test('Slash-Rhythm: alternate half-dim spellings normalize universally (min7b5 → ø7)', () => {
+  const ctx = loadRenderer();
+  ctx.fbSettings.halfDimStyle = 'slashed';
+  const out = ctx.renderHybridDoc('- V\n| Cmin7b5 | D-7b5 |\n');
+  assert.ok(out.includes('>Cø7<'), 'Cmin7b5 renders as Cø7');
+  assert.ok(out.includes('>Dø7<'), 'D-7b5 renders as Dø7');
+});
