@@ -369,10 +369,30 @@ function estimateSpacing(ys) {
   clusters.sort((a, b) => b.vals.length - a.vals.length || a.center - b.center);
   return clusters[0].center || 7;
 }
-function buildChart(tokens) {
+/* `opts.systemShifts` — MANUAL per-system string correction (Roadmap Wave 2 #7).
+ *
+ * `topY` (the high-e line) is anchored to the highest digit row in a system, which is
+ * correct only when that system actually plays the high e. When it doesn't, the anchor
+ * latches onto a lower string and EVERY note in that system shifts by one or more
+ * strings — silently, producing confident wrong chords (Kid Charlemagne bars 26–32 read
+ * Fm7 where the truth is C7).
+ *
+ * This is NOT auto-fixable from the PDF layers and the auto-fix is a documented trap:
+ * the correctly-anchored Blue Sky system and the mis-anchored Kid Charlemagne one have
+ * near-identical geometry (notation→digit offsets 52.6pt vs 53.3pt), so any rule that
+ * shifts the second also breaks the first. The honest escape hatch is a manual override.
+ *
+ * `systemShifts` is indexed by GLOBAL system index (the order systems are found across
+ * pages, matching the `systems` array in the return value). The value is added to the
+ * engine string index (0 = low E … 5 = high e), so **−1 moves every note in that system
+ * toward the bass** and +1 toward the treble. Default (absent/0) is a no-op, so the
+ * validated corpus is untouched. */
+function buildChart(tokens, opts = {}) {
+  const shifts = opts.systemShifts || {};
   const pages = {};
   tokens.forEach((t) => (pages[t.page] = pages[t.page] || []).push(t));
   const measures = new Map();
+  const systems = [];
   let systemsFound = 0, columnsFound = 0;
 
   Object.values(pages).forEach((ds) => {
@@ -391,7 +411,10 @@ function buildChart(tokens) {
     const staves = groups.filter((g) => g.length >= 3).map((g) => ({ topY: Math.min(...g), botY: Math.max(...g) }));
 
     staves.forEach((st, si) => {
+      const sysIndex = systemsFound;                      // global, across pages
       systemsFound++;
+      const shift = (shifts[sysIndex] | 0) || 0;
+      const sysMeasures = new Set();
       const lo = st.topY - pad, hi = st.topY + spacing * 5 + pad;
       const staffNotes = ds.filter((d) => d.y >= lo && d.y <= hi);
 
@@ -429,7 +452,8 @@ function buildChart(tokens) {
         col.forEach((d) => {
           const top = Math.round((d.y - st.topY) / spacing); // 0 = high e
           if (top < 0 || top > 5) return;
-          const eng = 5 - top;                                // 0 = low E
+          const eng = 5 - top + shift;                        // 0 = low E (+ manual shift)
+          if (eng < 0 || eng > 5) return;                     // shifted off the neck
           if (frets[eng] === undefined) frets[eng] = d.val;
         });
         if (!Object.keys(frets).length) return;
@@ -437,6 +461,7 @@ function buildChart(tokens) {
         for (const m of marks) if (cx >= m.x - pad) meas = m.num;
         if (meas == null) return;
         columnsFound++;
+        sysMeasures.add(meas);
         if (!measures.has(meas)) measures.set(meas, { number: meas, columns: [] });
         const mo = measures.get(meas);
         mo.columns.push({ x: cx, frets });
@@ -444,12 +469,17 @@ function buildChart(tokens) {
           const e = markExt.get(meas); mo.startX = e.startX; mo.endX = e.endX;
         }
       });
+      // report each system + the bars it covers, so the UI can offer a per-system
+      // shift control labelled with something the user can actually find on the page
+      const nums = [...sysMeasures].sort((a, b) => a - b);
+      systems.push({ index: sysIndex, page: ds[0] ? ds[0].page : 0, shift, measures: nums, firstMeasure: nums[0] != null ? nums[0] : null, lastMeasure: nums.length ? nums[nums.length - 1] : null });
     });
   });
 
   const list = [...measures.values()].sort((a, b) => a.number - b.number);
   list.forEach((m) => m.columns.sort((a, b) => a.x - b.x));
-  return { measures: list, systemsFound, columnsFound };
+  systems.sort((a, b) => a.index - b.index);
+  return { measures: list, systemsFound, columnsFound, systems };
 }
 
 /* ---- score model: chords placed on beats within each bar -----------------
