@@ -24,6 +24,29 @@ let _gpAtInstance = null;
 let _gpAtLoadPromise = null;
 
 /**
+ * Monkey-patch Voice._chain to guard against bars with mismatched voice counts.
+ * AlphaTab's _chain assumes nextBar.voices[this.index] exists, but GP7/8 files
+ * with heterogeneous track layouts can have bars with fewer voices than the
+ * current voice index, causing a "Cannot read properties of undefined" crash
+ * during Score.finish().
+ */
+function _patchVoiceChain(at) {
+  var Voice =
+    (at.model && at.model.Voice) || at.Voice || null;
+  if (!Voice || !Voice.prototype || typeof Voice.prototype._chain !== 'function') return;
+  var orig = Voice.prototype._chain;
+  Voice.prototype._chain = function (beat, sharedDataBag) {
+    try {
+      return orig.call(this, beat, sharedDataBag);
+    } catch (_e) {
+      // Swallow the crash — the beat simply won't be chained to the next bar's
+      // voice, which is harmless (it only affects cross-bar beaming/ties).
+      if (beat && typeof beat.chain === 'function') beat.chain(sharedDataBag);
+    }
+  };
+}
+
+/**
  * Lazily load AlphaTab from CDN and return the namespace object.
  * Subsequent calls return the cached instance immediately.
  */
@@ -39,6 +62,7 @@ function _loadAlphaTab() {
       (window.alphaTab.Settings || window.alphaTab.importer)
     ) {
       _gpAtInstance = window.alphaTab;
+      _patchVoiceChain(_gpAtInstance);
       resolve(_gpAtInstance);
       return;
     }
@@ -53,6 +77,7 @@ function _loadAlphaTab() {
         return;
       }
       _gpAtInstance = at;
+      _patchVoiceChain(at);
       resolve(at);
     };
     script.onerror = function () {
