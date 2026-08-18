@@ -416,6 +416,15 @@
     var header = ['X:1'];
     if (doc.title) header.push('T:' + doc.title);
     if (doc.composer) header.push('C:' + doc.composer);
+    // Voiced mode stacks tall chord noteheads and (with the guitar-tab option) a
+    // second TAB staff under every system. Without extra vertical room abcjs packs
+    // the systems so tightly that the next system's chord symbols and section label
+    // overprint the previous system's TAB fret numbers — the "disorganized" render.
+    // Reserve inter-system + intra-system space so each system stands clear.
+    if (voiced) {
+      header.push('%%staffsep 110');
+      header.push('%%sysstaffsep 90');
+    }
     header.push('M:' + time);
     header.push('L:1/8');
     if (doc.tempo) header.push('Q:1/4=' + parseInt(doc.tempo, 10));
@@ -424,8 +433,11 @@
     // Flatten every bar across sections into a uniform model first, then engrave.
     var flat = [];
     var sections = doc.sections || [];
-    var prevChord = null;
-    var prevRaw = null;
+    // The full engraved body of the last real measure — a `%` simile repeats the
+    // WHOLE previous measure (every chord + its notes), not just the last chord.
+    // Repeating only the last chord silently dropped the first chord of every
+    // multi-chord bar (e.g. `| Em/B_Dsus4/A | % |` rendered `Dsus4/A` twice).
+    var prevBody = null;
     for (var s = 0; s < sections.length; s++) {
       var sec = sections[s];
       var sbars = sec.bars || [];
@@ -435,26 +447,24 @@
         var measure = b === 0 && label ? '"^' + label + '" ' : '';
         var rawTok = bar.chordToken == null ? '' : String(bar.chordToken).trim();
         var chords = rawTok ? rawTok.split('_') : [];
+        var body;
         if (!rawTok || rawTok === '%' || rawTok === '%%') {
-          // sustain: repeat the previous chord (symbol + voiced notes)
-          measure += (prevChord ? '"' + prevChord + '"' : '') + chordBody(prevRaw, units);
+          // simile: repeat the entire previous measure (or a rest if none yet).
+          body = prevBody != null ? prevBody : 'z' + units;
         } else if (/^N\.?C\.?$/i.test(rawTok)) {
-          measure += 'z' + units;
-          prevChord = null;
-          prevRaw = null;
+          body = 'z' + units;
+          prevBody = body;
         } else {
           var durs = splitUnits(units, chords.length);
           var parts = [];
           for (var c = 0; c < chords.length; c++) {
             var name = normalizeChordForAbc(chords[c]);
-            if (name) {
-              prevChord = name;
-              prevRaw = chords[c];
-            }
             parts.push((name ? '"' + name + '"' : '') + chordBody(chords[c], durs[c]));
           }
-          measure += parts.join(' ');
+          body = parts.join(' ');
+          prevBody = body;
         }
+        measure += body;
         flat.push({
           measure: measure,
           leftRepeat: bar.leftBar === 'repeat-start',

@@ -308,6 +308,31 @@ test('csmpnToAbc sustains the previous chord through a % simile bar', () => {
   assert.equal((abc.match(/"F"z8/g) || []).length, 2, abc);
 });
 
+test('csmpnToAbc % simile repeats the WHOLE previous measure (both chords), not just the last', () => {
+  const abc = A.csmpnToAbc('x', {
+    parse: fakeParse({
+      time: '4/4',
+      sections: [{ bars: [{ chordToken: 'Em/B_Dsus4/A' }, { chordToken: '%' }] }],
+    }),
+  });
+  // Both bars must carry BOTH chords — the old code repeated only "Dsus4/A".
+  assert.equal((abc.match(/"Em\/B"z4 "Dsus4\/A"z4/g) || []).length, 2, abc);
+});
+
+test('csmpnToAbc voiced mode adds inter-system spacing directives; plain mode does not', () => {
+  const model = {
+    time: '4/4',
+    sections: [{ bars: [{ chordToken: 'C' }, { chordToken: 'G' }] }],
+  };
+  // The directives are emitted from the `voiced` flag alone (independent of the
+  // chord-voicing tables), so no ChordTheory patterns are needed here.
+  const voiced = A.csmpnToAbc('x', { parse: fakeParse(model), voiced: true });
+  const plain = A.csmpnToAbc('x', { parse: fakeParse(model) });
+  assert.ok(voiced.includes('%%staffsep'), voiced);
+  assert.ok(voiced.includes('%%sysstaffsep'), voiced);
+  assert.ok(!plain.includes('%%staffsep'), plain);
+});
+
 test('csmpnToAbc normalizes unicode accidentals and closes with a final barline', () => {
   const abc = A.csmpnToAbc('x', {
     parse: fakeParse({ time: '4/4', key: 'B♭', sections: [{ bars: [{ chordToken: 'B♭7' }] }] }),

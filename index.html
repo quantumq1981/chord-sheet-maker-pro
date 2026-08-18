@@ -2398,6 +2398,9 @@ Tempo: 100
               <option value="2">Score Only</option>
             </select>
           </label>
+          <label id="gpnSectionsWrap" title="Show section markers (Intro, Verse, Chorus…). AlphaTab draws these over the first chord of each section, so they are off by default to keep chords readable — the section structure is always visible in the main editor.">
+            <input type="checkbox" id="gpnSections"> Section labels
+          </label>
           <button id="btnGpnPrint" title="Print or save as PDF">⎙ Print</button>
           <button id="btnGpnClose" title="Close notation view">&#x2715;</button>
         </div>
@@ -6772,6 +6775,7 @@ function csmpnToCsml(csmpnText) {
   const btnClose    = document.getElementById('btnGpnClose');
   const btnPrint    = document.getElementById('btnGpnPrint');
   const staveSelEl  = document.getElementById('gpnStaveProfile');
+  const sectionsEl  = document.getElementById('gpnSections');
   const trackWrap   = document.getElementById('gpnTrackWrap');
   const trackSelEl  = document.getElementById('gpnTrack');
   const container   = document.getElementById('gpNotationContainer');
@@ -6834,6 +6838,7 @@ function csmpnToCsml(csmpnText) {
         staveProfile: parseInt(staveSelEl.value, 10) || 1,
         layoutMode: 0,
         trackIndex: selectedTrackIndex,
+        showSections: !!(sectionsEl && sectionsEl.checked),
         onInfo: (kind, data) => {
           if (kind === 'rendered') rendered = true;
           if (kind === 'loaded' && data) populateTracks(data.trackList);
@@ -6878,6 +6883,12 @@ function csmpnToCsml(csmpnText) {
   if (btnClose) btnClose.addEventListener('click', () => panel.classList.remove('open'));
 
   if (staveSelEl) staveSelEl.addEventListener('change', () => {
+    if (panel.classList.contains('open')) renderNotation();
+  });
+
+  // Section markers overlap the first chord of each system in AlphaTab's engraving,
+  // so they are hidden by default; toggling re-renders the score.
+  if (sectionsEl) sectionsEl.addEventListener('change', () => {
     if (panel.classList.contains('open')) renderNotation();
   });
 
@@ -6936,6 +6947,7 @@ function csmpnToCsml(csmpnText) {
       const ok = window.printGpTracks(currentApi, indices, mode, {
         staveProfile: parseInt(staveSelEl.value, 10) || 1,
         paperSize: paperSize,
+        showSections: !!(sectionsEl && sectionsEl.checked),
       });
       if (!ok) setStatus('Could not open the print view — allow pop-ups for this site, then try again.', 'err');
     } else if (typeof currentApi.print === 'function') {
