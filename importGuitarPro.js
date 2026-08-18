@@ -939,6 +939,18 @@ if (typeof window !== 'undefined') {
    *   staveProfile  1=ScoreTab (default), 2=Score, 3=Tab
    *   layoutMode    0=Page (default), 1=Horizontal
    */
+  // Toggle AlphaTab's section-marker (rehearsal) engraving. Defensive across builds:
+  // `notation.elements` is a Map keyed by the NotationElement enum, and the enum member
+  // name is stable (EffectMarker). No-op if either is unavailable.
+  function _setMarkerVisibility(at, settings, visible) {
+    try {
+      var el = settings && settings.notation && settings.notation.elements;
+      var NE = at && (at.NotationElement || (at.model && at.model.NotationElement));
+      if (!el || !NE || NE.EffectMarker === undefined || typeof el.set !== 'function') return;
+      el.set(NE.EffectMarker, !!visible);
+    } catch (_e) { /* leave AlphaTab defaults in place */ }
+  }
+
   // Build a wired AlphaTabApi (shared by the GP-bytes and AlphaTex render paths).
   async function _buildGpApi(container, o) {
     var at = await _loadAlphaTab();
@@ -962,6 +974,13 @@ if (typeof window !== 'undefined') {
       settings.display.staveProfile = o.staveProfile !== undefined ? o.staveProfile : 1;
       settings.display.layoutMode   = o.layoutMode   !== undefined ? o.layoutMode   : 0;
     }
+
+    // AlphaTab draws section markers (Intro / Verse / Chorus …) at the top-left of
+    // each system, directly over the first bar's chord symbol and bar number — so a
+    // section start hides its own first chord. Hide the markers unless the caller
+    // explicitly asks for them (the section structure is always shown in the main
+    // editor / slash view). `notation.elements` is a Map keyed by NotationElement.
+    _setMarkerVisibility(at, settings, !!o.showSections);
 
     var Api = at.AlphaTabApi || (at.model && at.model.AlphaTabApi);
     if (!Api) throw new Error('AlphaTabApi not found in this AlphaTab build — try refreshing.');
@@ -1115,6 +1134,8 @@ if (typeof window !== 'undefined') {
         s.display.scale = 0.8;
         s.display.stretchForce = 0.8;
       }
+      // Mirror the on-screen setting: hide overlapping section markers unless asked.
+      _setMarkerVisibility(at, s, !!o.showSections);
       if (s.player) {
         try {
           s.player.enablePlayer = false;
