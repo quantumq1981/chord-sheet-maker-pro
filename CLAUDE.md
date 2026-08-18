@@ -2261,3 +2261,79 @@ the functional-analysis sequence *isolate bass → intervals from candidate root
   trusting only printed chord symbols
 - Optional "prefer simple chord names" toggle (recovered voicing names like Dsus4/Gsus2
   are note-accurate but verbose for fake books)
+
+## Feature — Performance Lyrics Mode (auto-scrolling stage lyric sheets, 2026-08-18)
+
+The inverse of the app's chord-centric pipeline: instead of turning a source into a
+chord chart, **Performance Lyrics Mode** ingests a RAW external lyric page and turns it
+into a clean, structured, **BPM/duration-timed auto-scrolling** lyric sheet for the
+stage. Distinct from the existing `LyricsView` (which strips chords from the app's OWN
+CSMPN chart and scrolls by a manual speed slider) — this reads pages the app never
+authored (chord-over-lyrics sheets, AZLyrics-style plain pages, Genius-style pages with
+`[Section]` headers), **infers sections** when the page has none, and times the scroll
+to the song.
+
+**`performanceLyrics.js`** (new root module, `window.PerformanceLyrics`) — a pure,
+headless-tested core + a browser-only stage-view runtime, following the
+`lyricsView.js`/`backupRestore.js` precedent. Loaded as a classic `<script>` after
+`chordsheetPdf.js`.
+
+- **Pure core** (no DOM, tested in `tests/performanceLyrics.test.mjs`):
+  - `normalizeText(raw)` — CRLF→LF, strip zero-width chars, decode HTML entities
+    (`&amp;`/`&#39;`/…), trim whitespace per line.
+  - `isChordOnlyLine` (>60% chord tokens AND no lyric words) + `stripInlineChords`
+    (removes bracketed `[Am7]`/`{C#m}` always; unbracketed chord tokens only when
+    whitespace-delimited, so "Amazing" keeps its "Am").
+  - `isBoilerplate`/`stripBoilerplate` — drops AZLyrics/Genius junk ("You might also
+    like", "Submit Corrections", "Embed"/"5Embed", "N Contributors", ©/writer credits,
+    ad placeholders).
+  - `detectMetadata` — title/artist/BPM/time-sig, but title/artist consumed ONLY on a
+    strong signal (`Title:`/`Artist:`/`By:` label, a quoted or "… lyrics" page title, a
+    `by <name>` line). A plain content line is NEVER grabbed as a title, so an untitled
+    raw paste keeps its first verse.
+  - `detectExplicitSections` (Genius `[Verse]`/`[Chorus]` markers) + `detectInferredSections`
+    (AZLyrics: blank-line blocks → fingerprint + exact-map/`≥0.85` Levenshtein clustering →
+    most-repeated block = Chorus, distinct blocks numbered Verse 1..n, best-effort
+    Pre-Chorus/Bridge/Outro only on an unambiguous signature). Fuzzy matching is skipped
+    past 120 blocks (a document, not a song) to keep the pass O(n) — a 10k-line paste
+    parses in <500ms.
+  - `countSyllables`/`lineSyllables` (vowel-group heuristic w/ silent-e + `-le` handling).
+  - `parseLyrics(raw)` → `{ title, artist, bpm, timeSignature, sections:[{label, lines}] }`.
+  - `buildTimingPlan(model, {bpm, duration|durationSeconds, timeSignature, syllablesPerBeat})`
+    — `total_beats = BPM/60·duration`; per-line beats = `ceil(syllables/spb)`; scaled to
+    fill (never overshoot) the requested duration; each line/section gets
+    `startTimeSeconds`/`durationSeconds`. `flattenPlan` for the scroller.
+  - `interpolatePosition(t, keyframes, easing)` — monotonic, end-clamped, linear/smoothstep;
+    drives the rAF scroll so it never jumps between lines. `parseDuration` (`mm:ss`/`m.ss`/sec).
+- **Browser runtime** `openPerformanceLyrics()` — a full-screen modal: a setup pane
+  (paste/`.txt`/`.md` upload, BPM, duration, syllables-per-beat, **tap tempo**, editable
+  section-label preview) → a stage pane (high-contrast dark theme, adjustable font 20–80px
+  with `+`/`-` shortcuts, sticky current-section header, centered highlighted current line +
+  dimmed next line, timed rAF auto-scroll, Play/Pause/Restart/jump-to-section, **reduced-
+  motion** step mode, `Esc`/space keys). Persists the last paste + timing settings to
+  `localStorage["csmpn_perfLyrics_v1"]`.
+
+**`index.html`** — `🎤 Perform Lyrics` button beside the existing Lyrics button (prepare
+stage); `<script src="performanceLyrics.js">` after `chordsheetPdf.js`; click handler opens
+the modal.
+
+**Integration plumbing:** `csmpn_perfLyrics_v1` added to `backupRestore.js` BACKUP_KEYS +
+the `offlineStore.js` FALLBACK_KEYS mirror; `performanceLyrics.js` added to `sw.js` PRECACHE,
+the CI `node --check` list, and the deploy `cp` list (`verify-deploy-assets` confirms — 31
+refs). `tests/performanceLyrics.test.mjs` (39 tests) added to `npm test`; 4 fixtures under
+`tests/fixtures/perf-lyrics/` (Genius / AZLyrics / chord-over-lyrics / inline-chords).
+
+**Design note (assumption, in the module header):** rather than add a new top-level mode
+tab to the 318 KB index.html monolith, this ships as a modal launched from a button —
+self-contained, zero risk to the chord-chart workflows, matching how `LyricsView`/
+`StageSheets` already work. Offline after first load; no server-side parsing.
+
+**Gates green:** `npm run lint` · `npm run format:check` · `npm run build` ·
+`npm run test:all` (**889 npm-test + 486 test:parsers = 1375, 0 failures**) ·
+`npm run verify:deploy`. The stage-view DOM glue (rAF scroll, modal) is browser-only —
+smoke-test on iOS Safari (paste a page, Build, ▶ Play, tap-tempo, font +/-, jump-to-section).
+
+**Honest limits (documented):** the syllable heuristic is English-tuned (non-English lyrics
+still time, less precisely — never crash); section inference targets common pop V/C/V/C
+structures (Verse+Chorus are the reliable calls, Bridge/Pre-Chorus/Outro best-effort);
+title/artist need a strong signal or stay empty ("Untitled").
