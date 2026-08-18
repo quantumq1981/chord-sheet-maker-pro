@@ -166,6 +166,53 @@ test('lineSyllables: sums a line', () => {
   assert.equal(PL.lineSyllables('Amazing grace how sweet the sound'), 8);
 });
 
+// ── fonts + print/PDF ────────────────────────────────────────────────────────
+
+test('FONT_STACKS: every entry has id/label/css and a safe fallback family', () => {
+  const PL = loadPL();
+  assert.ok(PL.FONT_STACKS.length >= 3);
+  for (const f of PL.FONT_STACKS) {
+    assert.ok(f.id && f.label && f.css, 'font entry complete');
+    assert.ok(/serif|sans-serif|monospace/.test(f.css), 'ends in a generic family');
+  }
+});
+
+test('fontCssById: known id resolves, unknown falls back to the first stack', () => {
+  const PL = loadPL();
+  assert.equal(PL.fontCssById('serif'), PL.FONT_STACKS.find((f) => f.id === 'serif').css);
+  assert.equal(PL.fontCssById('nope'), PL.FONT_STACKS[0].css);
+});
+
+test('buildPrintHtml: emits a standalone doc with title, sections, and lines', () => {
+  const PL = loadPL();
+  const m = PL.parseLyrics('Test Song Lyrics\n[Verse 1]\nhello world line\n[Chorus]\nsing it loud');
+  const html = PL.buildPrintHtml(m, { fontFamily: PL.fontCssById('serif'), fontSize: 18 });
+  assert.ok(html.startsWith('<!doctype html>'));
+  assert.ok(html.includes('Test Song'));
+  assert.ok(html.includes('>Verse 1<'));
+  assert.ok(html.includes('>Chorus<'));
+  assert.ok(html.includes('hello world line'));
+  assert.ok(html.includes('Georgia'), 'chosen font family is applied');
+  assert.ok(/@media print/.test(html), 'carries a print stylesheet');
+});
+
+test('buildPrintHtml: escapes lyric/section text (no raw HTML injection)', () => {
+  const PL = loadPL();
+  const m = { title: 'A<b>', artist: '', sections: [{ label: 'V<1>', lines: ['a & <b>'] }] };
+  const html = PL.buildPrintHtml(m, {});
+  assert.ok(html.includes('A&lt;b&gt;'));
+  assert.ok(html.includes('V&lt;1&gt;'));
+  assert.ok(html.includes('a &amp; &lt;b&gt;'));
+  assert.ok(!html.includes('<b>a'), 'no unescaped tag from lyric text');
+});
+
+test('buildPrintHtml: an empty lyric line renders a non-empty paragraph', () => {
+  const PL = loadPL();
+  const m = { title: 'T', artist: '', sections: [{ label: 'V', lines: ['', 'word'] }] };
+  const html = PL.buildPrintHtml(m, {});
+  assert.ok(html.includes('&nbsp;'));
+});
+
 // ── similarity ───────────────────────────────────────────────────────────────
 
 test('levenshtein / similarity basics', () => {

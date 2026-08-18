@@ -812,6 +812,73 @@
     });
   }
 
+  // ── fonts ────────────────────────────────────────────────────────────────
+  // Font-family choices offered in the stage view + print output. Every stack is
+  // system-safe except "EB Garamond", which the app already loads via Google
+  // Fonts; all fall back to a guaranteed family so nothing renders blank.
+  var FONT_STACKS = [
+    { id: 'system', label: 'System', css: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif' },
+    { id: 'sans', label: 'Sans (Helvetica)', css: 'Helvetica,Arial,sans-serif' },
+    { id: 'serif', label: 'Serif (Georgia)', css: 'Georgia,"Times New Roman",serif' },
+    { id: 'garamond', label: 'EB Garamond', css: '"EB Garamond",Georgia,"Times New Roman",serif' },
+    { id: 'slab', label: 'Slab serif', css: '"Roboto Slab",Rockwell,"Courier New",Georgia,serif' },
+    { id: 'condensed', label: 'Condensed', css: '"Arial Narrow","Roboto Condensed","Helvetica Neue",sans-serif' },
+    { id: 'mono', label: 'Monospace', css: 'ui-monospace,"SF Mono",Menlo,Consolas,monospace' },
+  ];
+
+  function fontCssById(id) {
+    for (var i = 0; i < FONT_STACKS.length; i++) {
+      if (FONT_STACKS[i].id === id) return FONT_STACKS[i].css;
+    }
+    return FONT_STACKS[0].css;
+  }
+
+  // ── print / PDF ────────────────────────────────────────────────────────────
+  /**
+   * Build a clean, self-contained, paginated HTML document for a structured
+   * lyric sheet — title/artist header, section labels, lyric lines. Opened in a
+   * popup and printed (→ "Save as PDF" on desktop, Share→Save PDF on iOS). Pure
+   * (no DOM); takes the parsed model and presentation opts so it is unit-tested.
+   *
+   * opts: { title, artist, fontFamily (css string), fontSize (px), columns }
+   */
+  function buildPrintHtml(model, opts) {
+    opts = opts || {};
+    var fontCss = opts.fontFamily || FONT_STACKS[0].css;
+    var fs = clampNum(opts.fontSize, 10, 60, 20);
+    var title = model.title || opts.title || 'Lyrics';
+    var artist = model.artist || opts.artist || '';
+    var body = [];
+    (model.sections || []).forEach(function (sec) {
+      body.push('<h2 class="sec">' + escapeHtml(sec.label) + '</h2>');
+      (sec.lines || []).forEach(function (ln) {
+        var t = String(ln == null ? '' : ln);
+        body.push('<p class="ln">' + (t.trim() ? escapeHtml(t) : '&nbsp;') + '</p>');
+      });
+    });
+    var head =
+      '<h1 class="ttl">' +
+      escapeHtml(title) +
+      '</h1>' +
+      (artist ? '<div class="art">' + escapeHtml(artist) + '</div>' : '');
+    var css =
+      'html,body{margin:0;padding:0;}' +
+      'body{font-family:' + fontCss + ';color:#000;background:#fff;' +
+      'padding:24px 28px;font-size:' + fs + 'px;line-height:1.4;}' +
+      '.ttl{font-size:1.6em;margin:0 0 .1em;}' +
+      '.art{font-size:1em;color:#444;margin:0 0 1em;}' +
+      '.sec{font-size:.85em;text-transform:uppercase;letter-spacing:.06em;' +
+      'color:#0044cc;margin:1.1em 0 .25em;break-after:avoid;page-break-after:avoid;}' +
+      '.ln{margin:.05em 0;break-inside:avoid;page-break-inside:avoid;}' +
+      '@media print{@page{margin:14mm;}.sec{color:#000;}}';
+    return (
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>' + escapeHtml(title) + '</title><style>' + css + '</style></head>' +
+      '<body>' + head + body.join('') + '</body></html>'
+    );
+  }
+
   // Public pure API (also used by the runtime below).
   var api = {
     normalizeText: normalizeText,
@@ -837,6 +904,9 @@
     interpolatePosition: interpolatePosition,
     smoothstep: smoothstep,
     escapeHtml: escapeHtml,
+    FONT_STACKS: FONT_STACKS,
+    fontCssById: fontCssById,
+    buildPrintHtml: buildPrintHtml,
   };
 
   // ── runtime (browser-only; not headless-tested) ────────────────────────────
@@ -935,6 +1005,7 @@
       model: null,
       plan: null,
       fontSize: saved.fontSize || 34,
+      fontId: saved.fontId || 'system',
       easing: prefersReducedMotion() ? 'linear' : 'smooth',
       reduced: prefersReducedMotion(),
       playing: false,
@@ -1122,6 +1193,13 @@
       var editBtn = el('button', { type: 'button', 'aria-label': 'Edit' }, '✎ Edit');
       var minusBtn = el('button', { type: 'button', 'aria-label': 'Smaller font' }, 'A−');
       var plusBtn = el('button', { type: 'button', 'aria-label': 'Larger font' }, 'A+');
+      var fontSel = el('select', { 'aria-label': 'Font' });
+      api.FONT_STACKS.forEach(function (f) {
+        var opt = el('option', { value: f.id }, f.label);
+        if (f.id === state.fontId) opt.setAttribute('selected', 'selected');
+        fontSel.appendChild(opt);
+      });
+      var printBtn = el('button', { type: 'button', 'aria-label': 'Print or save as PDF' }, '⎙ PDF');
       var jump = el('select', { 'aria-label': 'Jump to section' });
       jump.appendChild(el('option', { value: '-1' }, 'Jump to…'));
       plan.sections.forEach(function (sec, i) {
@@ -1132,15 +1210,21 @@
       bar.appendChild(restartBtn);
       bar.appendChild(jump);
       bar.appendChild(el('span', { class: 'plm-spacer' }));
+      bar.appendChild(fontSel);
       bar.appendChild(minusBtn);
       bar.appendChild(plusBtn);
+      bar.appendChild(printBtn);
       bar.appendChild(editBtn);
       bar.appendChild(closeBtn);
       backdrop.appendChild(bar);
 
       var stage = el('div', { class: 'plm-stage' });
       var sticky = el('div', { class: 'plm-sticky', id: 'plm-sticky' }, plan.sections.length ? api.escapeHtml(plan.sections[0].label) : '');
-      var scroller = el('div', { class: 'plm-scroller', id: 'plm-scroller', style: 'font-size:' + state.fontSize + 'px;' });
+      var scroller = el('div', {
+        class: 'plm-scroller',
+        id: 'plm-scroller',
+        style: 'font-size:' + state.fontSize + 'px;font-family:' + api.fontCssById(state.fontId) + ';',
+      });
 
       // Build DOM + record each line element and its flattened event.
       var events = api.flattenPlan(plan);
@@ -1187,7 +1271,45 @@
         if (i >= 0) jumpToSection(i);
         jump.value = '-1';
       });
+      fontSel.addEventListener('change', function () { setFontFamily(fontSel.value); });
+      printBtn.addEventListener('click', printLyrics);
       window.addEventListener('resize', debounce(function () { recomputeKeyframes(); applyScrollForTime(currentTime()); }, 200));
+    }
+
+    function setFontFamily(id) {
+      state.fontId = id;
+      if (state.scroller) state.scroller.style.fontFamily = api.fontCssById(id);
+      var saved2 = loadState() || {};
+      saved2.fontId = id;
+      saveState(saved2);
+      // Line heights change with the face → recompute the scroll keyframes.
+      requestAnimationFrame(function () { recomputeKeyframes(); applyScrollForTime(currentTime()); });
+    }
+
+    // Open a clean, paginated lyric sheet in a popup and print it. On desktop the
+    // print dialog's "Save as PDF" exports; on iOS the share sheet does. Runs off
+    // the structured model (state.model) so the printout matches the stage view.
+    function printLyrics() {
+      var model = state.model;
+      if (!model || !model.sections || !model.sections.length) return;
+      var html = api.buildPrintHtml(model, {
+        fontFamily: api.fontCssById(state.fontId),
+        fontSize: Math.min(28, Math.max(12, Math.round(state.fontSize * 0.55))),
+      });
+      var w = window.open('', '_blank');
+      if (!w) {
+        // Pop-up blocked — fall back to printing this page (the print CSS renders
+        // the scroller statically, black-on-white).
+        window.print();
+        return;
+      }
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      setTimeout(function () {
+        try { w.print(); } catch (e) { /* user can print manually */ }
+      }, 250);
     }
 
     function recomputeKeyframes() {

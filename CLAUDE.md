@@ -2337,3 +2337,44 @@ smoke-test on iOS Safari (paste a page, Build, ▶ Play, tap-tempo, font +/-, ju
 still time, less precisely — never crash); section inference targets common pop V/C/V/C
 structures (Verse+Chorus are the reliable calls, Bridge/Pre-Chorus/Outro best-effort);
 title/artist need a strong signal or stay empty ("Untitled").
+
+## Performance Lyrics follow-up — Print/PDF, font options, + import-lyrics fix (2026-08-18)
+
+Three user-requested follow-ups after the initial Performance Lyrics Mode ship (PR #371).
+
+**1. Print / PDF export.** `performanceLyrics.js` gains a pure `buildPrintHtml(model, opts)`
+that emits a clean, paginated, self-contained lyric sheet (title/artist + section labels +
+lyric lines, escaped, with a `@media print` stylesheet). The stage view's new **⎙ PDF**
+button opens it in a popup and auto-prints — desktop "Save as PDF" / iOS share-sheet PDF.
+Pop-up blocked → falls back to `window.print()` (the modal's print CSS already renders the
+scroller statically black-on-white).
+
+**2. Font options.** `FONT_STACKS` (7 system-safe stacks incl. the app's EB Garamond) +
+`fontCssById`. A **Font** `<select>` in the stage toolbar changes the scroller face live and
+persists (`fontId` in `csmpn_perfLyrics_v1`); the print output honours it. Font size already
+had A+/A−/keyboard `+`/`-` (20–80px). Font-face change recomputes the scroll keyframes (line
+heights shift). Tests: +5 in `tests/performanceLyrics.test.mjs` (FONT_STACKS shape, fontCssById
+fallback, buildPrintHtml title/sections/lines/font/escaping/empty-line). 39 → 44.
+
+**3. Fix — the *other* Lyrics view (`LyricsView`) said "No lyrics found" on imported sheets.**
+Root cause: `fbSettings.includeLyrics` defaults to **false**, and every importer wrapped its
+CSMPN in `filterLyricsLines()` **before storing to `sourceEl.value`** — permanently discarding
+the `; <lyric>` lines importPipeline emits (importPipeline.js:53). `LyricsView` then read an
+already-stripped source and correctly found nothing. But `updatePreview()` (renderer.js:1535)
+**re-filters at render time**, so stripping at import was pure data loss.
+
+Fix — *store the full source, hide lyrics at presentation*:
+- The 25 `const finalCsmpn = filterLyricsLines(csmpn)` import store-sites (+ the `loadCsmpn`
+  handoff loader and the ABC "Load into Chart" path) now store the **unfiltered** CSMPN, so the
+  `;` lyric lines survive into the chart and `LyricsView` / Stage Sheets / Perform Lyrics can
+  read them.
+- The fake-book chart still renders chords-only (updatePreview re-filters per `includeLyrics`).
+- Verified-safe consumers of the raw source: **Fake Book export** uses `toPureFakeBook` (strips
+  independently), **MusicXML export** re-filters (index.html:5584), `;` lines are CSMPN comments
+  the parser ignores. **Copy** now filters when `includeLyrics===false` so its output stays
+  chords-only (unchanged behavior). Save-to-library / draft now keep lyrics (strictly better).
+
+Gates green: lint · format:check · build (parses the inline script) · test:all (894 npm + 486
+parser = 1380, 0 failures) · verify:deploy. The stage-view + popup-print DOM glue is browser-only
+— smoke-test on iOS (⎙ PDF from the stage view, Font picker, and: import a chord-over-lyrics /
+ChordPro sheet then open **Lyrics** → the words now show).
