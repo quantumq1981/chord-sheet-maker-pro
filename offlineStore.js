@@ -54,6 +54,7 @@
     'csmpn_appMode:perform',
     'csmpn_stage',
     'csmpn_draft',
+    'csmpn_perfLyrics_v1',
   ];
 
   function mirroredKeys() {

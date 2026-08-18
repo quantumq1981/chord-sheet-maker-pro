@@ -2149,6 +2149,7 @@ body.exporting .sectionBlock{
         <!-- Lyrics View — chord-free lyric sheet -->
         <div class="toolbar-group" data-stage-item="prepare">
           <button class="secondary" id="btnLyrics" title="Open lyrics-only view (no chords)">Lyrics</button>
+          <button class="secondary" id="btnPerfLyrics" title="Performance Lyrics — paste a lyric page (chords/AZLyrics/Genius), auto-detect sections, BPM/duration-timed auto-scroll for the stage">&#127908; Perform Lyrics</button>
         </div>
 
         <div class="toolbar-sep"></div>
@@ -3082,6 +3083,7 @@ Tempo: 130
 <script src="abcSuite.js"></script>
 <script src="midiImport.js"></script>
 <script src="chordsheetPdf.js"></script>
+<script src="performanceLyrics.js"></script>
 <script>
 /* =========================================================
    Core constants / helpers
@@ -5282,6 +5284,15 @@ document.getElementById('btnLyrics').addEventListener('click', () => {
   var doc = typeof parseCSMPN === 'function' ? parseCSMPN(src) : null;
   var title = (doc && doc.title) || 'Untitled';
   window.LyricsView.openLyricsView(function(){ return sourceEl.value; }, function(){ return title; });
+});
+
+// Performance Lyrics — paste a raw lyric page (chord-over-lyrics / AZLyrics /
+// Genius), auto-detect sections + metadata, and run a BPM/duration-timed
+// auto-scroll stage view. Opens on the paste screen (the feature's input is an
+// external lyric page, not the current chart, so it starts blank).
+document.getElementById('btnPerfLyrics').addEventListener('click', () => {
+  if (!window.PerformanceLyrics) { setStatus('Performance Lyrics module not loaded yet.', 'err'); return; }
+  window.PerformanceLyrics.openPerformanceLyrics('', '');
 });
 
 // Floating print button: long charts put the toolbar's ⎙ Print far off-screen,

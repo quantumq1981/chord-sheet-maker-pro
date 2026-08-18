@@ -29,6 +29,7 @@
     'csmpn_appMode:perform',
     'csmpn_stage', // last workflow stage (index.html)
     'csmpn_draft', // current editor draft (_SOURCE_DRAFT_KEY)
+    'csmpn_perfLyrics_v1', // Performance Lyrics last paste + timing settings (performanceLyrics.js)
   ];
 
   function pad2(n) {
