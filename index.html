@@ -3307,7 +3307,7 @@ fileInputMusicXML.addEventListener('change', async () => {
       importDiagnostics.ignoredLines = 0;
       const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-      const finalCsmpn = filterLyricsLines(csmpn);
+      const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
@@ -3360,7 +3360,7 @@ fileInputChordPro.addEventListener('change', async () => {
       const csmpnLines = csmpn.split(/\r?\n/).filter(l => l.trim());
       importDiagnostics.ignoredLines = Math.max(0, textLines.length - csmpnLines.length);
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-      const finalCsmpn = filterLyricsLines(csmpn);
+      const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
@@ -3413,7 +3413,7 @@ fileInputChordMark.addEventListener('change', async () => {
       const csmpnLines = csmpn.split(/\r?\n/).filter(l => l.trim());
       importDiagnostics.ignoredLines = Math.max(0, textLines.length - csmpnLines.length);
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-      const finalCsmpn = filterLyricsLines(csmpn);
+      const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
@@ -3455,7 +3455,7 @@ fileInputUG.addEventListener('change', async () => {
       importDiagnostics.bars = diagDoc.blocks
         .filter(b => b.type === 'bars')
         .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
-      const finalCsmpn = filterLyricsLines(csmpn);
+      const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
@@ -3505,7 +3505,7 @@ fileInputUG.addEventListener('change', async () => {
     importDiagnostics.ignoredLines = pipeline.ignoredLines;
     addImportConfidenceWarnings(pipeline, { fallbackUsed: usedFallback, context: 'UG import' });
     importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-    const finalCsmpn = filterLyricsLines(csmpn);
+    const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
     sourceEl.value = finalCsmpn;
     extractHeaderFromText(finalCsmpn);
     updatePreview();
@@ -3539,7 +3539,7 @@ fileInputOnSong.addEventListener('change', async () => {
       importDiagnostics.bars = diagDoc.blocks.filter(b => b.type === 'bars')
         .reduce((s, b) => s + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-      const finalCsmpn = filterLyricsLines(csmpn);
+      const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
@@ -3576,7 +3576,7 @@ fileInputOpenSong.addEventListener('change', async () => {
       importDiagnostics.bars = countSongModelBars(song);
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
       const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
-      const finalCsmpn = filterLyricsLines(csmpn);
+      const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
@@ -3613,7 +3613,7 @@ fileInputOpenLyrics.addEventListener('change', async () => {
       importDiagnostics.bars = countSongModelBars(song);
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
       const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
-      const finalCsmpn = filterLyricsLines(csmpn);
+      const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
@@ -3650,7 +3650,7 @@ fileInputIRealPro.addEventListener('change', async () => {
       importDiagnostics.bars = countSongModelBars(song);
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
       const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
-      const finalCsmpn = filterLyricsLines(csmpn);
+      const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
@@ -3696,7 +3696,7 @@ async function importViaRecognitionEngine(gpBuf, fileName, importStart, partInde
   window._gpLastBytes = gpBuf;
   window._gpLastFileName = fileName;
 
-  const finalCsmpn = filterLyricsLines(res.csmpn);
+  const finalCsmpn = res.csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
   sourceEl.value = finalCsmpn;
   extractHeaderFromText(finalCsmpn);
   updatePreview();
@@ -3810,7 +3810,7 @@ async function tryImportPowerTab(gpBuf, fileName, importStart) {
       // notation view (most tab-only files have no chord texts).
       let statusMsg;
       if (chart && chart.chordCount > 0) {
-        const finalCsmpn = filterLyricsLines(chart.csmpn);
+        const finalCsmpn = chart.csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
         sourceEl.value = finalCsmpn;
         extractHeaderFromText(finalCsmpn);
         updatePreview();
@@ -3849,7 +3849,7 @@ async function tryImportPowerTab(gpBuf, fileName, importStart) {
         .reduce((sum, b) => sum + b.tokens.filter((t) => !isBarlineToken(t)).length, 0)
     : 0;
   if (bars > 0) {
-    const finalCsmpn = filterLyricsLines(csmpn);
+    const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
     sourceEl.value = finalCsmpn;
     extractHeaderFromText(finalCsmpn);
     updatePreview();
@@ -3906,7 +3906,7 @@ fileInputGuitarPro.addEventListener('change', async () => {
         .filter(b => b.type === 'bars')
         .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
       importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-      const finalCsmpn = filterLyricsLines(csmpn);
+      const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
@@ -3992,7 +3992,7 @@ fileInputAudio.addEventListener('change', async () => {
       'is far more accurate than a full mix.'
     );
     if (abNote) importDiagnostics.warnings.push(abNote);
-    const finalCsmpn = filterLyricsLines(res.csmpn);
+    const finalCsmpn = res.csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
     sourceEl.value = finalCsmpn;
     extractHeaderFromText(finalCsmpn);
     updatePreview();
@@ -4874,7 +4874,7 @@ fileInput.addEventListener('change', async () => {
           .filter(b => b.type === 'bars')
           .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-        const finalGpCsmpn = filterLyricsLines(csmpn);
+        const finalGpCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
         sourceEl.value = finalGpCsmpn;
         extractHeaderFromText(finalGpCsmpn);
         updatePreview();
@@ -4900,7 +4900,7 @@ fileInput.addEventListener('change', async () => {
       importDiagnostics.bars = diagDoc.blocks
         .filter(b => b.type === 'bars')
         .reduce((sum, b) => sum + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
-      const finalCsmpn = filterLyricsLines(csmpn);
+      const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
       sourceEl.value = finalCsmpn;
       extractHeaderFromText(finalCsmpn);
       updatePreview();
@@ -4921,7 +4921,7 @@ fileInput.addEventListener('change', async () => {
         importDiagnostics.bars = countSongModelBars(song);
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);
         const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
-        const finalCsmpn = filterLyricsLines(csmpn);
+        const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
         sourceEl.value = finalCsmpn;
         extractHeaderFromText(finalCsmpn);
         updatePreview();
@@ -4947,7 +4947,7 @@ fileInput.addEventListener('change', async () => {
           importDiagnostics.bars = countSongModelBars(song);
           importDiagnostics.durationMs = Math.round(performance.now() - importStart);
           const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
-          const finalCsmpn = filterLyricsLines(csmpn);
+          const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
           sourceEl.value = finalCsmpn;
           extractHeaderFromText(finalCsmpn);
           updatePreview();
@@ -4973,7 +4973,7 @@ fileInput.addEventListener('change', async () => {
         importDiagnostics.bars = diagDoc.blocks.filter(b => b.type === 'bars')
           .reduce((s, b) => s + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-        const finalCsmpn = filterLyricsLines(csmpn);
+        const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
         sourceEl.value = finalCsmpn;
         extractHeaderFromText(finalCsmpn);
         updatePreview();
@@ -4997,7 +4997,7 @@ fileInput.addEventListener('change', async () => {
         importDiagnostics.ignoredLines = Math.max(0, totalLines - contentLines);
         const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-        const finalCsmpn = filterLyricsLines(csmpn);
+        const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
         sourceEl.value = finalCsmpn;
         extractHeaderFromText(finalCsmpn);
         updatePreview();
@@ -5025,7 +5025,7 @@ fileInput.addEventListener('change', async () => {
           importDiagnostics.bars = countSongModelBars(song);
           importDiagnostics.durationMs = Math.round(performance.now() - importStart);
           const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
-          const finalCsmpn = filterLyricsLines(csmpn);
+          const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
           sourceEl.value = finalCsmpn;
           extractHeaderFromText(finalCsmpn);
           updatePreview();
@@ -5046,7 +5046,7 @@ fileInput.addEventListener('change', async () => {
           importDiagnostics.bars = countSongModelBars(song);
           importDiagnostics.durationMs = Math.round(performance.now() - importStart);
           const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
-          const finalCsmpn = filterLyricsLines(csmpn);
+          const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
           sourceEl.value = finalCsmpn;
           extractHeaderFromText(finalCsmpn);
           updatePreview();
@@ -5071,7 +5071,7 @@ fileInput.addEventListener('change', async () => {
         importDiagnostics.ignoredLines = 0;
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);
         const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
-        const finalCsmpn = filterLyricsLines(csmpn);
+        const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
         sourceEl.value = finalCsmpn;
         extractHeaderFromText(finalCsmpn);
         updatePreview();
@@ -5096,7 +5096,7 @@ fileInput.addEventListener('change', async () => {
           importDiagnostics.bars = cpDoc.blocks.filter(b => b.type === 'bars')
             .reduce((s, b) => s + b.tokens.filter(t => !isBarlineToken(t)).length, 0);
           importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-          const finalCsmpn = filterLyricsLines(cpCsmpn);
+          const finalCsmpn = cpCsmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
           sourceEl.value = finalCsmpn;
           extractHeaderFromText(finalCsmpn);
           updatePreview();
@@ -5174,7 +5174,7 @@ fileInput.addEventListener('change', async () => {
     }
 
     importDiagnostics.durationMs = Math.round(performance.now() - importStart);
-    const finalCsmpn = filterLyricsLines(csmpn);
+    const finalCsmpn = csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
     sourceEl.value = finalCsmpn;
     extractHeaderFromText(finalCsmpn);
     updatePreview();
@@ -5500,7 +5500,12 @@ document.getElementById('btnPng').addEventListener('click', async () => {
 
 document.getElementById('btnCopy').addEventListener('click', async () => {
   try{
-    await navigator.clipboard.writeText(sourceEl.value || '');
+    // The source now keeps lyric lines; mirror the on-screen chart by hiding them
+    // in the copy when the Lyrics Lines setting is off.
+    const toCopy = (fbSettings.includeLyrics === false && typeof filterLyricsLines === 'function')
+      ? filterLyricsLines(sourceEl.value || '')
+      : (sourceEl.value || '');
+    await navigator.clipboard.writeText(toCopy);
     setStatus('CSMPN copied to clipboard.');
   }catch(err){
     setStatus('Copy failed (clipboard permissions).', true);
@@ -5856,7 +5861,9 @@ setStatus('Ready. v1.10.0 — iReal Pro (irealb://), MXL, OnSong, OpenSong, Open
     // instead of restoreSourceDraft() bringing back the previous draft.
     function loadCsmpn(csmpn){
       if (!csmpn) return false;
-      var finalCsmpn = (typeof filterLyricsLines === 'function') ? filterLyricsLines(csmpn) : csmpn;
+      // Keep lyrics in the source; the render + exports hide them per includeLyrics,
+      // so the Lyrics / Perform Lyrics views can still find the words.
+      var finalCsmpn = csmpn;
       sourceEl.value = finalCsmpn;
       if (typeof extractHeaderFromText === 'function') extractHeaderFromText(finalCsmpn);
       if (typeof saveSourceDraft === 'function') saveSourceDraft();
@@ -7448,7 +7455,7 @@ function csmpnToCsml(csmpnText) {
     try {
       const song = mineABCToSongModel(abc);
       let csmpn = song.toCSMPN({ barsPerRow: (window.fbSettings && fbSettings.barsPerRow) || 4 });
-      if (typeof filterLyricsLines === 'function') csmpn = filterLyricsLines(csmpn);
+      // Keep lyrics in the source; the render hides them per includeLyrics.
       const srcEl = document.getElementById('source') || (typeof sourceEl !== 'undefined' && sourceEl);
       if (!srcEl) { setAbcStatus('Chart source not found.', true); return; }
       srcEl.value = csmpn;
