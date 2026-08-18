@@ -1055,6 +1055,21 @@
       fileRow.appendChild(fileInput);
       setup.appendChild(fileRow);
 
+      // Title / artist — editable so an untitled paste can be named for the
+      // stage header + the PDF export.
+      var titleRow = el('div', { class: 'plm-fields' });
+      var titleField = field('Song title', 'plm-title', 'text', saved.title || '', 'Song title');
+      var artistField = field('Artist', 'plm-artist', 'text', saved.artist || '', 'Artist (optional)');
+      titleField.setAttribute('style', 'flex:2 1 220px;');
+      artistField.setAttribute('style', 'flex:1 1 160px;');
+      var titleInput = titleField.querySelector('input');
+      var artistInput = artistField.querySelector('input');
+      if (titleInput) titleInput.style.width = '100%';
+      if (artistInput) artistInput.style.width = '100%';
+      titleRow.appendChild(titleField);
+      titleRow.appendChild(artistField);
+      setup.appendChild(titleRow);
+
       var fields = el('div', { class: 'plm-fields' });
       fields.appendChild(field('BPM', 'plm-bpm', 'number', saved.bpm || '', 'e.g. 120'));
       fields.appendChild(field('Duration (mm:ss)', 'plm-dur', 'text', saved.duration || '', '3:45'));
@@ -1126,6 +1141,12 @@
         if (bpmField && !bpmField.value && model.bpm) bpmField.value = model.bpm;
         if (tsField && (!tsField.value || tsField.value === '4/4') && model.timeSignature)
           tsField.value = model.timeSignature;
+        // Auto-fill the title/artist fields from detection only when the user
+        // hasn't typed their own — so an untitled page suggests, and an edit sticks.
+        var tf = document.getElementById('plm-title');
+        var af = document.getElementById('plm-artist');
+        if (tf && !tf.value && model.title) tf.value = model.title;
+        if (af && !af.value && model.artist) af.value = model.artist;
         preview.innerHTML = '';
         if (!model.sections.length) {
           preview.appendChild(el('p', { style: 'color:#c66;' }, 'No lyrics detected yet.'));
@@ -1155,6 +1176,11 @@
           renderPreview();
           if (!state.model || !state.model.sections.length) return;
         }
+        // The user-entered title/artist win over what was auto-detected.
+        var titleVal = (document.getElementById('plm-title').value || '').trim();
+        var artistVal = (document.getElementById('plm-artist').value || '').trim();
+        state.model.title = titleVal;
+        state.model.artist = artistVal;
         var opts = {
           bpm: parseFloat(document.getElementById('plm-bpm').value) || state.model.bpm || 100,
           duration: document.getElementById('plm-dur').value,
@@ -1162,13 +1188,19 @@
           syllablesPerBeat: parseFloat(document.getElementById('plm-spb').value) || 2,
         };
         state.plan = api.buildTimingPlan(state.model, opts);
+        // buildTimingPlan carries title/artist from the model onto the plan.
+        state.plan.title = titleVal;
+        state.plan.artist = artistVal;
         saveState({
           rawText: ta.value,
+          title: titleVal,
+          artist: artistVal,
           bpm: opts.bpm,
           duration: opts.duration,
           timeSignature: opts.timeSignature,
           spb: opts.syllablesPerBeat,
           fontSize: state.fontSize,
+          fontId: state.fontId,
         });
         buildStage();
       }

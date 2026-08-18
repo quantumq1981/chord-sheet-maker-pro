@@ -333,6 +333,22 @@ test('parseDuration: mm:ss, m.ss, and bare seconds', () => {
   assert.equal(PL.parseDuration('garbage'), 0);
 });
 
+test('buildTimingPlan: carries a user-set title/artist onto the plan', () => {
+  const PL = loadPL();
+  // An untitled paste that the user names by hand in the setup fields.
+  const m = PL.parseLyrics('hello world line one\nline two here');
+  assert.equal(m.title, '');
+  m.title = 'My Custom Title';
+  m.artist = 'The Author';
+  const plan = PL.buildTimingPlan(m, { bpm: 120, duration: '2:00', syllablesPerBeat: 2 });
+  assert.equal(plan.title, 'My Custom Title');
+  assert.equal(plan.artist, 'The Author');
+  // And the PDF header uses it.
+  const html = PL.buildPrintHtml(m, {});
+  assert.ok(html.includes('My Custom Title'));
+  assert.ok(html.includes('The Author'));
+});
+
 test('buildTimingPlan: total time matches requested duration within 1s', () => {
   const PL = loadPL();
   const m = PL.parseLyrics(fixture('azlyrics_sample.txt'));

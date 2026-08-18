@@ -2378,3 +2378,20 @@ Gates green: lint · format:check · build (parses the inline script) · test:al
 parser = 1380, 0 failures) · verify:deploy. The stage-view + popup-print DOM glue is browser-only
 — smoke-test on iOS (⎙ PDF from the stage view, Font picker, and: import a chord-over-lyrics /
 ChordPro sheet then open **Lyrics** → the words now show).
+
+## Performance Lyrics — editable Title/Artist in the setup pane (2026-08-18)
+
+User feedback: an untitled lyric page showed "Untitled" in the stage view with no way
+to name it. The setup pane displayed the *detected* title/artist as read-only text only.
+
+`performanceLyrics.js` (browser runtime, `buildSetup`): added editable **Song title** +
+**Artist** fields (`#plm-title`/`#plm-artist`) above the BPM row. They auto-fill from
+detection *only when empty* (so a suggestion appears but a user edit sticks), and on
+**Build** the entered values override `state.model.title/artist` → flow onto the timing
+plan (the stage header) and into `buildPrintHtml` (the PDF header). Persisted in
+`csmpn_perfLyrics_v1` (`title`/`artist`/`fontId`) so re-open / Edit keeps them.
+
+Pure contract used: `buildTimingPlan` already copies `model.title/artist` onto the plan;
++1 test in `tests/performanceLyrics.test.mjs` pins that a user-set title/artist reach the
+plan and the PDF header (44 → 45). Gates green: lint · format:check · test:all
+(895 npm + 486 parser). Setup-pane DOM glue is browser-only — smoke-test on iOS.
