@@ -1956,6 +1956,56 @@ body.exporting .sectionBlock{
   #btnSetlistClose:hover{ background:#f0f0f0; }
   @media print{ .setlistPanel{ display:none !important; } }
 
+  /* ── Brass / Horn / Sax Section transposer ───────────────────────────── */
+  .brassPanel{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-bottom:12px;
+  }
+  .brassPanel.open{ display:block !important; }
+  .brass-header{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    margin-bottom:10px;
+  }
+  .brass-header h3{ margin:0; font-size:14px; font-weight:700; }
+  #btnBrassClose{
+    background:none; border:none; cursor:pointer; font-size:17px;
+    line-height:1; padding:2px 6px; border-radius:4px;
+  }
+  #btnBrassClose:hover{ background:#f0f0f0; }
+  .brass-intro{ font-size:12.5px; color:var(--muted,#666); margin-bottom:12px; line-height:1.45; }
+  .brass-row{ margin-bottom:10px; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; font-size:13px; }
+  .brass-row > label:first-child{ min-width:88px; }
+  .brass-radio{ display:inline-flex; align-items:center; gap:5px; }
+  .brass-inst-list{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr));
+    gap:4px 12px; flex:1 1 100%;
+  }
+  .brass-inst-list label{ display:inline-flex; align-items:center; gap:5px; font-size:12.5px; }
+  .brass-inst-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+  .brass-file-name{ font-size:12px; color:var(--muted,#888); }
+  .brass-actions{ margin-top:6px; }
+  .brass-status{ font-size:12.5px; color:var(--muted,#666); }
+  .brass-results{
+    margin-top:12px; display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));
+    gap:8px;
+  }
+  .brass-result-card{
+    border:1px solid var(--border); border-radius:8px; padding:8px 10px;
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    font-size:13px;
+  }
+  .brass-result-card .name{ font-weight:600; }
+  .brass-result-card .dl{
+    font-size:12px; padding:4px 10px; border:1px solid var(--accent);
+    border-radius:5px; background:transparent; color:var(--accent);
+    cursor:pointer; text-decoration:none;
+  }
+  .brass-result-card .dl:hover{ background:var(--accent); color:#fff; }
+  @media print{ .brassPanel{ display:none !important; } }
+
   .gpn-header{
     display:flex;
     align-items:center;
@@ -2206,6 +2256,7 @@ body.exporting .sectionBlock{
         <div class="toolbar-group" data-stage-item="perform">
           <button class="outline power-only" id="btnExportChordPro">Export ChordPro</button>
           <button class="outline power-only" id="btnExportMusicXml" title="Download the current chart as MusicXML">&#x2193; MusicXML</button>
+          <button class="outline power-only" id="btnBrassSection" title="Generate transposed parts for horn / brass / sax section (MusicXML + ABC)">&#127930; Brass Section</button>
           <button class="outline power-only" id="btnExportSvg" title="Download the slash/rhythm chart as SVG (Slash-Rhythm View)">&#x2193; SVG</button>
           <button class="outline power-only" id="btnTuner" title="Tune up — live pitch from the microphone">&#127908; Tuner</button>
           <button class="outline power-only" id="btnRefAudio" title="Play an audio recording (MP3, M4A, WAV) and follow along — the chart's chords highlight in time">&#127911; Play-Along</button>
@@ -2773,6 +2824,54 @@ Tempo: 130
       </div>
     </div>
 
+    <!-- Brass / Horn / Sax Section transposer -->
+    <div id="brassPanel" class="brassPanel power-only" style="display:none">
+      <div class="brass-header">
+        <h3>&#127930; Brass / Horn / Sax Section</h3>
+        <button id="btnBrassClose" title="Close">&#x2715;</button>
+      </div>
+      <div class="brass-intro">
+        Generate transposed parts for horn, brass and sax sections from the current chart, or from an uploaded
+        <strong>MusicXML (.xml)</strong> / <strong>ABC (.abc)</strong> file (concert pitch, treble clef).
+        Each part is transposed to its instrument's written key; trombone / tuba / euphonium (BC) render in bass clef.
+      </div>
+      <div class="brass-body">
+        <div class="brass-row">
+          <label><strong>Instruments</strong> — pick the parts you want:</label>
+          <div id="brassInstrumentList" class="brass-inst-list"></div>
+          <div class="brass-inst-actions">
+            <button class="outline" id="btnBrassPickAll" type="button">All</button>
+            <button class="outline" id="btnBrassPickNone" type="button">None</button>
+            <button class="outline" id="btnBrassPickBrass" type="button">Brass 5</button>
+            <button class="outline" id="btnBrassPickSax" type="button">Sax 4</button>
+          </div>
+        </div>
+        <div class="brass-row">
+          <label><strong>Source</strong></label>
+          <label class="brass-radio"><input type="radio" name="brassSource" value="chart" checked> Current chart</label>
+          <label class="brass-radio"><input type="radio" name="brassSource" value="file"> Uploaded MusicXML / ABC</label>
+          <input id="fileInputBrassSource" type="file" accept=".xml,.musicxml,.abc,text/xml,text/plain" style="display:none" />
+          <button class="outline" id="btnBrassPickFile" type="button">Choose file…</button>
+          <span id="brassFileName" class="brass-file-name"></span>
+        </div>
+        <div class="brass-row">
+          <label><strong>Output</strong></label>
+          <label class="brass-radio"><input type="radio" name="brassMode" value="parts" checked> Individual parts (one file per instrument)</label>
+          <label class="brass-radio"><input type="radio" name="brassMode" value="score"> Full score (all parts in one MusicXML)</label>
+        </div>
+        <div class="brass-row">
+          <label><strong>Format</strong></label>
+          <label class="brass-radio"><input type="radio" name="brassFormat" value="musicxml" checked> MusicXML (.xml) — for Sibelius/Dorico/MuseScore/notion apps</label>
+          <label class="brass-radio"><input type="radio" name="brassFormat" value="abc"> ABC (.abc) — text tune format</label>
+        </div>
+        <div class="brass-row brass-actions">
+          <button id="btnBrassGenerate" class="cta" type="button">&#x2913; Generate parts</button>
+          <span id="brassStatus" class="brass-status"></span>
+        </div>
+        <div id="brassResults" class="brass-results"></div>
+      </div>
+    </div>
+
     <!-- Setlist / Songbook Manager Panel -->
     <div id="setlistPanel" class="setlistPanel power-only">
       <div class="setlist-header">
@@ -3070,6 +3169,7 @@ Tempo: 130
 <script src="settings.js"></script>
 <script src="musicFont.js"></script>
 <script src="musicXmlCore.js"></script>
+<script src="brassTranspose.js"></script>
 <script src="renderer.js"></script>
 <script src="importPipeline.js"></script>
 <script src="backupRestore.js"></script>
@@ -5601,6 +5701,187 @@ document.getElementById('btnExportMusicXml').addEventListener('click', () => {
     setStatus('MusicXML export failed: ' + (e?.message || e), 'error');
   }
 });
+
+/* =========================================================
+   Brass / Horn / Sax Section transposer — the panel wiring.
+   The pure engine lives in brassTranspose.js (window.BrassTranspose);
+   this block just gathers the UI selections, feeds them to the engine,
+   and renders one download card per output.
+========================================================= */
+(function wireBrassPanel(){
+  const panelEl = document.getElementById('brassPanel');
+  const btnOpen = document.getElementById('btnBrassSection');
+  const btnClose = document.getElementById('btnBrassClose');
+  const listEl = document.getElementById('brassInstrumentList');
+  const btnAll = document.getElementById('btnBrassPickAll');
+  const btnNone = document.getElementById('btnBrassPickNone');
+  const btnBrass5 = document.getElementById('btnBrassPickBrass');
+  const btnSax4 = document.getElementById('btnBrassPickSax');
+  const fileInput = document.getElementById('fileInputBrassSource');
+  const btnPickFile = document.getElementById('btnBrassPickFile');
+  const fileNameEl = document.getElementById('brassFileName');
+  const btnGen = document.getElementById('btnBrassGenerate');
+  const statusEl = document.getElementById('brassStatus');
+  const resultsEl = document.getElementById('brassResults');
+
+  if (!panelEl || !btnOpen) return;
+
+  let uploadedName = '';
+  let uploadedText = '';
+  let uploadedFmt = ''; // 'musicxml' | 'abc'
+
+  function renderInstrumentList(){
+    if (!window.BrassTranspose) { listEl.innerHTML = '<div style="color:#c00">Brass engine did not load.</div>'; return; }
+    const html = window.BrassTranspose.INSTRUMENTS.map(inst => {
+      const semis = inst.transposeSemitones;
+      const hint = semis === 0 ? 'concert' : (semis > 0 ? '+' : '') + semis + ' semitones';
+      const id = 'brassPick_' + inst.id;
+      return '<label><input type="checkbox" value="' + inst.id + '" id="' + id + '"> ' +
+        escapeHtml(inst.name) + ' <span style="color:#888;font-size:11px">(' + hint + ')</span></label>';
+    }).join('');
+    listEl.innerHTML = html;
+  }
+
+  function pickedIds(){
+    return Array.from(listEl.querySelectorAll('input[type=checkbox]:checked')).map(el => el.value);
+  }
+
+  function setPicks(ids){
+    const set = new Set(ids);
+    listEl.querySelectorAll('input[type=checkbox]').forEach(el => { el.checked = set.has(el.value); });
+  }
+
+  function openPanel(){
+    if (!listEl.children.length) renderInstrumentList();
+    panelEl.style.display = 'block';
+    panelEl.classList.add('open');
+    // Default a sensible set (a small brass section) the first time.
+    if (!listEl.querySelector('input:checked')) setPicks(['trumpet-bb','alto-sax-eb','tenor-sax-bb','trombone']);
+    panelEl.scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+  function closePanel(){ panelEl.style.display = 'none'; panelEl.classList.remove('open'); }
+
+  btnOpen.addEventListener('click', openPanel);
+  btnClose.addEventListener('click', closePanel);
+  btnAll.addEventListener('click', () => setPicks(window.BrassTranspose.INSTRUMENTS.map(i => i.id)));
+  btnNone.addEventListener('click', () => setPicks([]));
+  btnBrass5.addEventListener('click', () => setPicks(['trumpet-bb','trumpet-bb','horn-f','trombone','tuba']));
+  btnSax4.addEventListener('click', () => setPicks(['soprano-sax-bb','alto-sax-eb','tenor-sax-bb','baritone-sax-eb']));
+
+  btnPickFile.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async (ev) => {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    try {
+      uploadedText = await f.text();
+      uploadedName = f.name;
+      const low = f.name.toLowerCase();
+      uploadedFmt = low.endsWith('.abc') ? 'abc' : 'musicxml';
+      fileNameEl.textContent = f.name + ' (' + uploadedFmt.toUpperCase() + ')';
+      // Auto-select the "Uploaded" source and the matching format.
+      const upRadio = document.querySelector('input[name=brassSource][value=file]');
+      if (upRadio) upRadio.checked = true;
+      const fmtRadio = document.querySelector('input[name=brassFormat][value=' + uploadedFmt + ']');
+      if (fmtRadio) fmtRadio.checked = true;
+    } catch (e) {
+      setStatus('Could not read file: ' + (e && e.message || e), 'error');
+    } finally {
+      ev.target.value = '';
+    }
+  });
+
+  function chartSourceXml(){
+    if (typeof hrBuildMusicXml !== 'function') return null;
+    const text = (fbSettings.includeLyrics === false && typeof filterLyricsLines === 'function')
+      ? filterLyricsLines(sourceEl.value || '') : (sourceEl.value || '');
+    return hrBuildMusicXml(text);
+  }
+  function chartSourceAbc(){
+    if (window.ABCSuite && typeof window.ABCSuite.csmpnToAbc === 'function'){
+      try { return window.ABCSuite.csmpnToAbc(sourceEl.value || '', { voiced: true }); } catch(e) { return null; }
+    }
+    return null;
+  }
+
+  function makeCard(name, filename, mime, payload){
+    const wrap = document.createElement('div');
+    wrap.className = 'brass-result-card';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'name';
+    nameEl.textContent = name;
+    const a = document.createElement('a');
+    a.className = 'dl';
+    a.textContent = '↓ ' + (filename.endsWith('.abc') ? 'ABC' : 'XML');
+    a.href = URL.createObjectURL(new Blob([payload], { type: mime + ';charset=utf-8' }));
+    a.download = filename;
+    a.title = filename;
+    wrap.appendChild(nameEl);
+    wrap.appendChild(a);
+    return wrap;
+  }
+
+  btnGen.addEventListener('click', () => {
+    resultsEl.innerHTML = '';
+    statusEl.textContent = '';
+    if (!window.BrassTranspose){ statusEl.textContent = 'Brass engine unavailable.'; return; }
+    const ids = pickedIds();
+    if (!ids.length){ statusEl.textContent = 'Pick at least one instrument.'; return; }
+    const source = (document.querySelector('input[name=brassSource]:checked') || {}).value || 'chart';
+    const mode = (document.querySelector('input[name=brassMode]:checked') || {}).value || 'parts';
+    const fmt = (document.querySelector('input[name=brassFormat]:checked') || {}).value || 'musicxml';
+    const title = (hdr.title.value || '').trim() || 'chart';
+
+    // For MusicXML output, we need MusicXML input; ABC output needs ABC input.
+    // Convert the chart to the requested format if the source is 'chart'; if the
+    // user uploaded a file in the "other" format, warn.
+    let sourceText = '';
+    if (source === 'file'){
+      if (!uploadedText){ statusEl.textContent = 'Choose a file first (or switch source to Current chart).'; return; }
+      if (uploadedFmt !== fmt){
+        statusEl.textContent = 'Uploaded file is ' + uploadedFmt.toUpperCase() + ' but Format is ' + fmt.toUpperCase() + '. Switch Format to match or upload a different file.';
+        return;
+      }
+      sourceText = uploadedText;
+    } else {
+      sourceText = (fmt === 'abc') ? chartSourceAbc() : chartSourceXml();
+      if (!sourceText){
+        statusEl.textContent = 'No chord data to transpose — import or paste a chart first.';
+        return;
+      }
+    }
+
+    try {
+      if (fmt === 'musicxml'){
+        const out = window.BrassTranspose.buildBrassMusicXml(sourceText, ids, {
+          mode: mode,
+          title: title,
+          composer: (hdr.composer && hdr.composer.value || '').trim() || '',
+        });
+        if (mode === 'score'){
+          resultsEl.appendChild(makeCard('Full brass section score', out.filename, 'text/xml', out.score));
+          statusEl.textContent = 'Generated one full-score MusicXML (' + ids.length + ' parts).';
+        } else {
+          for (const p of out.parts) resultsEl.appendChild(makeCard(p.name, p.filename, 'text/xml', p.xml));
+          statusEl.textContent = 'Generated ' + out.parts.length + ' individual MusicXML parts.';
+        }
+      } else {
+        // ABC. Full-score assembly for ABC isn't in scope of the pure engine —
+        // ABC's multi-voice format is inherently a single tune with V: voices —
+        // so we always emit one .abc per instrument here.
+        const out = window.BrassTranspose.buildBrassAbc(sourceText, ids, { title: title });
+        for (const p of out.parts) resultsEl.appendChild(makeCard(p.name, p.filename, 'text/plain', p.abc));
+        statusEl.textContent = mode === 'score'
+          ? 'Generated ' + out.parts.length + ' ABC parts (full-score ABC not supported — use MusicXML for a combined score).'
+          : 'Generated ' + out.parts.length + ' individual ABC parts.';
+      }
+    } catch(e){
+      statusEl.textContent = 'Transposition failed: ' + (e && e.message || e);
+    }
+  });
+
+  // Populate the list once at boot so the first open is instant.
+  if (window.BrassTranspose) renderInstrumentList();
+})();
 
 document.getElementById('btnExportSvg').addEventListener('click', () => {
   // Export the unified slash/rhythm chart as one continuous (unpaginated) SVG —

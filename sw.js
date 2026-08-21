@@ -42,6 +42,7 @@ var PRECACHE = [
   './settings.js',
   './musicFont.js',
   './musicXmlCore.js',
+  './brassTranspose.js',
   './renderer.js',
   './importPipeline.js',
   './importGuitarPro.js',
