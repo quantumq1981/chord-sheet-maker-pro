@@ -123,6 +123,56 @@ test('transposeMusicXml can rewrite the clef for bass-clef instruments', () => {
   assert.equal(same, src);
 });
 
+test('bass-clef targets drop slash noteheads to D3 (middle of the bass staff)', () => {
+  const BT = loadBrass();
+  // The app emits slash noteheads at B4 — 5 ledger lines above the bass
+  // staff. Bass-clef targets must relocate them to a comfortable staff
+  // position (D3, middle line) so notation apps render bass clef instead of
+  // silently reverting to treble.
+  const src =
+    '<note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration>' +
+    '<type>quarter</type><notehead>slash</notehead></note>';
+  const bass = BT.transposeMusicXml(src, 0, { clef: 'bass' });
+  assert.match(bass, /<step>D<\/step>/, 'slash pitch step becomes D');
+  assert.match(bass, /<octave>3<\/octave>/, 'slash pitch octave becomes 3');
+  assert.ok(!/<step>B<\/step>/.test(bass), 'B4 slash pitch removed');
+});
+
+test('bass-clef swap leaves NON-slash notes at their transposed pitch', () => {
+  const BT = loadBrass();
+  // A real melody note (no <notehead>slash</notehead>) must not be moved by
+  // the slash-notehead fixup — only its transposition applies. Trombone reads
+  // concert pitch, so B4 stays B4.
+  const src =
+    '<note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration>' +
+    '<type>quarter</type></note>';
+  const bass = BT.transposeMusicXml(src, 0, { clef: 'bass' });
+  assert.match(bass, /<step>B<\/step>/);
+  assert.match(bass, /<octave>4<\/octave>/);
+});
+
+test('trombone end-to-end: bass clef AND slash noteheads at D3', () => {
+  const BT = loadBrass();
+  const src = `<?xml version="1.0"?>
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Concert</part-name></score-part></part-list>
+<part id="P1"><measure number="1">
+  <attributes><divisions>1</divisions><key><fifths>0</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+  <harmony><root><root-step>C</root-step></root><kind>major</kind></harmony>
+  <note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type><notehead>slash</notehead></note>
+  <note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type><notehead>slash</notehead></note>
+</measure></part></score-partwise>`;
+  const { parts } = BT.buildBrassMusicXml(src, ['trombone'], { mode: 'parts' });
+  const xml = parts[0].xml;
+  assert.match(xml, /<sign>F<\/sign>[\s\S]*?<line>4<\/line>/, 'bass F/4 clef');
+  const slashPitches = xml.match(/<pitch>[\s\S]*?<\/pitch>/g);
+  for (const p of slashPitches) {
+    assert.ok(
+      /<step>D<\/step>/.test(p) && /<octave>3<\/octave>/.test(p),
+      `slash pitch relocated: ${p}`
+    );
+  }
+});
+
 test('transposeMusicXml with semitones=0 and no clef override is a passthrough', () => {
   const BT = loadBrass();
   const src = `<?xml version="1.0"?>
