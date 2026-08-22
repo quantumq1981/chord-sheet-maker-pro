@@ -194,6 +194,19 @@
     if (newClef === 'bass') {
       out = out.replace(/<clef>\s*<sign>[A-Z]<\/sign>\s*<line>\d+<\/line>\s*<\/clef>/g,
         '<clef><sign>F</sign><line>4</line></clef>');
+      // Slash noteheads emitted by the app sit at B4 (middle line of the treble
+      // staff). In bass clef, B4 is FIVE ledger lines above the staff — many
+      // notation apps refuse to render it in bass clef and silently keep the
+      // treble clef, which is what the user sees. Slash-notehead pitch is purely
+      // presentational (chord roots live in <harmony>), so drop the pitch to D3
+      // (middle line of the bass staff) whenever the target is bass clef.
+      out = out.replace(/<note>([\s\S]*?)<\/note>/g, function (m, inner) {
+        if (!/<notehead>\s*slash\s*<\/notehead>/.test(inner)) return m;
+        return '<note>' + inner.replace(
+          /<pitch>[\s\S]*?<\/pitch>/,
+          '<pitch><step>D</step><octave>3</octave></pitch>'
+        ) + '</note>';
+      });
     } else if (newClef === 'treble') {
       out = out.replace(/<clef>\s*<sign>[A-Z]<\/sign>\s*<line>\d+<\/line>\s*<\/clef>/g,
         '<clef><sign>G</sign><line>2</line></clef>');
