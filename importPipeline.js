@@ -949,11 +949,18 @@ function importChordPro(text){
   const lines = text.replace(/\r/g, '').split('\n');
   const out = [];
   let inGrid = false; // true while inside {start_of_grid} / {end_of_grid}
+  let inTab = false;  // true while inside {start_of_tab}/{sot} — ASCII tab, skipped
   // Process each line and build output; header entries are prepended via unshift.
   for (const line0 of lines) {
     const line = normalizeAccidentals(line0);
     const trimmed = line.trim();
     if (!trimmed) continue;
+
+    // ChordPro tab blocks are ASCII fretboard tab, not chart content — skip them
+    // (aliases {sot}/{eot}) so their lines never leak in as lyrics/bars.
+    if (/^\{\s*(?:start_of_tab|sot)\b[^}]*\}$/i.test(trimmed)) { inTab = true; continue; }
+    if (/^\{\s*(?:end_of_tab|eot)\s*\}$/i.test(trimmed)) { inTab = false; continue; }
+    if (inTab) continue;
 
     // Grid lines: while inside {start_of_grid}, parse | [chord] . | rows
     if (inGrid && trimmed.includes('|')) {
@@ -1121,6 +1128,21 @@ function importChordPro(text){
       const lyricsText = line.replace(/\[([^\]]*)\]/g, '').trim();
       out.push(toCSMPNBars(chords));
       if (lyricsText) out.push(`; ${lyricsText}`);
+    } else if (isLikelyUGChordLine(trimmed)) {
+      // A BARE (non-bracketed) chord line — the chords-over-lyrics layout, where
+      // the chords sit on their own line above the words. Emit its chords as
+      // bars so the chart isn't empty. (Previously dropped → empty bars bug.)
+      const barChords = tokenizeBars(trimmed).map((t) => normalizeChordToken(t)).filter(Boolean);
+      if (barChords.length) out.push(toCSMPNBars(barChords));
+    } else if (/^\{.*\}$/.test(trimmed)) {
+      // An unrecognised brace directive — not a lyric, don't preserve it.
+      continue;
+    } else {
+      // A plain LYRIC line (no chords). Preserve the words as a CSMPN lyric
+      // comment so they survive into the chart / Lyrics / Perform Lyrics.
+      // Previously any chord-less line was silently DROPPED — the reported bug
+      // where a chords-over-lyrics import rendered only section headers.
+      out.push(`; ${trimmed}`);
     }
   }
   setStatus(`Imported ChordPro.`);
