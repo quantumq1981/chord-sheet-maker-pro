@@ -2396,6 +2396,33 @@ Pure contract used: `buildTimingPlan` already copies `model.title/artist` onto t
 plan and the PDF header (44 → 45). Gates green: lint · format:check · test:all
 (895 npm + 486 parser). Setup-pane DOM glue is browser-only — smoke-test on iOS.
 
+## ChordPro import — dropped lyrics + iOS file-picker greyout (2026-09-16, bug fix)
+
+Two reported defects importing a ChordPro / chords-over-lyrics file:
+
+**1. `importChordPro` rendered ONLY section headers.** For any content line the old
+code emitted output *only if it contained bracketed `[chords]`* — so a **bare chord
+line** (chords-over-lyrics layout: chords on their own line above the words) and a
+**plain lyric line** both fell through and were **silently dropped**. A chords-over-lyrics
+sheet came out as `: Intro : Verse 1 : Pre-Chorus …` with nothing between (empty bars,
+no words). Fix (`importPipeline.js`): the no-bracket branch now (a) emits bars for a bare
+chord line detected by the existing `isLikelyUGChordLine`, and (b) **preserves every
+other lyric line as a `; lyric` CSMPN comment** (so the words survive into the chart /
+Lyrics extraction / Perform Lyrics) instead of dropping it. Also added an `inTab` guard
+that skips `{sot}…{eot}` / `{start_of_tab}…{end_of_tab}` ASCII-tab blocks. New
+`tests/importChordPro.test.mjs` (5) — `importChordPro` had **zero** prior coverage:
+chords-over-lyrics keeps lyrics + chords, bracketed ChordPro unregressed, the
+`{comment}`-lyric + `[chord]`-only "Billy Joel" structure, tab-block skip, empty input.
+
+**2. iOS greyed out `.chordpro`/`.chopro`/`.cho`/`.pro` in the file picker.** The
+format-specific `<input type=file>` elements carried `accept` lists of extensions iOS
+can't map to UTIs, so iOS made the very file unselectable (only `.txt` showed). Removed
+`accept` from every text/binary import input whose formats have no iOS UTI — ChordPro,
+ChordMark, UG, OnSong, iReal Pro, Guitar Pro, Decode, CSML (XML-based inputs keep
+`accept` — iOS maps those). Format is detected by content in the change handlers, so the
+filter was unnecessary — same lesson as the audio/Guitar-Pro uploads. Full `npm test`
+green (923).
+
 ## Lyrics view CONSOLIDATED into Perform Lyrics (2026-09-16)
 
 **Why.** The standalone **Lyrics** button (`LyricsView` modal) and **🎤 Perform Lyrics**
