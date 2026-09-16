@@ -6186,6 +6186,58 @@ setStatus('Ready. v1.10.0 — iReal Pro (irealb://), MXL, OnSong, OpenSong, Open
   }
 })();
 
+/* =========================================================
+   Perform-Lyrics handoff RECEIVER — "?import=lyrics"
+   (additive mirror of consumeCsmHandoff, above)
+
+   Tab Translator Pro's Lyrics Import (chords-over-lyrics / ChordPro →
+   clean lyrics-only sheet) sends the extracted words straight into this
+   app's auto-scrolling PERFORM LYRICS stage view, so the two apps work in
+   tandem. Same GitHub Pages origin → shared localStorage. Inert on every
+   normal load; only acts when opened with ?import=lyrics. Reads the
+   csm:lyrics:v1 envelope ONCE, opens the Perform Lyrics modal pre-seeded
+   with the lyric body + title/artist, then strips the query param.
+   Wrapped in try/catch so a malformed payload can never break boot.
+   Touches no chart/import feature. ========================= */
+(function consumeLyricsHandoff(){
+  try {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('import') !== 'lyrics') return;
+
+    var raw = localStorage.getItem('csm:lyrics:v1');
+    localStorage.removeItem('csm:lyrics:v1'); // one-shot: clear before use so a refresh can't re-import
+    // Strip the query param first so a manual refresh is a clean, normal load
+    // even if the payload is missing/malformed.
+    if (window.history && typeof history.replaceState === 'function') {
+      history.replaceState(null, '', window.location.pathname);
+    }
+    if (!raw) return;
+
+    var env = JSON.parse(raw);
+    if (!env || env.v !== 1 || typeof env.lyrics !== 'string' || !env.lyrics.trim()) return;
+
+    // Open the Perform Lyrics modal seeded with the handoff. performanceLyrics.js
+    // is a non-deferred <script> loaded above this inline block, so the module is
+    // normally ready here; a short retry covers any slow-parse edge case on device.
+    var attempts = 0;
+    function openWhenReady(){
+      if (window.PerformanceLyrics && typeof window.PerformanceLyrics.openPerformanceLyrics === 'function') {
+        window.PerformanceLyrics.openPerformanceLyrics(env.lyrics, env.title || '', env.artist || '');
+        if (typeof setStatus === 'function') {
+          var srcName = env.source === 'tab-translator-pro' ? 'Tab Translator Pro' : 'Chord Sheet Maker';
+          setStatus('Lyrics imported from ' + srcName + (env.title ? ' — ' + env.title : '') + ' → Perform Lyrics.');
+        }
+        return;
+      }
+      if (attempts++ < 20) { setTimeout(openWhenReady, 150); }
+      else if (typeof setStatus === 'function') { setStatus('Performance Lyrics module not loaded — could not open the handoff.', 'err'); }
+    }
+    openWhenReady();
+  } catch (e) {
+    console.warn('Perform-Lyrics handoff skipped:', e);
+  }
+})();
+
 // --- Optional self-tests (run manually in console): window.runCSMPNSelfTests() ---
 // v1.10.0: iReal Pro (irealb://), MXL, OnSong, OpenSong XML, OpenLyrics XML, VexFlow notation blocks
 const IMPORT_REGRESSION_FIXTURES = {

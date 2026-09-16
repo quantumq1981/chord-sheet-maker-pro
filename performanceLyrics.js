@@ -996,7 +996,7 @@
   }
 
   // The single browser entry point.
-  function openPerformanceLyrics(initialText, initialTitle) {
+  function openPerformanceLyrics(initialText, initialTitle, initialArtist) {
     ensureStyle();
     var saved = loadState() || {};
     var backdrop = el('div', { class: 'plm-backdrop', role: 'dialog', 'aria-label': 'Performance Lyrics' });
@@ -1058,8 +1058,10 @@
       // Title / artist — editable so an untitled paste can be named for the
       // stage header + the PDF export.
       var titleRow = el('div', { class: 'plm-fields' });
-      var titleField = field('Song title', 'plm-title', 'text', saved.title || '', 'Song title');
-      var artistField = field('Artist', 'plm-artist', 'text', saved.artist || '', 'Artist (optional)');
+      // A handoff (e.g. Tab Translator Pro → Perform Lyrics) seeds title/artist so
+      // they win over a previous session's saved values; otherwise fall back to saved.
+      var titleField = field('Song title', 'plm-title', 'text', initialTitle || saved.title || '', 'Song title');
+      var artistField = field('Artist', 'plm-artist', 'text', initialArtist || saved.artist || '', 'Artist (optional)');
       titleField.setAttribute('style', 'flex:2 1 220px;');
       artistField.setAttribute('style', 'flex:1 1 160px;');
       var titleInput = titleField.querySelector('input');
