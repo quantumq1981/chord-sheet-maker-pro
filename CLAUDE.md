@@ -2395,3 +2395,28 @@ Pure contract used: `buildTimingPlan` already copies `model.title/artist` onto t
 +1 test in `tests/performanceLyrics.test.mjs` pins that a user-set title/artist reach the
 plan and the PDF header (44 → 45). Gates green: lint · format:check · test:all
 (895 npm + 486 parser). Setup-pane DOM glue is browser-only — smoke-test on iOS.
+
+## Performance Lyrics — Tab Translator Pro handoff RECEIVER (2026-09-16)
+
+Tab Translator Pro's **Lyrics Import** (chords-over-lyrics / ChordPro → clean lyrics-only
+sheet) now hands the extracted words straight into **Perform Lyrics** — the two apps in
+tandem (strip/recognize there → perform here). Same GitHub Pages origin → shared
+`localStorage`, a **new channel** alongside `csm:handoff:v1` (chart) and `ttp:decode:v1`
+(reverse decode).
+
+- **`index.html` `consumeLyricsHandoff`** (additive IIFE right after `consumeCsmHandoff`):
+  inert unless opened with `?import=lyrics`; reads `csm:lyrics:v1`
+  `{ v:1, source, createdAt, title, artist, lyrics }` **once**, clears it, strips the
+  query param, then opens the Perform Lyrics modal pre-seeded —
+  `PerformanceLyrics.openPerformanceLyrics(env.lyrics, env.title, env.artist)`. Guarded +
+  short retry (performanceLyrics.js is a non-deferred `<script>` loaded above the inline
+  block, so it's normally ready; the retry covers slow-parse on device). try/catch so a
+  bad payload can't break boot. `csm:lyrics:v1` is transient (written→nav→consumed→cleared)
+  and, like `csm:handoff:v1`, is naturally excluded from backup (BACKUP_KEYS is a whitelist).
+- **`performanceLyrics.js`** — `openPerformanceLyrics(initialText, initialTitle, initialArtist)`
+  gained the third arg; the setup pane's Song title / Artist fields now seed from
+  `initialTitle || saved.title` / `initialArtist || saved.artist`, so a handoff's
+  title/artist win over a previous session's saved values. Backward-compatible (the
+  existing `btnPerfLyrics` caller passes only text). Browser-only glue — smoke-test on iOS
+  (from Tab Translator: strip a chord-over-lyrics sheet → 🎤 Perform on Chord Sheet Maker
+  Pro → this app opens the stage view seeded with the words + title).
