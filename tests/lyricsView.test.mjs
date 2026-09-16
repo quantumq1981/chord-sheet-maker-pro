@@ -289,3 +289,18 @@ test('buildLyricsHtml includes auto-scroll script', () => {
   const html = LV.buildLyricsHtml(sheet);
   assert.ok(html.includes('Auto-scroll'), 'has scroll control');
 });
+
+// The ⎙ Print handler prints a popup of buildLyricsHtml with a paper palette.
+// The default is the dark stage theme (white on black), which prints invisibly
+// because browsers drop backgrounds — so the print path passes light colors.
+// Guard that they're honoured (regression against the fake-book/white-on-black
+// print bug).
+test('buildLyricsHtml honours a black-on-white print palette', () => {
+  const LV = loadLV();
+  const sheet = { title: 'T', sections: [{ header: 'VERSE', lines: ['Hi'] }] };
+  const dark = LV.buildLyricsHtml(sheet);
+  assert.ok(/--bg:\s*#000000/i.test(dark) && /--fg:\s*#FFFFFF/i.test(dark), 'default is dark (white on black)');
+  const print = LV.buildLyricsHtml(sheet, { textColor: '#000000', bgColor: '#FFFFFF' });
+  assert.ok(/--bg:\s*#FFFFFF/i.test(print), 'print palette forces a white background');
+  assert.ok(/--fg:\s*#000000/i.test(print), 'print palette forces black text');
+});

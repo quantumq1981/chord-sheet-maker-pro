@@ -692,10 +692,31 @@
     });
 
     bar.querySelector('.lv-print').addEventListener('click', function () {
-      // iOS Safari: native print dialog turns the modal (with the CSS @media
-      // print rules in ensureModalStyle) into a lyrics-only PDF via
-      // Share → Print → pinch-out.
-      window.print();
+      // Print the lyrics-ONLY sheet in a fresh popup document, mirroring
+      // Perform Lyrics' ⎙ PDF. This is the correct path: window.print() on the
+      // app page prints whatever the app's OWN print CSS renders — i.e. the
+      // fake-book chart grid (each lyric word parsed as a bar token), not these
+      // lyrics — because the modal's @media print rules restyle the modal but
+      // can't suppress the underlying chart. buildLyricsHtml is a self-contained
+      // <!DOCTYPE html> doc with its own print CSS, so a popup inherits none of
+      // the app's print rules and prints exactly what's on screen. Falls back to
+      // window.print() only if the popup is blocked.
+      // Black-on-white for print: buildLyricsHtml defaults to the dark stage
+      // theme (white on black), which prints invisibly since browsers drop
+      // backgrounds. Force a paper-friendly palette for the print popup.
+      var html = buildLyricsHtml(sheet, {
+        secondsPerLine: parseFloat(speed.value), fontSize: fontSize,
+        textColor: '#000000', bgColor: '#FFFFFF',
+      });
+      var w = window.open('', '_blank');
+      if (!w) { window.print(); return; }
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      setTimeout(function () {
+        try { w.print(); } catch (e) { /* user can print manually */ }
+      }, 250);
     });
   }
 
