@@ -2396,26 +2396,41 @@ Pure contract used: `buildTimingPlan` already copies `model.title/artist` onto t
 plan and the PDF header (44 → 45). Gates green: lint · format:check · test:all
 (895 npm + 486 parser). Setup-pane DOM glue is browser-only — smoke-test on iOS.
 
-## Lyrics View — ⎙ Print emitted the fake-book chart, not the lyrics (2026-09-16, bug fix)
+## Lyrics view CONSOLIDATED into Perform Lyrics (2026-09-16)
 
-**Reported defect:** load a lyrics-only text as the chart source, open the **Lyrics** view
-(`LyricsView`) — the on-screen sheet is correct, but **⎙ Print / Save PDF** comes out as the
-**fake-book chart grid** (each lyric word parsed as a bar token → `|| word ||`, capital-first
-words mis-read as chords like `Cₐₙ'ₜ`/`Fₘ`, "Page N of 11" footer).
+**Why.** The standalone **Lyrics** button (`LyricsView` modal) and **🎤 Perform Lyrics**
+(`PerformanceLyrics`) were two stage lyric views. The trigger was a real bug: the Lyrics
+modal's **⎙ Print** was a bare `window.print()` that relied on `@media print` CSS to isolate
+the modal — but that restyle **never suppressed the underlying chart preview**, so printing a
+lyrics-only chart emitted the app's **fake-book grid** (each lyric word parsed as a bar token
+→ `|| word ||`, capital-first words mis-read as chords `Cₐₙ'ₜ`/`Fₘ`, "Page N of 11" footer).
+Rather than patch a redundant feature, we consolidated: Perform Lyrics is the single, superior
+stage view (BPM/duration timing, section inference, correct popup-based PDF), so the Lyrics
+modal was retired and its one salient capability — *perform the CURRENT chart's lyrics* —
+folded into Perform Lyrics.
 
-**Root cause:** the Print handler was a bare `window.print()` that relied on the modal's
-`@media print` rules (in `ensureModalStyle`) to isolate the modal. Those rules restyle the
-modal but **never suppress the underlying app chart preview**, so the browser printed what the
-app's OWN print CSS renders — the CSMPN fake-book/slash chart — not these lyrics.
+**What changed:**
+- **`performanceLyrics.js`** — `openPerformanceLyrics(initialText, initialTitle, initialArtist,
+  opts)` gained `opts.getChartSource`/`getChartTitle`. When present, the setup pane shows a
+  **⬆ Load current chart** button that runs `window.LyricsView.extractLyrics(source)` →
+  `sheetToText` → the same parse/preview pipeline a paste uses. New pure `sheetToText(sheet)`
+  flattens a LyricsView sheet (`{title, sections:[{header,lines}]}`) to a plain body (headers +
+  blank-line stanzas, **no title line** — the title rides in the field, exactly like the TTP
+  handoff body); exported + unit-tested (round-trips through `parseLyrics`).
+- **`index.html`** — removed the `btnLyrics` button + its `openLyricsView` handler; the
+  `btnPerfLyrics` (and the `consumeLyricsHandoff` receiver) now pass `_perfLyricsChartOpts()`
+  (the `sourceEl.value` / `parseCSMPN` title getters) so ⬆ Load current chart is available.
+- **`lyricsView.js`** is now a **pure DOM-free extraction library** — the ~290-line modal
+  runtime (`openLyricsView` + scroll/print/`ensureModalStyle`/`buildLyricsHtml`/`escapeHtml`)
+  was deleted. It keeps ONLY the extractors (`extractLyrics` etc.), which **Setlist → Stage
+  Sheets** (`stageSheets.js`) and the new Perform Lyrics load path both depend on. `api` no
+  longer exports `openLyricsView`/`buildLyricsHtml`.
+- **Tests:** the 3 `buildLyricsHtml` tests were replaced by a guard that the retired modal
+  surface is no longer exported (extractor library stays); `+1` `sheetToText` test in
+  `tests/performanceLyrics.test.mjs`. Full `npm test` green (918).
 
-**Fix (mirrors Perform Lyrics' `⎙ PDF`):** Print now builds the **self-contained**
-`buildLyricsHtml` doc (already used by the ↓ HTML button — its own `<!DOCTYPE html>` + print
-CSS, so a popup inherits none of the app's print rules), opens it in a popup, and prints that;
-falls back to `window.print()` only if the popup is blocked. **Palette:** `buildLyricsHtml`
-defaults to the dark stage theme (white on black) which prints invisibly (browsers drop
-backgrounds), so the print path passes `textColor:'#000000'/bgColor:'#FFFFFF'` for a
-paper-friendly sheet. `tests/lyricsView.test.mjs` +1 (the print palette is honoured; default
-stays dark). Browser-only glue — device smoke-test the popup print on iOS.
+Browser-only glue (the ⬆ button, the modal) — device smoke-test: load a chart with lyrics →
+🎤 Perform Lyrics → ⬆ Load current chart → the words populate; Build & Perform / PDF work.
 
 ## Performance Lyrics — Tab Translator Pro handoff RECEIVER (2026-09-16)
 

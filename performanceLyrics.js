@@ -663,6 +663,29 @@
   }
 
   /**
+   * Flatten a LyricsView-style extraction sheet ({ title, sections:[{header,
+   * lines}] }) into a plain-text lyric body: each section's header on its own
+   * line, then its lines, with a blank line between sections. The title is NOT
+   * included (it rides in the Song title field, not the body — a title line
+   * would re-parse as a stray lyric). The shape matches what parseLyrics
+   * re-detects, so "Load current chart" routes through the same pipeline as a
+   * paste. Pure.
+   */
+  function sheetToText(sheet) {
+    if (!sheet || !sheet.sections || !sheet.sections.length) return '';
+    var out = [];
+    for (var i = 0; i < sheet.sections.length; i++) {
+      var s = sheet.sections[i];
+      if (s.header) out.push(String(s.header));
+      var lines = s.lines || [];
+      for (var j = 0; j < lines.length; j++) out.push(String(lines[j]));
+      if (i < sheet.sections.length - 1) out.push('');
+    }
+    // Collapse any run of blank lines and trim edges.
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\s+$/g, '');
+  }
+
+  /**
    * Compute a per-line timing plan and fold it into a copy of the model.
    *
    *   total_beats     = (BPM/60) * durationSeconds
@@ -898,6 +921,7 @@
     detectExplicitSections: detectExplicitSections,
     detectInferredSections: detectInferredSections,
     parseLyrics: parseLyrics,
+    sheetToText: sheetToText,
     parseDuration: parseDuration,
     buildTimingPlan: buildTimingPlan,
     flattenPlan: flattenPlan,
@@ -996,7 +1020,8 @@
   }
 
   // The single browser entry point.
-  function openPerformanceLyrics(initialText, initialTitle, initialArtist) {
+  function openPerformanceLyrics(initialText, initialTitle, initialArtist, opts) {
+    opts = opts || {};
     ensureStyle();
     var saved = loadState() || {};
     var backdrop = el('div', { class: 'plm-backdrop', role: 'dialog', 'aria-label': 'Performance Lyrics' });
@@ -1053,6 +1078,34 @@
         'aria-label': 'Import lyric file',
       });
       fileRow.appendChild(fileInput);
+      // "Load current chart": pull the lyrics out of the chart the app has open
+      // (the salient feature carried over from the retired Lyrics view). Reuses
+      // window.LyricsView.extractLyrics — the CSMPN/ChordPro-aware extractor —
+      // then routes its text through the same parse/preview pipeline as a paste.
+      // Shown only when the caller wired a getChartSource.
+      if (typeof opts.getChartSource === 'function') {
+        var loadBtn = el('button', {
+          type: 'button',
+          style: 'margin-left:.6rem;background:#333;border:1px solid #555;color:#fff;padding:.3rem .8rem;border-radius:6px;cursor:pointer;',
+        }, '⬆ Load current chart');
+        loadBtn.addEventListener('click', function () {
+          var src = '';
+          try { src = opts.getChartSource() || ''; } catch (e) { src = ''; }
+          if (!src.trim()) { loadBtn.textContent = 'No chart loaded'; setTimeout(function () { loadBtn.textContent = '⬆ Load current chart'; }, 1500); return; }
+          var LV = typeof window !== 'undefined' ? window.LyricsView : null;
+          if (!LV || typeof LV.extractLyrics !== 'function') { loadBtn.textContent = 'Extractor not loaded'; return; }
+          var sheet = LV.extractLyrics(src);
+          if (!sheet || !LV.sheetHasLyrics(sheet)) { loadBtn.textContent = 'No lyrics in this chart'; setTimeout(function () { loadBtn.textContent = '⬆ Load current chart'; }, 1800); return; }
+          ta.value = sheetToText(sheet);
+          var tf = document.getElementById('plm-title');
+          if (tf) {
+            var chartTitle = sheet.title || (typeof opts.getChartTitle === 'function' ? (function () { try { return opts.getChartTitle(); } catch (e) { return ''; } })() : '');
+            if (chartTitle) tf.value = chartTitle;
+          }
+          renderPreview();
+        });
+        fileRow.appendChild(loadBtn);
+      }
       setup.appendChild(fileRow);
 
       // Title / artist — editable so an untitled paste can be named for the
