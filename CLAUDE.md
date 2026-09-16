@@ -2396,6 +2396,42 @@ Pure contract used: `buildTimingPlan` already copies `model.title/artist` onto t
 plan and the PDF header (44 → 45). Gates green: lint · format:check · test:all
 (895 npm + 486 parser). Setup-pane DOM glue is browser-only — smoke-test on iOS.
 
+## Lyrics view CONSOLIDATED into Perform Lyrics (2026-09-16)
+
+**Why.** The standalone **Lyrics** button (`LyricsView` modal) and **🎤 Perform Lyrics**
+(`PerformanceLyrics`) were two stage lyric views. The trigger was a real bug: the Lyrics
+modal's **⎙ Print** was a bare `window.print()` that relied on `@media print` CSS to isolate
+the modal — but that restyle **never suppressed the underlying chart preview**, so printing a
+lyrics-only chart emitted the app's **fake-book grid** (each lyric word parsed as a bar token
+→ `|| word ||`, capital-first words mis-read as chords `Cₐₙ'ₜ`/`Fₘ`, "Page N of 11" footer).
+Rather than patch a redundant feature, we consolidated: Perform Lyrics is the single, superior
+stage view (BPM/duration timing, section inference, correct popup-based PDF), so the Lyrics
+modal was retired and its one salient capability — *perform the CURRENT chart's lyrics* —
+folded into Perform Lyrics.
+
+**What changed:**
+- **`performanceLyrics.js`** — `openPerformanceLyrics(initialText, initialTitle, initialArtist,
+  opts)` gained `opts.getChartSource`/`getChartTitle`. When present, the setup pane shows a
+  **⬆ Load current chart** button that runs `window.LyricsView.extractLyrics(source)` →
+  `sheetToText` → the same parse/preview pipeline a paste uses. New pure `sheetToText(sheet)`
+  flattens a LyricsView sheet (`{title, sections:[{header,lines}]}`) to a plain body (headers +
+  blank-line stanzas, **no title line** — the title rides in the field, exactly like the TTP
+  handoff body); exported + unit-tested (round-trips through `parseLyrics`).
+- **`index.html`** — removed the `btnLyrics` button + its `openLyricsView` handler; the
+  `btnPerfLyrics` (and the `consumeLyricsHandoff` receiver) now pass `_perfLyricsChartOpts()`
+  (the `sourceEl.value` / `parseCSMPN` title getters) so ⬆ Load current chart is available.
+- **`lyricsView.js`** is now a **pure DOM-free extraction library** — the ~290-line modal
+  runtime (`openLyricsView` + scroll/print/`ensureModalStyle`/`buildLyricsHtml`/`escapeHtml`)
+  was deleted. It keeps ONLY the extractors (`extractLyrics` etc.), which **Setlist → Stage
+  Sheets** (`stageSheets.js`) and the new Perform Lyrics load path both depend on. `api` no
+  longer exports `openLyricsView`/`buildLyricsHtml`.
+- **Tests:** the 3 `buildLyricsHtml` tests were replaced by a guard that the retired modal
+  surface is no longer exported (extractor library stays); `+1` `sheetToText` test in
+  `tests/performanceLyrics.test.mjs`. Full `npm test` green (918).
+
+Browser-only glue (the ⬆ button, the modal) — device smoke-test: load a chart with lyrics →
+🎤 Perform Lyrics → ⬆ Load current chart → the words populate; Build & Perform / PDF work.
+
 ## Performance Lyrics — Tab Translator Pro handoff RECEIVER (2026-09-16)
 
 Tab Translator Pro's **Lyrics Import** (chords-over-lyrics / ChordPro → clean lyrics-only

@@ -2196,10 +2196,9 @@ body.exporting .sectionBlock{
 
         <div class="toolbar-sep"></div>
 
-        <!-- Lyrics View — chord-free lyric sheet -->
+        <!-- Performance Lyrics — chord-free auto-scrolling stage lyric sheet -->
         <div class="toolbar-group" data-stage-item="prepare">
-          <button class="secondary" id="btnLyrics" title="Open lyrics-only view (no chords)">Lyrics</button>
-          <button class="secondary" id="btnPerfLyrics" title="Performance Lyrics — paste a lyric page (chords/AZLyrics/Genius), auto-detect sections, BPM/duration-timed auto-scroll for the stage">&#127908; Perform Lyrics</button>
+          <button class="secondary" id="btnPerfLyrics" title="Perform Lyrics — auto-scrolling stage lyric sheet. Load the current chart's lyrics, or paste a lyric page (chords/AZLyrics/Genius); auto-detects sections + BPM/duration timing">&#127908; Perform Lyrics</button>
         </div>
 
         <div class="toolbar-sep"></div>
@@ -5377,22 +5376,26 @@ document.getElementById('btnPrint').addEventListener('click', () => {
   window.print();
 });
 
-document.getElementById('btnLyrics').addEventListener('click', () => {
-  if (!window.LyricsView) { setStatus('Lyrics module not loaded yet.', 'err'); return; }
-  var src = sourceEl.value;
-  if (!src || !src.trim()) { setStatus('No chart loaded — load a song first.', 'err'); return; }
-  var doc = typeof parseCSMPN === 'function' ? parseCSMPN(src) : null;
-  var title = (doc && doc.title) || 'Untitled';
-  window.LyricsView.openLyricsView(function(){ return sourceEl.value; }, function(){ return title; });
-});
+// Getters that let Perform Lyrics pull the CURRENT chart's lyrics ("⬆ Load
+// current chart"). This is the capability carried over from the retired
+// standalone Lyrics view — Perform Lyrics is now the single stage lyric view.
+function _perfLyricsChartOpts() {
+  return {
+    getChartSource: function () { return sourceEl.value; },
+    getChartTitle: function () {
+      try { var doc = typeof parseCSMPN === 'function' ? parseCSMPN(sourceEl.value) : null; return (doc && doc.title) || ''; }
+      catch (e) { return ''; }
+    },
+  };
+}
 
-// Performance Lyrics — paste a raw lyric page (chord-over-lyrics / AZLyrics /
-// Genius), auto-detect sections + metadata, and run a BPM/duration-timed
-// auto-scroll stage view. Opens on the paste screen (the feature's input is an
-// external lyric page, not the current chart, so it starts blank).
+// Performance Lyrics — an auto-scrolling stage lyric sheet. Load the current
+// chart's lyrics, or paste a raw lyric page (chord-over-lyrics / AZLyrics /
+// Genius); it auto-detects sections + BPM/duration timing. Opens on the setup
+// screen so either input path is one tap away.
 document.getElementById('btnPerfLyrics').addEventListener('click', () => {
   if (!window.PerformanceLyrics) { setStatus('Performance Lyrics module not loaded yet.', 'err'); return; }
-  window.PerformanceLyrics.openPerformanceLyrics('', '');
+  window.PerformanceLyrics.openPerformanceLyrics('', '', '', _perfLyricsChartOpts());
 });
 
 // Floating print button: long charts put the toolbar's ⎙ Print far off-screen,
@@ -6222,7 +6225,7 @@ setStatus('Ready. v1.10.0 — iReal Pro (irealb://), MXL, OnSong, OpenSong, Open
     var attempts = 0;
     function openWhenReady(){
       if (window.PerformanceLyrics && typeof window.PerformanceLyrics.openPerformanceLyrics === 'function') {
-        window.PerformanceLyrics.openPerformanceLyrics(env.lyrics, env.title || '', env.artist || '');
+        window.PerformanceLyrics.openPerformanceLyrics(env.lyrics, env.title || '', env.artist || '', _perfLyricsChartOpts());
         if (typeof setStatus === 'function') {
           var srcName = env.source === 'tab-translator-pro' ? 'Tab Translator Pro' : 'Chord Sheet Maker';
           setStatus('Lyrics imported from ' + srcName + (env.title ? ' — ' + env.title : '') + ' → Perform Lyrics.');

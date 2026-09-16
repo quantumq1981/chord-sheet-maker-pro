@@ -460,3 +460,24 @@ test('parseLyrics: 10k-line input parses under 500ms', () => {
   assert.ok(m.sections.length > 0);
   assert.ok(dt < 500, `parse took ${dt}ms (budget 500ms)`);
 });
+
+test('sheetToText flattens a LyricsView sheet into headers + blank-separated stanzas', () => {
+  const PL = loadPL();
+  const sheet = {
+    title: 'Ignored In Body',
+    sections: [
+      { header: 'Verse 1', lines: ['line a', 'line b'] },
+      { header: 'Chorus', lines: ['hook one'] },
+    ],
+  };
+  const txt = PL.sheetToText(sheet);
+  // Title is NOT in the body (rides in the title field, not the lyrics).
+  assert.ok(!/Ignored In Body/.test(txt), 'title excluded from body');
+  assert.ok(/Verse 1\nline a\nline b/.test(txt), 'section header + lines preserved');
+  assert.ok(/line b\n\nChorus/.test(txt), 'blank line between sections');
+  // And it round-trips back into sections through the same parse pipeline.
+  const model = PL.parseLyrics(txt);
+  assert.ok(model.sections.length >= 2, 'flattened text re-parses into sections');
+  assert.equal(PL.sheetToText({ sections: [] }), '', 'empty sheet → empty string');
+  assert.equal(PL.sheetToText(null), '', 'null sheet → empty string');
+});

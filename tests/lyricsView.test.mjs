@@ -264,28 +264,12 @@ test('sheetHasLyrics returns false for empty/null sheets', () => {
   assert.equal(LV.sheetHasLyrics({ sections: [{ header: '', lines: [] }] }), false);
 });
 
-// ── buildLyricsHtml ───────────────────────────────────────────────────────
-
-test('buildLyricsHtml produces HTML with section headers and lyrics', () => {
+// The standalone Lyrics modal (openLyricsView + buildLyricsHtml) was retired
+// 2026-09-16 in favour of Perform Lyrics; lyricsView.js is now a pure extraction
+// library. Its exported surface no longer carries those DOM/HTML functions.
+test('the retired modal surface is no longer exported', () => {
   const LV = loadLV();
-  const sheet = {
-    title: 'Test Song',
-    sections: [
-      { header: 'Verse', lines: ['Hello world', 'Goodbye moon'] },
-      { header: 'Chorus', lines: ['Sing along'] },
-    ],
-  };
-  const html = LV.buildLyricsHtml(sheet);
-  assert.ok(html.includes('Test Song'), 'contains title');
-  assert.ok(html.includes('Verse'), 'contains section header');
-  assert.ok(html.includes('Hello world'), 'contains lyrics');
-  assert.ok(html.includes('Chorus'), 'contains second header');
-  assert.ok(html.includes('Sing along'), 'contains second section lyrics');
-});
-
-test('buildLyricsHtml includes auto-scroll script', () => {
-  const LV = loadLV();
-  const sheet = { title: 'T', sections: [{ header: '', lines: ['Hi'] }] };
-  const html = LV.buildLyricsHtml(sheet);
-  assert.ok(html.includes('Auto-scroll'), 'has scroll control');
+  assert.equal(typeof LV.openLyricsView, 'undefined', 'openLyricsView removed');
+  assert.equal(typeof LV.buildLyricsHtml, 'undefined', 'buildLyricsHtml removed');
+  assert.equal(typeof LV.extractLyrics, 'function', 'the extractor library stays');
 });
