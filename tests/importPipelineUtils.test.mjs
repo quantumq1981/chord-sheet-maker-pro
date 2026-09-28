@@ -10,6 +10,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import JSZip from 'jszip';
 
 // ── Context factory ───────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ function makeContext(fbOverrides = {}) {
       body: { appendChild: () => {} },
     },
     window: { ABCJS: null },
+    JSZip,
     navigator: { canShare: null, share: null },
     URL: { createObjectURL: () => 'blob:mock', revokeObjectURL: () => {} },
     setTimeout: globalThis.setTimeout,
@@ -46,6 +48,7 @@ function makeContext(fbOverrides = {}) {
 
   vm.createContext(context);
   vm.runInContext(load('utils.js'), context);
+  vm.runInContext(load('chordTheory.js'), context);
   vm.runInContext(load('chordProcessing.js'), context);
   vm.runInContext(load('csmpnParser.js'), context);
   vm.runInContext(load('importPipeline.js'), context);
@@ -57,6 +60,44 @@ function makeContext(fbOverrides = {}) {
 }
 
 const ctx = makeContext();
+
+describe('MusicXML chart import', () => {
+  it('selects one harmony part, keeping its measure count and chords', () => {
+    const xml = `<score-partwise><part id="melody"><measure number="1"><note><pitch><step>D</step><octave>4</octave></pitch></note></measure></part><part id="chords"><measure number="1"><harmony><root><root-step>C</root-step></root><kind>major</kind></harmony></measure></part></score-partwise>`;
+    const song = ctx.importMusicXML(xml);
+    assert.deepEqual(Array.from(song.sections[0].bars), ['C']);
+  });
+
+  it('recognizes a note-only chord part without inventing chords from single melody notes', () => {
+    const xml = `<score-partwise><part id="melody"><measure number="1"><note><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration></note></measure></part><part id="rhythm"><measure number="1"><note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration></note><note><chord/><pitch><step>E</step><octave>3</octave></pitch><duration>4</duration></note><note><chord/><pitch><step>G</step><octave>3</octave></pitch><duration>4</duration></note></measure><measure number="2"><note><pitch><step>D</step><octave>4</octave></pitch><duration>4</duration></note></measure></part></score-partwise>`;
+    const song = ctx.importMusicXML(xml);
+    assert.deepEqual(Array.from(song.sections[0].bars), ['C', 'N.C.']);
+  });
+
+  it('keeps written harmony and recovers a later unmarked chordal bar', () => {
+    const xml = `<score-partwise><part id="P1"><measure number="1"><harmony><root><root-step>C</root-step></root><kind>major</kind></harmony><note><notehead>slash</notehead><pitch><step>B</step><octave>4</octave></pitch><duration>4</duration></note></measure><measure number="2"><note><pitch><step>G</step><octave>3</octave></pitch><duration>4</duration></note><note><chord/><pitch><step>B</step><octave>3</octave></pitch></note><note><chord/><pitch><step>D</step><octave>4</octave></pitch></note></measure></part></score-partwise>`;
+    const song = ctx.importMusicXML(xml);
+    assert.deepEqual(Array.from(song.sections[0].bars), ['C', 'G']);
+  });
+
+  it('orders note-derived chords by onset across MusicXML voice backups', () => {
+    const xml = `<score-partwise><part id="P1"><measure number="1"><note><rest/><duration>2</duration></note><note><pitch><step>G</step><octave>3</octave></pitch><duration>2</duration></note><note><chord/><pitch><step>B</step><octave>3</octave></pitch></note><note><chord/><pitch><step>D</step><octave>4</octave></pitch></note><backup><duration>4</duration></backup><note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration></note><note><chord/><pitch><step>E</step><octave>3</octave></pitch></note><note><chord/><pitch><step>G</step><octave>3</octave></pitch></note></measure></part></score-partwise>`;
+    const song = ctx.importMusicXML(xml);
+    assert.deepEqual(Array.from(song.sections[0].bars), ['C_G']);
+  });
+
+  it('applies the same part selection to compressed MusicXML', async () => {
+    const xml = `<score-partwise><part id="P1"><measure number="1"><harmony><root><root-step>F</root-step></root><kind>major</kind></harmony></measure></part><part id="P2"><measure number="1"><harmony><root><root-step>C</root-step></root><kind>major</kind></harmony></measure></part></score-partwise>`;
+    const zip = new JSZip();
+    zip.file(
+      'META-INF/container.xml',
+      '<container><rootfile full-path="score.musicxml"/></container>'
+    );
+    zip.file('score.musicxml', xml);
+    const song = await ctx.importMXL(await zip.generateAsync({ type: 'uint8array' }));
+    assert.deepEqual(Array.from(song.sections[0].bars), ['F']);
+  });
+});
 
 // ── SongModel ─────────────────────────────────────────────────────────────────
 
