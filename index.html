@@ -3407,7 +3407,7 @@ fileInputMusicXML.addEventListener('change', async () => {
       importDiagnostics.bars = countSongModelBars(song);
       const ncBars = song.sections.reduce((n, sec) => n + (sec.bars || []).filter((b) => b === 'N.C.').length, 0);
       if (ncBars > 0){
-        importDiagnostics.warnings.push(`MusicXML had ${ncBars} empty harmony measure(s); emitted N.C. instead of inferred repeats.`);
+        importDiagnostics.warnings.push(`MusicXML had ${ncBars} measure(s) without recoverable chords; emitted N.C.`);
       }
       importDiagnostics.ignoredLines = 0;
       const csmpn = song.toCSMPN({ barsPerRow: fbSettings.barsPerRow });
@@ -5171,7 +5171,7 @@ fileInput.addEventListener('change', async () => {
         importDiagnostics.bars = countSongModelBars(song);
         const ncBars = song.sections.reduce((n, sec) => n + (sec.bars || []).filter((b) => b === 'N.C.').length, 0);
         if (ncBars > 0){
-          importDiagnostics.warnings.push(`MusicXML had ${ncBars} empty harmony measure(s); emitted N.C. instead of inferred repeats.`);
+          importDiagnostics.warnings.push(`MusicXML had ${ncBars} measure(s) without recoverable chords; emitted N.C.`);
         }
         importDiagnostics.ignoredLines = 0;
         importDiagnostics.durationMs = Math.round(performance.now() - importStart);

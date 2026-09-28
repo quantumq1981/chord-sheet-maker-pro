@@ -1979,6 +1979,71 @@ async function readImportedTextFile(file){
 const _mxTagRe = new Map(); // name -> RegExp
 const _mxAttrRe = new Map(); // `${tagName}\x00${attrName}` -> RegExp
 
+// A score-partwise document repeats measure numbers in each instrument part.
+// Choose the part with written harmony first; for note-only scores, favor the
+// part with simultaneous notes over a single-note melody. Keep ties in score
+// order so an ordinary single-part import behaves exactly as before.
+function _mxBestPart(parts, counts){
+  let best = 0;
+  for (let i = 1; i < parts.length; i++){
+    const a = counts(parts[i]);
+    const b = counts(parts[best]);
+    if (a.harmonies > b.harmonies ||
+        (a.harmonies === b.harmonies && a.chordNotes > b.chordNotes)) best = i;
+  }
+  return parts[best] || null;
+}
+
+function _mxNoteChord(tokens, key){
+  const theory = typeof window !== 'undefined' && window.ChordTheory;
+  if (!theory?.recognizeChordFromPcs) return 'N.C.';
+  const steps = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  let cursor = 0, lastOnset = 0;
+  const onsets = new Map();
+  for (const token of tokens){
+    if (token.type === 'backup' || token.type === 'forward'){
+      cursor += (token.type === 'backup' ? -1 : 1) * (Number(token.duration) || 0);
+      continue;
+    }
+    const onset = token.chord ? lastOnset : cursor;
+    if (!token.chord){ lastOnset = cursor; cursor += Number(token.duration) || 0; }
+    if (token.rest || token.slash || token.octave == null || token.octave === '') continue;
+    const step = steps[String(token.step || '').toUpperCase()];
+    const octave = Number(token.octave);
+    if (step === undefined || !Number.isFinite(octave)) continue;
+    const midi = (octave + 1) * 12 + step + (Number(token.alter) || 0);
+    if (!onsets.has(onset)) onsets.set(onset, []);
+    onsets.get(onset).push(midi);
+  }
+  const chords = [];
+  for (const notes of onsets.values()){
+    const weights = Object.create(null);
+    for (const midi of notes){ const pc = ((midi % 12) + 12) % 12; weights[pc] = (weights[pc] || 0) + 1; }
+    if (Object.keys(weights).length < 2) continue;
+    const chord = theory.recognizeChordFromPcs(weights, Math.min(...notes) % 12, { key });
+    const normalized = chord && normalizeChordToken(chord);
+    if (normalized && normalized !== chords[chords.length - 1]) chords.push(normalized);
+  }
+  return chords.length ? chords.join('_') : 'N.C.';
+}
+
+function _mxRegexNoteTokens(measureText, tag){
+  const tokens = [];
+  const eventRe = /<(note|backup|forward)(?=[\s>])[^>]*>([\s\S]*?)<\/\1>/gi;
+  let match;
+  while ((match = eventRe.exec(measureText)) !== null){
+    const body = match[2];
+    const pitch = body.match(/<pitch(?=[\s>])[^>]*>([\s\S]*?)<\/pitch>/i)?.[1] || '';
+    tokens.push({
+      type: match[1].toLowerCase(), duration: tag(body, 'duration'),
+      chord: /<chord\s*\/?\s*>/i.test(body), rest: /<rest\b/i.test(body),
+      slash: /<notehead[^>]*>\s*slash\s*<\/notehead>/i.test(body),
+      step: tag(pitch, 'step'), alter: tag(pitch, 'alter'), octave: tag(pitch, 'octave'),
+    });
+  }
+  return tokens;
+}
+
 function _mxGetTagRe(name) {
   let re = _mxTagRe.get(name);
   if (!re) {
@@ -2037,11 +2102,18 @@ function importMusicXMLRegex(xmlText){
     song.meta.tempo = Number.isFinite(tempoNum) ? String(Math.round(tempoNum)) : '';
   }
 
+  // A partwise score has one measure sequence PER instrument, not a single
+  // document-wide sequence. Never append the other instruments as extra bars.
+  const parts = [...t.matchAll(/<part(?=[\s>])[^>]*>([\s\S]*?)<\/part>/gi)].map(m => m[1]);
+  const part = _mxBestPart(parts, p => ({
+    harmonies: (p.match(/<harmony(?=[\s>])/gi) || []).length,
+    chordNotes: (p.match(/<chord\s*\/?\s*>/gi) || []).length,
+  })) || t;
   // Measures → bars
   const measureRe = /<measure\b[^>]*>([\s\S]*?)<\/measure>/gi;
   const bars = [];
   let mm;
-  while ((mm = measureRe.exec(t)) !== null){
+  while ((mm = measureRe.exec(part)) !== null){
     const mContent = mm[1];
     // Extract <harmony> blocks
     const harmRe = /<harmony>([\s\S]*?)<\/harmony>/gi;
@@ -2070,7 +2142,7 @@ function importMusicXMLRegex(xmlText){
       const norm = normalizeChordToken(chord);
       if (norm) chords.push(norm);
     }
-    if (!chords.length) bars.push('N.C.');
+    if (!chords.length) bars.push(_mxNoteChord(_mxRegexNoteTokens(mContent, tag), song.meta.key));
     else if (chords.length === 1) bars.push(chords[0]);
     else bars.push(chords.join('_'));
   }
@@ -2122,13 +2194,30 @@ function importMusicXML(xmlText){
       song.meta.tempo = Number.isFinite(tempoNum) ? String(Math.round(tempoNum)) : '';
     }
 
-    const measures = [...xml.querySelectorAll('measure')];
+    const parts = [...xml.querySelectorAll('part')];
+    const part = _mxBestPart(parts, p => ({
+      harmonies: p.querySelectorAll('harmony').length,
+      chordNotes: p.querySelectorAll('note > chord').length,
+    }));
+    const measures = [...(part || xml).querySelectorAll('measure')];
     const bars = [];
     for (const meas of measures){
       const harmonies = [...meas.querySelectorAll('harmony')];
       const chords = harmonies.map((h) => normalizeChordToken(harmonyToChord(h))).filter(Boolean);
       if (!chords.length){
-        bars.push('N.C.');
+        const tokens = [];
+        for (const node of meas.children){
+          const type = node.localName;
+          if (type !== 'note' && type !== 'backup' && type !== 'forward') continue;
+          const pitch = node.querySelector('pitch');
+          tokens.push({ type, duration: node.querySelector('duration')?.textContent,
+            chord: !!node.querySelector('chord'), rest: !!node.querySelector('rest'),
+            slash: node.querySelector('notehead')?.textContent?.trim().toLowerCase() === 'slash',
+            step: pitch?.querySelector('step')?.textContent,
+            alter: pitch?.querySelector('alter')?.textContent,
+            octave: pitch?.querySelector('octave')?.textContent });
+        }
+        bars.push(_mxNoteChord(tokens, song.meta.key));
       } else if (chords.length === 1){
         bars.push(chords[0]);
       } else {

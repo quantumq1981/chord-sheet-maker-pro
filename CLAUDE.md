@@ -50,6 +50,13 @@ The family is **recognize → normalize → finish**:
 | 4.3 | iOS Safari SVG export fix (replace html2canvas for slash notation) | ✅ DONE |
 
 ## Current State (2026-07-15)
+- **MusicXML chart import (2026-09-28):** `importMusicXML`/`importMXL` select one
+  score part (written harmony first, then the part with simultaneous notes).
+  Explicit `<harmony>` takes priority in each bar; bars without harmony use
+  `ChordTheory` on simultaneous pitched notes and leave single-note melody
+  onsets unguessed. Multi-part measures no longer concatenate. The vendored
+  Tab Translator engine is pinned by `recognitionEngine.provenance.json` and
+  regression-tested for the current key analysis and true MusicXML timing.
 - **1,068 tests passing** (`npm run test:all`) — 582 npm-test + 486 test:parsers; latest work: Sprint 19 import-quality arc (PRs #339/#340/#341 — UG Pro PDF recovery, cross-track harmony recovery, bass-priority chord analysis + key-aware spelling; see "SPRINT 19 CHANGES" below)
 - `chordTheory.js` is now the family's **harmonic analysis engine**, not just data: `inferKeyFromChords`, `recognizeChordFromPcs` (bass-priority + tritone bias + inversion slashes), `keyFifths`, `spellPcForKey`
 - `tests/gpCsmpnConverter.test.mjs` — 53 tests for GP→CSMPN pure helpers (flat names, new patterns, slash chords, tuplets, repeats, voltas)

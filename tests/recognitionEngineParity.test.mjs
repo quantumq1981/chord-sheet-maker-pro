@@ -110,3 +110,38 @@ test('the family default spells Bb C# Eb F# Ab — never A#/Db/D#/Gb/G#', () => 
     assert.ok(!names.includes(banned), `${banned} is not the family default spelling`);
   }
 });
+
+test('vendored key analysis includes the upstream functional-key update', () => {
+  const score = {
+    bars: ['D', 'C', 'G', 'D'].map((symbol, i) => ({
+      number: i + 1,
+      events: [{ symbol, beat: 0, durBeats: 4 }],
+    })),
+  };
+  assert.equal(engine.keyName(engine.analyzeKey(score), true), 'D');
+});
+
+test('vendored MusicXML export retains triplet timing', () => {
+  const score = {
+    timeSig: [4, 4],
+    bars: [
+      {
+        number: 1,
+        events: [
+          { symbol: 'Dm', beat: 0, durBeats: 1, qbeat: 0, qdur: 1 / 3, tuplet: 3, midis: [50] },
+          { symbol: 'G', beat: 0, durBeats: 1, qbeat: 1 / 3, qdur: 1 / 3, tuplet: 3, midis: [55] },
+          { symbol: 'C', beat: 1, durBeats: 1, qbeat: 2 / 3, qdur: 1 / 3, tuplet: 3, midis: [48] },
+          { symbol: 'F', beat: 1, durBeats: 3, qbeat: 1, qdur: 3, midis: [53] },
+        ],
+      },
+    ],
+  };
+  const xml = engine.scoreToMusicXML(score);
+  const divisions = Number(xml.match(/<divisions>(\d+)<\/divisions>/)[1]);
+  const durations = [...xml.matchAll(/<duration>(\d+)<\/duration>/g)].map((m) => Number(m[1]));
+  assert.equal(
+    durations.reduce((sum, duration) => sum + duration, 0),
+    divisions * 4
+  );
+  assert.equal((xml.match(/<actual-notes>3<\/actual-notes>/g) || []).length, 3);
+});
