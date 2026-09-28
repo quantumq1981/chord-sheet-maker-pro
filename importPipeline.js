@@ -2016,7 +2016,7 @@ function _mxNoteChord(tokens, key){
     onsets.get(onset).push(midi);
   }
   const chords = [];
-  for (const notes of onsets.values()){
+  for (const [, notes] of [...onsets.entries()].sort((a, b) => a[0] - b[0])){
     const weights = Object.create(null);
     for (const midi of notes){ const pc = ((midi % 12) + 12) % 12; weights[pc] = (weights[pc] || 0) + 1; }
     if (Object.keys(weights).length < 2) continue;
