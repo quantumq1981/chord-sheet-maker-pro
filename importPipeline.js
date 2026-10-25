@@ -2452,6 +2452,9 @@ function sniffBinaryMusicExt(bytes){
     const probe = ascii(0, 65536);
     if (probe.includes('score.gpif')) return '.gp';
     if (probe.includes('container.xml') || probe.includes('META-INF')) return '.mxl';
+    // any other zip holding a score — Muscriptor's <song>_sheets.zip carries score.musicxml
+    // + score.mid (+ PDFs); the recognition engine opens it (parseScoreZip)
+    if (/\.(musicxml|mid|midi)\b/i.test(probe) || /[\w-]\.xml/.test(probe)) return '.zip';
     return '';
   }
   const textHead = ascii(0, 256).replace(/^\xEF\xBB\xBF/, '').trimStart();

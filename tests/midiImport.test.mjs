@@ -184,3 +184,41 @@ test('midiToCsmpn collapses consecutive identical bars to %', () => {
   // first bar C, next two collapse to %
   assert.equal((body.match(/%/g) || []).length, 2, body);
 });
+
+// The owner's real Muscriptor output (score.mid from the "Saddle Up" sheets zip): named
+// tracks, a "voice" track, no key or time signature. The fallback importer must leave the
+// voice out, infer the key and spell for it.
+test('midiToCsmpn on a Muscriptor score.mid: voice left out, key inferred, spelled for it', async () => {
+  const { readFileSync } = await import('node:fs');
+  const zip = new Uint8Array(
+    readFileSync(new URL('./fixtures/muscriptor-saddle-up_sheets.zip', import.meta.url))
+  );
+  // STORED zip: the local header of score.mid is first; its data follows the 30-byte header + name
+  const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  const size = dv.getUint32(18, true),
+    start = 30 + dv.getUint16(26, true) + dv.getUint16(28, true);
+  const mid = zip.subarray(start, start + size);
+  const parsed = M.parseMidi(mid);
+  assert.deepEqual(
+    Array.from(parsed.tracks, (t) => t.name),
+    ['', 'electric piano', 'electric bass', 'distorted electric guitar', 'drums', 'voice']
+  );
+  assert.equal(M.isVoiceTrack(parsed.tracks[5]), true);
+  assert.equal(M.isVoiceTrack(parsed.tracks[1]), false);
+  assert.ok(M.harmonyNotes(parsed).every((n) => n.track !== 5));
+  const csmpn = M.midiToCsmpn(mid, { title: 'Saddle Up' });
+  assert.match(csmpn, /^Key: Fm$/m);
+  assert.match(csmpn, /^Tempo: 67$/m);
+  const chart = csmpn.split('- Chart')[1];
+  assert.match(chart, /^Fm9\b/m);
+  assert.match(chart, /\bDbmaj7\b/);
+  assert.doesNotMatch(chart, /\b[CDGA]#/, chart);
+});
+
+test('spellTokenForKey respells root and slash bass, and leaves a file key alone', () => {
+  assert.equal(M.spellTokenForKey('C#maj7/G#', 'Fm'), 'Dbmaj7/Ab');
+  assert.equal(M.spellTokenForKey('Abm', 'E'), 'G#m');
+  assert.equal(M.spellTokenForKey('C6/9', 'Fm'), 'C6/9');
+  // a file's own key signature is trusted; tinyMidi has none and stays a plain C chart
+  assert.match(M.midiToCsmpn(tinyMidi(), { title: 'T' }), /^Key: C$/m);
+});

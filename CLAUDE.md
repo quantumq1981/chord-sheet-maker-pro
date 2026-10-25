@@ -2505,3 +2505,31 @@ part is in **`docs/MUSCRIPTOR-REVIEW.md`**. Decisions that bind here:
   and its `_sheets.zip` (→ `importMusicXML` / `midiImport`); (2) an optional versioned `parts[]` in
   `csm:handoff:v1` for Tab Translator's coming "All parts" export (spec change in
   `chord-sheet-maker/docs/HANDOFF-CONTRACT.md` first); (3) carry a tempo map when one arrives.
+
+## Muscriptor zip + MIDI through the recognition engine (2026-10-25)
+
+Built against the owner's real Muscriptor v0.4 file (`tests/fixtures/muscriptor-saddle-up_sheets.zip`:
+score.mid + score.musicxml, STORED; 5 parts, no chord symbols, no meter/key metas in the MIDI).
+
+- **Re-vendored `recognitionEngine.mjs`** from Tab-Translator-Pro `12effe4` (a month of upstream
+  changes: chord vocabularies, m11, zip + MIDI import, Harmony, key spelling). All 930 + 486 existing
+  tests passed unchanged on the new copy.
+- **`.zip` and `.mid` go through the engine first** (`importViaRecognitionEngine`): a zip is sniffed as
+  `.zip` when it holds a `.musicxml`/`.mid`/`.xml` and is neither `.gp` nor `.mxl`
+  (`sniffBinaryMusicExt`); `.zip` added to the main file input's `accept`. MIDI falls back to
+  `midiImport.js` if the engine can't read it.
+- **Bridge Harmony** (`recognitionBridge.importBinary`): for MusicXML/MIDI with several parts the part
+  list offers "Harmony (all pitched parts)" (`partIndex = engine.HARMONY_PART`, −1); a zip or MIDI lands
+  on it by default (a plain MusicXML/GP keeps `pickChordPart`). Harmony is simplified, named with the
+  Pro vocabulary (`respellScore(…, 'chart')`) and skips `recoverEmptyBars` (it already reads every
+  part). `notationBytes` hands a zip's MusicXML to the Tab View (AlphaTab reads MusicXML, not the zip).
+- **Key-aware spelling for every bridge import** (owner's decision): `engine.spellScoreForKey` +
+  `scoreToCSMPN({ spellKey: true })` — Dbmaj7 and `Key: Db`-style names in flat keys. The family
+  `NOTE_NAMES` default in this repo's own modules is unchanged.
+- **`midiImport.js` fallback**: tracks carry names/programs (`parsed.tracks`, `note.track`); voice
+  tracks are left out (`isVoiceTrack`: name or GM 52–54); with no key signature the key is inferred
+  (`ChordTheory.inferKeyFromChords`) and every token spelled for it (`spellTokenForKey`).
+- Result (both paths' engine route, real browser): `Key: Fm`, `Fm9 | Bbm9 | Fm7 | Bbm7 | Eb/F | Bbm7 |
+  Db | Bb7/Ab | …` — identical to Tab Translator Pro's chart of the same file.
+- Tests: `@xmldom/xmldom` added as a **test-only** devDependency (the engine reads MusicXML with
+  `DOMParser`, which Node lacks); new bridge/midiImport/sniffer tests on the fixture.

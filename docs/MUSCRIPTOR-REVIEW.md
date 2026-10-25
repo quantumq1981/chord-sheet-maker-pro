@@ -42,3 +42,11 @@ The full review, licence analysis and measurements are in the Tab Translator Pro
 Beat/downbeat tracking, quantisation and audio transcription stay in Tab Translator Pro (one
 engine, one place). Stereo-split "check by ear" playback needs the original recording, which
 only Tab Translator has.
+
+## Update 2026-10-25 — item 1 built
+
+Muscriptor's `_sheets.zip` and `score.mid` now import through the re-vendored recognition engine on a
+Harmony reading (every instrument except voice and drums), Pro chord names, spelled for the key —
+F minor `Fm9 | Bbm9 | Fm7 | Bbm7 | Eb/F | Bbm7 | Db | Bb7/Ab | …` on the owner's file, the same chart Tab
+Translator Pro gives. `midiImport.js` (fallback) now drops voice tracks, infers the key and spells for
+it. Items 2 (multi-part handoff) and 3 (tempo map) remain.

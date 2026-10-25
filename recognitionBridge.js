@@ -290,22 +290,39 @@
     for (var i = 1; i < parts.length; i++) {
       scores.push(await engine.parseGuitarProOrXML(u8, name, useSharp, i));
     }
-    var index = opts.partIndex != null ? opts.partIndex : pickChordPart(scores);
-    var score = scores[index] || first;
+    // HARMONY: every pitched part read together (voices and drums left out). Offered for
+    // MusicXML and MIDI with several parts, and the default for a multi-instrument
+    // transcription — a zipped score (Muscriptor's sheets zip) or a MIDI file — where no part
+    // states the changes on its own (no chord symbols, piano alone ≠ piano + bass).
+    var HP = engine.HARMONY_PART;
+    var harmony = HP != null && parts.length > 1 && (first.source === 'musicxml' || first.source === 'midi');
+    var multiInstrument = first.source === 'midi' || (u8[0] === 0x50 && u8[1] === 0x4b && first.source === 'musicxml');
+    var index = opts.partIndex != null ? opts.partIndex : harmony && multiInstrument ? HP : pickChordPart(scores);
+    var score = harmony && index === HP ? await engine.parseGuitarProOrXML(u8, name, useSharp, HP) : scores[index] || first;
+    if (!(harmony && index === HP) && !scores[index]) index = 0;
 
     // An arpeggiated or single-note part would otherwise export one chord per
-    // note; collapsing it to one chord per bar is what makes it a chart.
+    // note; collapsing it to one chord per bar is what makes it a chart. The
+    // Harmony reading is per-onset too, so it is condensed the same way.
     var melodic = engine.isMelodicScore(score);
-    var charted = melodic ? engine.simplifyScore(score, useSharp) : score;
+    var charted = melodic || score.merged ? engine.simplifyScore(score, useSharp) : score;
+    // Pro chord names for the merged reading (no 6/9 or sus2 soup, no minor-triad slashes).
+    if (score.merged && engine.respellScore) charted = engine.respellScore(charted, 'chart', { useSharp: useSharp });
 
     var key = engine.analyzeKey(charted);
-    // Bars the chosen part rests through get their harmony from the other parts.
-    charted = recoverEmptyBars(charted, scores, { key: engine.keyName(key, useSharp) });
+    // Bars the chosen part rests through get their harmony from the other parts
+    // (the Harmony reading already reads them all).
+    if (!score.merged) charted = recoverEmptyBars(charted, scores, { key: engine.keyName(key, useSharp) });
+    // Chord roots and slash basses spelled for the key (Dbmaj7 in F minor) — the family's
+    // choice since 2026-10-25; only on the default ♯♭ spelling.
+    var spellKey = useSharp && !!key && typeof engine.spellScoreForKey === 'function';
+    if (spellKey) charted = engine.spellScoreForKey(charted, key);
     var csmpn = engine.scoreToCSMPN(charted, {
       title: opts.title || chartTitleFromFilename(name) || 'Imported chart',
       key: key,
       tempo: score.tempo,
       useSharp: useSharp,
+      spellKey: spellKey,
       tab: opts.tab !== false,
       hybrid: opts.hybrid !== false,
     });
@@ -318,7 +335,16 @@
       partIndex: index,
       melodic: melodic,
       recoveredBars: charted.recoveredBars || 0,
-      key: engine.keyName(key, useSharp) || '',
+      harmony: harmony,
+      harmonyPart: HP,
+      merged: !!score.merged,
+      mergedParts: score.mergedParts || [],
+      // A zipped score's MusicXML, for the Tab View (AlphaTab reads MusicXML, not the zip).
+      notationBytes:
+        u8[0] === 0x50 && u8[1] === 0x4b && first.source === 'musicxml' && typeof first._xml === 'string' && typeof TextEncoder !== 'undefined'
+          ? new TextEncoder().encode(first._xml)
+          : null,
+      key: (spellKey ? engine.keyNameForKey(key) : engine.keyName(key, useSharp)) || '',
       summary: importSummary(charted),
       format: score.source || '',
     };
