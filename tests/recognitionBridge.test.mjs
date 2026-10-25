@@ -48,6 +48,7 @@ function loadBridge(engineModule = engine) {
   const ctx = {
     window: {},
     console,
+    TextEncoder, // a browser global the bridge uses for a zip's notation bytes
     __loadEngineModule: () => Promise.resolve(engineModule),
   };
   vm.createContext(ctx);
@@ -433,4 +434,67 @@ test('importTabPdf reads six string lines into chords and hands back parseable C
   // showing, and column geometry carries no reliable onset timing.
   assert.ok(!res.csmpn.includes('{tab'), 'no tab block');
   assert.ok(!res.csmpn.includes('{hybrid'), 'no hybrid block');
+});
+
+// ── Muscriptor sheets zip + MIDI (2026-10-25) ───────────────────────────────
+// The owner's real Muscriptor v0.4 output for "Saddle Up": score.mid + score.musicxml from
+// <song>_sheets.zip (STORED, as Muscriptor writes it; the PDFs dropped). No part states the
+// changes alone, so the bridge reads every instrument together (Harmony), names it with the
+// Pro vocabulary and spells it for the key.
+const saddle = () => bytes('tests', 'fixtures', 'muscriptor-saddle-up_sheets.zip');
+// The engine reads MusicXML with the browser's DOMParser; Node has none, so these tests lend
+// it @xmldom/xmldom (a test-only devDependency — the app itself stays dependency-free).
+const { DOMParser: XmlDomParser } = await import('@xmldom/xmldom');
+if (typeof globalThis.DOMParser === 'undefined') globalThis.DOMParser = XmlDomParser;
+const body = (csmpn) => csmpn.split('- Chart')[1] || '';
+
+test('a Muscriptor sheets zip imports on the Harmony reading, spelled for F minor', async () => {
+  const bridge = loadBridge();
+  const res = await bridge.importBinary(saddle(), { filename: 'Saddle_Up_MSTFix_sheets.zip' });
+  assert.equal(res.partIndex, engine.HARMONY_PART);
+  assert.ok(res.merged && res.harmony, 'merged Harmony reading');
+  assert.deepEqual(
+    plain(res.mergedParts).map((n) => /voice|drum|percussion/i.test(n)),
+    [false, false, false]
+  );
+  assert.equal(res.key, 'Fm');
+  assert.equal(res.summary.bars, 31);
+  assert.match(res.csmpn, /^Key: Fm$/m);
+  assert.match(res.csmpn, /^Tempo: 67$/m);
+  assert.match(body(res.csmpn), /^\|?\s*Fm9\b/m, res.csmpn);
+  assert.match(body(res.csmpn), /\bBbm9\b/);
+  assert.match(body(res.csmpn), /\bDb(maj7)?\b/);
+  assert.doesNotMatch(body(res.csmpn), /\b[CDGA]#/, 'no sharp roots or basses in a 4-flat key');
+  assert.ok(
+    res.notationBytes && res.notationBytes.length > 1000,
+    'the zip hands its MusicXML to the Tab View'
+  );
+});
+
+test("the zip's MIDI gives the same Harmony opening through the same engine", async () => {
+  const bridge = loadBridge();
+  const zip = saddle();
+  const mid = await engine._zipRead(
+    zip,
+    engine._zipEntries(zip).find((e) => e.name === 'score.mid')
+  );
+  const a = await bridge.importBinary(zip, { filename: 's.zip' });
+  const b = await bridge.importBinary(mid, { filename: 'score.mid' });
+  assert.equal(b.format, 'midi');
+  assert.equal(b.partIndex, engine.HARMONY_PART);
+  assert.equal(b.key, 'Fm');
+  const firstBars = (c) => body(c).replace(/[|%]/g, ' ').trim().split(/\s+/).slice(0, 8).join(' ');
+  assert.equal(firstBars(b.csmpn), firstBars(a.csmpn));
+});
+
+test('picking one part of the zip charts that part alone (the part picker path)', async () => {
+  const bridge = loadBridge();
+  const res = await bridge.importBinary(saddle(), { filename: 's.zip', partIndex: 0 });
+  assert.equal(res.partIndex, 0);
+  assert.equal(res.merged, false);
+  const back = await bridge.importBinary(res.notationBytes || saddle(), {
+    filename: 's.zip',
+    partIndex: engine.HARMONY_PART,
+  });
+  assert.ok(back.merged, 'Harmony can be picked again from the stored MusicXML bytes');
 });

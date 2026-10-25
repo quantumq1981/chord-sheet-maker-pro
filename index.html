@@ -2898,7 +2898,7 @@ Tempo: 130
     </div>
 
     <button id="btnPrintFloat" data-stage-item="perform" title="Print / PDF" aria-label="Print / PDF">⎙</button>
-    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.abc,.mid,.midi,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx,.ptb,.csml,text/plain,application/pdf" style="display:none" />
+    <input id="fileInput" type="file" accept=".pdf,.txt,.xml,.musicxml,.mxl,.zip,.abc,.mid,.midi,.chordmark,.cmark,.onsong,.opensong,.chopro,.chordpro,.cho,.pro,.irealb,.gp,.gp3,.gp4,.gp5,.gpx,.ptb,.csml,text/plain,application/pdf" style="display:none" />
     <!-- Dedicated hidden file inputs for each format -->
     <input id="fileInputMusicXML" type="file" accept=".musicxml,.xml,.mxl,text/xml,application/xml" style="display:none" />
     <!-- NO `accept` on the inputs whose formats have no iOS UTI (.chordpro/.chopro/
@@ -3798,7 +3798,7 @@ async function importViaRecognitionEngine(gpBuf, fileName, importStart, partInde
 
   // The part picker re-reads from these, so record them on every engine import
   // rather than only on the paths that happen to set them for the Tab View.
-  window._gpLastBytes = gpBuf;
+  window._gpLastBytes = res.notationBytes || gpBuf;
   window._gpLastFileName = fileName;
 
   const finalCsmpn = res.csmpn; /* keep lyrics in source; render + exports hide them per includeLyrics */
@@ -3806,7 +3806,10 @@ async function importViaRecognitionEngine(gpBuf, fileName, importStart, partInde
   extractHeaderFromText(finalCsmpn);
   updatePreview();
 
-  const label = fileName.toLowerCase().endsWith('.ptb') ? 'Power Tab' : 'Guitar Pro';
+  const label = fileName.toLowerCase().endsWith('.ptb') ? 'Power Tab'
+    : res.format === 'midi' ? 'MIDI'
+    : /\.zip$/i.test(fileName) ? 'zipped score'
+    : res.format === 'musicxml' ? 'MusicXML' : 'Guitar Pro';
   importDiagnostics.miner = label;
   importDiagnostics.sourceFlavor = res.format || 'guitarpro';
   importDiagnostics.confidence = 'high';
@@ -3818,6 +3821,12 @@ async function importViaRecognitionEngine(gpBuf, fileName, importStart, partInde
       'This part is mostly single notes, so it was condensed to one chord per bar.'
     );
   }
+  if (res.merged){
+    importDiagnostics.warnings.push(
+      'Harmony: every instrument read together (' + (res.mergedParts || []).join(', ') +
+      '); voices and drums left out. Pick one part below to chart it alone.'
+    );
+  }
   if (res.recoveredBars){
     importDiagnostics.warnings.push(
       `${res.recoveredBars} bar(s) where this part rests took their harmony from the ` +
@@ -3827,11 +3836,11 @@ async function importViaRecognitionEngine(gpBuf, fileName, importStart, partInde
   updateDiagnosticsPanel();
 
   showImportPartPicker(res);
-  const partName = (res.parts[res.partIndex] && res.parts[res.partIndex].name) || '';
+  const partName = res.merged ? 'Harmony (all pitched parts)' : (res.parts[res.partIndex] && res.parts[res.partIndex].name) || '';
   const partNote = res.parts.length > 1 && partName ? `, from "${partName}"` : '';
   setStatus(
     `Imported ${label}: ${res.summary.bars} bars, ${res.summary.chords} chords${partNote}. ` +
-    'Use 🎸 Tab View for full notation.'
+    (res.format === 'midi' ? 'Chords are read from the notes — review & edit.' : 'Use 🎸 Tab View for full notation.')
   );
   return true;
 }
@@ -3849,7 +3858,7 @@ function showImportPartPicker(res){
     return;
   }
   _lastImportParts = res.parts;
-  sel.innerHTML = res.parts
+  sel.innerHTML = (res.harmony ? `<option value="${res.harmonyPart}">Harmony (all pitched parts)</option>` : '') + res.parts
     .map((p, i) => `<option value="${i}">${escapeHtml(p.name || ('Part ' + (i + 1)))}</option>`)
     .join('');
   sel.value = String(res.partIndex);
@@ -4899,6 +4908,7 @@ fileInput.addEventListener('change', async () => {
           /\.ptb$/.test(n) ? 'powertab' :
           /\.midi?$/.test(n) ? 'midi' :
           /\.mxl$/.test(n) ? 'mxl' :
+          /\.zip$/.test(n) ? 'zip' :
           /\.(xml|musicxml)$/.test(n) ? 'musicxml' :
           /\.pdf$/.test(n) ? 'pdf' : '';
         const named = importerFor(name);
@@ -4921,17 +4931,33 @@ fileInput.addEventListener('change', async () => {
       return;
     }
 
-    // MIDI: parse the Standard MIDI File → chord-per-bar CSMPN
+    // A zipped score — Muscriptor's <song>_sheets.zip (score.musicxml + score.mid + PDFs), or
+    // any zip holding one MusicXML / MIDI file. Only the recognition engine reads it: it opens
+    // the MusicXML and reads every instrument together (Harmony).
+    if (name.endsWith('.zip')){
+      importDiagnostics.miner = 'Zipped score';
+      importDiagnostics.sourceFlavor = 'zip';
+      const zipBuf = await readFileBytesReliably(file);
+      if (await importViaRecognitionEngine(zipBuf, file.name, importStart)) return;
+      setStatus('This zip holds no score this app can read (it needs a MusicXML or MIDI file inside).', 'error');
+      updateDiagnosticsPanel();
+      return;
+    }
+
+    // MIDI: the recognition engine first (one part per track; Harmony reads every
+    // instrument together), then this app's own chord-per-bar importer as the fallback
     if (name.endsWith('.mid') || name.endsWith('.midi') || type.includes('audio/midi') || type.includes('audio/x-midi')){
       importDiagnostics.miner = 'MIDI';
       importDiagnostics.sourceFlavor = 'midi';
       importDiagnostics.confidence = 'medium';
+      const midiBuf = new Uint8Array(await file.arrayBuffer());
+      if (await importViaRecognitionEngine(midiBuf, file.name, importStart)) return;
       if (typeof window.MidiImport === 'undefined') {
         setStatus('MIDI importer not loaded — try refreshing.', 'error');
         return;
       }
       try {
-        const midiBytes = new Uint8Array(await file.arrayBuffer());
+        const midiBytes = midiBuf;
         const title = file.name.replace(/\.[^.]+$/, '');
         const csmpn = window.MidiImport.midiToCsmpn(midiBytes, { barsPerRow: fbSettings.barsPerRow, title });
         const midiDoc = parseCSMPN(csmpn);

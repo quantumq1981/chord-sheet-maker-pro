@@ -626,6 +626,12 @@ describe('sniffBinaryMusicExt', () => {
     assert.equal(sniff(strBytes('PK........Content/score.gpif....')), '.gp');
   });
 
+  it('detects any other zip holding a score — a Muscriptor sheets zip', () => {
+    assert.equal(sniff(strBytes('PK........score.mid....PK....score.musicxml....')), '.zip');
+    assert.equal(sniff(strBytes('PK........song/sample.musicxml....')), '.zip');
+    assert.equal(sniff(strBytes('PK........photo.jpg....')), '');
+  });
+
   it('detects compressed MusicXML zip via container.xml', () => {
     assert.equal(sniff(strBytes('PK....META-INF/container.xml....')), '.mxl');
   });

@@ -82,6 +82,7 @@
     var ppq = division & 0x8000 ? 480 : division; // SMPTE division → fallback ppq
 
     var notes = [];
+    var tracks = []; // { name, programs: {channel: program} } per MTrk, for voice filtering
     var tempoBpm = null;
     var timeSig = null;
     var keySig = null;
@@ -106,6 +107,8 @@
       var absTick = 0;
       var running = 0;
       var pending = {}; // "ch:note" → { midi, channel, start }
+      var trackInfo = { name: '', programs: {} };
+      tracks.push(trackInfo);
 
       while (cur.p < trackEnd) {
         absTick += readVLQ(bytes, cur);
@@ -134,6 +137,10 @@
             if (timeSig == null) {
               timeSig = { num: bytes[dataStart], den: Math.pow(2, bytes[dataStart + 1]) };
             }
+          } else if (metaType === 0x03 && !trackInfo.name) {
+            var tn = '';
+            for (var ti = dataStart; ti < dataStart + len; ti++) tn += String.fromCharCode(bytes[ti]);
+            trackInfo.name = tn.trim();
           } else if (metaType === 0x59 && len >= 1) {
             if (keySig == null) keySig = { sf: (bytes[dataStart] << 24) >> 24, mi: bytes[dataStart + 1] };
           }
@@ -147,7 +154,7 @@
           var vel = bytes[cur.p++];
           var key = channel + ':' + note;
           if (vel > 0) {
-            pending[key] = { midi: note, channel: channel, start: absTick };
+            pending[key] = { midi: note, channel: channel, start: absTick, track: tracks.length - 1 };
           } else if (pending[key]) {
             finishNote(pending, key, absTick, channel, notes);
           }
@@ -157,8 +164,11 @@
           finishNote(pending, channel + ':' + note2, absTick, channel, notes);
         } else if (type === 0xa0 || type === 0xb0 || type === 0xe0) {
           cur.p += 2; // 2-byte channel messages we ignore
-        } else if (type === 0xc0 || type === 0xd0) {
-          cur.p += 1; // 1-byte channel messages
+        } else if (type === 0xc0) {
+          if (trackInfo.programs[channel] == null) trackInfo.programs[channel] = bytes[cur.p];
+          cur.p += 1; // program change
+        } else if (type === 0xd0) {
+          cur.p += 1; // channel pressure
         } else {
           cur.p++; // unknown — step to avoid an infinite loop
         }
@@ -173,6 +183,7 @@
       timeSig: timeSig,
       keySig: keySig,
       notes: notes,
+      tracks: tracks,
     };
   }
 
@@ -183,7 +194,7 @@
     if (channel === 9) return; // drop percussion
     var dur = endTick - n.start;
     if (dur <= 0) return;
-    notes.push({ midi: n.midi, channel: n.channel, start: n.start, dur: dur });
+    notes.push({ midi: n.midi, channel: n.channel, start: n.start, dur: dur, track: n.track });
   }
 
   // ── Chord recognition ────────────────────────────────────────────────────────
@@ -327,15 +338,47 @@
    * per bar (consecutive identical bars collapse to `%`, empty bars → N.C.),
    * `opts.barsPerRow` bars per line (default 4), `opts.title` for the Title.
    */
+  // A sung line is melody, not harmony: in a band transcription (Muscriptor's score.mid
+  // names its tracks "voice", "drums", …) it fakes extensions and slash basses. GM 52–54 are
+  // the choir / voice programs.
+  var VOICE_TRACK_RE = /\b(voice|vocals?|vox|choir|singers?|soprano|alto|tenor|baritone)\b/i;
+  function isVoiceTrack(track) {
+    if (!track) return false;
+    if (VOICE_TRACK_RE.test(track.name || '')) return true;
+    var progs = Object.keys(track.programs || {}).map(function (c) { return track.programs[c]; });
+    return progs.length > 0 && progs.every(function (p) { return p >= 52 && p <= 54; });
+  }
+  /** The notes that carry the harmony: voice tracks left out unless nothing else sounds. */
+  function harmonyNotes(parsed) {
+    var tracks = parsed.tracks || [];
+    var kept = parsed.notes.filter(function (n) {
+      return n.track == null || !isVoiceTrack(tracks[n.track]);
+    });
+    return kept.length ? kept : parsed.notes;
+  }
+  // Root + slash bass respelled for the chart's key (Dbmaj7 in F minor), via ChordTheory.
+  function spellTokenForKey(tok, keyStr) {
+    var theory = typeof window !== 'undefined' && window.ChordTheory;
+    if (!keyStr || !theory || !theory.spellPcForKey) return tok;
+    var PC = { C: 0, 'B#': 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, Fb: 4, 'E#': 5, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11, Cb: 11 };
+    var m = /^([A-G][#b]?)(.*)$/.exec(tok);
+    if (!m || PC[m[1]] == null) return tok;
+    var rest = m[2];
+    var bm = /^(.*)\/([A-G][#b]?)$/.exec(rest);
+    if (bm && PC[bm[2]] != null) rest = bm[1] + '/' + theory.spellPcForKey(PC[bm[2]], keyStr);
+    return theory.spellPcForKey(PC[m[1]], keyStr) + rest;
+  }
+
   function midiToCsmpn(input, opts) {
     opts = opts || {};
     var parsed = input && input.notes ? input : parseMidi(input);
     var ts = parsed.timeSig || { num: 4, den: 4 };
-    var bars = notesToBars(parsed.notes, parsed.ppq, ts, opts);
+    var bars = notesToBars(harmonyNotes(parsed), parsed.ppq, ts, opts);
 
     var header = [];
     header.push('Title: ' + (opts.title || 'Imported MIDI'));
     var k = keyName(parsed.keySig);
+    var keyLine = header.length;
     if (k) header.push('Key: ' + k);
     header.push('Time: ' + ts.num + '/' + ts.den);
     if (parsed.tempoBpm) header.push('Tempo: ' + parsed.tempoBpm);
@@ -361,6 +404,15 @@
     }
     if (!tokens.length) tokens.push('N.C.');
 
+    // No key signature in the file (Muscriptor writes none): infer it from the chords, then
+    // spell every chord for it. A file's own key signature is trusted as written.
+    var theory = typeof window !== 'undefined' && window.ChordTheory;
+    if (!k && theory && theory.inferKeyFromChords) {
+      k = theory.inferKeyFromChords(tokens.filter(function (t) { return t !== '%' && t !== 'N.C.'; })) || '';
+      if (k) header.splice(keyLine, 0, 'Key: ' + k);
+    }
+    if (k) tokens = tokens.map(function (t) { return t === '%' || t === 'N.C.' ? t : spellTokenForKey(t, k); });
+
     var bpr = Math.max(1, opts.barsPerRow || 4);
     var lines = [];
     for (var j = 0; j < tokens.length; j += bpr) {
@@ -377,6 +429,9 @@
     recognizeChord: recognizeChord,
     notesToBars: notesToBars,
     keyName: keyName,
+    isVoiceTrack: isVoiceTrack,
+    harmonyNotes: harmonyNotes,
+    spellTokenForKey: spellTokenForKey,
     midiToCsmpn: midiToCsmpn,
   };
   if (typeof window !== 'undefined') window.MidiImport = api;
