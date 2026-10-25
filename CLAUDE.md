@@ -2490,3 +2490,18 @@ tandem (strip/recognize there → perform here). Same GitHub Pages origin → sh
   existing `btnPerfLyrics` caller passes only text). Browser-only glue — smoke-test on iOS
   (from Tab Translator: strip a chord-over-lyrics sheet → 🎤 Perform on Chord Sheet Maker
   Pro → this app opens the stage view seeded with the words + title).
+
+## Muscriptor v0.4.0 review (2026-10-25) — what lands in the finish stage
+
+Full review + measurements live in `Tab-Translator-Pro/docs/MUSCRIPTOR-REVIEW.md`. This repo's
+part is in **`docs/MUSCRIPTOR-REVIEW.md`**. Decisions that bind here:
+- Muscriptor has **no stem splitter**. Its per-instrument zip is a multi-instrument transcription
+  engraved by MuseScore 4 on their server. Weights are **CC BY-NC 4.0** → never shipped in the
+  family; the code (MIT) may be ported. Beat/downbeat tracking and quantisation belong in Tab
+  Translator Pro, not here.
+- To do here: (1) read Muscriptor's `.mid` (`midiImport.js` should already work: bars are cut in
+  ticks, so a tempo map is harmless and drums are dropped; it reports only the first tempo and
+  assumes 4/4 when no time signature is written; **needs a real Muscriptor `.mid` as a fixture**)
+  and its `_sheets.zip` (→ `importMusicXML` / `midiImport`); (2) an optional versioned `parts[]` in
+  `csm:handoff:v1` for Tab Translator's coming "All parts" export (spec change in
+  `chord-sheet-maker/docs/HANDOFF-CONTRACT.md` first); (3) carry a tempo map when one arrives.
