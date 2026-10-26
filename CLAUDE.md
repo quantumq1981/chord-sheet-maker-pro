@@ -57,7 +57,7 @@ The family is **recognize → normalize → finish**:
   onsets unguessed. Multi-part measures no longer concatenate. The vendored
   Tab Translator engine is pinned by `recognitionEngine.provenance.json` and
   regression-tested for the current key analysis and true MusicXML timing.
-- **1,068 tests passing** (`npm run test:all`) — 582 npm-test + 486 test:parsers; latest work: Sprint 19 import-quality arc (PRs #339/#340/#341 — UG Pro PDF recovery, cross-track harmony recovery, bass-priority chord analysis + key-aware spelling; see "SPRINT 19 CHANGES" below)
+- **1,427 tests passing** (`npm run test:all`, 2026-10-25) — 941 npm-test + 486 test:parsers; latest work: tempo map + parts[] handoff (see the end of this file); earlier: Sprint 19 import-quality arc (PRs #339/#340/#341 — UG Pro PDF recovery, cross-track harmony recovery, bass-priority chord analysis + key-aware spelling; see "SPRINT 19 CHANGES" below)
 - `chordTheory.js` is now the family's **harmonic analysis engine**, not just data: `inferKeyFromChords`, `recognizeChordFromPcs` (bass-priority + tritone bias + inversion slashes), `keyFifths`, `spellPcForKey`
 - `tests/gpCsmpnConverter.test.mjs` — 53 tests for GP→CSMPN pure helpers (flat names, new patterns, slash chords, tuplets, repeats, voltas)
 - `tests/musicXmlExport.test.ts` — 8 new repeat/volta tests (51 total); `musicXmlExporter.ts` now emits repeat barlines + ending brackets
@@ -2533,3 +2533,26 @@ score.mid + score.musicxml, STORED; 5 parts, no chord symbols, no meter/key meta
   Db | Bb7/Ab | …` — identical to Tab Translator Pro's chart of the same file.
 - Tests: `@xmldom/xmldom` added as a **test-only** devDependency (the engine reads MusicXML with
   `DOMParser`, which Node lacks); new bridge/midiImport/sniffer tests on the fixture.
+
+## Tempo map + multi-part (`parts[]`) handoff (2026-10-25)
+
+Items 2 and 3 of `docs/MUSCRIPTOR-REVIEW.md`, matching Tab Translator Pro's beat-grid / "All parts" work.
+
+- **`Tempo Map:` header** — `Tempo Map: 1=117.6 9=119.2 17=118.4` (bar=♩, floats). `parseTempoMap` in
+  `csmpnParser.js` (+ `src/parsers/csmpnParser.ts` regex) → `doc.tempoMap` `[{bar, bpm}]` sorted, last
+  entry per bar wins, junk ignored; never read as a bar. `parseHybridChartFromCSMPN` returns it.
+  - **Playback** (`audioPlayback.js`): `tempoAtBar` → seconds-per-quarter per bar, clamped 30–300 bpm
+    as a FLOAT (the old `parseInt` clamp truncated 90.5 → 90).
+  - **MusicXML** (`renderer.js`): `hrTempoAt` / `hrTempoChangeXml` write a `<sound tempo>` direction at
+    each bar where the map changes, in both the slash and hybrid exporters.
+  - No `Tempo Map:` line → identical output to before.
+- **`parts[]` in `csm:handoff:v1`** (`handoffParts.js`, `window.HandoffParts`, pure):
+  `env.parts = [{ name, role, formats: { csmpn } }]`, ≤ 16, parts without CSMPN skipped. Still `v:1`;
+  `formats` stays the primary chart, so older receivers ignore `parts`. `normalizeParts(env)` →
+  `[{name, role, csmpn, title}]` (title = the part's `Title:` line, else `<song> — <name>`);
+  `mergePartsIntoLibrary(library, parts)` upserts by title without mutating. The receiver in
+  `consumeCsmHandoff` runs it only after the primary chart loaded and appends "N parts saved to the
+  library (…) — open them with Load." to the status line.
+- Shipped in `sw.js` PRECACHE + CI check/copy lists. Tests: `tests/tempoMapHandoff.test.mjs` (5).
+- **Not done here:** the canonical contract note in `chord-sheet-maker/docs/HANDOFF-CONTRACT.md` (third
+  repo, not in this session); a part switcher UI (parts land as separate library songs).

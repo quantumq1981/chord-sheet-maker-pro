@@ -196,6 +196,15 @@
     return Math.max(30, Math.min(300, t));
   }
 
+  // The tempo in force at a 1-based bar of a tempo map ([{ bar, bpm }], sorted): the last entry at
+  // or before it; before the first entry, the first entry's tempo; no map → `fallback`.
+  function tempoAtBar(map, bar, fallback) {
+    if (!map || !map.length) return fallback;
+    var t = map[0].bpm;
+    for (var i = 0; i < map.length && map[i].bar <= bar; i++) t = map[i].bpm;
+    return t;
+  }
+
   // Build a flat playback schedule from chart source. Uses the global
   // parseHybridChartFromCSMPN (same model as the renderer); a parse fn can be
   // injected via opts.parse for tests. Returns { tempo, duration, strikes }.
@@ -210,6 +219,10 @@
 
     var bpm = clampTempo(hy.tempo);
     var spq = 60 / bpm; // seconds per quarter-unit
+    // A chart decoded from a recording can carry a tempo map (`Tempo Map:` header → hy.tempoMap,
+    // [{ bar, bpm }]): the bar lines follow the performance, so each bar plays at its own tempo.
+    var tmap = Array.isArray(hy.tempoMap) && hy.tempoMap.length ? hy.tempoMap : null;
+    var barNo = 0;
     var time = hy.time || '4/4';
     var quPerBar = meterQuarterUnits(time);
     var quPerPos = quPerBar / meterNumerator(time);
@@ -241,6 +254,12 @@
       var bars = hy.sections[si].bars || [];
       for (var bi = 0; bi < bars.length; bi++) {
         var bar = bars[bi];
+        barNo++;
+        if (tmap) {
+          // fractional on purpose: a tempo map's 117.6 rounded to 117 drifts off the recording
+          spq = 60 / Math.max(30, Math.min(300, +tempoAtBar(tmap, barNo, bpm) || bpm));
+          barDur = quPerBar * spq;
+        }
         var chords = splitChords(bar.chordToken);
         if ((!chords.length || (chords.length === 1 && chords[0] === '%')) && lastChords.length)
           chords = lastChords; // repeat-bar / blank → hold the previous chord

@@ -50,3 +50,18 @@ Harmony reading (every instrument except voice and drums), Pro chord names, spel
 F minor `Fm9 | Bbm9 | Fm7 | Bbm7 | Eb/F | Bbm7 | Db | Bb7/Ab | …` on the owner's file, the same chart Tab
 Translator Pro gives. `midiImport.js` (fallback) now drops voice tracks, infers the key and spells for
 it. Items 2 (multi-part handoff) and 3 (tempo map) remain.
+
+## Update 2026-10-25 — items 2 and 3 built
+
+- **Item 2, multi-part handoff.** `csm:handoff:v1` gains an optional `parts[]`
+  (`[{ name, role, formats: { csmpn } }]`, at most 16). The envelope stays `v:1` and keeps `formats`
+  (the band chart), so an older receiver just loads that. This receiver (`handoffParts.js`) files every
+  part in the song library by its `Title:` line (replacing an entry with the same title), after the
+  primary chart has loaded, and says so in the status line. Sender: Tab Translator Pro's stems panel,
+  "→ Chord Sheet Maker Pro (all parts)". Checked end to end in a browser across both apps on one origin.
+  The canonical `chord-sheet-maker/docs/HANDOFF-CONTRACT.md` (third repo) still needs the same note.
+- **Item 3, tempo map.** CSMPN header `Tempo Map: 1=117.6 9=119.2 …` (bar=♩, written by Tab
+  Translator Pro when the performance tempo moves) → `doc.tempoMap` (`csmpnParser.js` + the TS twin)
+  → `parseHybridChartFromCSMPN().tempoMap` → playback (`audioPlayback.js`, per-bar seconds-per-quarter,
+  clamped 30–300) and MusicXML export (`renderer.js`, a `<sound tempo>` direction where it changes).
+  Charts without the line behave exactly as before.
