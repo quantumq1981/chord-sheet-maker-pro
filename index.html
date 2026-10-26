@@ -3189,6 +3189,7 @@ Tempo: 130
 <script src="midiImport.js"></script>
 <script src="chordsheetPdf.js"></script>
 <script src="performanceLyrics.js"></script>
+<script src="handoffParts.js"></script>
 <script>
 /* =========================================================
    Core constants / helpers
@@ -6204,11 +6205,23 @@ setStatus('Ready. v1.10.0 — iReal Pro (irealb://), MXL, OnSong, OpenSong, Open
       }
     }
 
+    // Optional parts[] (Tab Translator Pro's "all parts"): every instrument's chart goes into the
+    // song library, one Load away; the primary chart above is the one shown. See handoffParts.js.
+    var partsNote = '';
+    if (loaded && window.HandoffParts && Array.isArray(env.parts) && env.parts.length && typeof getSongLibrary === 'function' && typeof saveSongLibrary === 'function') {
+      var parts = window.HandoffParts.normalizeParts(env);
+      if (parts.length) {
+        var merged = window.HandoffParts.mergePartsIntoLibrary(getSongLibrary(), parts);
+        saveSongLibrary(merged.library);
+        partsNote = ' ' + parts.length + ' part' + (parts.length === 1 ? '' : 's') + ' saved to the library (' + parts.map(function (p) { return p.name; }).join(', ') + ') — open them with Load.';
+      }
+    }
+
     if (loaded && typeof setStatus === 'function') {
       // Source-aware credit: both Chord Sheet Maker and Tab Translator Pro send
       // through this same envelope (see chord-sheet-maker/docs/HANDOFF-CONTRACT.md).
       var srcName = env.source === 'tab-translator-pro' ? 'Tab Translator Pro' : 'Chord Sheet Maker';
-      setStatus('Imported from ' + srcName + (env.title ? ' — ' + env.title : '') + '.');
+      setStatus('Imported from ' + srcName + (env.title ? ' — ' + env.title : '') + '.' + partsNote);
     }
 
     // Strip the query param so a manual refresh is a clean, normal load.

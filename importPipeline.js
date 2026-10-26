@@ -3435,6 +3435,7 @@ function parseHybridChartFromCSMPN(text){
     key: doc.key || '',
     time: doc.time || '4/4',
     tempo: doc.tempo || null,
+    tempoMap: doc.tempoMap && doc.tempoMap.length ? doc.tempoMap : null,
     composer: doc.composer || '',
     style: doc.style || '',
     capo: doc.capo || 0,

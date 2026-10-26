@@ -1300,6 +1300,23 @@ function hrBarlineXml(bar, prevEnding, nextEl) {
   return { left, right, nextPrev: curEl };
 }
 
+// A chart with a tempo map (`Tempo Map:` header, from Tab Translator Pro when the bar lines follow
+// a recording): the tempo in force at a 1-based bar, else the chart's Tempo.
+function hrTempoAt(hybrid, bar) {
+  const map = hybrid && hybrid.tempoMap;
+  if (!map || !map.length) return hybrid ? hybrid.tempo : null;
+  let t = map[0].bpm;
+  for (let i = 0; i < map.length && map[i].bar <= bar; i++) t = map[i].bpm;
+  return t;
+}
+// A <sound tempo> at a bar where the tempo map changes ('' everywhere else).
+function hrTempoChangeXml(hybrid, bar) {
+  const map = hybrid && hybrid.tempoMap;
+  if (!map || bar < 2 || !map.some((m) => m.bar === bar)) return '';
+  const t = hrTempoAt(hybrid, bar);
+  return `\n      <direction placement="above"><sound tempo="${escapeHtml(String(t))}"/></direction>`;
+}
+
 function hrBuildMusicXml(sourceText) {
   const hybrid = (typeof parseHybridChartFromCSMPN === 'function')
     ? parseHybridChartFromCSMPN(sourceText || '') : null;
@@ -1338,12 +1355,13 @@ function hrBuildSlashMusicXml(hybrid) {
           `<time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>` +
           `<clef><sign>G</sign><line>2</line></clef>` +
           `<measure-style><slash type="start" use-stems="no"/></measure-style></attributes>`;
-        if (hybrid.tempo) {
+        const t1 = hrTempoAt(hybrid, 1);
+        if (t1) {
           attrs += `\n      <direction placement="above"><direction-type><metronome parentheses="no">` +
-            `<beat-unit>quarter</beat-unit><per-minute>${escapeHtml(String(hybrid.tempo))}</per-minute>` +
-            `</metronome></direction-type><sound tempo="${escapeHtml(String(hybrid.tempo))}"/></direction>`;
+            `<beat-unit>quarter</beat-unit><per-minute>${escapeHtml(String(Math.round(+t1) || t1))}</per-minute>` +
+            `</metronome></direction-type><sound tempo="${escapeHtml(String(t1))}"/></direction>`;
         }
-      }
+      } else attrs += hrTempoChangeXml(hybrid, num);
 
       let rehearsalXml = '';
       if (bi === 0 && label && !isNav) {
@@ -1429,12 +1447,13 @@ function hrBuildHybridMusicXml(hybrid) {
           `<time><beats>${tsBeats}</beats><beat-type>${tsBeatType}</beat-type></time>` +
           `<clef><sign>G</sign><line>2</line></clef>` +
           `<measure-style><slash type="start" use-stems="yes"/></measure-style></attributes>`;
-        if (hybrid.tempo) {
+        const t1 = hrTempoAt(hybrid, 1);
+        if (t1) {
           attrs += `\n      <direction placement="above"><direction-type><metronome parentheses="no">` +
-            `<beat-unit>quarter</beat-unit><per-minute>${escapeHtml(String(hybrid.tempo))}</per-minute>` +
-            `</metronome></direction-type><sound tempo="${escapeHtml(String(hybrid.tempo))}"/></direction>`;
+            `<beat-unit>quarter</beat-unit><per-minute>${escapeHtml(String(Math.round(+t1) || t1))}</per-minute>` +
+            `</metronome></direction-type><sound tempo="${escapeHtml(String(t1))}"/></direction>`;
         }
-      }
+      } else attrs += hrTempoChangeXml(hybrid, num);
 
       let directionsXml = '';
       if (bi === 0 && label && !isNav) {

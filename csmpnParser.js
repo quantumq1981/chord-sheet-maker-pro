@@ -98,7 +98,7 @@ function parseDiagramDefinition(str){
  * Parse a CSMPN source text into a document object.
  *
  * Returns:
- *   { title, composer, style, tempo, time, key, capo, tuning, blocks[] }
+ *   { title, composer, style, tempo, time, key, capo, tuning, tempoMap[], blocks[] }
  *
  * Block types:
  *   { type:'pagebreak' }
@@ -107,6 +107,23 @@ function parseDiagramDefinition(str){
  *   { type:'marker',  marker: Char, text: String }
  *   { type:'bars',    tokens: Array, indent: Number }
  */
+/**
+ * parseTempoMap — `Tempo Map: 1=117.6 9=119.2 17=121` → [{ bar, bpm }] (bar 1-based, sorted,
+ * later entries for the same bar win). Written by Tab Translator Pro for charts decoded from a
+ * recording whose tempo drifts: the map keeps the bar lines on the performance, so playback and
+ * the MusicXML export follow it. Tokens that aren't `bar=bpm` are ignored; empty → [].
+ */
+function parseTempoMap(val){
+  const out = new Map();
+  for (const tok of String(val || '').split(/[\s,;]+/)){
+    const m = tok.match(/^(\d+)\s*[=:@]\s*(\d+(?:\.\d+)?)$/);
+    if (!m) continue;
+    const bar = parseInt(m[1], 10), bpm = parseFloat(m[2]);
+    if (bar >= 1 && bpm >= 10 && bpm <= 500) out.set(bar, bpm);
+  }
+  return [...out.entries()].sort((a, b) => a[0] - b[0]).map(([bar, bpm]) => ({ bar, bpm }));
+}
+
 function parseCSMPN(text){
   const raw = (text || '').replace(/\r/g,'');
   const lines = raw.split('\n');
@@ -120,6 +137,7 @@ function parseCSMPN(text){
     key: '',
     capo: 0,
     tuning: '',
+    tempoMap: [],
     blocks: []
   };
 
@@ -127,7 +145,8 @@ function parseCSMPN(text){
   // (both describe how the instrument is set up, not the harmony). Without it here
   // a "Tuning: Standard" line falls through to the content pass and is parsed as a
   // BAR — every handed-off chart grew a spurious leading measure.
-  const metaRE = /^(Title|Composer|Artist|Style|Tempo|Time|Key|Capo|Tuning)\s*:\s*(.*)$/i;
+  // `Tempo Map` (before `Tempo` in the alternation) carries a performance's tempo changes.
+  const metaRE = /^(Title|Composer|Artist|Style|Tempo Map|Tempo|Time|Key|Capo|Tuning)\s*:\s*(.*)$/i;
 
   // First pass: meta extraction
   const contentLines = [];
@@ -139,6 +158,7 @@ function parseCSMPN(text){
       if (field === 'title') doc.title = val;
       else if (field === 'composer' || field === 'artist') doc.composer = val;
       else if (field === 'style') doc.style = val;
+      else if (field === 'tempo map') doc.tempoMap = parseTempoMap(val);
       else if (field === 'tempo') doc.tempo = val;
       else if (field === 'time') doc.time = val;
       else if (field === 'key') doc.key = val;

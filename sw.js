@@ -53,6 +53,7 @@ var PRECACHE = [
   './lyricsView.js',
   './stageSheets.js',
   './performanceLyrics.js',
+  './handoffParts.js',
   './audioCapture.js',
   './abcSuite.js',
   './midiImport.js',
