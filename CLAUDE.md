@@ -18,26 +18,8 @@ The family is **recognize → normalize → finish**:
 
 **Shared rails:**
 - **CSMPN** (Chord Sheet Maker Pro Notation) is the canonical interchange text; ChordPro / MusicXML / CSML ride alongside.
-- **Same-origin localStorage handoff** — forward `csm:handoff:v1` (→ Pro, `?import=handoff`) and reverse `ttp:decode:v1` (→ Tab Translator, `?import=decode`). Versioned; any same-origin sender interoperable. Canonical spec: `chord-sheet-maker/docs/HANDOFF-CONTRACT.md`.
+- **Same-origin localStorage handoff** — forward `csm:handoff:v1` (→ Pro, `?import=handoff`) and reverse `ttp:decode:v1` (→ Tab Translator, `?import=decode`). Versioned; any same-origin sender interoperable. Canonical spec: `chord-sheet-maker/docs/HANDOFF-CONTRACT.md` (up to date as of 2026-10-26: `parts[]`, `Tempo Map:`, `csm:lyrics:v1`).
 - All three are **client-side, iOS-Safari-first, zero-server** static web apps on GitHub Pages.
-
-> **📌 PENDING — update the third app, `chord-sheet-maker` (noted 2026-10-26).** Its canonical
-> `docs/HANDOFF-CONTRACT.md` is behind what Tab-Translator-Pro and chord-sheet-maker-pro now ship
-> (Tab-Translator-Pro#126 / chord-sheet-maker-pro#382, merged 2026-10-26). Do it on a new branch in
-> that repo:
-> 1. **`parts[]` on `csm:handoff:v1`** (optional, envelope stays `v:1`): `parts: [{ name, role,
->    formats: { csmpn } }]`, at most 16, parts without CSMPN skipped. `formats` stays the primary
->    (band) chart, so older receivers ignore `parts`. Sender: Tab Translator Pro's stems panel
->    "→ Chord Sheet Maker Pro (all parts)". Receiver: CSMP `handoffParts.js` files each part in the song
->    library by its `Title:` line (replacing a same-title entry), after the primary chart loads.
-> 2. **CSMPN `Tempo Map:` header** — `Tempo Map: 1=117.6 9=119.2 17=118.4` (bar=♩, floats, changes on
->    bar lines). Written by Tab Translator Pro when the performance tempo moves; read by CSMP
->    (playback + MusicXML). Check chord-sheet-maker's own CSMPN parser accepts the line (doesn't read
->    it as a bar) and, if it emits CSMPN, passes it through.
-> 3. While there: confirm the other live channels are listed — `ttp:decode:v1` (`?import=decode`) and
->    `csm:lyrics:v1` (`?import=lyrics`, Tab Translator Pro Lyrics Import → CSMP Perform Lyrics).
->
-> Delete this note from both repos' CLAUDE.md once chord-sheet-maker is updated.
 
 **This repo is the family's finishing app (the "stage").**
 
