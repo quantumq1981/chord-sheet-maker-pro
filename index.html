@@ -2171,6 +2171,7 @@ body.exporting .sectionBlock{
               <button class="import-item power-only" id="btnImportCsml" role="menuitem">ChordSlashML (.csml)</button>
               <hr class="import-divider power-only">
               <button class="import-item power-only" id="btnDecodeTab" role="menuitem">Decode tab → Tab Translator Pro ↗</button>
+              <button class="import-item power-only" id="btnLinkRecording" role="menuitem" title="Send a Guitar Pro / MusicXML / Power Tab file to Tab Translator Pro and link a recording of the song to it: chords read from the audio with the score as evidence, bars on the recording's tempo">Link a score to a recording → Tab Translator Pro ↗</button>
             </div>
           </div>
           <button class="info-btn" onclick="openFeatureInfo('import')" title="About Import">ⓘ</button>
@@ -4323,8 +4324,18 @@ fileInputAudio.addEventListener('change', async () => {
 // navigate to `…/Tab-Translator-Pro/?import=decode` (mirror of the forward
 // `csm:handoff:v1` contract). Tab Translator decodes magic bytes itself, so no
 // format field is needed. Same-tab nav is mobile-popup-safe.
+// "Link a score to a recording" sends the same envelope with `intent: 'link'` (optional, additive —
+// HANDOFF-CONTRACT.md): Tab Translator opens the score, then its Audio panel with the score attached,
+// ready for the recording (score + audio read together; the differences listed for review).
 const fileInputDecode = document.getElementById('fileInputDecode');
+let decodeIntent = null;
 document.getElementById('btnDecodeTab').addEventListener('click', () => {
+  decodeIntent = null;
+  fileInputDecode.value = '';
+  fileInputDecode.click();
+});
+document.getElementById('btnLinkRecording').addEventListener('click', () => {
+  decodeIntent = 'link';
   fileInputDecode.value = '';
   fileInputDecode.click();
 });
@@ -4346,6 +4357,7 @@ fileInputDecode.addEventListener('change', async () => {
       return;
     }
     const env = { v: 1, source: 'chord-sheet-maker-pro', createdAt: new Date().toISOString(), filename: file.name, b64 };
+    if (decodeIntent === 'link') env.intent = 'link';
     localStorage.setItem('ttp:decode:v1', JSON.stringify(env));
     window.location.assign(window.location.origin + '/Tab-Translator-Pro/?import=decode');
   } catch (err) {

@@ -18,7 +18,7 @@ The family is **recognize → normalize → finish**:
 
 **Shared rails:**
 - **CSMPN** (Chord Sheet Maker Pro Notation) is the canonical interchange text; ChordPro / MusicXML / CSML ride alongside.
-- **Same-origin localStorage handoff** — forward `csm:handoff:v1` (→ Pro, `?import=handoff`) and reverse `ttp:decode:v1` (→ Tab Translator, `?import=decode`). Versioned; any same-origin sender interoperable. Canonical spec: `chord-sheet-maker/docs/HANDOFF-CONTRACT.md` (up to date as of 2026-10-26: `parts[]`, `Tempo Map:`, `csm:lyrics:v1`).
+- **Same-origin localStorage handoff** — forward `csm:handoff:v1` (→ Pro, `?import=handoff`) and reverse `ttp:decode:v1` (→ Tab Translator, `?import=decode`, optional `intent: "link"` = open the score ready to link a recording). Versioned; any same-origin sender interoperable. Canonical spec: `chord-sheet-maker/docs/HANDOFF-CONTRACT.md` (up to date as of 2026-10-26: `parts[]`, `Tempo Map:`, `csm:lyrics:v1`).
 - All three are **client-side, iOS-Safari-first, zero-server** static web apps on GitHub Pages.
 
 **This repo is the family's finishing app (the "stage").**
@@ -2556,3 +2556,15 @@ Items 2 and 3 of `docs/MUSCRIPTOR-REVIEW.md`, matching Tab Translator Pro's beat
 - Shipped in `sw.js` PRECACHE + CI check/copy lists. Tests: `tests/tempoMapHandoff.test.mjs` (5).
 - **Not done here:** the canonical contract note in `chord-sheet-maker/docs/HANDOFF-CONTRACT.md` (third
   repo, not in this session); a part switcher UI (parts land as separate library songs).
+
+## "Link a score to a recording → Tab Translator Pro" (2026-11-06)
+
+New import-menu item (power-only) beside **Decode tab**: the same file input and `ttp:decode:v1`
+envelope, plus `intent: "link"` (optional, additive — `chord-sheet-maker/docs/HANDOFF-CONTRACT.md`).
+Tab Translator Pro opens the score, then its Audio panel with the score attached: the user adds the
+recording and the chords are read from the audio WITH the score as evidence, on the score's bars and
+the recording's tempo map, every disagreement listed for review (Tab-Translator-Pro
+`docs/SCORE-AUDIO-LINK.md`: held-out 75.3 → 83.0 % root with an exact score; a real record vs its own
+GP file 60 → 92 %). The linked chart comes back here through the normal `csm:handoff:v1` (CSMPN with
+the score's sections and a `Tempo Map:` header). index.html only (`decodeIntent` flag in the
+`fileInputDecode` handler).
