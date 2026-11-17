@@ -58,6 +58,7 @@ var PRECACHE = [
   './abcSuite.js',
   './midiImport.js',
   './chordsheetPdf.js',
+  './realBook.js',
   './sheetOcr.js',
   './offlineStore.js',
   './recognitionBridge.js',

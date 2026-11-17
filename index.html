@@ -661,6 +661,11 @@
   .barline.single::before{
     left:50%;
   }
+  /* A single barline is one line. Without this the unused ::after sits at
+     left:auto (x = 0) and every bar draws a second line. */
+  .barline.single::after{
+    display:none;
+  }
 
   .barline.double::before{
     left:35%;
@@ -879,11 +884,22 @@
     color:var(--fb-chord-color);
   }
 
+  /* Bars and barlines live on grid row 2, ending brackets on row 1. If both
+     shared row 1, the explicitly placed bracket would occupy those cells and the
+     auto-placed bars after it would be pushed onto a new grid row. Row 1 is
+     zero-height when a row has no ending. */
+  .barlineRow.hasEnding > .barline,
+  .barlineRow.hasEnding > .measure{
+    grid-row:2;
+  }
+
   .endingBracket{
     grid-row:1;
     align-self:start;
     justify-self:stretch;
-    margin-top:-14px;
+    /* Sits in its own grid row (above the bars) — a negative offset would put it
+       outside the row's overflow box, where it was clipped to a few pixels. */
+    margin-top:2px;
     border-top:1.5px solid #111;
     height:12px;
     position:relative;
@@ -915,6 +931,64 @@
     color:#111;
     font-family: var(--fb-body-font);
   }
+
+  /* ===== Real Book (iGigBook) chart style — fbSettings.chartStyle === 'realbook' =====
+     Staff-free chord chart: composer / title / style header, boxed rehearsal
+     letters and the opening time signature in a left gutter, subscript chord
+     qualities, raised root accidentals, low-set slash basses. Purely visual —
+     the same HTML as the standard style, re-styled. */
+  .sheet.realbook{ --rb-gutter:calc(30px * var(--fb-font-scale)); }
+  .sheet.realbook .rbHeader{
+    display:grid; grid-template-columns:1fr auto 1fr; align-items:end;
+    gap:10px; border-bottom:0; padding-bottom:0; margin-bottom:4px;
+  }
+  .sheet.realbook .rbComposer,
+  .sheet.realbook .rbStyle{
+    font-family:var(--fb-body-font); font-size:calc(13px * var(--fb-font-scale));
+    line-height:1.2; padding-bottom:4px;
+  }
+  .sheet.realbook .rbComposer{ justify-self:start; text-align:left; }
+  .sheet.realbook .rbStyle{ justify-self:end; text-align:right; }
+  .sheet.realbook .rbHeader .songTitle{
+    font-size:calc(28px * var(--fb-font-scale)); text-transform:none; font-variant:small-caps;
+  }
+  .sheet.realbook .barsBlock{ position:relative; margin-left:var(--rb-gutter); }
+  .sheet.realbook .sectionBlock.rbSection{
+    position:relative; height:0; margin:0; padding:0; background:none; border-radius:0;
+  }
+  .sheet.realbook .rbSection .rehearsalLetter{
+    position:absolute; left:0; top:calc(var(--fb-line-spacing) - 10px); margin:0;
+    padding:0 4px; border-width:1.5px; background:var(--rb-bg, transparent);
+    font-size:calc(13px * var(--fb-font-scale)); line-height:1.35;
+  }
+  .sheet.realbook .rbSection .rbSectionName{
+    position:absolute; left:var(--rb-gutter); top:calc(var(--fb-line-spacing) - 14px);
+    font-family:var(--fb-body-font); font-size:calc(11px * var(--fb-font-scale));
+    font-style:italic; font-weight:700; white-space:nowrap; line-height:1;
+  }
+  .sheet.realbook .rbTimeSig{
+    position:absolute; left:calc(-1 * var(--rb-gutter) + 2px);
+    top:calc(var(--fb-line-spacing) + 16px);
+    display:flex; flex-direction:column; align-items:center; line-height:0.85;
+    font-family:var(--fb-body-font); font-weight:700; font-size:calc(14px * var(--fb-font-scale));
+  }
+  .sheet.realbook .rbTimeSig .tsNum,
+  .sheet.realbook .rbTimeSig .tsDen{ display:block; }
+  /* Chord symbol: accidental raised, quality and slash bass lowered (offsets are
+     visual only — position:relative keeps the bar layout unchanged). */
+  .sheet.realbook .chord-acc{ position:relative; top:-0.5em; font-size:0.7em; margin-left:1px; }
+  .sheet.realbook .chord-quality{
+    position:relative; top:0.32em; font-size:calc(15px * var(--fb-font-scale)); margin-left:1px;
+  }
+  .sheet.realbook .chord-bass{
+    position:relative; top:0.5em; font-size:calc(15px * var(--fb-font-scale)); margin-left:0;
+  }
+  .sheet.realbook .chord-bass::before{
+    display:inline-block; transform:scale(1.1, 1.6) translateY(-0.2em); margin:0 2px 0 1px;
+  }
+  .sheet.realbook .optionalChord::before,
+  .sheet.realbook .optionalChord::after{ font-size:calc(17px * var(--fb-font-scale)); font-weight:400; }
+  body.exporting .sheet.realbook .sectionBlock{ background:none !important; }
 
   /* Page footer */
   .sheetFooter{
@@ -979,13 +1053,18 @@
        without it a dense bar's chords overprint the next bar on exactly the
        narrow screens where bars are tightest. The row scrolls instead.
        Scoped to :not(.exporting) so a PDF/PNG keeps the full per-row layout. */
-    body:not(.exporting) .barlineRow{
+    body:not(.exporting) .sheet:not(.realbook) .barlineRow:not(.hasEnding){
       grid-template-columns: 14px minmax(min-content, 1fr) 14px minmax(min-content, 1fr) 14px !important;
     }
     .measure{
       flex-shrink:0;
       min-width:60px;
     }
+    /* Real Book keeps 4 bars per row on a phone, like iGigBook: the chart type
+       shrinks instead of the rows wrapping. --fb-font-scale-base is the user's
+       Font Size (settings.js); print is unaffected (screen-only query). */
+    .sheet.realbook{ --fb-font-scale:calc(var(--fb-font-scale-base, 1) * 0.66); }
+    .sheet.realbook .measure{ min-width:0; padding:0 3px; }
 
     /* Chord font scaling: 15% smaller in portrait */
     .beats{
@@ -1059,9 +1138,10 @@
     }
     /* Tablet: scale to 3 bars per row. Same min-content floor + :not(.exporting)
        scoping as the portrait rule below — see there for why. */
-    body:not(.exporting) .barlineRow{
+    body:not(.exporting) .sheet:not(.realbook) .barlineRow:not(.hasEnding){
       grid-template-columns: 14px minmax(min-content, 1fr) 14px minmax(min-content, 1fr) 14px minmax(min-content, 1fr) 14px !important;
     }
+    .sheet.realbook{ --fb-font-scale:calc(var(--fb-font-scale-base, 1) * 0.85); }
   }
 
   /* Desktop: side-by-side editor and preview */
@@ -2927,6 +3007,27 @@ Tempo: 130
   <div id="settingsPanel" class="settingsPanel">
     <h3>Fake Book Settings <button class="info-btn" onclick="openFeatureInfo('fakeBookLayout')" title="About Fake Book Layout">ⓘ</button></h3>
     <div class="settingsGrid">
+      <div class="field" style="grid-column:1/-1">
+        <label>Real Book (iGigBook) chart</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="outline" id="btnRealBookPreset" title="Set every Fake Book setting below to the staff-free Real Book look (Δ7, −, °, ø, handwritten font, boxed letters, no lyrics, fit to one page)">&#9733; Apply Real Book preset</button>
+          <button class="outline" id="btnRealBookLayout" title="Rewrite the chart source: remove lyric lines and divider lines, box the section markers, fold repeated sections into |: :| with 1st/2nd endings, 4 bars per line">&#8594; Real Book layout (rewrites source)</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Chart Style</label>
+        <select id="setChartStyle">
+          <option value="standard" selected>Standard (default)</option>
+          <option value="realbook">Real Book (iGigBook)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Print Fit</label>
+        <select id="setPrintFit" title="Fit to one page: before printing, step the font size and line spacing down until the chart fits one page. Your settings are restored afterwards.">
+          <option value="off" selected>Off (default)</option>
+          <option value="onepage">Fit to one page</option>
+        </select>
+      </div>
       <div class="field">
         <label>Font Size</label>
         <select id="setFontSize">
@@ -2984,8 +3085,8 @@ Tempo: 130
       <div class="field">
         <label>Lyrics Lines</label>
         <select id="setIncludeLyrics">
-          <option value="true" selected>Include</option>
-          <option value="false">Hide</option>
+          <option value="true">Include</option>
+          <option value="false" selected>Hide (default)</option>
         </select>
       </div>
       <div class="field">
@@ -3107,6 +3208,7 @@ Tempo: 130
           <option value="caveat">Caveat (handwritten)</option>
           <option value="handlee">Handlee (handwritten)</option>
           <option value="architects">Architects Daughter</option>
+          <option value="permanent">Permanent Marker (heavy)</option>
           <option value="freesans">FreeSans (GNU Unicode)</option>
           <option value="freeserif">FreeSerif (GNU Unicode)</option>
         </select>
@@ -3189,6 +3291,7 @@ Tempo: 130
 <script src="abcSuite.js"></script>
 <script src="midiImport.js"></script>
 <script src="chordsheetPdf.js"></script>
+<script src="realBook.js"></script>
 <script src="performanceLyrics.js"></script>
 <script src="handoffParts.js"></script>
 <script>
@@ -4672,6 +4775,40 @@ document.getElementById('setFgColor').addEventListener('input', (e) => {
 document.getElementById('setChordColor').addEventListener('input', (e) => {
   fbSettings.chordColor = e.target.value; applyFBSettings();
 });
+document.getElementById('setChartStyle').addEventListener('change', (e) => {
+  fbSettings.chartStyle = e.target.value; applyFBSettings();
+});
+document.getElementById('setPrintFit').addEventListener('change', (e) => {
+  fbSettings.printFit = e.target.value; saveFBSettings();
+});
+document.getElementById('btnRealBookPreset').addEventListener('click', () => {
+  if (applyRealBookPreset()){
+    setStatus('Real Book preset applied. Use "→ Real Book layout" to also fold repeats and lay the source out 4 bars per line.');
+  } else {
+    setStatus('Real Book module not loaded yet.', 'error');
+  }
+});
+document.getElementById('btnRealBookLayout').addEventListener('click', () => {
+  if (!window.RealBook){ setStatus('Real Book module not loaded yet.', 'error'); return; }
+  const text = sourceEl.value;
+  if (!text.trim()) return;
+  const r = window.RealBook.toRealBookCSMPN(text);
+  const st = r.stats;
+  // Removing lyric lines loses data (Perform Lyrics reads them), so ask first.
+  if (st.lyricLinesRemoved > 0 &&
+      !window.confirm('Real Book layout removes ' + st.lyricLinesRemoved + ' lyric line(s) from the source. Continue?')){
+    return;
+  }
+  sourceEl.value = r.csmpn;
+  extractHeaderFromText(r.csmpn);
+  updatePreview();
+  const bits = [];
+  if (st.sectionsFolded) bits.push(st.sectionsFolded + ' section(s) folded into repeats' + (st.endings ? ' (' + st.endings + ' with 1st/2nd endings)' : ''));
+  if (st.lyricLinesRemoved) bits.push(st.lyricLinesRemoved + ' lyric line(s) removed');
+  if (st.dividersRemoved) bits.push(st.dividersRemoved + ' divider line(s) removed');
+  if (st.sectionsKept) bits.push(st.sectionsKept + ' section(s) kept as written');
+  setStatus('Real Book layout: ' + (bits.length ? bits.join(', ') : 'source laid out 4 bars per line') + '.');
+});
 document.getElementById('setHeadlineFont').addEventListener('change', (e) => {
   fbSettings.headlineFont = e.target.value; applyFBSettings();
 });
@@ -5416,10 +5553,22 @@ function doTranspose(delta){
   setStatus(`Transposed ${currentTranspose >= 0 ? '+' : ''}${currentTranspose} semitone(s).`);
 }
 
-document.getElementById('btnPrint').addEventListener('click', () => {
+// Print / PDF for the main chart. With Print Fit = "Fit to one page" the chart
+// is shrunk (font size, then line spacing) to one page for this print only.
+function printChart(){
   setStatus('Opening print dialog...');
+  if (window.RealBook && fbSettings.printFit === 'onepage'){
+    window.RealBook.printWithAutoFit({
+      sheet: previewEl,
+      settings: fbSettings,
+      fontScaleMap: FONT_SCALE_MAP,
+      onStatus: (msg) => setStatus(msg),
+    });
+    return;
+  }
   window.print();
-});
+}
+document.getElementById('btnPrint').addEventListener('click', printChart);
 
 // Getters that let Perform Lyrics pull the CURRENT chart's lyrics ("⬆ Load
 // current chart"). This is the capability carried over from the retired
@@ -5449,10 +5598,7 @@ document.getElementById('btnPerfLyrics').addEventListener('click', () => {
   const floatBtn = document.getElementById('btnPrintFloat');
   const anchorBtn = document.getElementById('btnPrint');
   if (!floatBtn || !anchorBtn) return;
-  floatBtn.addEventListener('click', () => {
-    setStatus('Opening print dialog...');
-    window.print();
-  });
+  floatBtn.addEventListener('click', printChart);
   if (typeof IntersectionObserver === 'function'){
     const io = new IntersectionObserver((entries) => {
       for (const entry of entries){

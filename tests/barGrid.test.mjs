@@ -147,7 +147,8 @@ test('no stylesheet default reintroduces a 0-floor bar track', () => {
   const html = read('index.html');
   // Only .barlineRow rules — other grids (settings panels) legitimately use a
   // 0 floor because their content wraps.
-  const rules = (html.match(/\.barlineRow\{[\s\S]*?\}/g) || []).filter((r) =>
+  // The mobile overrides carry :not(.realbook) / :not(.hasEnding) qualifiers.
+  const rules = (html.match(/\.barlineRow(?::not\([^)]*\))*\{[\s\S]*?\}/g) || []).filter((r) =>
     /grid-template-columns/.test(r)
   );
   assert.ok(rules.length >= 2, `expected the default and mobile grid rules, got ${rules.length}`);
@@ -162,7 +163,7 @@ test('the mobile override yields to export so the PDF keeps per-row columns', ()
   // It needs !important to beat the inline template on a phone; scoping it to
   // :not(.exporting) is what lets the export still match the preview.
   const html = read('index.html');
-  const m = html.match(/body:not\(\.exporting\) \.barlineRow\{[\s\S]*?\}/);
+  const m = html.match(/body:not\(\.exporting\) [^{]*\.barlineRow[^{]*\{[\s\S]*?\}/);
   assert.ok(m, 'mobile grid override is not scoped to :not(.exporting)');
   assert.match(m[0], /grid-template-columns:[^;]*!important/);
 });

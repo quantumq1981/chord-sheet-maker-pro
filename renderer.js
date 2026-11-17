@@ -12,6 +12,19 @@ const REHEARSAL_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 // Track VexFlow notation block IDs (reset on each updatePreview)
 let _vtBlockId = 0;
 
+// Real Book style: time signature waiting to be drawn at the first bar row.
+let _rbPendingTimeSig = null;
+
+/*
+ * A section label that is itself a rehearsal letter ("A", "B2", "A'") is shown
+ * as that letter — not as an auto-assigned letter plus a second box repeating it.
+ * Returns the letter text, or null for a named section ("Verse", "Bridge").
+ */
+function rehearsalLetterFromLabel(text){
+  const t = String(text || '').trim();
+  return /^[A-Z](?:\d{1,2}|['′])?$/.test(t) ? t : null;
+}
+
 function renderTimeSig(timeStr){
   // Render time signature as stacked fraction-style
   const m = (timeStr || '').match(/^(\d+)\/(\d+)$/);
@@ -30,7 +43,20 @@ function renderDoc(doc){
   _csDiagramThroughout = false;
 
   let html = '';
-  if (doc.title || doc.style || doc.key || doc.time || doc.tempo || doc.composer){
+  const realBook = fbSettings.chartStyle === 'realbook';
+  // Real Book: the time signature is drawn at the start of the first bar row.
+  _rbPendingTimeSig = realBook && doc.time ? doc.time : null;
+  if (realBook && (doc.title || doc.composer || doc.style || doc.tempo)){
+    // iGigBook header: composer left, title centred, style (and tempo) right.
+    // The key is not printed — the chart itself shows it.
+    const right = [doc.style, doc.tempo ? `♩=${doc.tempo}` : ''].filter(Boolean).join(' ');
+    html += `
+      <div class="sheetHeader rbHeader">
+        <div class="rbComposer">${escapeHtml(doc.composer || '')}</div>
+        <div class="songTitle">${escapeHtml(doc.title || '')}</div>
+        <div class="rbStyle">${escapeHtml(right)}</div>
+      </div>`;
+  } else if (doc.title || doc.style || doc.key || doc.time || doc.tempo || doc.composer){
     // ChordSheet.com style: annotation line in parentheses above title
     const metaBits = [];
     if (doc.style) metaBits.push(doc.style);
@@ -109,20 +135,27 @@ function renderSectionMarker(block){
     return `<div class="sectionColumns"><span class="colL">${l}</span><span class="colC">${c}</span><span class="colR">${r}</span></div>`;
   }
 
-  if (block.marker === '-' || block.marker === ':'){
-    // Fake book style: show rehearsal letter + section name in label boxes
-    const letter = REHEARSAL_LETTERS[rehearsalLetterIndex] || '';
-    rehearsalLetterIndex++;
-    let letterHtml = letter ? `<span class="rehearsalLetter">${letter}</span>` : '';
-    return `<div class="sectionBlock">${letterHtml}<span class="labelBox">${t}</span></div>`;
-  }
-
-  if (block.marker === '='){
-    // Section divider with label - show as = label
-    const letter = REHEARSAL_LETTERS[rehearsalLetterIndex] || '';
-    rehearsalLetterIndex++;
-    let letterHtml = letter ? `<span class="rehearsalLetter">${letter}</span>` : '';
-    return `<div class="sectionBlock">${letterHtml}<span class="labelBox">${t}</span></div>`;
+  if (block.marker === '-' || block.marker === ':' || block.marker === '='){
+    // Fake book style: rehearsal letter + section name. A label that already is a
+    // letter ("= A") is the letter; the auto sequence continues after it.
+    const own = rehearsalLetterFromLabel(block.text);
+    let letter;
+    if (own){
+      letter = own;
+      const idx = REHEARSAL_LETTERS.indexOf(own[0]);
+      if (idx >= 0) rehearsalLetterIndex = idx + 1;
+    } else {
+      letter = REHEARSAL_LETTERS[rehearsalLetterIndex] || '';
+      rehearsalLetterIndex++;
+    }
+    const letterHtml = letter ? `<span class="rehearsalLetter">${escapeHtml(letter)}</span>` : '';
+    if (fbSettings.chartStyle === 'realbook'){
+      // Boxed letter in the left gutter; a section name, if any, as small text.
+      const name = own ? '' : `<span class="rbSectionName">${t}</span>`;
+      return `<div class="sectionBlock rbSection">${letterHtml}${name}</div>`;
+    }
+    const labelHtml = own ? '' : `<span class="labelBox">${t}</span>`;
+    return `<div class="sectionBlock">${letterHtml}${labelHtml}</div>`;
   }
 
   if (block.marker === ';'){
@@ -195,8 +228,10 @@ function renderBars(tokens, indent, diagrams){
 
     // Pad to barsPerRow
     while (row.length < bpr){
-      row.push({ token: '', leftBar: 'single', rightBar: 'single' });
+      row.push({ token: '', leftBar: 'single', rightBar: 'single', pad: true });
     }
+    // An ending bracket stops at the last real bar, not across the padding.
+    const lastReal = row.reduce((acc, bar, idx) => (bar.pad ? acc : idx), 0);
 
     const segments = [];
     let currentLabel = activeEnding;
@@ -211,8 +246,8 @@ function renderBars(tokens, indent, diagrams){
         startIndex = idx;
       }
     });
-    if (currentLabel !== null && startIndex !== null){
-      segments.push({ label: currentLabel, start: startIndex, end: row.length - 1 });
+    if (currentLabel !== null && startIndex !== null && startIndex <= lastReal){
+      segments.push({ label: currentLabel, start: startIndex, end: lastReal });
     }
     activeEnding = currentLabel;
     if (row.some((bar) => ['repeat-end', 'final'].includes(bar.rightBar))){
@@ -221,7 +256,18 @@ function renderBars(tokens, indent, diagrams){
 
     // Built per row, after padding: the columns depend on how many chords each
     // bar in THIS row carries, not just on the bars-per-row setting.
-    html += `<div class="barlineRow" style="grid-template-columns:${buildGridTemplate(row)}">`;
+    // Real Book opening time signature: a child of .barsBlock (not of the row,
+    // whose overflow-x:auto would clip it), drawn in the left gutter.
+    if (_rbPendingTimeSig){
+      if (!row[0]?.timeSig){
+        html += `<span class="rbTimeSig">${renderInlineTimeSig(_rbPendingTimeSig)}</span>`;
+      }
+      _rbPendingTimeSig = null;
+    }
+    // A row with an ending bracket keeps its full bar grid on phones too (it
+    // scrolls instead of wrapping): see .barlineRow.hasEnding in index.html.
+    const rowCls = segments.length ? 'barlineRow hasEnding' : 'barlineRow';
+    html += `<div class="${rowCls}" style="grid-template-columns:${buildGridTemplate(row)}">`;
     html += renderBarline(row[0]?.leftBar || 'single');
 
     row.forEach((bar) => {

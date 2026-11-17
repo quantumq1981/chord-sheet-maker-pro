@@ -2568,3 +2568,71 @@ the recording's tempo map, every disagreement listed for review (Tab-Translator-
 GP file 60 → 92 %). The linked chart comes back here through the normal `csm:handoff:v1` (CSMPN with
 the score's sections and a `Tempo Map:` header). index.html only (`decodeIntent` flag in the
 `fileInputDecode` handler).
+
+## Real Book (iGigBook) chart style (2026-11-17)
+
+Staff-free Real Book / iGigBook look for the fake-book renderer, plus a source
+transform and one-page print fit. Reference charts: iGigBook screenshots (Cherokee,
+Some Enchanted Evening, Devil May Care, The Christmas Song).
+
+**`realBook.js`** (new root module, `window.RealBook`, pure core + browser glue):
+- `REAL_BOOK_PRESET` + `applyPreset(settings)` — Δ7 · − · ° · ø, 4 bars/row, left
+  align, Slash-Rhythm off, lyrics hidden, strum none, Patrick Hand SC title, **Kalam**
+  chords, **chordFontPack `default`** (Pori/Norfolk REPLACE the chord font with an
+  engraved serif, so they cannot be combined with a handwritten chord font), line
+  spacing 12, footer hidden, `chartStyle:'realbook'`, `printFit:'onepage'`.
+- `toRealBookCSMPN(text, opts)` → `{csmpn, stats}` — explicit, user-invoked (NOT an
+  import step: lyric lines stay in the source for Perform Lyrics / Stage Sheets).
+  Drops `;` lyric lines and `---`/`===` divider lines, hoists meta + `//` diagram
+  defs, `-`/`:`/`==` markers → `= Label`, folds a section whose second half repeats
+  its first into `|: … :|`, or into `|: body 1. tail1 :| 2. tail2 |` when only the
+  tail differs (`foldRepeats`; similes resolved for comparison; a 2nd ending starting
+  with `%` is spelled out), lays plain sections out 4 bars/line. Sections with
+  repeats/endings/per-bar meters/`{tab}`/`{hybrid}`/`X`/`.` lines, or a `(…)xN`
+  group that does not fold, are kept as written.
+- `buildFitLevels` / `chooseFitLevel` / `printableHeightPx` / `printWithAutoFit` —
+  steps (font, spacing) M12→M8→M4→S4→S2→XS2→XS0 (never above the user's setting)
+  until the sheet fits one Letter page. Only CSS vars change during the print
+  (`--fb-font-scale`, `--fb-font-scale-base`, `--fb-line-spacing`); restored on
+  `afterprint`, never saved. Measured at print width with `body.exporting`.
+  Skipped in Slash-Rhythm View and when the chart has `+` page breaks.
+
+**Correction to the original spec:** `(A B C D)x2` is EXPANDED by
+`parseBarStructures` (it prints all 8 bars); Real Book compression needs `|: :|`
+barlines, which is what the transform emits. `-`/`:`/`=` section markers render
+identically in the fake book; the box comes from the renderer, not the marker.
+Auto-parenthesising "turnaround" bars was not implemented: the last bars of a tune
+are usually played, so marking them optional would change the chart.
+
+**`settings.js`** — `fbSettings.chartStyle` ('standard'|'realbook') +
+`printFit` ('off'|'onepage'); `BODY_FONT_MAP.permanent` (Permanent Marker);
+`syncSettingsUI()` (extracted; now runs on first visit too — Lyrics Lines used to
+show "Include" while the setting was false); `applyRealBookPreset()`;
+`applyFBSettings` toggles `.realbook` on `.sheet` and sets `--fb-font-scale-base`.
+
+**`renderer.js`** — Real Book header (composer left · title · style/tempo right, no
+key line); opening time sig in the left gutter (`.rbTimeSig`, child of
+`.barsBlock`); `rehearsalLetterFromLabel` — a label that IS a letter (`= A`, `A2`,
+`A'`) is the rehearsal letter (no more "A [A]" double box, both styles); Real Book
+sections = boxed letter in the gutter + small name for named sections; ending
+brackets stop at the last real bar of a padded row; rows with a bracket get
+`.hasEnding`.
+
+**`chordProcessing.js`** — `renderChordToken` puts the root accidental in
+`<span class="chord-acc">` (text content unchanged) so Real Book can raise it.
+
+**`index.html`** — settings panel: ★ Apply Real Book preset, → Real Book layout
+(confirm() when lyric lines would be removed), Chart Style, Print Fit; body font
+Permanent Marker; `printChart()` for both ⎙ buttons; `.sheet.realbook` CSS
+(subscript quality, raised accidental, lowered slash bass, gutter, phone/tablet keep
+4 bars/row by scaling `--fb-font-scale` from `--fb-font-scale-base`).
+**Pre-existing fake-book bugs fixed:** every single barline drew a second line
+(`.barline.single::after` was never hidden); 1st/2nd ending rows broke apart (the
+explicitly placed bracket took grid row 1 and pushed the bars onto a new row — bars
+now go on row 2 in `.hasEnding` rows); the bracket was clipped by the row's
+overflow box (negative margin → 2px).
+
+Registered in `sw.js` PRECACHE + CI `node --check` + deploy `cp`. Tests:
+`tests/realBook.test.mjs` (27). Gates: lint · format · build · test:all
+(968 npm + 486 parsers) · verify:deploy. Checked in Chromium (desktop + 390px phone);
+**iOS Safari device check still pending** (print fit relies on `afterprint`).
