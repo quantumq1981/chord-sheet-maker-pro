@@ -586,7 +586,11 @@ function renderChordToken(token){
   }
   const quality = parsed.quality ? `<span class="chord-quality">${escapeHtml(parsed.quality)}</span>` : '';
   const bass = parsed.bass ? `<span class="chord-bass">${escapeHtml(parsed.bass)}</span>` : '';
-  return `<span class="chord"><span class="chord-root">${escapeHtml(parsed.root)}</span>${quality}${bass}</span>`;
+  // The root's accidental gets its own span so the Real Book style can raise it
+  // (B♭ with a superscript flat); in the standard style it renders inline as before.
+  const rootLetter = escapeHtml(parsed.root.charAt(0));
+  const rootAcc = parsed.root.length > 1 ? `<span class="chord-acc">${escapeHtml(parsed.root.slice(1))}</span>` : '';
+  return `<span class="chord"><span class="chord-root">${rootLetter}${rootAcc}</span>${quality}${bass}</span>`;
 }
 
 function renderBeatContent(rawBeat){

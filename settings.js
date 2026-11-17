@@ -36,6 +36,13 @@ const fbSettings = {
   strumMode: 'none',
   // Custom strum pattern string (chars D U X V -) used when strumMode === 'custom'
   strumPattern: '',
+  // Fake-book look: 'standard' or 'realbook' (iGigBook-style: boxed rehearsal
+  // letters in a left gutter, subscript chord qualities, raised accidentals,
+  // composer / title / style header, time signature at the first bar).
+  chartStyle: 'standard',
+  // Print: 'off' prints at the chosen size; 'onepage' steps font size and line
+  // spacing down until the chart fits one page (realBook.js printWithAutoFit).
+  printFit: 'off',
 };
 
 const FONT_SCALE_MAP = { M: 1, S: 0.85, XS: 0.72 };
@@ -56,6 +63,7 @@ const BODY_FONT_MAP = {
   caveat: '"Caveat", cursive',
   handlee: '"Handlee", cursive',
   architects: '"Architects Daughter", cursive',
+  permanent: '"Permanent Marker", cursive',
   freesans: '"FreeSans", Helvetica, Arial, sans-serif',
   freeserif: '"FreeSerif", Georgia, serif',
 };
@@ -116,37 +124,60 @@ function loadFBSettings(){
       for (const k of Object.keys(fbSettings)){
         if (parsed[k] !== undefined) fbSettings[k] = parsed[k];
       }
-      // Sync UI controls
-      const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-      setEl('setFontSize', fbSettings.fontSize);
-      setEl('setBarsPerRow', String(fbSettings.barsPerRow));
-      setEl('setLineSpacing', String(fbSettings.lineSpacing));
-      setEl('setBarLines', fbSettings.barLines);
-      setEl('setChordAlign', fbSettings.chordAlign);
-      setEl('setChordFontPack', fbSettings.chordFontPack);
-      setEl('setMaj7Style', fbSettings.maj7Style);
-      setEl('setMinorStyle', fbSettings.minorStyle);
-      setEl('setDimStyle', fbSettings.dimStyle);
-      setEl('setHalfDimStyle', fbSettings.halfDimStyle);
-      setEl('setPageOrientation', fbSettings.pageOrientation);
-      setEl('setFooter', fbSettings.footer);
-      setEl('setBgColor', fbSettings.bgColor);
-      setEl('setFgColor', fbSettings.fgColor);
-      setEl('setChordColor', fbSettings.chordColor);
-      setEl('setHeadlineFont', fbSettings.headlineFont);
-      setEl('setBodyFont', fbSettings.bodyFont);
-      setEl('setIncludeLyrics', String(fbSettings.includeLyrics));
-      setEl('setHybridRhythmMode', String(fbSettings.hybridRhythmMode));
-      setEl('setHybridScaffoldPreset', fbSettings.hybridScaffoldPreset || 'quarter');
-      setEl('setStrumMode', fbSettings.strumMode || 'none');
-      setEl('setStrumPattern', fbSettings.strumPattern || '');
     }
   } catch(_){}
+  // Always sync, not only when something was saved: on a first visit the controls
+  // must still show the defaults above (Lyrics Lines used to read "Include" while
+  // the setting was false).
+  syncSettingsUI();
+}
+
+/* Push every fbSettings value into its Fake Book Settings control. */
+function syncSettingsUI(){
+  if (typeof document === 'undefined') return;
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  setEl('setFontSize', fbSettings.fontSize);
+  setEl('setBarsPerRow', String(fbSettings.barsPerRow));
+  setEl('setLineSpacing', String(fbSettings.lineSpacing));
+  setEl('setBarLines', fbSettings.barLines);
+  setEl('setChordAlign', fbSettings.chordAlign);
+  setEl('setChordFontPack', fbSettings.chordFontPack);
+  setEl('setMaj7Style', fbSettings.maj7Style);
+  setEl('setMinorStyle', fbSettings.minorStyle);
+  setEl('setDimStyle', fbSettings.dimStyle);
+  setEl('setHalfDimStyle', fbSettings.halfDimStyle);
+  setEl('setPageOrientation', fbSettings.pageOrientation);
+  setEl('setFooter', fbSettings.footer);
+  setEl('setBgColor', fbSettings.bgColor);
+  setEl('setFgColor', fbSettings.fgColor);
+  setEl('setChordColor', fbSettings.chordColor);
+  setEl('setHeadlineFont', fbSettings.headlineFont);
+  setEl('setBodyFont', fbSettings.bodyFont);
+  setEl('setIncludeLyrics', String(fbSettings.includeLyrics));
+  setEl('setHybridRhythmMode', String(fbSettings.hybridRhythmMode));
+  setEl('setHybridScaffoldPreset', fbSettings.hybridScaffoldPreset || 'quarter');
+  setEl('setStrumMode', fbSettings.strumMode || 'none');
+  setEl('setStrumPattern', fbSettings.strumPattern || '');
+  setEl('setChartStyle', fbSettings.chartStyle || 'standard');
+  setEl('setPrintFit', fbSettings.printFit || 'off');
+  if (typeof _syncStrumPatternVis === 'function') _syncStrumPatternVis();
+}
+
+/* One tap to the Real Book (iGigBook) look — values in realBook.js REAL_BOOK_PRESET. */
+function applyRealBookPreset(){
+  if (!window.RealBook) return false;
+  Object.assign(fbSettings, window.RealBook.applyPreset(fbSettings));
+  syncSettingsUI();
+  applyFBSettings();
+  return true;
 }
 
 function applyFBSettings(){
   const root = document.documentElement;
   root.style.setProperty('--fb-font-scale', FONT_SCALE_MAP[fbSettings.fontSize] || 1);
+  // Same value, for rules that scale it (Real Book on a phone): a property cannot
+  // be defined in terms of itself.
+  root.style.setProperty('--fb-font-scale-base', FONT_SCALE_MAP[fbSettings.fontSize] || 1);
   root.style.setProperty('--fb-line-spacing', fbSettings.lineSpacing + 'px');
   root.style.setProperty('--fb-bars-per-row', fbSettings.barsPerRow);
   root.style.setProperty('--fb-chord-color', fbSettings.chordColor || '#20201c');
@@ -172,6 +203,7 @@ function applyFBSettings(){
   if (sheetEl){
     sheetEl.style.background = fbSettings.bgColor || '#ffffff';
     sheetEl.style.color = fbSettings.fgColor || '#111111';
+    sheetEl.classList.toggle('realbook', fbSettings.chartStyle === 'realbook');
   }
   // Apply page orientation to print style. Slash-Rhythm View's printed pages
   // already bake their own margins into the SVG layout (see renderer.js
